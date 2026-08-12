@@ -1,0 +1,176 @@
+% policy-document.tex — LaTeX equivalent of templates/typst/policy-document.typ.
+%
+% Unlike the Typst template, this one does NOT read the policy JSON: LaTeX has
+% no native data loading, and the alternatives (generating .tex from a script,
+% or driving LuaTeX) are the error-prone path DOCUMENT_TEMPLATES.md argues
+% against. Fill the fields in by hand, or generate this file from the JSON with
+% a small script if you need it automated.
+%
+% Build:
+%   cd templates/latex && latexmk -xelatex policy-document.tex
+%   (or: xelatex policy-document.tex, twice, for the page-count reference)
+
+\documentclass[11pt,a4paper]{article}
+\usepackage{carelock}
+
+% ---- Document metadata ----------------------------------------------------
+\setcldoctitle{Access Control Policy}
+\setclreference{POL-AC-001}
+\setclclassification{Confidential}
+
+\begin{document}
+
+\clcoverpage{Access Control Policy}{Policy}{Northwind Financial Services Ltd}
+
+% Ragged right with hyphenation suppressed: these are short field values in
+% narrow columns, where a hyphenated break ("Of-ficer") is far more visible than
+% a ragged edge.
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\hyphenpenalty=10000\arraybackslash}X>{\raggedright\hyphenpenalty=10000\arraybackslash}X>{\raggedright\hyphenpenalty=10000\arraybackslash}X@{}}
+  \cllabel{Reference}\newline POL-AC-001 &
+  \cllabel{Document type}\newline Policy &
+  \cllabel{Version}\newline v2.0 \\[11pt]
+  \cllabel{Document owner}\newline Head of Information Security &
+  \cllabel{Approver}\newline Chief Information Security Officer &
+  \cllabel{Effective date}\newline 2026-02-01 \\[11pt]
+  \cllabel{Review cycle}\newline 12 months &
+  \cllabel{Next review}\newline 2027-02-01 &
+  \cllabel{Frameworks}\newline ISO 27001, NIST 800-53 \\
+\end{tabularx}
+
+\clearpage
+\pagestyle{clbody}
+
+% ---- Document control -----------------------------------------------------
+\section*{Document Control}
+\addcontentsline{toc}{section}{Document Control}
+
+\begin{clkvtable}
+  Reference & POL-AC-001 \\
+  Title & Access Control Policy \\
+  Document type & Policy \\
+  Classification & Confidential \\
+  Status & Approved \\
+  Document owner & Head of Information Security \\
+  Approver & Chief Information Security Officer \\
+  Client & Northwind Financial Services Ltd \\
+  Frameworks & ISO 27001, NIST 800-53, PCI DSS \\
+  Effective date & 2026-02-01 \\
+  Next review & 2027-02-01 \\
+\end{clkvtable}
+
+\vspace{1em}
+\begin{clcallout}
+  \cllabel{Summary}\par\vspace{0.2em}
+  This policy establishes the requirements for granting, reviewing and revoking
+  access to Northwind information systems and the cardholder data environment.
+  It applies to all employees, contractors and third parties, and is mandatory
+  for any system that processes, stores or transmits regulated data.
+\end{clcallout}
+
+% ---- Revision history -----------------------------------------------------
+% A clause 7.5 requirement, not a nicety: an auditor asks what changed between
+% versions and who approved it.
+\vspace{1.2em}
+\section*{Revision History}
+\addcontentsline{toc}{section}{Revision History}
+
+\rowcolors{2}{}{clTableZebra}
+\begin{tabularx}{\linewidth}{@{}>{\sffamily\small}l>{\sffamily\small}l>{\small}lX@{}}
+  \toprule
+  \sffamily\bfseries\small Version & \sffamily\bfseries\small Approved &
+  \sffamily\bfseries\small Approved by & \sffamily\bfseries\small Change summary \\
+  \midrule
+  v2.0 & 2026-02-01 & Chief Information Security Officer &
+    Added quarterly privileged access review and one-business-day revocation requirement. \\
+  v1.0 & 2025-01-15 & Chief Information Security Officer & Initial issue. \\
+  \bottomrule
+\end{tabularx}
+
+\clearpage
+\renewcommand{\contentsname}{Contents}
+\tableofcontents
+\clearpage
+
+% ---- Body -----------------------------------------------------------------
+\section{Purpose}
+Unauthorised access is the most frequently exploited weakness in financial
+services environments, and the majority of material incidents begin with a
+credential that should have been revoked or was never appropriate to issue.
+This policy sets the mandatory requirements that limit access to information
+systems to identified, authorised individuals, and that ensure access is removed
+promptly when it is no longer justified.
+
+It exists to protect the confidentiality, integrity and availability of
+Northwind information assets, and to meet the access control obligations placed
+on the organisation by ISO/IEC 27001:2022, NIST SP 800-53 Revision 5 and the
+Payment Card Industry Data Security Standard.
+
+\section{Scope}
+This policy applies to all production and pre-production information systems
+operated by or on behalf of Northwind, including the cardholder data
+environment, and to every account type used to access them --- interactive user
+accounts, privileged administrative accounts, service accounts and accounts held
+by third parties.
+
+\section{Policy Statements}
+% Normative language only: must / shall (mandatory), should (expected, deviation
+% needs justification), may (discretionary). An assessor cannot test "will",
+% "strives to" or "is encouraged to".
+Access \textbf{must} be granted on the principle of least privilege: an account
+must hold only the permissions required for the role it supports, and no more.
+
+Access \textbf{must} be authorised by the system owner before it is provisioned,
+and the authorisation must be recorded and retained for a minimum of twelve
+months.
+
+Privileged access \textbf{must} be issued separately from an individual's
+standard account, \textbf{must} require multi-factor authentication, and
+\textbf{must} be reviewed at least quarterly by the system owner.
+
+Access \textbf{must} be revoked within one business day of a person leaving the
+organisation or changing to a role that no longer requires it.
+
+\section{Roles and Responsibilities}
+The Chief Information Security Officer owns this policy, approves it, and is
+accountable for its effectiveness. The Head of Information Security must
+maintain this policy and report material non-compliance to the Executive Risk
+Committee. System owners must authorise access to the systems they own and
+conduct the periodic access reviews required by this policy.
+
+\section{Management Commitment}
+The Executive Risk Committee endorses this policy and commits the resources
+required to implement and sustain it. Compliance with this policy is a condition
+of continued access to Northwind systems.
+
+\section{Compliance and Enforcement}
+Compliance is monitored through the periodic access reviews, automated reporting
+on privileged account usage, and internal audit. Breaches must be reported to
+the Head of Information Security and are handled under the disciplinary
+procedure.
+
+% ---- Control mapping ------------------------------------------------------
+\clearpage
+\section{Control Mapping}
+This document is mapped to the following catalog controls. Coverage is stated
+per control: \emph{full} means this document satisfies the control on its own,
+\emph{partial} means further documents are required, and \emph{supporting}
+means the text contributes context without satisfying the control.
+
+\vspace{0.6em}
+\rowcolors{2}{}{clTableZebra}
+\begin{tabularx}{\linewidth}{@{}>{\ttfamily\small}lX>{\small}l>{\small}l@{}}
+  \toprule
+  \sffamily\bfseries\small Control & \sffamily\bfseries\small Name &
+  \sffamily\bfseries\small Coverage & \sffamily\bfseries\small Section \\
+  \midrule
+  AC-1 & Policy and Procedures & Full & Purpose \\
+  AC-2 & Account Management & Full & Policy Statements \\
+  AC-3 & Access Enforcement & Full & Policy Statements \\
+  AC-6 & Least Privilege & Partial & Policy Statements \\
+  \bottomrule
+\end{tabularx}
+
+\vspace{1.5em}
+\clapproval{Chief Information Security Officer}{Head of Information Security}{2026-02-01}
+
+\end{document}

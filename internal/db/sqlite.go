@@ -1,0 +1,576 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+)
+
+import _ "github.com/mattn/go-sqlite3"
+
+func OpenSQLite(path string) (*Conn, error) {
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+
+	for _, pragma := range []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA busy_timeout=5000",
+		"PRAGMA foreign_keys=ON",
+	} {
+		if _, err := db.Exec(pragma); err != nil {
+			return nil, fmt.Errorf("failed to set %s: %w", pragma, err)
+		}
+	}
+
+	const schema = `
+	CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		email TEXT NOT NULL UNIQUE
+	);
+
+	CREATE TABLE IF NOT EXISTS nist_stride_mappings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		control_id TEXT NOT NULL UNIQUE,
+		baselines_json TEXT NOT NULL,
+		threats_json TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS rcsa_controls (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_key TEXT NOT NULL DEFAULT '',
+		control_id TEXT NOT NULL UNIQUE,
+		control_type TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL DEFAULT '',
+		family TEXT NOT NULL,
+		in_low INTEGER NOT NULL DEFAULT 0,
+		in_moderate INTEGER NOT NULL DEFAULT 0,
+		in_high INTEGER NOT NULL DEFAULT 0,
+		in_privacy INTEGER NOT NULL DEFAULT 0,
+		mapping_baselines_json TEXT NOT NULL,
+		threats_json TEXT NOT NULL,
+		confidentiality_status TEXT NOT NULL DEFAULT '',
+		integrity_status TEXT NOT NULL DEFAULT '',
+		availability_status TEXT NOT NULL DEFAULT '',
+		justification TEXT NOT NULL DEFAULT '',
+		potentially_common_inheritable TEXT NOT NULL DEFAULT '',
+		requirements TEXT NOT NULL DEFAULT '',
+		discussion TEXT NOT NULL DEFAULT '',
+		related_controls_json TEXT NOT NULL DEFAULT '[]',
+		appendix_json TEXT NOT NULL DEFAULT 'null'
+	);
+
+	CREATE TABLE IF NOT EXISTS control_family_visibility (
+		family TEXT PRIMARY KEY,
+		enabled INTEGER NOT NULL DEFAULT 1
+	);
+
+	CREATE TABLE IF NOT EXISTS security_nfrs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		record_key TEXT NOT NULL UNIQUE,
+		nfr_id TEXT NOT NULL DEFAULT '',
+		summary TEXT NOT NULL DEFAULT '',
+		issue_type TEXT NOT NULL DEFAULT '',
+		description TEXT NOT NULL DEFAULT '',
+		nist_mapping TEXT NOT NULL DEFAULT '',
+		additional_details TEXT NOT NULL DEFAULT '',
+		implementation TEXT NOT NULL DEFAULT '',
+		domain TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS security_nfr_control_links (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		nfr_key TEXT NOT NULL,
+		nfr_id TEXT NOT NULL DEFAULT '',
+		nfr_summary TEXT NOT NULL DEFAULT '',
+		nfr_domain TEXT NOT NULL DEFAULT '',
+		nist_mapping_raw TEXT NOT NULL DEFAULT '',
+		mapping_control_id TEXT NOT NULL DEFAULT '',
+		control_id TEXT NOT NULL DEFAULT '',
+		control_name TEXT NOT NULL DEFAULT '',
+		control_family TEXT NOT NULL DEFAULT '',
+		matched INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE TABLE IF NOT EXISTS nfr_control_link_overrides (
+		nfr_key TEXT NOT NULL,
+		mapping_control_id TEXT NOT NULL,
+		override_control_id TEXT NOT NULL DEFAULT '',
+		matched INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (nfr_key, mapping_control_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS nfr_source_documents (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		title TEXT NOT NULL DEFAULT '',
+		origin TEXT NOT NULL DEFAULT '',
+		url TEXT NOT NULL DEFAULT '',
+		filename TEXT NOT NULL DEFAULT '',
+		media_type TEXT NOT NULL DEFAULT '',
+		sha256 TEXT NOT NULL DEFAULT '',
+		byte_size INTEGER NOT NULL DEFAULT 0,
+		uploaded_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS nfr_source_chunks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		ordinal INTEGER NOT NULL DEFAULT 0,
+		heading TEXT NOT NULL DEFAULT '',
+		body TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_nfr_source_chunks_document
+		ON nfr_source_chunks (document_id, ordinal);
+
+	CREATE TABLE IF NOT EXISTS nfr_enrichment_proposals (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		nfr_key TEXT NOT NULL DEFAULT '',
+		document_id INTEGER NOT NULL,
+		field TEXT NOT NULL DEFAULT '',
+		suggested_text TEXT NOT NULL DEFAULT '',
+		rationale TEXT NOT NULL DEFAULT '',
+		confidence REAL NOT NULL DEFAULT 0,
+		citations_json TEXT NOT NULL DEFAULT '[]',
+		status TEXT NOT NULL DEFAULT 'pending',
+		model TEXT NOT NULL DEFAULT '',
+		prompt_hash TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		decided_at TEXT NOT NULL DEFAULT '',
+		decided_by TEXT NOT NULL DEFAULT '',
+		decided_note TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_nfr_enrichment_proposals_status
+		ON nfr_enrichment_proposals (status, nfr_key);
+
+	CREATE TABLE IF NOT EXISTS ai_usage_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		provider TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS stored_json_documents (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL DEFAULT '',
+		content_json TEXT NOT NULL DEFAULT '{}',
+		created_at TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS auth_users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		is_admin INTEGER NOT NULL DEFAULT 0,
+		allowed_pages_json TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS auth_sessions (
+		session_token TEXT PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		expires_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS security_risk_register (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		risk_id TEXT NOT NULL UNIQUE,
+		title TEXT NOT NULL DEFAULT '',
+		business_unit TEXT NOT NULL DEFAULT '',
+		asset TEXT NOT NULL DEFAULT '',
+		threat_source TEXT NOT NULL DEFAULT '',
+		vulnerability TEXT NOT NULL DEFAULT '',
+		likelihood INTEGER NOT NULL DEFAULT 1,
+		impact INTEGER NOT NULL DEFAULT 1,
+		inherent_score INTEGER NOT NULL DEFAULT 1,
+		current_controls TEXT NOT NULL DEFAULT '',
+		residual_likelihood INTEGER NOT NULL DEFAULT 1,
+		residual_impact INTEGER NOT NULL DEFAULT 1,
+		residual_score INTEGER NOT NULL DEFAULT 1,
+		response_strategy TEXT NOT NULL DEFAULT 'Mitigate',
+		response_action TEXT NOT NULL DEFAULT '',
+		owner TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'Open',
+		target_date TEXT NOT NULL DEFAULT '',
+		last_review_date TEXT NOT NULL DEFAULT '',
+		next_review_date TEXT NOT NULL DEFAULT '',
+		risk_appetite_aligned INTEGER NOT NULL DEFAULT 0,
+		notes TEXT NOT NULL DEFAULT ''
+	);
+
+
+	CREATE TABLE IF NOT EXISTS policy_documents (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		client_id INTEGER NOT NULL DEFAULT 0,
+		client_name TEXT NOT NULL DEFAULT '',
+		doc_type TEXT NOT NULL DEFAULT 'policy',
+		reference TEXT NOT NULL DEFAULT '',
+		title TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'draft',
+		owner_role TEXT NOT NULL DEFAULT '',
+		approver TEXT NOT NULL DEFAULT '',
+		classification TEXT NOT NULL DEFAULT 'Internal',
+		frameworks_json TEXT NOT NULL DEFAULT '[]',
+		effective_date TEXT NOT NULL DEFAULT '',
+		review_cadence_months INTEGER NOT NULL DEFAULT 12,
+		next_review_date TEXT NOT NULL DEFAULT '',
+		parent_document_id INTEGER NOT NULL DEFAULT 0,
+		summary TEXT NOT NULL DEFAULT '',
+		author TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS policy_sections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		ordinal INTEGER NOT NULL DEFAULT 0,
+		heading TEXT NOT NULL DEFAULT '',
+		body TEXT NOT NULL DEFAULT '',
+		section_kind TEXT NOT NULL DEFAULT 'statements',
+		provenance TEXT NOT NULL DEFAULT 'human',
+		provenance_detail TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS policy_versions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		version_label TEXT NOT NULL DEFAULT '',
+		approved_by TEXT NOT NULL DEFAULT '',
+		approved_at TEXT NOT NULL DEFAULT '',
+		change_summary TEXT NOT NULL DEFAULT '',
+		snapshot TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	-- No foreign key to rcsa_controls on purpose. The catalog is reseeded from
+	-- JSON and controls can be deleted from the Control Editor; a cascade there
+	-- would silently erase coverage claims, which are evidence. Dangling refs
+	-- are surfaced as orphans by the coverage report instead.
+	CREATE TABLE IF NOT EXISTS policy_section_controls (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		section_id INTEGER NOT NULL,
+		control_id TEXT NOT NULL,
+		framework TEXT NOT NULL DEFAULT '',
+		coverage TEXT NOT NULL DEFAULT 'full',
+		note TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(section_id) REFERENCES policy_sections(id) ON DELETE CASCADE
+	);
+
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_section_controls_unique
+		ON policy_section_controls(section_id, control_id);
+	CREATE INDEX IF NOT EXISTS idx_policy_section_controls_control
+		ON policy_section_controls(control_id);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_documents_client ON policy_documents(client_id);
+	CREATE INDEX IF NOT EXISTS idx_policy_documents_status ON policy_documents(status);
+	CREATE INDEX IF NOT EXISTS idx_policy_sections_document ON policy_sections(document_id, ordinal);
+	CREATE INDEX IF NOT EXISTS idx_policy_versions_document ON policy_versions(document_id);
+
+	-- "What is due this month" is the calendar view's only query; without this
+	-- it is a scan of every task the install has ever held.
+
+
+	CREATE TABLE IF NOT EXISTS doc_template_brand (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		settings_json TEXT NOT NULL DEFAULT '{}',
+		updated_at TEXT NOT NULL DEFAULT '',
+		updated_by TEXT NOT NULL DEFAULT ''
+	);`
+
+	const stateSchema = `
+	CREATE TABLE IF NOT EXISTS app_state (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL DEFAULT ''
+	);`
+
+	if _, err := db.Exec(schema); err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(stateSchema); err != nil {
+		return nil, err
+	}
+
+	if err := ensureColumn(db, "rcsa_controls", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "rcsa_controls", "source_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "rcsa_controls", "control_type", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "rcsa_controls", "requirements", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "rcsa_controls", "discussion", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "rcsa_controls", "related_controls_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "rcsa_controls", "appendix_json", "TEXT NOT NULL DEFAULT 'null'"); err != nil {
+		return nil, err
+	}
+	// Added after policy_documents shipped, so existing databases need the
+	// column back-filled -- CREATE TABLE IF NOT EXISTS will not add it and the
+	// repository would fail on every read.
+	if err := ensureColumn(db, "policy_documents", "author", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "nfr_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "summary", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "issue_type", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "description", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "nist_mapping", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "additional_details", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "implementation", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "domain", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "nfr_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "nfr_summary", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "nfr_domain", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "nist_mapping_raw", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "mapping_control_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "control_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "control_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "control_family", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfr_control_links", "matched", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "nfr_control_link_overrides", "override_control_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "nfr_control_link_overrides", "matched", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	// The client a policy was issued to used to be resolved through the CRM's
+	// client table. The CRM has moved to wintermute, and the name is now stored
+	// on the document — which is also the more correct record: an approved
+	// deliverable's cover page must not change because somebody renamed a client
+	// a year later.
+	if err := ensureColumn(db, "policy_documents", "client_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "stored_json_documents", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "stored_json_documents", "source", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "stored_json_documents", "content_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "stored_json_documents", "created_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_users", "username", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_users", "password_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_users", "is_admin", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_users", "allowed_pages_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_users", "created_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_users", "updated_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_sessions", "user_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "auth_sessions", "expires_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "risk_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "title", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "business_unit", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "asset", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "threat_source", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "vulnerability", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "likelihood", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "impact", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "inherent_score", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "current_controls", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "residual_likelihood", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "residual_impact", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "residual_score", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "response_strategy", "TEXT NOT NULL DEFAULT 'Mitigate'"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "response_action", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "owner", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "status", "TEXT NOT NULL DEFAULT 'Open'"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "target_date", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "last_review_date", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "next_review_date", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "risk_appetite_aligned", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_risk_register", "notes", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_rcsa_controls_control_id", "CREATE INDEX IF NOT EXISTS idx_rcsa_controls_control_id ON rcsa_controls(control_id)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_rcsa_controls_family_type", "CREATE INDEX IF NOT EXISTS idx_rcsa_controls_family_type ON rcsa_controls(family, control_type)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_security_nfrs_domain", "CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_security_nfr_links_control_match", "CREATE INDEX IF NOT EXISTS idx_security_nfr_links_control_match ON security_nfr_control_links(control_id, matched)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_security_nfr_links_nfr_key", "CREATE INDEX IF NOT EXISTS idx_security_nfr_links_nfr_key ON security_nfr_control_links(nfr_key, mapping_control_id)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_auth_users_username", "CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_auth_sessions_user_id", "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_stored_json_documents_created_at", "CREATE INDEX IF NOT EXISTS idx_stored_json_documents_created_at ON stored_json_documents(created_at DESC)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_security_risk_register_status", "CREATE INDEX IF NOT EXISTS idx_security_risk_register_status ON security_risk_register(status)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_security_risk_register_owner", "CREATE INDEX IF NOT EXISTS idx_security_risk_register_owner ON security_risk_register(owner)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_security_risk_register_scores", "CREATE INDEX IF NOT EXISTS idx_security_risk_register_scores ON security_risk_register(residual_score, inherent_score)"); err != nil {
+		return nil, err
+	}
+	if err := ensureIndex(db, "idx_security_risk_register_risk_id", "CREATE UNIQUE INDEX IF NOT EXISTS idx_security_risk_register_risk_id ON security_risk_register(risk_id)"); err != nil {
+		return nil, err
+	}
+
+	return &Conn{DB: db, dialect: DialectSQLite}, nil
+}
+
+func ensureColumn(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var colType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
+	return err
+}
+
+func ensureIndex(db *sql.DB, _ string, statement string) error {
+	_, err := db.Exec(statement)
+	return err
+}

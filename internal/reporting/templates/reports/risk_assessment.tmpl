@@ -1,0 +1,56 @@
+{{define "content"}}
+<section class="section-keep">
+  <h2>Executive Summary</h2>
+  {{if .Scope}}<p><strong>Scope:</strong> {{.Scope}}</p>{{end}}
+  {{if .Period}}<p><strong>Assessment Period:</strong> {{.Period}}</p>{{end}}
+  {{if .ExecutiveReview}}<p>{{.ExecutiveReview}}</p>{{end}}
+  <div class="cards">
+    <div class="card"><div class="num">{{.Summary.TotalRisks}}</div><div class="lbl">Total Risks</div></div>
+    <div class="card"><div class="num">{{.Summary.Critical}}</div><div class="lbl">Critical</div></div>
+    <div class="card"><div class="num">{{.Summary.High}}</div><div class="lbl">High</div></div>
+    <div class="card"><div class="num">{{.Summary.OpenFindings}}</div><div class="lbl">Open Findings</div></div>
+  </div>
+  <div class="charts">
+    <div class="chart-box"><div class="chart-title">Risk Severity Distribution</div>{{.SeverityChart}}</div>
+    <div class="chart-box"><div class="chart-title">Treatment Strategy</div>{{.TreatmentChart}}</div>
+  </div>
+</section>
+
+{{if .Methodology}}
+<section class="section-keep">
+  <h2>Methodology</h2>
+  <p>{{.Methodology}}</p>
+</section>
+{{end}}
+
+<section>
+  <h2>Risk Register</h2>
+  {{template "datatable" .RegisterTable}}
+</section>
+
+<section>
+  <h2>Control Matrix</h2>
+  {{template "datatable" .ControlMatrixTable}}
+</section>
+
+<section>
+  <h2>Findings &amp; Recommendations</h2>
+  {{if .Findings}}
+    {{range .Findings}}
+    <div class="finding">
+      <div class="finding-head">
+        <h4>{{.ID}} &mdash; {{.Title}}</h4>
+        <span class="badge" style="background:{{.Severity.Color}}">{{.Severity}}</span>
+      </div>
+      <dl>
+        <dt>Observation</dt><dd>{{.Description}}</dd>
+        <dt>Recommendation</dt><dd>{{.Recommendation}}</dd>
+        <dt>Owner</dt><dd>{{.Owner}}{{if .DueDate}} &middot; due {{.DueDate}}{{end}}</dd>
+      </dl>
+    </div>
+    {{end}}
+  {{else}}
+    <p class="muted">No findings were raised during this assessment.</p>
+  {{end}}
+</section>
+{{end}}

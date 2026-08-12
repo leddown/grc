@@ -1,0 +1,25 @@
+server {
+    listen 80;
+    listen [::]:80;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name carelockconsulting.l3d.local;
+
+    ssl_certificate     /etc/nginx/ssl/l3d-local.crt;
+    ssl_certificate_key /etc/nginx/ssl/l3d-local.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_read_timeout  300s;
+        proxy_send_timeout  300s;
+        proxy_connect_timeout 10s;
+    }
+}

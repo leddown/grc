@@ -1,0 +1,17 @@
+{{define "datatable"}}<table class="datatable">
+  {{if .Caption}}<caption>{{.Caption}}</caption>{{end}}
+  <thead>
+    <tr>
+      {{range .Headers}}<th{{if .Align}} style="text-align:{{.Align}}"{{end}}>{{.Text}}</th>{{end}}
+    </tr>
+  </thead>
+  <tbody>
+    {{if .Rows}}
+      {{range .Rows}}<tr>
+        {{range .Cells}}<td class="{{if .Mono}}mono{{end}}"{{if .Align}} style="text-align:{{.Align}}"{{end}}>{{if .Badge}}<span class="badge" style="background:{{.Color}}">{{.Text}}</span>{{else}}{{.Text}}{{end}}</td>{{end}}
+      </tr>{{end}}
+    {{else}}
+      <tr><td class="empty" colspan="{{len .Headers}}">{{.EmptyText}}</td></tr>
+    {{end}}
+  </tbody>
+</table>{{end}}

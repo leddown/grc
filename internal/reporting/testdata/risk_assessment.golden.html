@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quarterly Risk Assessment Report</title>
+<style>
+:root{--primary:#1f2a44;--accent:#8b3d2e;--text:#1c2431;--muted:#5a6473;--banner:#8b3d2e;--font:"Helvetica Neue", Helvetica, Arial, sans-serif;}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  color: var(--text);
+  font-size: 10.5pt;
+  line-height: 1.45;
+}
+h1, h2, h3, h4 { color: var(--primary); font-weight: 700; margin: 0 0 6px; }
+h2 { font-size: 15pt; border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin-top: 4px; }
+h3 { font-size: 12pt; margin-top: 14px; }
+p { margin: 0 0 8px; }
+a { color: var(--accent); text-decoration: none; }
+.muted { color: var(--muted); }
+.small { font-size: 8.5pt; }
+
+ 
+.watermark {
+  position: fixed;
+  top: 42%;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  transform: rotate(-32deg);
+  transform-origin: center;
+  font-size: 86pt;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: rgba(139, 61, 46, 0.12);
+  text-transform: uppercase;
+  z-index: 0;
+  pointer-events: none;
+}
+
+ 
+.cover {
+  display: flex;
+  flex-direction: column;
+  min-height: 88vh;
+  page-break-after: always;
+  break-after: page;
+}
+.cover-banner {
+  background: var(--banner);
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 8px 0;
+  font-size: 11pt;
+}
+.cover-logo { max-height: 70px; max-width: 260px; margin: 36px 0 0; }
+.cover-org { font-size: 12pt; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 8px; }
+.cover-main { margin-top: auto; margin-bottom: auto; }
+.cover-title { font-size: 30pt; line-height: 1.1; color: var(--primary); margin: 0 0 8px; }
+.cover-subtitle { font-size: 14pt; color: var(--muted); margin: 0; }
+.cover-meta {
+  margin-top: 28px;
+  border-top: 1px solid var(--accent);
+  padding-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 28px;
+  font-size: 10pt;
+}
+.cover-meta .label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 8pt; }
+
+ 
+.content { position: relative; z-index: 1; }
+section { margin-bottom: 18px; }
+.section-keep { break-inside: avoid; page-break-inside: avoid; }
+
+ 
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0; }
+.card { border: 1px solid #d8d2c6; border-radius: 8px; padding: 10px 12px; }
+.card .num { font-size: 20pt; font-weight: 800; color: var(--primary); line-height: 1; }
+.card .lbl { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-top: 4px; }
+
+ 
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: center; margin: 12px 0; }
+.chart-box { text-align: center; }
+.chart-box .chart-title { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+
+ 
+table.datatable { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 8px 0 4px; }
+table.datatable caption { caption-side: top; text-align: left; font-weight: 700; color: var(--primary); padding: 4px 0; font-size: 10pt; }
+table.datatable thead { display: table-header-group; }
+table.datatable tfoot { display: table-footer-group; }
+table.datatable th {
+  background: var(--accent);
+  color: #fff;
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+table.datatable td { padding: 5px 8px; border-bottom: 1px solid #e0dbcf; vertical-align: top; }
+table.datatable tbody tr { break-inside: avoid; page-break-inside: avoid; }
+table.datatable tbody tr:nth-child(even) { background: #f6f3ec; }
+.mono { font-family: "Courier New", monospace; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-size: 8pt; font-weight: 700; white-space: nowrap; }
+.empty { padding: 10px; color: var(--muted); font-style: italic; }
+
+ 
+.finding { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e0dbcf; border-left: 4px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 10px 0; }
+.finding .finding-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.finding h4 { margin: 0; font-size: 11pt; }
+.finding dl { margin: 8px 0 0; }
+.finding dt { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-top: 6px; }
+.finding dd { margin: 2px 0 0; }
+</style>
+</head>
+<body>
+<div class="watermark">DRAFT</div>
+<section class="cover">
+  <div class="cover-banner">CONFIDENTIAL</div>
+  <img class="cover-logo" src="data:image/svg&#43;xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMjAiIGhlaWdodD0iNTYiIHZpZXdCb3g9IjAgMCAyMjAgNTYiPjxyZWN0IHdpZHRoPSI1NiIgaGVpZ2h0PSI1NiIgcng9IjEwIiBmaWxsPSIjMWYyYTQ0Ii8&#43;PHBhdGggZD0iTTE4IDMwIGw4IDggbDE2IC0xOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOGIzZDJlIiBzdHJva2Utd2lkdGg9IjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjx0ZXh0IHg9IjY4IiB5PSIzNiIgZm9udC1mYW1pbHk9IkhlbHZldGljYSxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjIyIiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjMWYyYTQ0Ij5DYXJlTG9jazwvdGV4dD48L3N2Zz4=" alt="Care Lock Consulting logo">
+  <div class="cover-org">Care Lock Consulting</div>
+  <div class="cover-main">
+    <h1 class="cover-title">Quarterly Risk Assessment Report</h1>
+    <p class="cover-subtitle">Information Security &amp; Operational Risk — Q2 2026</p>
+  </div>
+  <div class="cover-meta">
+    <div><div class="label">Author</div><div>Risk &amp; Compliance Team</div></div>
+    <div><div class="label">Owner</div><div>Chief Information Security Officer</div></div>
+    <div><div class="label">Version</div><div>1.0</div></div>
+    <div><div class="label">Classification</div><div>CONFIDENTIAL</div></div>
+    <div><div class="label">Generated</div><div>25 June 2026 09:30 UTC</div></div>
+  </div>
+</section>
+<main class="content">
+
+<section class="section-keep">
+  <h2>Executive Summary</h2>
+  <p><strong>Scope:</strong> Enterprise information systems, cloud workloads, and third-party integrations in scope for the FY26 RCSA cycle.</p>
+  <p><strong>Assessment Period:</strong> 01 April 2026 – 30 June 2026</p>
+  <p>Overall residual risk is within appetite, with two critical items requiring executive attention. Identity and third-party risk domains show the highest concentration of open findings.</p>
+  <div class="cards">
+    <div class="card"><div class="num">24</div><div class="lbl">Total Risks</div></div>
+    <div class="card"><div class="num">2</div><div class="lbl">Critical</div></div>
+    <div class="card"><div class="num">8</div><div class="lbl">High</div></div>
+    <div class="card"><div class="num">5</div><div class="lbl">Open Findings</div></div>
+  </div>
+  <div class="charts">
+    <div class="chart-box"><div class="chart-title">Risk Severity Distribution</div><svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150" role="img"><g transform="rotate(-90 75.00 75.00)"><circle cx="75.00" cy="75.00" r="58.50" fill="none" stroke="#7a1f1f" stroke-width="33.00" stroke-dasharray="30.631 336.936" stroke-dashoffset="-0.000"/><circle cx="75.00" cy="75.00" r="58.50" fill="none" stroke="#b3431f" stroke-width="33.00" stroke-dasharray="122.522 245.044" stroke-dashoffset="-30.631"/><circle cx="75.00" cy="75.00" r="58.50" fill="none" stroke="#c08a1e" stroke-width="33.00" stroke-dasharray="183.783 183.783" stroke-dashoffset="-153.153"/><circle cx="75.00" cy="75.00" r="58.50" fill="none" stroke="#2f7d4f" stroke-width="33.00" stroke-dasharray="30.631 336.936" stroke-dashoffset="-336.936"/></g><text x="75.00" y="75.00" text-anchor="middle" dominant-baseline="central" font-size="30.0" font-weight="700" fill="#1f2a44">24</text></svg><div style="margin-top:8px; font-size:8pt; color:#1c2431;"><div style="display:inline-flex; align-items:center; margin:0 8px 2px 0;"><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#7a1f1f; margin-right:4px;"></span>Critical (2)</div><div style="display:inline-flex; align-items:center; margin:0 8px 2px 0;"><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#b3431f; margin-right:4px;"></span>High (8)</div><div style="display:inline-flex; align-items:center; margin:0 8px 2px 0;"><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#c08a1e; margin-right:4px;"></span>Medium (12)</div><div style="display:inline-flex; align-items:center; margin:0 8px 2px 0;"><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#2f7d4f; margin-right:4px;"></span>Low (2)</div></div></div>
+    <div class="chart-box"><div class="chart-title">Treatment Strategy</div><svg xmlns="http://www.w3.org/2000/svg" width="240" height="88" viewBox="0 0 240 88" role="img"><text x="0" y="11.00" font-size="9" fill="#1c2431" dominant-baseline="central">Mitigate</text><rect x="96.00" y="4.00" width="114.00" height="14.00" rx="2" fill="#eee7da"/><rect x="96.00" y="4.00" width="114.00" height="14.00" rx="2" fill="#2f7d4f"/><text x="216.00" y="11.00" font-size="9" font-weight="700" fill="#1c2431" dominant-baseline="central">19</text><text x="0" y="33.00" font-size="9" fill="#1c2431" dominant-baseline="central">Transfer</text><rect x="96.00" y="26.00" width="114.00" height="14.00" rx="2" fill="#eee7da"/><rect x="96.00" y="26.00" width="12.00" height="14.00" rx="2" fill="#3a6b8a"/><text x="216.00" y="33.00" font-size="9" font-weight="700" fill="#1c2431" dominant-baseline="central">2</text><text x="0" y="55.00" font-size="9" fill="#1c2431" dominant-baseline="central">Accept</text><rect x="96.00" y="48.00" width="114.00" height="14.00" rx="2" fill="#eee7da"/><rect x="96.00" y="48.00" width="12.00" height="14.00" rx="2" fill="#c08a1e"/><text x="216.00" y="55.00" font-size="9" font-weight="700" fill="#1c2431" dominant-baseline="central">2</text><text x="0" y="77.00" font-size="9" fill="#1c2431" dominant-baseline="central">Avoid</text><rect x="96.00" y="70.00" width="114.00" height="14.00" rx="2" fill="#eee7da"/><rect x="96.00" y="70.00" width="6.00" height="14.00" rx="2" fill="#7a1f1f"/><text x="216.00" y="77.00" font-size="9" font-weight="700" fill="#1c2431" dominant-baseline="central">1</text></svg></div>
+  </div>
+</section>
+
+
+<section class="section-keep">
+  <h2>Methodology</h2>
+  <p>Risks were scored on a 5×5 likelihood/impact matrix per the NIST SP 800-30 methodology. Residual scores reflect the effect of existing controls assessed in the control matrix below. Findings are rated by severity and tracked to remediation owners.</p>
+</section>
+
+
+<section>
+  <h2>Risk Register</h2>
+  <table class="datatable">
+  
+  <thead>
+    <tr>
+      <th>Risk ID</th><th>Title</th><th>Category</th><th>Owner</th><th style="text-align:right">L</th><th style="text-align:right">I</th><th style="text-align:right">Score</th><th>Severity</th><th>Treatment</th><th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    
+      <tr>
+        <td class="mono">RISK-001</td><td class="">Unpatched internet-facing VPN appliance</td><td class="">Vulnerability Mgmt</td><td class="">Infra Security</td><td class="" style="text-align:right">5</td><td class="" style="text-align:right">5</td><td class="" style="text-align:right">25</td><td class=""><span class="badge" style="background:#7a1f1f">Critical</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-002</td><td class="">Privileged account without MFA</td><td class="">Identity &amp; Access</td><td class="">IAM Team</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">5</td><td class="" style="text-align:right">20</td><td class=""><span class="badge" style="background:#7a1f1f">Critical</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-003</td><td class="">Third-party data processor breach exposure</td><td class="">Third-Party Risk</td><td class="">Vendor Risk</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">5</td><td class="" style="text-align:right">15</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Transfer</td><td class="">Monitoring</td>
+      </tr><tr>
+        <td class="mono">RISK-004</td><td class="">Backup restoration not regularly tested</td><td class="">Resilience</td><td class="">IT Operations</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">12</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Mitigate</td><td class="">In Progress</td>
+      </tr><tr>
+        <td class="mono">RISK-005</td><td class="">Excessive S3 bucket permissions</td><td class="">Cloud Security</td><td class="">Cloud Platform</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">16</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-006</td><td class="">Phishing susceptibility in finance dept</td><td class="">Human Risk</td><td class="">Security Awareness</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">12</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Mitigate</td><td class="">In Progress</td>
+      </tr><tr>
+        <td class="mono">RISK-007</td><td class="">End-of-life database engine in production</td><td class="">Vulnerability Mgmt</td><td class="">DBA Team</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">12</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-008</td><td class="">Missing DLP on outbound email</td><td class="">Data Protection</td><td class="">Security Eng</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">9</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Planned</td>
+      </tr><tr>
+        <td class="mono">RISK-009</td><td class="">Shadow IT SaaS adoption</td><td class="">Governance</td><td class="">IT Governance</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">6</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Monitoring</td>
+      </tr><tr>
+        <td class="mono">RISK-010</td><td class="">Inadequate logging on payment service</td><td class="">Detection</td><td class="">SOC</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">8</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">In Progress</td>
+      </tr><tr>
+        <td class="mono">RISK-011</td><td class="">Weak TLS configuration on legacy API</td><td class="">Network Security</td><td class="">Platform Eng</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">9</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-012</td><td class="">No formal incident response runbook</td><td class="">Resilience</td><td class="">SOC</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">8</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Planned</td>
+      </tr><tr>
+        <td class="mono">RISK-013</td><td class="">Orphaned service accounts</td><td class="">Identity &amp; Access</td><td class="">IAM Team</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">9</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-014</td><td class="">Unencrypted PII in analytics store</td><td class="">Data Protection</td><td class="">Data Eng</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">5</td><td class="" style="text-align:right">10</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-015</td><td class="">Single region cloud deployment</td><td class="">Resilience</td><td class="">Cloud Platform</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">6</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Accept</td><td class="">Accepted</td>
+      </tr><tr>
+        <td class="mono">RISK-016</td><td class="">Outdated cryptographic library</td><td class="">Vulnerability Mgmt</td><td class="">AppSec</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">9</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">In Progress</td>
+      </tr><tr>
+        <td class="mono">RISK-017</td><td class="">Insufficient vendor SLA penalties</td><td class="">Third-Party Risk</td><td class="">Procurement</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">4</td><td class=""><span class="badge" style="background:#2f7d4f">Low</span></td><td class="">Transfer</td><td class="">Monitoring</td>
+      </tr><tr>
+        <td class="mono">RISK-018</td><td class="">No periodic access recertification</td><td class="">Identity &amp; Access</td><td class="">IAM Team</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">9</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Planned</td>
+      </tr><tr>
+        <td class="mono">RISK-019</td><td class="">Public code repo with stale secrets</td><td class="">AppSec</td><td class="">DevSecOps</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">16</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-020</td><td class="">Lack of network segmentation in OT</td><td class="">Network Security</td><td class="">OT Security</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">12</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Mitigate</td><td class="">In Progress</td>
+      </tr><tr>
+        <td class="mono">RISK-021</td><td class="">Manual change management process</td><td class="">Governance</td><td class="">Change Mgmt</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">4</td><td class=""><span class="badge" style="background:#2f7d4f">Low</span></td><td class="">Accept</td><td class="">Accepted</td>
+      </tr><tr>
+        <td class="mono">RISK-022</td><td class="">Unmonitored privileged API tokens</td><td class="">Identity &amp; Access</td><td class="">Platform Eng</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">4</td><td class="" style="text-align:right">12</td><td class=""><span class="badge" style="background:#b3431f">High</span></td><td class="">Mitigate</td><td class="">Open</td>
+      </tr><tr>
+        <td class="mono">RISK-023</td><td class="">No tabletop exercise in 12 months</td><td class="">Resilience</td><td class="">BCM</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">6</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Mitigate</td><td class="">Planned</td>
+      </tr><tr>
+        <td class="mono">RISK-024</td><td class="">Vendor offboarding gaps</td><td class="">Third-Party Risk</td><td class="">Vendor Risk</td><td class="" style="text-align:right">2</td><td class="" style="text-align:right">3</td><td class="" style="text-align:right">6</td><td class=""><span class="badge" style="background:#c08a1e">Medium</span></td><td class="">Avoid</td><td class="">In Progress</td>
+      </tr>
+    
+  </tbody>
+</table>
+</section>
+
+<section>
+  <h2>Control Matrix</h2>
+  <table class="datatable">
+  
+  <thead>
+    <tr>
+      <th>Control</th><th>Name</th><th>Family</th><th>Owner</th><th>Status</th><th>Effectiveness</th>
+    </tr>
+  </thead>
+  <tbody>
+    
+      <tr>
+        <td class="mono">AC-2</td><td class="">Account Management</td><td class="">Access Control</td><td class="">Effective</td><td class="">IAM Team</td><td class="">Implemented</td>
+      </tr><tr>
+        <td class="mono">AC-17</td><td class="">Remote Access</td><td class="">Access Control</td><td class="">Needs Improvement</td><td class="">Infra Security</td><td class="">Partial</td>
+      </tr><tr>
+        <td class="mono">AU-6</td><td class="">Audit Review &amp; Reporting</td><td class="">Audit &amp; Accountability</td><td class="">Needs Improvement</td><td class="">SOC</td><td class="">Partial</td>
+      </tr><tr>
+        <td class="mono">CM-2</td><td class="">Baseline Configuration</td><td class="">Configuration Mgmt</td><td class="">Effective</td><td class="">Platform Eng</td><td class="">Implemented</td>
+      </tr><tr>
+        <td class="mono">CP-9</td><td class="">System Backup</td><td class="">Contingency Planning</td><td class="">Needs Improvement</td><td class="">IT Operations</td><td class="">Partial</td>
+      </tr><tr>
+        <td class="mono">IA-2</td><td class="">Identification &amp; Authentication</td><td class="">Identification &amp; Auth</td><td class="">Ineffective</td><td class="">IAM Team</td><td class="">Partial</td>
+      </tr><tr>
+        <td class="mono">IR-8</td><td class="">Incident Response Plan</td><td class="">Incident Response</td><td class="">Ineffective</td><td class="">SOC</td><td class="">Planned</td>
+      </tr><tr>
+        <td class="mono">RA-5</td><td class="">Vulnerability Monitoring</td><td class="">Risk Assessment</td><td class="">Effective</td><td class="">Infra Security</td><td class="">Implemented</td>
+      </tr><tr>
+        <td class="mono">SC-8</td><td class="">Transmission Confidentiality</td><td class="">System &amp; Comms</td><td class="">Needs Improvement</td><td class="">Platform Eng</td><td class="">Partial</td>
+      </tr><tr>
+        <td class="mono">SC-28</td><td class="">Protection of Data at Rest</td><td class="">System &amp; Comms</td><td class="">Needs Improvement</td><td class="">Data Eng</td><td class="">Partial</td>
+      </tr><tr>
+        <td class="mono">SI-2</td><td class="">Flaw Remediation</td><td class="">System &amp; Info Integrity</td><td class="">Needs Improvement</td><td class="">Vuln Mgmt</td><td class="">Partial</td>
+      </tr><tr>
+        <td class="mono">SI-4</td><td class="">System Monitoring</td><td class="">System &amp; Info Integrity</td><td class="">Effective</td><td class="">SOC</td><td class="">Implemented</td>
+      </tr>
+    
+  </tbody>
+</table>
+</section>
+
+<section>
+  <h2>Findings &amp; Recommendations</h2>
+  
+    
+    <div class="finding">
+      <div class="finding-head">
+        <h4>FND-001 &mdash; Privileged access lacks enforced multi-factor authentication</h4>
+        <span class="badge" style="background:#7a1f1f">Critical</span>
+      </div>
+      <dl>
+        <dt>Observation</dt><dd>Several administrative accounts on core infrastructure can authenticate with a password alone. This materially increases the likelihood of account takeover following credential compromise.</dd>
+        <dt>Recommendation</dt><dd>Enforce phishing-resistant MFA for all privileged accounts and disable legacy password-only authentication paths within 30 days.</dd>
+        <dt>Owner</dt><dd>IAM Team &middot; due 31 July 2026</dd>
+      </dl>
+    </div>
+    
+    <div class="finding">
+      <div class="finding-head">
+        <h4>FND-002 &mdash; Internet-facing VPN appliance missing critical patches</h4>
+        <span class="badge" style="background:#7a1f1f">Critical</span>
+      </div>
+      <dl>
+        <dt>Observation</dt><dd>The remote-access VPN appliance is running firmware with known, actively exploited vulnerabilities. Exploitation could grant unauthenticated network access.</dd>
+        <dt>Recommendation</dt><dd>Apply vendor security updates immediately and add the appliance to the emergency patch SLA tier.</dd>
+        <dt>Owner</dt><dd>Infra Security &middot; due 04 July 2026</dd>
+      </dl>
+    </div>
+    
+    <div class="finding">
+      <div class="finding-head">
+        <h4>FND-003 &mdash; Backup restoration is not routinely tested</h4>
+        <span class="badge" style="background:#b3431f">High</span>
+      </div>
+      <dl>
+        <dt>Observation</dt><dd>While backups are taken, there is no documented evidence of periodic restoration testing, leaving recovery capability unverified against the stated RTO/RPO.</dd>
+        <dt>Recommendation</dt><dd>Establish a quarterly restoration test for tier-1 systems with documented results reviewed by IT Operations management.</dd>
+        <dt>Owner</dt><dd>IT Operations &middot; due 30 September 2026</dd>
+      </dl>
+    </div>
+    
+    <div class="finding">
+      <div class="finding-head">
+        <h4>FND-004 &mdash; Sensitive data stored without encryption at rest</h4>
+        <span class="badge" style="background:#b3431f">High</span>
+      </div>
+      <dl>
+        <dt>Observation</dt><dd>Personally identifiable information is persisted in an analytics store without encryption at rest, increasing impact in the event of unauthorized data store access.</dd>
+        <dt>Recommendation</dt><dd>Enable storage-level encryption and rotate keys via the managed KMS; classify and minimize PII retained in analytics.</dd>
+        <dt>Owner</dt><dd>Data Engineering &middot; due 31 August 2026</dd>
+      </dl>
+    </div>
+    
+    <div class="finding">
+      <div class="finding-head">
+        <h4>FND-005 &mdash; Secrets committed to a public code repository</h4>
+        <span class="badge" style="background:#c08a1e">Medium</span>
+      </div>
+      <dl>
+        <dt>Observation</dt><dd>Historical commits in a public repository contain credentials. Although rotated, the exposure highlights gaps in pre-commit secret scanning.</dd>
+        <dt>Recommendation</dt><dd>Adopt automated secret scanning in CI and pre-commit hooks, and complete a repository history purge for the affected project.</dd>
+        <dt>Owner</dt><dd>DevSecOps &middot; due 15 August 2026</dd>
+      </dl>
+    </div>
+    
+  
+</section>
+
+</main>
+</body>
+</html>
