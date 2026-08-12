@@ -65,8 +65,8 @@ The API binary accepts command-line flags for runtime behavior.
   served by the **Change Log** page and `/knowledge/*`. Those are read from
   disk, so they have to be findable: when this is unset the app searches the
   working directory, the directory holding the binary, and
-  `<bindir>/../share/carelockconsulting` (plus `/usr/local/share/` and
-  `/usr/share/carelockconsulting`) — `scripts/setup.sh` and `update.sh`
+  `<bindir>/../share/grc` (plus `/usr/local/share/` and
+  `/usr/share/grc`) — `scripts/setup.sh` and `update.sh`
   install them into the first of those. Set this explicitly only if the docs
   live somewhere else; a path given here is used as-is, so a wrong one is
   reported on the page rather than silently falling back to another copy.
@@ -105,7 +105,7 @@ engine only if you want PDFs produced on the server.
   the TeX packages it needs on first run, so the first LaTeX render on a host
   needs outbound network access and is slow.
 - `LATEXMK` — path to `latexmk`, used when `tectonic` is absent. Drives
-  XeLaTeX, not pdfLaTeX: `carelock.sty` uses `fontspec`.
+  XeLaTeX, not pdfLaTeX: `grc.sty` uses `fontspec`.
 
 Engines are detected once per process and cached; **Re-check** on the
 Templates page re-probes after an install. Subprocesses run with a minimal
@@ -135,7 +135,7 @@ binaries rather than configure the app, and have no flag equivalent.
 ## Local (no-login) laptop mode
 
 ```bash
-LOCAL_MODE=true SQLITE_PATH=./local.db ./carelockconsulting
+LOCAL_MODE=true SQLITE_PATH=./local.db ./grc
 ```
 
 There is no first-boot bootstrap step in this mode — every page and admin
@@ -150,37 +150,37 @@ server or anywhere reachable by other users.
 Build:
 
 ```bash
-go build -o carelockconsulting ./cmd/api
+go build -o grc ./cmd/api
 ```
 
 Run with defaults (save endpoints disabled):
 
 ```bash
-./carelockconsulting
+./grc
 ```
 
 Run with save endpoints enabled:
 
 ```bash
-./carelockconsulting -allow-json-save=true
+./grc -allow-json-save=true
 ```
 
 Run with custom address and DB:
 
 ```bash
-./carelockconsulting -listen-addr=:9090 -sqlite-path=./data/app.db -allow-json-save=true
+./grc -listen-addr=:9090 -sqlite-path=./data/app.db -allow-json-save=true
 ```
 
 Run using environment variables:
 
 ```bash
-ALLOW_JSON_SAVE=true LISTEN_ADDR=:9090 SQLITE_PATH=./data/app.db ./carelockconsulting
+ALLOW_JSON_SAVE=true LISTEN_ADDR=:9090 SQLITE_PATH=./data/app.db ./grc
 ```
 
 Run against an external PostgreSQL database (overrides SQLite):
 
 ```bash
-DATABASE_URL='postgres://carelockconsulting:secret@db.internal:5432/carelockconsulting?sslmode=require' ./carelockconsulting
+DATABASE_URL='postgres://grc:secret@db.internal:5432/grc?sslmode=require' ./grc
 ```
 
 `scripts/setup.sh` can provision the role/database for you: set `PG_ADMIN_URL`
@@ -195,7 +195,7 @@ single command:
 
 ```bash
 # local SQLite -> remote PostgreSQL (upsert/merge), then exit
-SQLITE_PATH=./local.db ./carelockconsulting -sync-to "$DATABASE_URL"
+SQLITE_PATH=./local.db ./grc -sync-to "$DATABASE_URL"
 ```
 
 Full guide: `docs/DATABASE.md`.
@@ -203,7 +203,7 @@ Full guide: `docs/DATABASE.md`.
 Run with break-glass admin token fallback:
 
 ```bash
-ADMIN_TOKEN='replace-with-long-random-secret' ./carelockconsulting
+ADMIN_TOKEN='replace-with-long-random-secret' ./grc
 ```
 
 ## Production setup (first boot)
@@ -219,7 +219,7 @@ Recommended model:
 SETUP_TOKEN='replace-with-one-time-setup-secret' \
 LISTEN_ADDR=':8080' \
 SQLITE_PATH='./data/app.db' \
-./carelockconsulting
+./grc
 ```
 
 ### 2. Bootstrap first admin user (one time)
@@ -255,7 +255,7 @@ curl -i -sS -X POST 'http://localhost:8080/auth/login' \
   }'
 ```
 
-This returns `Set-Cookie: carelockconsulting_auth_session=...`.
+This returns `Set-Cookie: grc_auth_session=...`.
 
 ### 5. Manage authentication users (admin only)
 
@@ -263,7 +263,7 @@ List auth users:
 
 ```bash
 curl -sS 'http://localhost:8080/auth/users' \
-  -H 'Cookie: carelockconsulting_auth_session=<session-cookie>'
+  -H 'Cookie: grc_auth_session=<session-cookie>'
 ```
 
 Create auth user:
@@ -271,7 +271,7 @@ Create auth user:
 ```bash
 curl -sS -X POST 'http://localhost:8080/auth/users' \
   -H 'Content-Type: application/json' \
-  -H 'Cookie: carelockconsulting_auth_session=<session-cookie>' \
+  -H 'Cookie: grc_auth_session=<session-cookie>' \
   -d '{
     "username": "ops-admin",
     "password": "replace-with-strong-password-12+-chars",
@@ -284,7 +284,7 @@ Update auth user password and/or admin role:
 ```bash
 curl -sS -X PUT 'http://localhost:8080/auth/users/ops-admin' \
   -H 'Content-Type: application/json' \
-  -H 'Cookie: carelockconsulting_auth_session=<session-cookie>' \
+  -H 'Cookie: grc_auth_session=<session-cookie>' \
   -d '{
     "password": "replace-with-new-strong-password-12+-chars",
     "is_admin": true
@@ -295,7 +295,7 @@ Delete auth user:
 
 ```bash
 curl -sS -X DELETE 'http://localhost:8080/auth/users/ops-admin' \
-  -H 'Cookie: carelockconsulting_auth_session=<session-cookie>'
+  -H 'Cookie: grc_auth_session=<session-cookie>'
 ```
 
 ### 5b. Manage users offline (no server, no session)

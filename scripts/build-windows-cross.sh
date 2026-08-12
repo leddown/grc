@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GOCACHE_DIR="${GOCACHE_DIR:-/tmp/gocache-carelockconsulting}"
-OUT_FILE="${1:-${ROOT_DIR}/dist/carelockconsulting-windows-amd64.exe}"
+GOCACHE_DIR="${GOCACHE_DIR:-/tmp/gocache-grc}"
+OUT_FILE="${1:-${ROOT_DIR}/dist/grc-windows-amd64.exe}"
 
 find_windows_toolchain_dir() {
   if [[ -n "${WINDOWS_TOOLCHAIN_DIR:-}" ]]; then

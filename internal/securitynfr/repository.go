@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 type Repository interface {

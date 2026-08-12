@@ -38,7 +38,7 @@ func userManagementPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>User Management · CareLock Consulting</title>
+  <title>User Management · GRC</title>
   <style>
     body { margin:0; font-family: Arial, sans-serif; background:#0b1220; color:#e5e7eb; }
     main { max-width: 1320px; margin: 24px auto; padding: 24px; background:#111827; border:1px solid #334155; border-radius:16px; }

@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"strings"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 // strategy selects how a table's rows are reconciled on the destination.

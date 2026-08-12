@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 func TestStoredJSONDocuments_SaveListAndLoad(t *testing.T) {

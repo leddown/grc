@@ -1,7 +1,7 @@
 package doctemplate
 
 import (
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 // The pages are rendered as Go string literals, matching internal/app and
@@ -14,7 +14,7 @@ func galleryPageHTML() string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Document Templates · CareLock Consulting</title>
+  <title>Document Templates · GRC</title>
   <style>` + templateCSS + `</style>
 </head>
 <body>
@@ -69,7 +69,7 @@ func brandPageHTML() string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Template Brand · CareLock Consulting</title>
+  <title>Template Brand · GRC</title>
   <style>` + templateCSS + `</style>
 </head>
 <body>
@@ -369,9 +369,9 @@ async function render(url, label) {
     a.href = href; a.download = name; a.click();
     URL.revokeObjectURL(href);
 
-    const reason = res.headers.get('X-Carelock-Reason');
+    const reason = res.headers.get('X-GRC-Reason');
     status.textContent = reason ? name + ' — ' + reason : 'Downloaded ' + name;
-    const engineLog = res.headers.get('X-Carelock-Render-Log');
+    const engineLog = res.headers.get('X-GRC-Render-Log');
     if (engineLog) { log.textContent = engineLog; log.hidden = false; }
   } catch (err) {
     status.textContent = 'Failed: ' + err.message;
@@ -587,10 +587,10 @@ $('previewPdf').addEventListener('click', async () => {
     }
     const blob = await res.blob();
     const href = URL.createObjectURL(blob);
-    if (res.headers.get('X-Carelock-Bundled')) {
+    if (res.headers.get('X-GRC-Bundled')) {
       const a = document.createElement('a');
       a.href = href; a.download = 'template-sources.zip'; a.click();
-      status.textContent = res.headers.get('X-Carelock-Reason') || 'No engine installed — downloaded the sources instead.';
+      status.textContent = res.headers.get('X-GRC-Reason') || 'No engine installed — downloaded the sources instead.';
     } else {
       window.open(href, '_blank');
       status.textContent = 'Opened in a new tab.';

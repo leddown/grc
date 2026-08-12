@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Post-install verification: proves that a deployed carelockconsulting actually
+# Post-install verification: proves that a deployed grc actually
 # serves the routes the current source registers, that the schema carries the
 # current tables, and that the optional external tooling some features need is
 # present.
@@ -23,10 +23,10 @@
 # produces warnings and never fails the run.
 set -uo pipefail
 
-APP_NAME="carelockconsulting"
-ENV_FILE="${CARELOCK_ENV_FILE:-/etc/${APP_NAME}/${APP_NAME}.env}"
-BIN_PATH="${CARELOCK_BIN_PATH:-/usr/local/bin/${APP_NAME}}"
-SERVICE_NAME="${CARELOCK_SERVICE_NAME:-${APP_NAME}}"
+APP_NAME="grc"
+ENV_FILE="${GRC_ENV_FILE:-/etc/${APP_NAME}/${APP_NAME}.env}"
+BIN_PATH="${GRC_BIN_PATH:-/usr/local/bin/${APP_NAME}}"
+SERVICE_NAME="${GRC_SERVICE_NAME:-${APP_NAME}}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -73,7 +73,7 @@ if [ -n "$DOCS_DIR_ENV" ]; then
   DOC_DIR="$DOCS_DIR_ENV"
   DOC_DIR_SOURCE="DOCS_DIR in $ENV_FILE"
 else
-  DOC_DIR="${CARELOCK_DOC_DIR:-$(dirname "$(dirname "$BIN_PATH")")/share/${APP_NAME}}"
+  DOC_DIR="${GRC_DOC_DIR:-$(dirname "$(dirname "$BIN_PATH")")/share/${APP_NAME}}"
   DOC_DIR_SOURCE="installed alongside $BIN_PATH"
 fi
 
@@ -117,7 +117,7 @@ if [ -z "$BASE_URL" ]; then
 
   TEMP_ADDR="127.0.0.1:8098"
   TEMP_LOG="$(mktemp)"
-  SERVICE_USER="${CARELOCK_SERVICE_USER:-$APP_NAME}"
+  SERVICE_USER="${GRC_SERVICE_USER:-$APP_NAME}"
   if id "$SERVICE_USER" >/dev/null 2>&1; then
     sudo -u "$SERVICE_USER" env "${DB_ENV[@]}" LISTEN_ADDR="$TEMP_ADDR" DOCS_DIR="$DOC_DIR" \
       "$BIN_PATH" >"$TEMP_LOG" 2>&1 &

@@ -1,6 +1,6 @@
 # Database backends, switching, and local → remote sync
 
-carelockconsulting runs on either of two interchangeable storage backends that
+grc runs on either of two interchangeable storage backends that
 share one logical schema:
 
 | Backend                | Selected by                          | Typical use                     |
@@ -54,12 +54,12 @@ profile never accidentally connects to Postgres and vice-versa.
 
 ```bash
 # SQLite
-./carelockconsulting -sqlite-path ./local.db
-SQLITE_PATH=./local.db ./carelockconsulting
+./grc -sqlite-path ./local.db
+SQLITE_PATH=./local.db ./grc
 
 # PostgreSQL (overrides SQLite)
-./carelockconsulting -database-url 'postgres://user:pass@host:5432/db?sslmode=require'
-DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=require' ./carelockconsulting
+./grc -database-url 'postgres://user:pass@host:5432/db?sslmode=require'
+DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=require' ./grc
 ```
 
 For a server install, `scripts/setup.sh` can also provision the PostgreSQL role
@@ -95,11 +95,11 @@ the flag value is the other side. A sync target/source is engine-detected: a
 
 ```bash
 # push: active SQLite -> remote Postgres
-SQLITE_PATH=./local.db ./carelockconsulting \
+SQLITE_PATH=./local.db ./grc \
   -sync-to 'postgres://user:pass@host:5432/db?sslmode=require'
 
 # pull: remote Postgres -> active SQLite
-SQLITE_PATH=./local.db ./carelockconsulting \
+SQLITE_PATH=./local.db ./grc \
   -sync-from 'postgres://user:pass@host:5432/db?sslmode=require'
 ```
 

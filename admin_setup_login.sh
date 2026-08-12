@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# First-boot helper: starts carelockconsulting with a one-time SETUP_TOKEN, bootstraps
+# First-boot helper: starts grc with a one-time SETUP_TOKEN, bootstraps
 # the first admin user, verifies login, then prints the command-line args /
 # env vars to use for normal (post-bootstrap) startup. See RUNTIME_ARGS.md
 # for the manual curl-based equivalent of this flow.
@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${ROOT_DIR}"
 
-BINARY="${BINARY:-${ROOT_DIR}/carelockconsulting}"
+BINARY="${BINARY:-${ROOT_DIR}/grc}"
 LISTEN_ADDR="${LISTEN_ADDR:-:8080}"
 SQLITE_PATH="${SQLITE_PATH:-users.db}"
 ALLOW_JSON_SAVE="${ALLOW_JSON_SAVE:-false}"
@@ -25,7 +25,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [options]
 
-Starts carelockconsulting, bootstraps the first admin user, verifies login, then
+Starts grc, bootstraps the first admin user, verifies login, then
 prints the command-line args / env vars for subsequent normal startups.
 
 Options:

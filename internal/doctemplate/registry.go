@@ -94,7 +94,7 @@ var Templates = []Template{
 		Engine:      EngineLaTeX,
 		Kind:        KindPolicy,
 		Description: "The same policy document typeset through XeLaTeX, for clients whose house style is already LaTeX. The .tex is generated from the payload rather than read from disk, because LaTeX has no native data loading.",
-		Sources:     []string{"latex/carelock.sty"},
+		Sources:     []string{"latex/grc.sty"},
 		Entry:       "policy-document.tex",
 		Generated:   true,
 		SampleData:  "samples/policy-sample.json",
@@ -157,12 +157,12 @@ func dirCandidates() []string {
 		binDir := filepath.Dir(executable)
 		candidates = append(candidates,
 			filepath.Join(binDir, "templates"),
-			filepath.Join(binDir, "..", "share", "carelockconsulting", "templates"),
+			filepath.Join(binDir, "..", "share", "grc", "templates"),
 		)
 	}
 	return append(candidates,
-		"/usr/local/share/carelockconsulting/templates",
-		"/usr/share/carelockconsulting/templates",
+		"/usr/local/share/grc/templates",
+		"/usr/share/grc/templates",
 	)
 }
 

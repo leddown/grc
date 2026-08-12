@@ -1,7 +1,7 @@
 package policydocs
 
 import (
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 // listPageHTML renders the policy library. manage=true turns on the mutating
@@ -24,7 +24,7 @@ func listPageHTML(manage bool) string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>` + title + ` · CareLock Consulting</title>
+  <title>` + title + ` · GRC</title>
   <style>` + policyCSS + `</style>
 </head>
 <body>

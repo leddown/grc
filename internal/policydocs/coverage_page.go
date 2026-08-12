@@ -1,7 +1,7 @@
 package policydocs
 
 import (
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 // coveragePageHTML renders the framework coverage matrix: every in-scope
@@ -14,7 +14,7 @@ func coveragePageHTML() string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Policy Coverage · CareLock Consulting</title>
+  <title>Policy Coverage · GRC</title>
   <style>` + policyCSS + `
     .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin:6px 0 16px; }
     .card { border:1px solid var(--line); border-radius:14px; padding:10px 14px; }

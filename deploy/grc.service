@@ -1,5 +1,5 @@
 [Unit]
-Description=CareLock Consulting RCSA web application
+Description=GRC RCSA web application
 # network-online (not just network.target) so an external PostgreSQL
 # (DATABASE_URL) is reachable at first start; on-failure restarts cover any
 # residual races.
@@ -8,17 +8,17 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=carelockconsulting
-Group=carelockconsulting
-EnvironmentFile=/etc/carelockconsulting/carelockconsulting.env
-ExecStart=/usr/local/bin/carelockconsulting
+User=grc
+Group=grc
+EnvironmentFile=/etc/grc/grc.env
+ExecStart=/usr/local/bin/grc
 Restart=on-failure
 RestartSec=5
 # The SQLite database (default backend) lives under
-# /var/lib/carelockconsulting; StateDirectory creates it (mode 0700, owned by
+# /var/lib/grc; StateDirectory creates it (mode 0700, owned by
 # the service user) and keeps it writable even with ProtectSystem=strict. It is
 # harmless and unused when DATABASE_URL points at an external PostgreSQL.
-StateDirectory=carelockconsulting
+StateDirectory=grc
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

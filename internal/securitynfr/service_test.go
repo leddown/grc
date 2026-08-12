@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"carelockconsulting/internal/db"
-	"carelockconsulting/internal/nfrfile"
+	"grc/internal/db"
+	"grc/internal/nfrfile"
 )
 
 func TestSeedTrueSyncRemovesStaleRows(t *testing.T) {

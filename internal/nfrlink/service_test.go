@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 func TestExtractMappingTokens(t *testing.T) {

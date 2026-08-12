@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strings"
 
-	"carelockconsulting/internal/authn"
 	"github.com/gin-gonic/gin"
+	"grc/internal/authn"
 )
 
 // sessionUserContextKey is where pageAccessMiddleware stashes the resolved

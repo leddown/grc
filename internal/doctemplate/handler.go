@@ -173,13 +173,13 @@ func (h *Handler) RenderEndpoint(c *gin.Context) {
 	// Surfaced as headers so the page can report what happened without a second
 	// request — the body is a PDF or a zip and has nowhere to carry it.
 	if result.Bundled {
-		c.Header("X-Carelock-Bundled", "1")
+		c.Header("X-GRC-Bundled", "1")
 	}
 	if result.Reason != "" {
-		c.Header("X-Carelock-Reason", headerSafe(result.Reason))
+		c.Header("X-GRC-Reason", headerSafe(result.Reason))
 	}
 	if result.Log != "" {
-		c.Header("X-Carelock-Render-Log", headerSafe(result.Log))
+		c.Header("X-GRC-Render-Log", headerSafe(result.Log))
 	}
 	c.Data(http.StatusOK, result.ContentType, result.Body)
 }

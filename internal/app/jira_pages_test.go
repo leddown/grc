@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/jira"
+	"grc/internal/jira"
 )
 
 type jiraRoundTripFunc func(req *http.Request) (*http.Response, error)
@@ -62,7 +62,7 @@ func TestJiraJSONPage_IncludesLocalFileLoader(t *testing.T) {
 		`Clear All Fields`,
 		`function clearAllFields()`,
 		`name="jiraField"`,
-		`carelockconsulting_jira_connection`,
+		`grc_jira_connection`,
 		`localStorage.setItem(jiraConnectionStorageKey`,
 		`background: #000;`,
 		`background: #111827;`,
@@ -100,7 +100,7 @@ func TestJiraReportsPage_PersistsConnectionAndDisplaysStoredJSON(t *testing.T) {
 
 	body := rec.Body.String()
 	required := []string{
-		`carelockconsulting_jira_connection`,
+		`grc_jira_connection`,
 		`function loadSavedJiraConnection()`,
 		`function persistJiraConnection()`,
 		`id="storedJSONSelect"`,

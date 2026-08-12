@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/apiutil"
-	"carelockconsulting/internal/pageui"
+	"grc/internal/apiutil"
+	"grc/internal/pageui"
 )
 
 type Handler struct {
@@ -183,7 +183,7 @@ func riskRegisterHTML(manage bool) string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>` + modeLabel + ` · CareLock Consulting</title>
+  <title>` + modeLabel + ` · GRC</title>
   <style>
     :root { color-scheme: light; --ink:#1c2431; --muted:#5e6672; --line:#d7cebf; }
     body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink); background:linear-gradient(135deg,#f7f3eb,#ece4d6 55%,#e4d8c4);}

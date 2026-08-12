@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs carelockconsulting in local mode: no login, no user management, every page and
+# Runs grc in local mode: no login, no user management, every page and
 # admin action open. Intended for single-user laptop use only — see
 # RUNTIME_ARGS.md ("Local (no-login) laptop mode").
 set -euo pipefail
@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${ROOT_DIR}"
 
-BINARY="${BINARY:-${ROOT_DIR}/carelockconsulting}"
+BINARY="${BINARY:-${ROOT_DIR}/grc}"
 LISTEN_ADDR="${LISTEN_ADDR:-:8080}"
 SQLITE_PATH="${SQLITE_PATH:-local.db}"
 SKIP_BUILD=0
@@ -16,7 +16,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [options]
 
-Builds (unless --skip-build) and runs carelockconsulting with LOCAL_MODE=true: no
+Builds (unless --skip-build) and runs grc with LOCAL_MODE=true: no
 login page, no user management, every page and admin action open.
 
 Options:

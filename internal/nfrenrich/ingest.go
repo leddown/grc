@@ -88,7 +88,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) ([]byte, string, err
 		return nil, "", fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Accept", "text/html, text/plain, text/markdown;q=0.9, */*;q=0.1")
-	req.Header.Set("User-Agent", "CareLockConsulting-NFR-Enrichment/1.0")
+	req.Header.Set("User-Agent", "GRC-NFR-Enrichment/1.0")
 
 	// #nosec G704 -- the URL is validated for scheme and public address space
 	// above, and every redirect hop is re-validated by CheckRedirect.

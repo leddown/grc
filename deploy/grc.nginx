@@ -3,7 +3,7 @@ server {
     listen [::]:80;
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name carelockconsulting.l3d.local;
+    server_name grc.l3d.local;
 
     ssl_certificate     /etc/nginx/ssl/l3d-local.crt;
     ssl_certificate_key /etc/nginx/ssl/l3d-local.key;

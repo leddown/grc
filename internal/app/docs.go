@@ -47,12 +47,12 @@ func docsDirCandidates() []string {
 		binDir := filepath.Dir(executable)
 		candidates = append(candidates,
 			binDir,
-			filepath.Join(binDir, "..", "share", "carelockconsulting"),
+			filepath.Join(binDir, "..", "share", "grc"),
 		)
 	}
 	return append(candidates,
-		"/usr/local/share/carelockconsulting",
-		"/usr/share/carelockconsulting",
+		"/usr/local/share/grc",
+		"/usr/share/grc",
 	)
 }
 

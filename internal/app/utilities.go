@@ -12,9 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/db"
-	"carelockconsulting/internal/dbsync"
-	"carelockconsulting/internal/pageui"
+	"grc/internal/db"
+	"grc/internal/dbsync"
+	"grc/internal/pageui"
 )
 
 // registerUtilitiesRoutes wires the Utilities page and its full-database
@@ -49,7 +49,7 @@ func utilitiesExport(sqliteDB *db.Conn) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to encode data set: %v", err)})
 			return
 		}
-		filename := "carelock-data-export-" + time.Now().Format("20060102-150405") + ".json"
+		filename := "grc-data-export-" + time.Now().Format("20060102-150405") + ".json"
 		c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 		c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
 	}
@@ -128,7 +128,7 @@ func utilitiesBackup(sqliteDB *db.Conn) gin.HandlerFunc {
 		// A temp *directory* rather than a temp file: VACUUM INTO refuses to
 		// write to a path that already exists, so the destination has to be a
 		// name nothing has created yet.
-		tmpDir, err := os.MkdirTemp("", "carelock-backup-*")
+		tmpDir, err := os.MkdirTemp("", "grc-backup-*")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to prepare backup file: %v", err)})
 			return
@@ -141,7 +141,7 @@ func utilitiesBackup(sqliteDB *db.Conn) gin.HandlerFunc {
 			return
 		}
 
-		filename := "carelock-sqlite-backup-" + time.Now().Format("20060102-150405") + ".db"
+		filename := "grc-sqlite-backup-" + time.Now().Format("20060102-150405") + ".db"
 		c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 		c.File(tmpPath)
 	}
@@ -225,7 +225,7 @@ func utilitiesPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Utilities · CareLock Consulting</title>
+  <title>Utilities · GRC</title>
   <style>
     :root {
       color-scheme: light;

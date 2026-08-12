@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 func TestService_ListsLinkedAndUnlinkedControlsWithFilters(t *testing.T) {

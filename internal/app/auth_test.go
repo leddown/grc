@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"carelockconsulting/internal/authn"
-	"carelockconsulting/internal/controlcatalog"
-	"carelockconsulting/internal/db"
-	"carelockconsulting/internal/nfrlink"
-	"carelockconsulting/internal/reports"
-	"carelockconsulting/internal/riskregister"
-	"carelockconsulting/internal/securitynfr"
-	"carelockconsulting/internal/user"
 	"github.com/gin-gonic/gin"
+	"grc/internal/authn"
+	"grc/internal/controlcatalog"
+	"grc/internal/db"
+	"grc/internal/nfrlink"
+	"grc/internal/reports"
+	"grc/internal/riskregister"
+	"grc/internal/securitynfr"
+	"grc/internal/user"
 )
 
 func TestAdminTokenMiddleware_RequiresAuthenticationWhenTokenMissing(t *testing.T) {

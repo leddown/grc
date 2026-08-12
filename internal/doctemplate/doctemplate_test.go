@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"carelockconsulting/internal/db"
 	"github.com/gin-gonic/gin"
+	"grc/internal/db"
 )
 
 // repoTemplatesDir points the package at the checked-in templates. Tests run
@@ -266,7 +266,7 @@ func TestTypstDictQuotesEverySettableString(t *testing.T) {
 	brand := DefaultBrand()
 	dict := brand.TypstDict()
 	for _, want := range []string{
-		`firm: "CareLock Consulting"`,
+		`firm: "GRC"`,
 		`serif: ("Libertinus Serif", "Liberation Serif", "Times New Roman", "DejaVu Serif")`,
 		`paper: "a4"`,
 		"margin: (x: 30mm, top: 28mm, bottom: 26mm)",
@@ -376,7 +376,7 @@ func TestGenerateLaTeXFromTheSample(t *testing.T) {
 
 	for _, want := range []string{
 		`\documentclass[11pt,a4paper]{article}`,
-		`\usepackage{carelock}`,
+		`\usepackage{grc}`,
 		`\begin{document}`,
 		`\end{document}`,
 		`\clcoverpage{`,
@@ -607,7 +607,7 @@ func TestLaTeXBundleCarriesAGeneratedDocument(t *testing.T) {
 		t.Fatalf("Render: %v", err)
 	}
 	names := zipEntries(t, result.Body)
-	for _, want := range []string{"policy-document.tex", "carelock.sty", "data.json", "build.sh"} {
+	for _, want := range []string{"policy-document.tex", "grc.sty", "data.json", "build.sh"} {
 		if !names[want] {
 			t.Errorf("LaTeX bundle is missing %s (has %v)", want, keys(names))
 		}
@@ -911,7 +911,7 @@ func TestRenderRouteReturnsABundleWithHeaders(t *testing.T) {
 	if got := res.Header().Get("Content-Type"); got != "application/zip" {
 		t.Errorf("content type = %q, want application/zip", got)
 	}
-	if res.Header().Get("X-Carelock-Bundled") != "1" {
+	if res.Header().Get("X-GRC-Bundled") != "1" {
 		t.Error("a bundled response must say so in a header")
 	}
 	if disposition := res.Header().Get("Content-Disposition"); !strings.Contains(disposition, "POL-AC-001") {

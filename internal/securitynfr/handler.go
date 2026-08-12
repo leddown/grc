@@ -8,9 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/apiutil"
-	"carelockconsulting/internal/nfrfile"
-	"carelockconsulting/internal/pageui"
+	"grc/internal/apiutil"
+	"grc/internal/nfrfile"
+	"grc/internal/pageui"
 )
 
 type Handler struct {
@@ -203,7 +203,7 @@ func (h *Handler) DetailPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Security NFR Detail · CareLock Consulting</title>
+  <title>Security NFR Detail · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -323,7 +323,7 @@ func (h *Handler) Page(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Security NFRs · CareLock Consulting</title>
+  <title>Security NFRs · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -583,8 +583,8 @@ func (h *Handler) Page(c *gin.Context) {
     const detailToggle = document.getElementById('detailToggle');
     const detailToggleLabel = document.getElementById('detailToggleLabel');
     const editBtn = document.getElementById('editBtn');
-    const FILTERS_KEY = 'carelock-nfr-filters-collapsed';
-    const DETAIL_KEY = 'carelock-nfr-detail-collapsed';
+    const FILTERS_KEY = 'grc-nfr-filters-collapsed';
+    const DETAIL_KEY = 'grc-nfr-detail-collapsed';
 
     // Blocked localStorage (private mode, hardened settings) must not break the
     // collapse toggles; they just stop remembering their state across loads.
@@ -807,7 +807,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Security NFR Editor · CareLock Consulting</title>
+  <title>Security NFR Editor · GRC</title>
   <style>
     :root {
       color-scheme: light;

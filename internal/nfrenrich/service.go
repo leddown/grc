@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"carelockconsulting/internal/securitynfr"
+	"grc/internal/securitynfr"
 )
 
 const (

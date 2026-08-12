@@ -54,7 +54,7 @@ type Brand struct {
 // have to stay in step — TestDefaultBrandMatchesBrandTyp asserts that they do.
 func DefaultBrand() Brand {
 	return Brand{
-		Firm:       "CareLock Consulting",
+		Firm:       "GRC",
 		Tagline:    "Risk and Control Advisory",
 		FooterNote: "Uncontrolled when printed.",
 
@@ -353,7 +353,7 @@ func ApplyToTypstBrand(source string, brand Brand) (string, error) {
 // ---- LaTeX generation ----
 
 // LaTeXPreamble renders the brand as overrides applied after
-// \usepackage{carelock}. Redefinition rather than a rewritten .sty: \definecolor
+// \usepackage{grc}. Redefinition rather than a rewritten .sty: \definecolor
 // and \renewcommand both take effect at that point, so the package file stays
 // exactly as shipped and the generated document carries the whole delta.
 func (b Brand) LaTeXPreamble() string {
@@ -382,7 +382,7 @@ func (b Brand) LaTeXPreamble() string {
 	// definition, so redefining the colour alone would not change the text.
 	sb.WriteString("\\color{clInk}\n")
 
-	// Fonts are guarded exactly as carelock.sty guards them. An unavailable
+	// Fonts are guarded exactly as grc.sty guards them. An unavailable
 	// family is a hard error in fontspec, which would turn a brand typo into a
 	// failed build rather than a fallback.
 	sb.WriteString("\\ifPDFTeX\\else\n")

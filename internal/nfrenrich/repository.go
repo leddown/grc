@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 // Repository is the persistence surface. It is an interface so the service can

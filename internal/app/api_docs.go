@@ -12,7 +12,7 @@ func openAPIPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>API Docs · CareLock Consulting</title>
+  <title>API Docs · GRC</title>
   <style>
     body { margin: 0; padding: 24px; background: #f7f3eb; color: #1c2431; font-family: Georgia, "Times New Roman", serif; }
     main { max-width: 1100px; margin: 0 auto; background: rgba(255,252,246,0.94); border: 1px solid #d7cebf; border-radius: 24px; padding: 24px; }
@@ -43,7 +43,7 @@ func openAPIJSON(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"openapi": "3.1.0",
 		"info": gin.H{
-			"title":   "carelockconsulting API",
+			"title":   "grc API",
 			"version": "0.1.0",
 		},
 		"components": gin.H{

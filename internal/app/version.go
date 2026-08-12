@@ -10,7 +10,7 @@ import (
 // BuildVersion identifies the source revision this binary was built from. It is
 // stamped at build time by scripts/setup.sh and update.sh:
 //
-//	go build -ldflags "-X carelockconsulting/internal/app.BuildVersion=$(git rev-parse --short HEAD)"
+//	go build -ldflags "-X grc/internal/app.BuildVersion=$(git rev-parse --short HEAD)"
 //
 // and stays "dev" for an ordinary `go build ./cmd/api`.
 //

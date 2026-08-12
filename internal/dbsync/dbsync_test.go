@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 func openTemp(t *testing.T, name string) *db.Conn {

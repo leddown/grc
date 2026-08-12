@@ -19,7 +19,7 @@ templates/
     policy-document.typ    policy / standard / procedure / work instruction
     business-report.typ    assessment and consulting reports
   latex/
-    carelock.sty           LaTeX equivalent of brand.typ + lib.typ
+    grc.sty           LaTeX equivalent of brand.typ + lib.typ
     policy-document.tex    LaTeX policy document
   samples/
     policy-sample.json     realistic input, matching internal/policydocs
@@ -294,7 +294,7 @@ Set `logo: none` to get a typographic wordmark. That looks deliberate; a
 stretched or low-resolution logo does not.
 
 For LaTeX, the same values live in the *Identity* and *Palette* blocks at the
-top of `templates/latex/carelock.sty`.
+top of `templates/latex/grc.sty`.
 
 ### Adding a document type
 

@@ -20,7 +20,7 @@
 
 #let brand = (
   // ---- Identity -----------------------------------------------------------
-  firm: "CareLock Consulting",
+  firm: "GRC",
   firm-tagline: "Risk and Control Advisory",
   // Path to a logo, relative to the template file. Leave as none to render a
   // typographic wordmark instead — which looks deliberate, whereas a stretched

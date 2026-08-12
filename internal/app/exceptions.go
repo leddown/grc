@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 func exceptionsPage(c *gin.Context) {
@@ -14,7 +14,7 @@ func exceptionsPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Exceptions · CareLock Consulting</title>
+  <title>Exceptions · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -678,7 +678,7 @@ func exceptionsDetailPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Exception Detail · CareLock Consulting</title>
+  <title>Exception Detail · GRC</title>
   <style>
     :root {
       color-scheme: light;

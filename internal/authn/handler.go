@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const AuthSessionCookie = "carelockconsulting_auth_session"
+const AuthSessionCookie = "grc_auth_session"
 
 type Handler struct {
 	service           *Service

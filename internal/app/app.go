@@ -9,19 +9,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/authn"
-	"carelockconsulting/internal/controlcatalog"
-	"carelockconsulting/internal/db"
-	"carelockconsulting/internal/dbsync"
-	"carelockconsulting/internal/doctemplate"
-	"carelockconsulting/internal/nfrenrich"
-	"carelockconsulting/internal/nfrlink"
-	"carelockconsulting/internal/policydocs"
-	"carelockconsulting/internal/reporting"
-	"carelockconsulting/internal/reports"
-	"carelockconsulting/internal/riskregister"
-	"carelockconsulting/internal/securitynfr"
-	"carelockconsulting/internal/user"
+	"grc/internal/authn"
+	"grc/internal/controlcatalog"
+	"grc/internal/db"
+	"grc/internal/dbsync"
+	"grc/internal/doctemplate"
+	"grc/internal/nfrenrich"
+	"grc/internal/nfrlink"
+	"grc/internal/policydocs"
+	"grc/internal/reporting"
+	"grc/internal/reports"
+	"grc/internal/riskregister"
+	"grc/internal/securitynfr"
+	"grc/internal/user"
 )
 
 type Options struct {

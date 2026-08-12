@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"carelockconsulting/internal/controlfile"
-	"carelockconsulting/internal/db"
+	"grc/internal/controlfile"
+	"grc/internal/db"
 )
 
 func TestServiceListHonorsHiddenFamilies(t *testing.T) {

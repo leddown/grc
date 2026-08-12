@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 type aiUsageStore interface {

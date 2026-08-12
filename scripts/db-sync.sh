@@ -15,7 +15,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 CONFIG="${ROOT_DIR}/config/db.env"
-BINARY="${BINARY:-${ROOT_DIR}/carelockconsulting}"
+BINARY="${BINARY:-${ROOT_DIR}/grc}"
 
 MODE="${1:-}"
 shift || true

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 func newTestService(t *testing.T) *Service {

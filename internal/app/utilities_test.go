@@ -11,8 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/db"
-	"carelockconsulting/internal/dbsync"
+	"grc/internal/db"
+	"grc/internal/dbsync"
 )
 
 func newUtilitiesTestRouter(t *testing.T) *gin.Engine {

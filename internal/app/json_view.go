@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 func jsonViewPage(c *gin.Context) {
@@ -14,7 +14,7 @@ func jsonViewPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JSON_view · CareLock Consulting</title>
+  <title>JSON_view · GRC</title>
   <style>
     :root {
       color-scheme: light;

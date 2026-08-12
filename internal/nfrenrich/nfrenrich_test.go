@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"carelockconsulting/internal/securitynfr"
+	"grc/internal/securitynfr"
 )
 
 // ---- chunking ----

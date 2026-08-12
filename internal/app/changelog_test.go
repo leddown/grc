@@ -20,7 +20,7 @@ func TestRenderChangeLogHTML_IncludesContentAndPath(t *testing.T) {
 }
 
 func TestRenderChangeLogHTML_ShowsReadError(t *testing.T) {
-	html := string(renderChangeLogHTML("/usr/local/share/carelockconsulting/CHANGELOG.md", nil, assertErr{}))
+	html := string(renderChangeLogHTML("/usr/local/share/grc/CHANGELOG.md", nil, assertErr{}))
 
 	if !strings.Contains(html, "Failed to read change log: render failed") {
 		t.Fatalf("expected read error in html, got %q", html)

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	seeddata "carelockconsulting/internal/data"
-	"carelockconsulting/internal/nfrfile"
+	seeddata "grc/internal/data"
+	"grc/internal/nfrfile"
 )
 
 var ErrNotFound = errors.New("security NFR not found")

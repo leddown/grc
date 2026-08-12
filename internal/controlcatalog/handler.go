@@ -14,9 +14,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/apiutil"
-	"carelockconsulting/internal/controlfile"
-	"carelockconsulting/internal/pageui"
+	"grc/internal/apiutil"
+	"grc/internal/controlfile"
+	"grc/internal/pageui"
 )
 
 type Handler struct {
@@ -357,7 +357,7 @@ func (h *Handler) DetailPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Control Detail · CareLock Consulting</title>
+  <title>Control Detail · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -580,7 +580,7 @@ func (h *Handler) Page(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RCSA Control Database · CareLock Consulting</title>
+  <title>RCSA Control Database · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -1815,7 +1815,7 @@ func (h *Handler) FamilyVisibilityPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Family Filter Visibility · CareLock Consulting</title>
+  <title>Family Filter Visibility · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -2022,7 +2022,7 @@ func (h *Handler) HierarchyPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Control Hierarchy · CareLock Consulting</title>
+  <title>Control Hierarchy · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -2532,7 +2532,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RCSA Control Editor · CareLock Consulting</title>
+  <title>RCSA Control Editor · GRC</title>
   <style>
     :root {
       color-scheme: light;

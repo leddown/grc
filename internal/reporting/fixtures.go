@@ -13,7 +13,7 @@ func sampleLogoDataURI() template.URL {
 	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="220" height="56" viewBox="0 0 220 56">` +
 		`<rect width="56" height="56" rx="10" fill="#1f2a44"/>` +
 		`<path d="M18 30 l8 8 l16 -18" fill="none" stroke="#8b3d2e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
-		`<text x="68" y="36" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="700" fill="#1f2a44">CareLock</text>` +
+		`<text x="68" y="36" font-family="Helvetica,Arial,sans-serif" font-size="22" font-weight="700" fill="#1f2a44">GRC</text>` +
 		`</svg>`
 	encoded := base64.StdEncoding.EncodeToString([]byte(svg))
 	// #nosec G203 -- the SVG is a constant defined above; the data URI is fully server-generated, not user input.
@@ -130,7 +130,7 @@ func SampleControlAssessment() ControlAssessmentReport {
 		System:         "Client Engagement Platform (Production)",
 		Scope:          "All security controls in the moderate baseline applicable to the production environment and its supporting cloud infrastructure.",
 		AssessmentDate: "12 June 2026",
-		Assessor:       "Care Lock Consulting",
+		Assessor:       "GRC",
 		Narrative:      "Controls were assessed using the examine, interview, and test methods defined in NIST SP 800-53A. The system meets the majority of moderate-baseline objectives; identified deficiencies are concentrated in identity management and audit review and are tracked below with recommended remediation.",
 		Results:        sampleControlResults(),
 		Deficiencies:   sampleDeficiencies(),

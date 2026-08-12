@@ -1,4 +1,4 @@
-# carelockconsulting — Agent Instructions & Policy
+# grc — Agent Instructions & Policy
 
 Internal Go web application for RCSA (Risk and Control Self-Assessment): a
 NIST control catalog, security NFR catalog, NFR-to-control linking, a
@@ -19,11 +19,11 @@ all backed by SQLite and served via Gin.
 
 ## Running the app
 
-- Normal mode (login required): `go run ./cmd/api` or `./carelockconsulting`. See
+- Normal mode (login required): `go run ./cmd/api` or `./grc`. See
   `RUNTIME_ARGS.md` for flags/env vars and first-boot admin bootstrap
   (`./admin_setup_login.sh`).
 - Local/no-login laptop mode (single user, every page and admin action
-  open, no auth at all): `LOCAL_MODE=true ./carelockconsulting` or `./run_local.sh`.
+  open, no auth at all): `LOCAL_MODE=true ./grc` or `./run_local.sh`.
   Never run `-local-mode` on a server or anywhere reachable by other users.
 
 ## Architecture Overview
@@ -52,7 +52,7 @@ all backed by SQLite and served via Gin.
 
 ## Conventions & Code Style
 
-- Module `carelockconsulting`, Go 1.25 (see `go.mod` for the exact toolchain version)
+- Module `grc`, Go 1.25 (see `go.mod` for the exact toolchain version)
   — don't downgrade
 - Gin for HTTP, `mattn/go-sqlite3` for storage, `golang.org/x/crypto/bcrypt`
   for password hashing — prefer these existing deps over adding new ones

@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"carelockconsulting/internal/authn"
-	"carelockconsulting/internal/db"
+	"grc/internal/authn"
+	"grc/internal/db"
 )
 
 const usage = `usage: userctl [-db SPEC] <command> [flags]

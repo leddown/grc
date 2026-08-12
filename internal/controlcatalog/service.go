@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"carelockconsulting/internal/controlfile"
-	"carelockconsulting/internal/controlid"
-	seeddata "carelockconsulting/internal/data"
+	"grc/internal/controlfile"
+	"grc/internal/controlid"
+	seeddata "grc/internal/data"
 )
 
 type Service struct {

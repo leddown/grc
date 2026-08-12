@@ -3,7 +3,7 @@ package app
 import (
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 func wizRulesPage(c *gin.Context) {
@@ -12,7 +12,7 @@ func wizRulesPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wiz Rules · CareLock Consulting</title>
+  <title>Wiz Rules · GRC</title>
   <style>
     :root {
       color-scheme: light;

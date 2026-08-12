@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 // SnapshotVersion is the format version stamped into every exported Snapshot.

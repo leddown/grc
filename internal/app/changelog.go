@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 func changeLogPage(c *gin.Context) {
@@ -32,7 +32,7 @@ func renderChangeLogHTML(path string, content []byte, readErr error) []byte {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Change Log · CareLock Consulting</title>
+  <title>Change Log · GRC</title>
   <style>
     :root {
       color-scheme: light;

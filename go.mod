@@ -1,4 +1,4 @@
-module carelockconsulting
+module grc
 
 go 1.25.0
 

@@ -1,4 +1,4 @@
-# carelockconsulting
+# grc
 
 Internal Go web application for RCSA (Risk and Control Self-Assessment) and
 consulting practice management. It bundles a NIST control catalog, a security
@@ -18,7 +18,7 @@ go build ./...
 go run ./cmd/api
 
 # Local/no-login laptop mode (single user, all pages/admin open, no auth):
-LOCAL_MODE=true ./carelockconsulting    # or: ./run_local.sh
+LOCAL_MODE=true ./grc    # or: ./run_local.sh
 ```
 
 > Never run local/no-login mode on a server or anywhere reachable by other
@@ -63,7 +63,7 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
 
 ## Stack
 
-Module `carelockconsulting`, Go 1.25. Gin for HTTP, `mattn/go-sqlite3` for
+Module `grc`, Go 1.25. Gin for HTTP, `mattn/go-sqlite3` for
 storage, `golang.org/x/crypto/bcrypt` for password hashing.
 
 ## Docs

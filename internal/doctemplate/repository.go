@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 // Repository is the brand-settings persistence boundary. One row, because the

@@ -121,7 +121,7 @@ func (s *Service) Render(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fmt.Errorf("saved brand settings are invalid: %w", err)
 	}
 
-	workspace, err := os.MkdirTemp("", "carelock-render-")
+	workspace, err := os.MkdirTemp("", "grc-render-")
 	if err != nil {
 		return Result{}, fmt.Errorf("creating render workspace: %w", err)
 	}
@@ -174,7 +174,7 @@ func (s *Service) Render(ctx context.Context, req Request) (Result, error) {
 // outputName is what every engine is told to write. Fixed so the read-back
 // never has to guess, and so the LaTeX path cannot collide with the Typst one
 // the way build.sh once did.
-const outputName = "carelock-output.pdf"
+const outputName = "grc-output.pdf"
 
 // dataName is the payload file inside the workspace. The Typst templates
 // resolve their `--input data=` path relative to the template file, and both
@@ -257,7 +257,7 @@ func compile(ctx context.Context, workspace string, tpl Template, status EngineS
 		case "tectonic":
 			args = []string{"-X", "compile", "--outdir", ".", tpl.Entry}
 		default:
-			// XeLaTeX, not pdfLaTeX: carelock.sty uses fontspec for the font
+			// XeLaTeX, not pdfLaTeX: grc.sty uses fontspec for the font
 			// stack, and pdfLaTeX cannot load it.
 			args = []string{"-xelatex", "-interaction=nonstopmode", "-outdir=.", tpl.Entry}
 		}

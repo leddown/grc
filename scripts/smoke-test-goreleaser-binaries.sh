@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="${DIST_DIR:-${ROOT_DIR}/dist}"
-BINARY_BASENAME="${BINARY_BASENAME:-carelockconsulting}"
+BINARY_BASENAME="${BINARY_BASENAME:-grc}"
 DATA_FILES=(
   "internal/data/merged_nist_controls_master_replaced_from_controls_all.json"
   "internal/data/NFR_incremental_keys_with_domain.json"

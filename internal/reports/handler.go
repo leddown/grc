@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/apiutil"
-	"carelockconsulting/internal/pageui"
+	"grc/internal/apiutil"
+	"grc/internal/pageui"
 )
 
 type Handler struct {
@@ -74,7 +74,7 @@ func (h *Handler) Page(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Reports · CareLock Consulting</title>
+  <title>Reports · GRC</title>
   <style>
     :root {
       color-scheme: light;

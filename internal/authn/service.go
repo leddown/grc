@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 var (

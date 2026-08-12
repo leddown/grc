@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_FILE="${GORELEASER_CONFIG:-${ROOT_DIR}/.goreleaser.yaml}"
 DIST_DIR="${DIST_DIR:-${ROOT_DIR}/dist}"
-GOCACHE_DIR="${GOCACHE_DIR:-/tmp/gocache-carelockconsulting}"
+GOCACHE_DIR="${GOCACHE_DIR:-/tmp/gocache-grc}"
 SMOKE_TEST_SCRIPT="${ROOT_DIR}/scripts/smoke-test-goreleaser-binaries.sh"
 DATA_FILES=(
   "internal/data/merged_nist_controls_master_replaced_from_controls_all.json"

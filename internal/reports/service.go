@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"carelockconsulting/internal/controlid"
-	"carelockconsulting/internal/db"
+	"grc/internal/controlid"
+	"grc/internal/db"
 )
 
 type ControlSummary struct {

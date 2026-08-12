@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 // Repository is the policy-document persistence boundary.

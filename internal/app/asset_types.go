@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 func assetTypesPage(c *gin.Context) {
@@ -14,7 +14,7 @@ func assetTypesPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Asset Types · CareLock Consulting</title>
+  <title>Asset Types · GRC</title>
   <style>
     :root {
       color-scheme: light;

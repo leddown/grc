@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"carelockconsulting/internal/db"
 	"github.com/gin-gonic/gin"
+	"grc/internal/db"
 )
 
 func TestBootstrapAndLoginFlow(t *testing.T) {

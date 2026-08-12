@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"carelockconsulting/internal/authn"
 	"github.com/gin-gonic/gin"
+	"grc/internal/authn"
 )
 
 // adminTokenMiddleware gates a route to admins only. It distinguishes two
@@ -80,7 +80,7 @@ func adminRequiredPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin Access Required · CareLock Consulting</title>
+  <title>Admin Access Required · GRC</title>
   <style>
     body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; font-family: Arial, sans-serif; background:#0b1220; color:#e5e7eb; }
     main { width:100%; max-width:420px; padding:28px; background:#111827; border:1px solid #334155; border-radius:16px; }

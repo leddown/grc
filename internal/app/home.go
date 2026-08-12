@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 func homePage(c *gin.Context) {
@@ -39,7 +39,7 @@ func homePage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Database UI · CareLock Consulting</title>
+  <title>Database UI · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -92,7 +92,7 @@ func homePage(c *gin.Context) {
 <body>
   <main>
     %[3]s
-    <h1>CareLock Consulting SQLite UI</h1>
+    <h1>GRC SQLite UI</h1>
     <p>Internal pages for the SQLite-backed control catalog seeded from %[2]s, plus supporting APIs.</p>
 
     <div class="grid">
@@ -189,7 +189,7 @@ func homePage(c *gin.Context) {
     </div>
   </main>
   <footer style="max-width:1320px;margin:0 auto 24px;padding:16px 24px;color:#6b6155;border-top:1px solid rgba(90,84,76,0.25);font-size:0.85rem;text-align:center;">
-    &copy; %[5]s CareLock Consulting &middot; Risk &amp; Control Self-Assessment platform
+    &copy; %[5]s GRC &middot; Risk &amp; Control Self-Assessment platform
   </footer>
 </body>
 </html>`, baseURL, controlDataPath, pageui.Nav("/"), authLinks, fmt.Sprintf("%d", time.Now().Year()))

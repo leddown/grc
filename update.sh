@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Redeploys carelockconsulting after a code change: pulls the latest commit,
+# Redeploys grc after a code change: pulls the latest commit,
 # rebuilds the binary, and restarts the systemd service. Run this on the host
 # after `git push`-ing changes, or any time the working tree has commits not
 # yet reflected in the running service. Assumes scripts/setup.sh has already
@@ -8,16 +8,16 @@
 # step is needed.
 set -euo pipefail
 
-ENV_FILE="${CARELOCK_ENV_FILE:-/etc/carelockconsulting/carelockconsulting.env}"
-BIN_PATH="${CARELOCK_BIN_PATH:-/usr/local/bin/carelockconsulting}"
-SERVICE_NAME="${CARELOCK_SERVICE_NAME:-carelockconsulting}"
+ENV_FILE="${GRC_ENV_FILE:-/etc/grc/grc.env}"
+BIN_PATH="${GRC_BIN_PATH:-/usr/local/bin/grc}"
+SERVICE_NAME="${GRC_SERVICE_NAME:-grc}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==> Pulling latest changes"
 git -C "$REPO_ROOT" pull --ff-only
 
-echo "==> Building carelockconsulting"
+echo "==> Building grc"
 BUILD_TMP="$(mktemp)"
 trap 'rm -f "$BUILD_TMP"' EXIT
 # Stamp the revision so verify-install.sh below can prove the running service is
@@ -30,7 +30,7 @@ BUILD_REV="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
 # identically.
 (cd "$REPO_ROOT" && go build \
   -tags fts5 \
-  -ldflags "-X carelockconsulting/internal/app.BuildVersion=${BUILD_REV}" \
+  -ldflags "-X grc/internal/app.BuildVersion=${BUILD_REV}" \
   -o "$BUILD_TMP" ./cmd/api)
 sudo install -m 0755 "$BUILD_TMP" "$BIN_PATH"
 echo "    installed binary at $BIN_PATH (revision ${BUILD_REV})"
@@ -40,7 +40,7 @@ echo "    installed binary at $BIN_PATH (revision ${BUILD_REV})"
 # next to the binary the change log comes up empty on every deployed server.
 # This path is one of the directories internal/app/docs.go searches, so no
 # configuration is needed; DOCS_DIR overrides it.
-DOC_DIR="${CARELOCK_DOC_DIR:-$(dirname "$(dirname "$BIN_PATH")")/share/carelockconsulting}"
+DOC_DIR="${GRC_DOC_DIR:-$(dirname "$(dirname "$BIN_PATH")")/share/grc}"
 echo "==> Installing documentation to $DOC_DIR"
 sudo install -d -m 0755 "$DOC_DIR"
 sudo install -m 0644 "$REPO_ROOT"/*.md "$DOC_DIR/"

@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/authn"
-	"carelockconsulting/internal/db"
+	"grc/internal/authn"
+	"grc/internal/db"
 )
 
 func newAccessControlTestRouter(t *testing.T) (*gin.Engine, *authn.Service) {

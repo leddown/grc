@@ -15,7 +15,7 @@ fi
 
 if [[ -z "${GOOGLE_DRIVE_DESTINATION}" ]]; then
   echo "missing Google Drive destination" >&2
-  echo "set GOOGLE_DRIVE_DESTINATION to an rclone target such as gdrive:releases/carelockconsulting" >&2
+  echo "set GOOGLE_DRIVE_DESTINATION to an rclone target such as gdrive:releases/grc" >&2
   exit 1
 fi
 

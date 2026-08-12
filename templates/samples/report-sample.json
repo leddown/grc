@@ -6,7 +6,7 @@
   "engagement": "ISMS Readiness Programme",
   "version": "v1.0",
   "classification": "Confidential",
-  "prepared_by": "CareLock Consulting",
+  "prepared_by": "GRC",
   "reviewed_by": "Engagement Principal",
   "report_date": "2026-07-24",
   "period": "2026-06-01 to 2026-07-18",
@@ -26,7 +26,7 @@
     },
     {
       "heading": "Approach",
-      "body": "The assessment combined documentation review, control owner interviews and sample testing.\n\nDocumentation review covered the approved policy set as held in the client's document management system, together with the control mapping maintained in the CareLock control database. Each in-scope control was traced to the policy text asserting it, and the assertion was checked against the control statement rather than accepted at face value.\n\nInterviews were conducted with the Head of Information Security, the IT Operations lead and the four nominated system owners.\n\nSample testing covered 25 joiner, mover and leaver events drawn from the period, selected to span all four systems and both standard and privileged access. Access review evidence was requested for every in-scope system for the current review period."
+      "body": "The assessment combined documentation review, control owner interviews and sample testing.\n\nDocumentation review covered the approved policy set as held in the client's document management system, together with the control mapping maintained in the GRC control database. Each in-scope control was traced to the policy text asserting it, and the assertion was checked against the control statement rather than accepted at face value.\n\nInterviews were conducted with the Head of Information Security, the IT Operations lead and the four nominated system owners.\n\nSample testing covered 25 joiner, mover and leaver events drawn from the period, selected to span all four systems and both standard and privileged access. Access review evidence was requested for every in-scope system for the current review period."
     },
     {
       "heading": "Conclusions",
@@ -105,7 +105,7 @@
       "severity": "informational",
       "control_id": "AC-1",
       "status": "Open",
-      "observation": "The mapping between policy text and catalog controls is maintained in the CareLock control database and was accurate at the time of testing. There is no defined cadence for re-validating it against catalog updates.",
+      "observation": "The mapping between policy text and catalog controls is maintained in the GRC control database and was accurate at the time of testing. There is no defined cadence for re-validating it against catalog updates.",
       "risk": "The mapping will drift silently as the control catalog is updated, and the coverage reporting derived from it will overstate assurance.",
       "recommendation": "Re-validate the mapping whenever the control catalog is updated, and at minimum annually alongside the policy review.",
       "management_response": "Noted. Will be added to the annual policy review checklist.",
@@ -123,5 +123,5 @@
       "body": "Critical — an exposure that is being actively exploited, or that permits unauthenticated access to regulated data. Immediate action required.\n\nHigh — a control failure that materially increases the likelihood or impact of a security incident, or that would result in a qualification under a certification audit.\n\nMedium — a control weakness that should be remediated in the current planning cycle but that is mitigated by other controls in the interim.\n\nLow — a deficiency with limited practical exposure, typically addressed at the next scheduled revision.\n\nInformational — an observation carrying no present risk, raised because it will become a risk if left unaddressed."
     }
   ],
-  "limitations": "This report is prepared for Northwind Financial Services Ltd for the purpose stated in the engagement letter dated 2026-05-18, and is not to be relied upon by any other party without the written consent of CareLock Consulting. The assessment was performed against the scope and period stated and reflects the position at the conclusion of fieldwork on 2026-07-18; it does not address changes made after that date. Conclusions are based on documentation provided, interviews conducted and samples tested, and sample testing provides reasonable rather than absolute assurance. This report does not constitute a certification against any standard, and no opinion is expressed on the financial statements or the internal control over financial reporting of Northwind Financial Services Ltd."
+  "limitations": "This report is prepared for Northwind Financial Services Ltd for the purpose stated in the engagement letter dated 2026-05-18, and is not to be relied upon by any other party without the written consent of GRC. The assessment was performed against the scope and period stated and reflects the position at the conclusion of fieldwork on 2026-07-18; it does not address changes made after that date. Conclusions are based on documentation provided, interviews conducted and samples tested, and sample testing provides reasonable rather than absolute assurance. This report does not constitute a certification against any standard, and no opinion is expressed on the financial statements or the internal control over financial reporting of Northwind Financial Services Ltd."
 }

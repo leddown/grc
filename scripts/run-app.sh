@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build (unless --skip-build) and run carelockconsulting using the active
+# Build (unless --skip-build) and run grc using the active
 # database profile from config/db.env (set via scripts/db-switch.sh):
 #   local  -> embedded SQLite, LOCAL_MODE (no login)
 #   remote -> external PostgreSQL, normal auth
@@ -11,7 +11,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 CONFIG="${ROOT_DIR}/config/db.env"
-BINARY="${BINARY:-${ROOT_DIR}/carelockconsulting}"
+BINARY="${BINARY:-${ROOT_DIR}/grc}"
 SKIP_BUILD=0
 [[ "${1:-}" == "--skip-build" ]] && SKIP_BUILD=1
 

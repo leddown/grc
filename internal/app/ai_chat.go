@@ -14,7 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/pageui"
+	"grc/internal/pageui"
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 
 	// wintermuteDefaultTitle labels the conversations this app opens on a
 	// wintermuted server, so they are identifiable in that server's own UI.
-	wintermuteDefaultTitle = "CareLock AI Chat"
+	wintermuteDefaultTitle = "GRC AI Chat"
 )
 
 var aiProviderHTTPClient = &http.Client{Timeout: 90 * time.Second}
@@ -47,7 +47,7 @@ func aiChatPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI Chat · CareLock Consulting</title>
+  <title>AI Chat · GRC</title>
   <style>
     :root {
       color-scheme: light;

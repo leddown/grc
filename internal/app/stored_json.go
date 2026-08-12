@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 const storedJSONListLimit = 200

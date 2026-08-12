@@ -55,7 +55,7 @@ type Branding struct {
 // not depend on any external assets or webfonts.
 func DefaultBranding() Branding {
 	return Branding{
-		OrgName:      "Care Lock Consulting",
+		OrgName:      "GRC",
 		PrimaryColor: "#1f2a44",
 		AccentColor:  "#8b3d2e",
 		TextColor:    "#1c2431",

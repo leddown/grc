@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"carelockconsulting/internal/authn"
-	"carelockconsulting/internal/db"
+	"grc/internal/authn"
+	"grc/internal/db"
 )
 
 func newTestService(t *testing.T) *authn.Service {

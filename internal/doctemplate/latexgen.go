@@ -6,7 +6,7 @@ import (
 )
 
 // GenerateLaTeX turns a policy payload into a complete .tex document against
-// templates/latex/carelock.sty.
+// templates/latex/grc.sty.
 //
 // The header of templates/latex/policy-document.tex says the LaTeX template
 // does not read the policy JSON, because LaTeX has no native data loading and
@@ -27,7 +27,7 @@ func GenerateLaTeX(payload PolicyPayload, brand Brand) string {
 	sb.WriteString("% the hand-filled reference this generator mirrors.\n%\n")
 	sb.WriteString("% Build with XeLaTeX or LuaLaTeX, not pdfLaTeX: the style uses fontspec.\n")
 	fmt.Fprintf(&sb, "\\documentclass[%s]{article}\n", brand.LaTeXClassOptions())
-	sb.WriteString("\\usepackage{carelock}\n\n")
+	sb.WriteString("\\usepackage{grc}\n\n")
 	sb.WriteString(brand.LaTeXPreamble())
 	sb.WriteString("\n")
 

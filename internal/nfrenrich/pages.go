@@ -1,6 +1,6 @@
 package nfrenrich
 
-import "carelockconsulting/internal/pageui"
+import "grc/internal/pageui"
 
 // pageHTML renders the review UI.
 //
@@ -15,7 +15,7 @@ func pageHTML() string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NFR Enrichment · CareLock Consulting</title>
+  <title>NFR Enrichment · GRC</title>
   <style>
     :root {
       color-scheme: light;

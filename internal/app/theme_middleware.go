@@ -301,15 +301,15 @@ const chaosThemeStyleTag = `<style id="global-theme-style">` + matrixPaletteCSS 
 // Both knobs are read from localStorage on every tick, so they can be changed
 // from the browser console and take effect on the next glitch without a reload:
 //
-//	carelock-chaos-interval : seconds between glitches (default 60)
-//	carelock-chaos-density  : characters recoloured per 300 on screen (default 2)
+//	grc-chaos-interval : seconds between glitches (default 60)
+//	grc-chaos-density  : characters recoloured per 300 on screen (default 2)
 const chaosEngineTag = `<script id="global-chaos-engine">
 (() => {
   if (window.__globalChaosInit) return;
   window.__globalChaosInit = true;
 
-  const INTERVAL_KEY = "carelock-chaos-interval";
-  const DENSITY_KEY = "carelock-chaos-density";
+  const INTERVAL_KEY = "grc-chaos-interval";
+  const DENSITY_KEY = "grc-chaos-density";
   // Density is expressed per this many characters, so the effect scales with
   // however much text a page happens to render.
   const DENSITY_BASE = 300;
@@ -463,7 +463,7 @@ const chaosEngineTag = `<script id="global-chaos-engine">
 
   // Exposed so the cadence can be tuned from the console; there is no settings
   // UI for it. setConfig restarts the timer so a change applies immediately.
-  window.CarelockChaos = {
+  window.GRCChaos = {
     config: () => ({ intervalSeconds: intervalSeconds(), density: density() }),
     setConfig: (next) => {
       localStorage.setItem(INTERVAL_KEY, String(clampInt(next.intervalSeconds, MIN_INTERVAL, MAX_INTERVAL, DEFAULT_INTERVAL)));
@@ -509,7 +509,7 @@ const chaosEngineTag = `<script id="global-chaos-engine">
 // Brightness is read from localStorage on every apply, so it can be changed from
 // the browser console and takes effect on the frame already on screen:
 //
-//	carelock-rain-brightness : percentage scaling of the fade (default 100)
+//	grc-rain-brightness : percentage scaling of the fade (default 100)
 const matrixRainTag = `<canvas id="global-matrix-rain" aria-hidden="true"></canvas>
 <style id="global-matrix-rain-style">
 /* Fixed rather than scrolled: it is the room the app sits in, not part of the
@@ -565,7 +565,7 @@ main {
   // resolve.
   const CELL = 16;
 
-  const BRIGHTNESS_KEY = "carelock-rain-brightness";
+  const BRIGHTNESS_KEY = "grc-rain-brightness";
 
   // The opacity the rain is faded to at 100%: faint enough to sit behind the
   // panes without competing with them.
@@ -748,11 +748,11 @@ main {
   }
 
   // Exposed so the brightness can be tuned from the console; there is no
-  // settings UI for it, matching CarelockChaos. The fade is a property of the
+  // settings UI for it, matching GRCChaos. The fade is a property of the
   // canvas element rather than of the pixels in it, so a change takes effect on
   // the frame already on screen — there is nothing to repaint and no wait for
   // the trails to turn over.
-  window.CarelockRain = {
+  window.GRCRain = {
     config: () => ({ brightness: brightness() }),
     setConfig: (next) => {
       const n = parseInt(next.brightness, 10);
@@ -1142,7 +1142,7 @@ main:has(> .global-shell) {
   const shell = document.getElementById("globalShell");
   if (!shell) return;
 
-  const COLLAPSE_KEY = "carelock-nav-collapsed";
+  const COLLAPSE_KEY = "grc-nav-collapsed";
   const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
 
   if (!isMobile() && localStorage.getItem(COLLAPSE_KEY) === "1") {

@@ -91,7 +91,7 @@ func RenderHTML(doc Document, sections []Section, refs []ControlRef) string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>` + html.EscapeString(doc.Title) + ` · CareLock Consulting</title>
+  <title>` + html.EscapeString(doc.Title) + ` · GRC</title>
   <style>
     :root { color-scheme: light; --ink:#1c2431; --muted:#5e6672; --line:#d7cebf; --accent:#8b3d2e; }
     * { box-sizing: border-box; }

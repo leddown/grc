@@ -115,7 +115,7 @@ func TestDocsDirFallsBackToWorkingDirectory(t *testing.T) {
 }
 
 // The share directories are the contract between internal/app and the deploy
-// scripts: setup.sh and update.sh install into <bindir>/../share/carelockconsulting.
+// scripts: setup.sh and update.sh install into <bindir>/../share/grc.
 // Dropping one here would break deployed servers without breaking any other test.
 func TestDocsDirCandidatesIncludeInstallLocations(t *testing.T) {
 	candidates := docsDirCandidates()
@@ -124,13 +124,13 @@ func TestDocsDirCandidatesIncludeInstallLocations(t *testing.T) {
 		t.Fatalf("candidates = %v, want the working directory searched first", candidates)
 	}
 
-	want := []string{"/usr/local/share/carelockconsulting", "/usr/share/carelockconsulting"}
+	want := []string{"/usr/local/share/grc", "/usr/share/grc"}
 	if executable, err := os.Executable(); err == nil {
 		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 			executable = resolved
 		}
 		binDir := filepath.Dir(executable)
-		want = append(want, binDir, filepath.Join(binDir, "..", "share", "carelockconsulting"))
+		want = append(want, binDir, filepath.Join(binDir, "..", "share", "grc"))
 	}
 
 	for _, dir := range want {

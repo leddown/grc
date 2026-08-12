@@ -16,8 +16,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"carelockconsulting/internal/jira"
-	"carelockconsulting/internal/pageui"
+	"grc/internal/jira"
+	"grc/internal/pageui"
 )
 
 var jiraFilenameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -197,7 +197,7 @@ func jiraJSONPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Jira JSON Connector · CareLock Consulting</title>
+  <title>Jira JSON Connector · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -475,7 +475,7 @@ func jiraJSONPage(c *gin.Context) {
       output: document.getElementById('output'),
     };
 
-    const jiraConnectionStorageKey = 'carelockconsulting_jira_connection';
+    const jiraConnectionStorageKey = 'grc_jira_connection';
 
     function checkedFieldValues() {
       return els.fieldChecks.filter((el) => el.checked).map((el) => el.value);
@@ -741,7 +741,7 @@ func jiraReportsPage(c *gin.Context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Jira Reports · CareLock Consulting</title>
+  <title>Jira Reports · GRC</title>
   <style>
     :root {
       color-scheme: light;
@@ -993,7 +993,7 @@ func jiraReportsPage(c *gin.Context) {
       kpiDone: document.getElementById('kpiDone'),
     };
 
-    const jiraConnectionStorageKey = 'carelockconsulting_jira_connection';
+    const jiraConnectionStorageKey = 'grc_jira_connection';
 
     function esc(value) {
       return String(value ?? '')

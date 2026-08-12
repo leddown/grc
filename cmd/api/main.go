@@ -4,7 +4,7 @@ import (
 	"flag"
 	"log"
 
-	"carelockconsulting/internal/app"
+	"grc/internal/app"
 )
 
 func main() {

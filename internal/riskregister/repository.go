@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 type Repository interface {

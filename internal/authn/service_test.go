@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"carelockconsulting/internal/db"
+	"grc/internal/db"
 )
 
 func TestBootstrapAdminOnce(t *testing.T) {
