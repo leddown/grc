@@ -1,0 +1,73 @@
+id: dora
+displayName: Digital Operational Resilience Act (DORA)
+sourceRef: EU 2022/2554
+idPrefix: DORA-ART
+
+detect:
+  filenamePatterns: [dora, "2022-2554", "2022_2554"]
+  contentPatterns:
+    - "2022/2554"
+    - digital operational resilience
+    - ict risk management framework
+
+segmentation:
+  - type: article
+    label: Article
+    minBodyChars: 120
+
+classification:
+  categories:
+    - ICT Risk Management
+    - ICT Incident Management
+    - Digital Operational Resilience Testing
+    - ICT Third-Party Risk
+    - Information Sharing
+    - General Provisions
+  rules:
+    - category: General Provisions
+      match:
+        articles: "1-4"
+    - category: ICT Risk Management
+      match:
+        articles: "5-16"
+    - category: ICT Incident Management
+      match:
+        articles: "17-23"
+    - category: Digital Operational Resilience Testing
+      match:
+        articles: "24-27"
+    - category: ICT Third-Party Risk
+      match:
+        articles: "28-44"
+    - category: Information Sharing
+      match:
+        articles: "45"
+
+# Seed mappings are starting points, not authoritative. GATE 2 is where they
+# get validated against the actual requirement text.
+seedCrosswalk:
+  - group: ICT Risk Management (Arts 5-16)
+    match:
+      articles: "5-16"
+    controls: [RA-3, RA-5, PM-9, CM-2, SI-4]
+    rationale: ICT risk management framework duties map to risk assessment, vulnerability management, an organizational risk strategy, configuration baselines and continuous monitoring.
+  - group: ICT Incident Management (Arts 17-23)
+    match:
+      articles: "17-23"
+    controls: [IR-4, IR-6, IR-8, AU-6]
+    rationale: Incident management, classification and regulatory reporting duties map to incident handling, reporting, response planning and audit record review.
+  - group: Digital Operational Resilience Testing (Arts 24-27)
+    match:
+      articles: "24-27"
+    controls: [CA-2, CA-8, RA-5, CP-4]
+    rationale: The testing programme including threat-led penetration testing maps to control assessment, penetration testing, vulnerability scanning and contingency plan testing.
+  - group: ICT Third-Party Risk (Arts 28-44)
+    match:
+      articles: "28-44"
+    controls: [SR-3, SR-5, SA-9, SA-4]
+    rationale: Third-party provider oversight and contractual duties map to supply chain controls, acquisition strategies, external system services and acquisition requirements.
+  - group: Information Sharing (Art 45)
+    match:
+      articles: "45"
+    controls: [PM-15, SI-5]
+    rationale: Voluntary threat-intelligence exchange maps to participation in security groups and receipt/dissemination of security alerts.

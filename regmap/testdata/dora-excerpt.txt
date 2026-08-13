@@ -1,0 +1,169 @@
+REGULATION (EU) 2022/2554 OF THE EUROPEAN PARLIAMENT AND OF THE COUNCIL
+
+of 14 December 2022
+
+on digital operational resilience for the financial sector and amending
+Regulations (EC) No 1060/2009, (EU) No 648/2012, (EU) No 600/2014,
+(EU) No 909/2014 and (EU) 2016/1011
+
+THE EUROPEAN PARLIAMENT AND THE COUNCIL OF THE EUROPEAN UNION,
+
+Having regard to the Treaty on the Functioning of the European Union, and in
+particular Article 114 thereof, Having regard to the proposal from the European
+Commission, Whereas the digital transformation of the financial sector has
+increased the reliance of financial entities on information and communication
+technology.
+
+CHAPTER II
+
+ICT risk management
+
+Article 5
+
+Governance and organisation
+
+1. Financial entities shall have in place an internal governance and control
+framework that ensures an effective and prudent management of ICT risk, in
+accordance with Article 6(4), in order to achieve a high level of digital
+operational resilience.
+
+2. The management body of the financial entity shall define, approve, oversee
+and be responsible for the implementation of all arrangements related to the
+ICT risk management framework referred to in Article 6(1).
+
+3. Members of the management body shall actively keep up to date with
+sufficient knowledge and skills to understand and assess ICT risk and its
+impact on the operations of the financial entity.
+
+Article 6
+
+ICT risk management framework
+
+1. Financial entities shall have a sound, comprehensive and well-documented ICT
+risk management framework as part of their overall risk management system,
+which enables them to address ICT risk quickly, efficiently and comprehensively
+and to ensure a high level of digital operational resilience.
+
+2. The ICT risk management framework shall include at least strategies,
+policies, procedures, ICT protocols and tools that are necessary to duly and
+adequately protect all information assets and ICT assets, including computer
+software, hardware and servers.
+
+4. Financial entities shall assign the responsibility for managing and
+overseeing ICT risk to a control function and ensure an appropriate level of
+independence of such control function in order to avoid conflicts of interest.
+
+Article 8
+
+Identification
+
+1. Financial entities shall identify, classify and adequately document all ICT
+supported business functions, roles and responsibilities, the information
+assets and ICT assets supporting those functions, and their roles and
+dependencies in relation to ICT risk.
+
+2. Financial entities shall, on a continuous basis, identify all sources of ICT
+risk, in particular the risk exposure to and from other financial entities, and
+assess cyber threats and ICT vulnerabilities relevant to their ICT supported
+business functions, information assets and ICT assets.
+
+CHAPTER III
+
+ICT-related incident management, classification and reporting
+
+Article 17
+
+ICT-related incident management process
+
+1. Financial entities shall define, establish and implement an ICT-related
+incident management process to detect, manage and notify ICT-related incidents.
+
+2. Financial entities shall record all ICT-related incidents and significant
+cyber threats. Financial entities shall establish appropriate procedures and
+processes to ensure a consistent and integrated monitoring, handling and
+follow-up of ICT-related incidents.
+
+3. The ICT-related incident management process shall put in place early warning
+indicators, establish procedures to identify, track, log, categorise and
+classify ICT-related incidents according to their priority and severity.
+
+Article 19
+
+Reporting of major ICT-related incidents and voluntary notification of
+significant cyber threats
+
+1. Financial entities shall report major ICT-related incidents to the relevant
+competent authority in accordance with paragraph 4 of this Article. Where a
+financial entity is subject to supervision by more than one competent
+authority, Member States shall designate a single competent authority.
+
+3. Financial entities shall submit to the relevant competent authority an
+initial notification, an intermediate report and a final report as referred to
+in Article 20, point (a), within the time limits established therein.
+
+CHAPTER IV
+
+Digital operational resilience testing
+
+Article 24
+
+General requirements for the performance of digital operational resilience
+testing
+
+1. For the purpose of assessing preparedness for handling ICT-related
+incidents, of identifying weaknesses, deficiencies and gaps in digital
+operational resilience, and of promptly implementing corrective measures,
+financial entities shall establish, maintain and review a sound and
+comprehensive digital operational resilience testing programme.
+
+2. The digital operational resilience testing programme shall include a range
+of assessments, tests, methodologies, practices and tools to be applied in
+accordance with Articles 25 and 26.
+
+Article 26
+
+Advanced testing of ICT tools, systems and processes based on TLPT
+
+1. Financial entities, other than entities referred to in Article 16(1), first
+subparagraph, and other than microenterprises, shall carry out at least every 3
+years advanced testing by means of threat-led penetration testing.
+
+CHAPTER V
+
+Managing of ICT third-party risk
+
+Article 28
+
+General principles
+
+1. Financial entities shall manage ICT third-party risk as an integral
+component of ICT risk within their ICT risk management framework, and in
+accordance with the principle of proportionality.
+
+2. The management of ICT third-party risk shall be implemented in light of the
+nature, scale, complexity and importance of ICT-related dependencies, taking
+into account the criticality of the services supported.
+
+Article 30
+
+Key contractual provisions
+
+1. The rights and obligations of the financial entity and of the ICT
+third-party service provider shall be clearly allocated and set out in writing.
+The full contract shall include the service level agreements and be documented
+in one written document available to the parties on paper or in a downloadable
+format.
+
+CHAPTER VI
+
+Information-sharing arrangements
+
+Article 45
+
+Information-sharing arrangements on cyber threat information and intelligence
+
+1. Financial entities may exchange amongst themselves cyber threat information
+and intelligence, including indicators of compromise, tactics, techniques and
+procedures, cyber security alerts and configuration tools, to the extent that
+such information and intelligence sharing aims to enhance the digital
+operational resilience of financial entities.

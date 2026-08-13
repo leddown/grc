@@ -59,6 +59,8 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
 - `internal/db` — SQLite connection + schema setup
 - `internal/pageui` — shared side-nav tab rendering
 - `internal/data` — embedded seed JSON for the control and NFR catalogs
+- `internal/regmap` — regulation → NIST 800-53 crosswalk tool with human review
+  gates, driven by `cmd/regmap` (see [REGMAP.md](REGMAP.md))
 - `scripts/` — goreleaser cross-build, smoke-test, and artifact-upload helpers
 
 ## Stack
@@ -73,5 +75,7 @@ storage, `golang.org/x/crypto/bcrypt` for password hashing.
 - [RISK_REGISTER_FRAMEWORK.md](RISK_REGISTER_FRAMEWORK.md) — risk register
   methodology
 - [JIRA_CONNECTOR.md](JIRA_CONNECTOR.md) — Jira integration methodology
+- [REGMAP.md](REGMAP.md) — `regmap` regulation → NIST 800-53 crosswalk CLI,
+  its review gates, and how to add a framework profile
 - [FAQ.md](FAQ.md) — `security-patches` → `main` merge procedure
 - [CHANGELOG.md](CHANGELOG.md) — change history / rollback reference

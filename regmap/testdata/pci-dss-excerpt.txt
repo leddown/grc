@@ -1,0 +1,108 @@
+Payment Card Industry Data Security Standard
+
+Requirements and Testing Procedures
+
+Version 4.0
+
+This document describes the twelve principal requirements of the PCI DSS and
+the testing procedures used to validate them. It applies to all entities
+involved in payment card processing, including merchants, processors,
+acquirers, issuers and service providers.
+
+Requirement 1: Install and Maintain Network Security Controls
+
+Network security controls (NSCs), such as firewalls and other network security
+technologies, are network policy enforcement points that typically control
+network traffic between two or more logical or physical network segments.
+
+1.2 Network security controls (NSCs) are configured and maintained.
+
+1.2.1 Configuration standards for NSC rulesets are defined, implemented and
+maintained. All configuration standards are documented, kept up to date and
+applied to every network security control in the cardholder data environment.
+
+1.3 Network access to and from the cardholder data environment is restricted.
+
+1.3.1 Inbound traffic to the cardholder data environment is restricted to only
+traffic that is necessary, and all other traffic is specifically denied. This
+restriction is enforced at every point of ingress to the environment.
+
+1.4.2 Inbound traffic from untrusted networks to trusted networks is restricted
+to communications with system components that provide publicly accessible
+services, protocols and ports.
+
+Page 58 of 360
+
+Requirement 3: Protect Stored Account Data
+
+Protection methods such as encryption, truncation, masking and hashing are
+critical components of account data protection. If an intruder circumvents
+other controls and gains access to encrypted data, the data is unreadable.
+
+3.2.1 Account data storage is kept to a minimum through implementation of data
+retention and disposal policies, procedures and processes that include coverage
+for all locations of stored account data.
+
+3.3.1 Sensitive authentication data is not retained after authorisation, even
+if encrypted. All sensitive authentication data received is rendered
+irretrievable upon completion of the authorisation process.
+
+3.4.1 PAN is masked when displayed such that only personnel with a legitimate
+business need can see more than the BIN and the last four digits of the PAN.
+
+3.5.1 PAN is rendered unreadable anywhere it is stored by using one-way hashes
+based on strong cryptography of the entire PAN, truncation, index tokens, or
+strong cryptography with associated key management processes and procedures.
+
+Requirement 8: Identify Users and Authenticate Access to System Components
+
+Assigning a unique identification to each person with access ensures that
+actions taken on critical data and systems are performed by, and can be traced
+to, known and authorised users and processes.
+
+8.2.1 All users are assigned a unique ID before access to system components or
+cardholder data is allowed. Shared, group and generic accounts are not used
+except where specifically documented and justified.
+
+8.3.6 If passwords or passphrases are used as authentication factors, they meet
+a minimum length of 12 characters and contain both numeric and alphabetic
+characters.
+
+8.4.2 Multi-factor authentication is implemented for all access into the
+cardholder data environment, and is configured so that it cannot be bypassed by
+any administrator.
+
+Requirement 10: Log and Monitor All Access to System Components and Cardholder
+Data
+
+Logging mechanisms and the ability to track user activities are critical for
+prevention, detection and minimisation of the impact of a data compromise.
+
+10.2.1 Audit logs are enabled and active for all system components and
+cardholder data, capturing all individual user access, all actions taken by
+administrators, and all access to audit logs.
+
+10.3.2 Audit log files are protected to prevent modifications by individuals,
+including by using file-integrity monitoring or change-detection mechanisms.
+
+10.4.1 The following audit logs are reviewed at least once daily: all security
+events, logs of all system components that store, process or transmit account
+data, and logs of all critical system components.
+
+Requirement 11: Test Security of Systems and Networks Regularly
+
+Vulnerabilities are being discovered continually by malicious individuals and
+researchers, and being introduced by new software. System components should be
+tested frequently to ensure controls continue to reflect a changing
+environment.
+
+11.3.1 Internal vulnerability scans are performed at least once every three
+months, and high-risk and critical vulnerabilities are resolved and rescanned
+to confirm resolution.
+
+11.4.1 A penetration testing methodology is defined, documented and implemented
+by the entity, and includes industry-accepted penetration testing approaches
+and coverage for the entire cardholder data environment perimeter.
+
+11.4.3 External penetration testing is performed at least once every 12 months
+and after any significant infrastructure or application upgrade or change.

@@ -1,0 +1,6 @@
+# regmap pipeline output: per-run review state, not source.
+/regmap/data/
+
+# Built binaries. regmap builds to bin/ because a ./regmap binary at the repo
+# root would collide with the regmap/ assets directory.
+/bin/

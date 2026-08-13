@@ -3,6 +3,108 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-13 (added regmap: regulation → NIST 800-53 crosswalk tool)
+
+New operator CLI, `cmd/regmap`, that ingests a cybersecurity or resilience
+regulation, maps its requirements to NIST SP 800-53 Rev 5 controls, and emits an
+auditable crosswalk. It is a terminal tool, separate from the web application —
+no routes, handlers or DB tables were touched — but it shares this module's
+embedded NIST control catalog so both surfaces map against the same controls.
+
+The tool is human-in-the-loop by design: a three-gate state machine where
+nothing reaches `approved` without a named reviewer.
+
+    ingest → [GATE 1 segmentation] → map → [GATE 2 mappings]
+           → suggest → [GATE 3 suggestions] → report
+
+### Added
+
+| Path | Purpose |
+|---|---|
+| `cmd/regmap` | Entry point, following the existing `cmd/userctl` pattern |
+| `internal/regmap/cli` | Cobra command tree: `frameworks`, `ingest`, `review`, `map`, `suggest`, `report`, `status` |
+| `internal/regmap/profile` | Framework profile loading, validation, section matchers, framework auto-detection |
+| `internal/regmap/ingest` | PDF/DOCX/TXT extraction and the framework-agnostic segmenter |
+| `internal/regmap/{requirement,mapping,nist}` | Domain types, the seed-crosswalk resolver, the control catalog |
+| `internal/regmap/review` | The three interactive gates — the only package permitted to approve anything |
+| `internal/regmap/{report,state,suggest}` | Markdown/JSON/CSV output, the YAML state store, the Anthropic suggestion client |
+| `regmap/profiles/*.yaml` | Starter profiles: DORA, PCI DSS v4.0, NIS2, EU Cyber Resilience Act |
+| `regmap/testdata/*.txt` | Regulation excerpts used to exercise the loop |
+
+The source framework is not hardcoded. Segmentation strategies (`article`,
+`numbered`, `annex`, `regex`, composable), classification rules and the seed
+crosswalk all live in the profile, so adding a regulation means adding a YAML
+file rather than editing the pipeline. All four starter profiles run through one
+code path.
+
+### Reuses the existing NIST catalog
+
+`internal/regmap/nist` reads `seeddata.ControlCatalogJSON()` — the same embedded
+dataset `internal/controlcatalog` serves — rather than carrying its own copy.
+Base controls only by default (323 of the 1193 entries); `--with-enhancements`
+opts into control enhancements such as `AC-2(1)`, which are excluded normally
+because they would bloat the control-ID list sent to the model on every
+suggestion without improving a regulation-level mapping. `--catalog <file>`
+still accepts a YAML override.
+
+The embedded dataset decodes from a JSON map, so the loader imposes a sort;
+a test asserts repeated loads produce identical ordering, since report output
+has to be reproducible. Another test asserts every control ID referenced by
+every shipped seed crosswalk resolves against that catalog.
+
+### New dependencies
+
+`github.com/spf13/cobra`, `gopkg.in/yaml.v3` and `github.com/ledongthuc/pdf` are
+now direct requirements. PDF extraction prefers the `pdftotext` binary when it
+is on PATH (its layout mode preserves headings) and falls back to the Go
+library, reporting which was used.
+
+### Security
+
+`go test ./...` covers the new packages, so `TestGosec` applies to them. Twelve
+findings were resolved before this landed:
+
+- `state.Store.write` creates the data directory `0750`, not `0755` — pipeline
+  state holds regulatory source text and review decisions.
+- `report --out` writes `0600` via `os.OpenFile` for the same reason.
+- `pdftotext` is invoked with an absolute input path, closing the
+  argument-injection hole a source path such as `-v` would otherwise open.
+- `$EDITOR` is validated before use: bare command name only, resolved through
+  `exec.LookPath`, rejected if it carries arguments or shell metacharacters.
+- Deferred `os.Remove` / `Close` calls have explicit error discards.
+
+The remaining `#nosec` annotations are line-scoped with a stated reason, and
+cover only paths inherent to a CLI: reading the document named by `--in`, the
+profiles under `--profiles-dir`, an explicit `--catalog`, the `--out`
+destination, and the tool's own temp file.
+
+### Reviewer guarantees, enforced by tests
+
+`internal/regmap/cli/approval_guard_test.go` walks the regmap tree with the Go
+AST and fails if any package outside `internal/regmap/review` writes
+`StatusApproved`. Reading the constant is allowed — reports compare against it —
+but no code path may set it. A companion test plants a violation to confirm the
+guard actually bites. Review sessions save after every decision and resume where
+they left off; `--auto-approve` is per-gate and explicit; a gate refuses to run
+at all when stdin is not a terminal.
+
+### Running it
+
+    go build -o bin/regmap ./cmd/regmap
+    ./bin/regmap frameworks
+    ./bin/regmap ingest --in dora.pdf
+    ./bin/regmap review --gate 1
+
+The `bin/` prefix matters: a `./regmap` binary at the repo root would collide
+with the `regmap/` assets directory. `bin/` and `regmap/data/` are gitignored —
+this change also adds a `.gitignore`, which the repository did not previously
+have (existing ignores live in `.git/info/exclude`).
+
+Pipeline state defaults to `regmap/data/` (`state.yaml`, `requirements.yaml`,
+`mappings.yaml`), sorted by requirement id for clean diffs and written
+atomically. `ANTHROPIC_API_KEY` is read from the environment for
+`suggest --with-llm`; that path has not yet been exercised against the live API.
+
 ## 2026-08-12 (renamed the project from carelockconsulting to grc)
 
 Every reference to the old `carelockconsulting` / `CareLock Consulting` name is
