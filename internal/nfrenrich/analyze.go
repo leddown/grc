@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -111,44 +112,85 @@ type replyCitation struct {
 	Quote   string `json:"quote"`
 }
 
+// KeyFunc returns the Anthropic API key to use for the next request. It is
+// consulted per call rather than once at startup so a key saved in the Settings
+// page takes effect immediately — this module used to tell the operator to set
+// an environment variable and restart the service.
+//
+// It is a plain function rather than a settings dependency to keep this module
+// from importing the settings store; the caller supplies the closure.
+type KeyFunc func() string
+
 // ClaudeAnalyzer implements Analyzer against the Anthropic Messages API.
 type ClaudeAnalyzer struct {
-	api      anthropic.Client
-	apiKey   string
+	keyFunc  KeyFunc
 	model    string
 	logUsage UsageLogger
+
+	// The SDK client is cached and rebuilt only when the resolved key changes,
+	// so the common path does not construct one per request.
+	mu     sync.Mutex
+	api    anthropic.Client
+	apiKey string
 }
 
-// NewClaudeAnalyzer reads the same ANTHROPIC_API_KEY the rest of the app uses.
-// A second copy of one secret in a second place is a second thing to leak.
-func NewClaudeAnalyzer(logUsage UsageLogger) *ClaudeAnalyzer {
-	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+// NewClaudeAnalyzer builds an analyzer that resolves its credential through
+// keyFunc. A nil keyFunc falls back to ANTHROPIC_API_KEY, which keeps a
+// deployment that has only ever used the environment working untouched.
+func NewClaudeAnalyzer(logUsage UsageLogger, keyFunc KeyFunc) *ClaudeAnalyzer {
+	if keyFunc == nil {
+		keyFunc = func() string { return strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) }
+	}
 	model := strings.TrimSpace(os.Getenv("NFR_ENRICHMENT_MODEL"))
 	if model == "" {
 		model = DefaultModel
 	}
 	return &ClaudeAnalyzer{
-		api:      anthropic.NewClient(option.WithAPIKey(key)),
-		apiKey:   key,
+		keyFunc:  keyFunc,
 		model:    model,
 		logUsage: logUsage,
 	}
 }
 
-func (a *ClaudeAnalyzer) Model() string    { return a.model }
-func (a *ClaudeAnalyzer) Configured() bool { return a.apiKey != "" }
+func (a *ClaudeAnalyzer) Model() string { return a.model }
+
+// Configured reports whether a credential is available right now.
+func (a *ClaudeAnalyzer) Configured() bool { return a.key() != "" }
+
+func (a *ClaudeAnalyzer) key() string {
+	if a.keyFunc == nil {
+		return ""
+	}
+	return strings.TrimSpace(a.keyFunc())
+}
+
+// client returns an SDK client bound to the current key, rebuilding it only
+// when the key has changed since the last call.
+func (a *ClaudeAnalyzer) client(key string) anthropic.Client {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.apiKey != key {
+		a.api = anthropic.NewClient(option.WithAPIKey(key))
+		a.apiKey = key
+	}
+	return a.api
+}
 
 // Analyze sends one NFR-and-excerpts prompt and parses the reply.
 func (a *ClaudeAnalyzer) Analyze(ctx context.Context, req AnalysisRequest) (AnalysisReply, error) {
-	if !a.Configured() {
+	// Resolved once per call and reused below, so a key cleared mid-request
+	// cannot leave this method half-configured.
+	key := a.key()
+	if key == "" {
 		return AnalysisReply{}, ErrNotConfigured
 	}
+	api := a.client(key)
 
 	prompt := BuildPrompt(req)
 	hash := sha256.Sum256([]byte(analysisSystemPrompt + "\n" + prompt))
 	promptHash := hex.EncodeToString(hash[:])
 
-	resp, err := a.api.Messages.New(ctx, anthropic.MessageNewParams{
+	resp, err := api.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(a.model),
 		MaxTokens: maxTokens,
 		System:    []anthropic.TextBlockParam{{Text: analysisSystemPrompt}},

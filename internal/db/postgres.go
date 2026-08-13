@@ -294,6 +294,18 @@ CREATE TABLE IF NOT EXISTS app_state (
 	value TEXT NOT NULL DEFAULT ''
 );
 
+-- Credentials set in the Settings page (AI provider keys today). Values are
+-- AES-256-GCM ciphertext, base64-encoded so both backends store them as TEXT
+-- rather than diverging over BLOB/BYTEA. Deliberately separate from app_state
+-- so plaintext state and secret material never share a table, and so who set a
+-- credential and when is recorded for the audit trail.
+CREATE TABLE IF NOT EXISTS app_secrets (
+	name TEXT PRIMARY KEY,
+	ciphertext TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
 
 
 -- Document-template brand settings: one row, because the brand is a property of

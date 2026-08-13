@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"grc/internal/pageui"
+	"grc/internal/settings"
 )
 
 const (
@@ -530,6 +531,30 @@ func aiChatWintermuteStatus(c *gin.Context) {
 	})
 }
 
+// activeSettings is the install-wide credential store, wired at startup by
+// configureAICredentials. It follows the same configured-singleton shape as
+// activeAIUsageStore because the AI Chat gateway handlers are package-level
+// functions rather than methods on a service.
+var activeSettings *settings.Service
+
+// configureAICredentials wires the credential store the AI gateway falls back
+// to. A nil service simply means no stored credentials, which is what the unit
+// tests exercise.
+func configureAICredentials(svc *settings.Service) { activeSettings = svc }
+
+// storedAICredential returns the stored credential for a provider, or "".
+func storedAICredential(provider string) string {
+	if activeSettings == nil {
+		return ""
+	}
+	switch provider {
+	case "wintermute":
+		return activeSettings.Get(settings.WintermuteToken)
+	default:
+		return activeSettings.Get(settings.AnthropicAPIKey)
+	}
+}
+
 func aiChatAsk(c *gin.Context) {
 	var req aiChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -550,10 +575,19 @@ func aiChatAsk(c *gin.Context) {
 		return
 	}
 
+	// A request that carries no credential falls back to the one stored in
+	// Settings, so the key does not have to be pasted into the browser on every
+	// visit. An explicit key in the request still wins, which keeps the page
+	// usable for trying a different key without changing the install-wide one.
+	if req.APIKey == "" {
+		req.APIKey = storedAICredential(req.Provider)
+	}
+
 	switch req.Provider {
 	case "", "claude":
 		if req.APIKey == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "api_key is required for claude"})
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "no Anthropic API key: paste one above, or set one in Settings to use it everywhere"})
 			return
 		}
 		answer, usage, err := askClaude(req)

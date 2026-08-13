@@ -20,7 +20,9 @@ import (
 	"grc/internal/reporting"
 	"grc/internal/reports"
 	"grc/internal/riskregister"
+	"grc/internal/secrets"
 	"grc/internal/securitynfr"
+	"grc/internal/settings"
 	"grc/internal/user"
 )
 
@@ -127,11 +129,16 @@ func Run(options Options) error {
 		options.AllowJSONSave,
 		options.LocalMode,
 	)
+	// Built before the AI modules: they resolve their credentials through it.
+	settingsService := newSettingsService(sqliteDB, options)
+	configureAICredentials(settingsService)
+
 	registerReportingRoutes(router)
+	registerSettingsRoutes(router, settingsService, adminMiddleware, options.LocalMode)
 	policyService := registerPolicyDocRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
 	registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
 	registerNFREnrichmentRoutes(
-		router, sqliteDB, securityNFRHandler.Service(), adminMiddleware, options.LocalMode)
+		router, sqliteDB, securityNFRHandler.Service(), settingsService, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
@@ -383,6 +390,40 @@ func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *
 	templateHandler.RegisterAdminRoutes(admin)
 }
 
+// newSettingsService builds the install-wide credential store.
+//
+// A missing master key disables storage but is deliberately not fatal: the
+// environment fallback still resolves credentials, so an existing deployment
+// keeps working and the Settings page explains why saving is unavailable
+// rather than the service refusing to start.
+func newSettingsService(sqliteDB *db.Conn, options Options) *settings.Service {
+	repo := settings.NewSQLRepository(sqliteDB)
+	keyring, err := secrets.Load(secrets.Options{
+		DBPath:        options.SQLitePath,
+		AllowGenerate: true,
+	})
+	if err != nil {
+		log.Printf("settings: credential storage disabled: %v", err)
+		return settings.NewService(repo, nil)
+	}
+	log.Printf("settings: %s", keyring.Describe())
+	return settings.NewService(repo, keyring)
+}
+
+// registerSettingsRoutes wires the admin Settings page and its API.
+//
+// Everything is admin-gated, including reads: nothing here is needed to *use*
+// the AI features, only to configure them, and a credential's status still
+// discloses something about the install.
+func registerSettingsRoutes(r gin.IRouter, service *settings.Service, adminMiddleware gin.HandlerFunc, localMode bool) {
+	admin := r.Group("/")
+	if !localMode {
+		admin.Use(adminMiddleware)
+	}
+	admin.GET("/settings", settingsPage)
+	settings.NewHandler(service, sessionUsername).RegisterAdminRoutes(admin)
+}
+
 // registerNFREnrichmentRoutes wires the security-document enrichment module.
 //
 // The read/write split matches the other RCSA catalog modules rather than the
@@ -400,13 +441,19 @@ func registerNFREnrichmentRoutes(
 	r gin.IRouter,
 	sqliteDB *db.Conn,
 	nfrService *securitynfr.Service,
+	settingsService *settings.Service,
 	adminMiddleware gin.HandlerFunc,
 	localMode bool,
 ) {
 	service := nfrenrich.NewService(
 		nfrenrich.NewSQLiteRepository(sqliteDB),
 		nfrService,
-		nfrenrich.NewClaudeAnalyzer(logAIUsage),
+		// Resolved per request, so a key saved in Settings works immediately.
+		// This page used to instruct the operator to set an environment
+		// variable and restart the service.
+		nfrenrich.NewClaudeAnalyzer(logAIUsage, func() string {
+			return settingsService.Get(settings.AnthropicAPIKey)
+		}),
 	)
 	handler := nfrenrich.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)

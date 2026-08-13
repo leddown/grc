@@ -83,6 +83,7 @@ var navGroups = []NavGroup{
 var adminGroup = NavGroup{
 	Label: "Admin",
 	Items: []NavItem{
+		{Path: "/settings", Label: "Settings"},
 		{Path: "/docs", Label: "API Docs"},
 		{Path: "/utilities", Label: "Utilities"},
 	},

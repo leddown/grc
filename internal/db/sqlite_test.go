@@ -23,6 +23,7 @@ func TestOpenSQLite_CreatesExpectedSchema(t *testing.T) {
 		"stored_json_documents",
 		"auth_users",
 		"auth_sessions",
+		"app_secrets",
 	}
 	for _, table := range tables {
 		var name string

@@ -3,6 +3,104 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-13 (Settings module: one place for AI credentials)
+
+AI credentials were handled two incompatible ways. AI Chat took a key pasted
+into a browser form on every visit and sent it in each request body; NFR
+Enrichment read `ANTHROPIC_API_KEY` once at startup and told the operator to
+"set `ANTHROPIC_API_KEY` and restart". Neither could share with the other, and
+a third AI feature would have invented a third mechanism.
+
+There is now a Settings page under Admin. A key set there is used by every AI
+field in the app and takes effect immediately, with no restart.
+
+### Added
+
+| Path | Purpose |
+|---|---|
+| `internal/secrets` | Master key resolution and AES-256-GCM seal/open |
+| `internal/settings` | Credential store, resolution, and the admin API |
+| `internal/app/settings_page.go` | The `/settings` page |
+| `app_secrets` table | On both SQLite and PostgreSQL |
+
+### Where the master key comes from
+
+`$GRC_SECRET_KEY` (base64, 32 bytes) first; then a key file, at
+`$GRC_SECRET_KEY_FILE`, else `$STATE_DIRECTORY/secret.key` — which systemd sets
+from `StateDirectory=grc` in the unit — else beside the SQLite database; and
+failing all of that a fresh key is generated at that location with mode `0600`.
+
+**It is never placed in the working directory of a checkout.** The
+2026-08-07 entry records an encryption key that lived beside the repository and
+was swept into a commit, which made the encryption it protected worthless. A
+key file readable by other accounts is rejected with the `chmod` that fixes it,
+and the page reports which source won so this is visible rather than assumed.
+
+A missing master key disables storing credentials but is deliberately not
+fatal: the environment fallback still resolves, so an existing deployment keeps
+working and the page explains why saving is unavailable.
+
+### Storage and resolution
+
+Values are AES-256-GCM sealed and base64-encoded, so both backends store TEXT
+rather than diverging over BLOB/BYTEA. The credential's name is passed as the
+AEAD additional data, so a ciphertext moved to another row will not decrypt
+there. Each row carries `updated_at`/`updated_by`.
+
+Resolution prefers a stored credential and falls back to the environment
+variable, so an install that has only ever used `ANTHROPIC_API_KEY` is
+unaffected until someone saves a key in the page. Clearing a stored credential
+falls back rather than disabling the feature, and the page says so before the
+button is pressed. A row that cannot be decrypted — after a rotated or replaced
+master key — is treated as absent and falls back too, rather than taking every
+AI feature down.
+
+Credentials are write-only in the UI: set, replace and clear. A stored value is
+never sent to a browser. The page shows whether one is configured, which source
+is active, and the last four characters so two keys can be told apart.
+
+### Consumers
+
+`nfrenrich.NewClaudeAnalyzer` now takes a `KeyFunc` consulted per request
+rather than reading the environment once at construction — this is what removes
+the restart. The SDK client is rebuilt only when the resolved key changes, so
+the common path does not construct one per request. A nil `KeyFunc` falls back
+to `ANTHROPIC_API_KEY`, which keeps existing callers and tests working.
+
+The AI Chat gateway falls back to the stored credential when a request omits
+one. An explicit key in the request still wins, so the page stays usable for
+trying a different key without changing the install-wide one.
+
+### Security
+
+`go test ./...` covers the new packages, so `TestGosec` applies to them. One
+`#nosec G101` remains, line-scoped: gosec matches the Go identifiers
+`AnthropicAPIKey` and `WintermuteToken`, but those constants are `app_secrets`
+row names, not credentials.
+
+### Verified
+
+Against a throwaway `LOCAL_MODE` instance on a spare port and database: the
+master key was generated in `STATE_DIRECTORY`; a saved key was confirmed
+non-plaintext in `app_secrets`; NFR Enrichment reported `configured: true`
+moments after the save **in the same process**, and `false` again after a clear;
+and AI Chat's "no key" error changed to an upstream authentication error once a
+key was stored, confirming the stored value is what gets sent.
+
+### Also restored: `.gitignore`
+
+The repository had no `.gitignore` — the one the 2026-08-07 entry added was
+lost when history was squashed to `init`/`rebrand`, and both `*.aichat.key`
+files are tracked in `HEAD` again along with `users.db`. The ignore block is
+restored here (`*.aichat.key`, `*.gcal.key`, `/ai_chat.key`, the databases and
+their `-shm`/`-wal` sidecars).
+
+**Still outstanding, and an operator decision:** ignore rules do not apply to
+already-tracked files. Untracking them needs
+`git rm --cached users.db.aichat.key local.db.aichat.key users.db`, with
+`--cached` deliberate so the files stay on disk and existing encrypted sessions
+remain readable. The keys are in history regardless; treat them as compromised.
+
 ## 2026-08-13 (manage-user.sh now uses the service's own database)
 
 Fixes a silent failure: resetting a password on a deployed host, restarting the

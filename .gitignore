@@ -1,3 +1,22 @@
+# Encryption keys — they must never be committed. Committing one defeats the
+# encryption it protects: anyone with repository access can decrypt the data.
+# (Restored here after a history squash dropped the .gitignore that the
+# 2026-08-07 CHANGELOG entry added. See that entry before changing this block.)
+*.aichat.key
+*.gcal.key
+/ai_chat.key
+
+# Databases and their SQLite sidecar files.
+users.db
+users.db-shm
+users.db-wal
+local.db
+local.db-shm
+local.db-wal
+
+# Local backend selection written by scripts/db-switch.sh.
+/config/db.env
+
 # regmap pipeline output: per-run review state, not source.
 /regmap/data/
 

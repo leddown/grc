@@ -218,7 +218,7 @@ func pageHTML() string {
         if (!configured) {
           configNotice.style.display = '';
           configNotice.textContent =
-            'Documents can be added and proposals reviewed, but analysis needs an Anthropic API key: set ANTHROPIC_API_KEY and restart.';
+            'Documents can be added and proposals reviewed, but analysis needs an Anthropic API key: set one in Settings. It takes effect immediately.';
         } else {
           configNotice.style.display = '';
           configNotice.textContent = 'Analysis runs on ' + (data.model || 'the configured model') +

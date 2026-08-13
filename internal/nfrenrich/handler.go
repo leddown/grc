@@ -301,7 +301,7 @@ func writeServiceError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 	case errors.Is(err, ErrNotConfigured):
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "AI analysis needs an Anthropic API key: set ANTHROPIC_API_KEY and restart"})
+			"error": "AI analysis needs an Anthropic API key: set one in Settings (no restart needed)"})
 	case errors.Is(err, ErrUnsupportedMedia), errors.Is(err, ErrEmptyDocument):
 		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrInvalid):
