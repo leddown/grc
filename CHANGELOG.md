@@ -3,6 +3,165 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-13 (AI Chat routed through the harness; SSRF fix in the harness)
+
+The AI Chat gateway now asks through `internal/aiprovider` rather than carrying
+its own copy of both protocols. Every AI surface in the app is on the harness.
+
+### SECURITY: the harness allowed plaintext to a public host
+
+`aiprovider.ValidateEndpoint`, added in the previous entry, accepted `http://`
+to **any** host. The client token rides on every Wintermute request, so a
+Settings entry of `http://wintermute.example.com` would have sent it in
+plaintext across the internet.
+
+The AI Chat code being replaced already had the correct rule — `http` only for
+a loopback, private or link-local literal, or the name `localhost` — and
+porting the transport is what surfaced the gap. `ValidateEndpoint` now enforces
+the same rule, with the same reasoning as the original: a hostname is **not**
+resolved to decide this, because a DNS lookup here would be both a TOCTOU race
+and a request to an attacker-chosen name.
+
+The practical consequence, unchanged from the old AI Chat behaviour: a
+Wintermute server reached by hostname needs `https`, or its IP address.
+`http://192.168.1.50:8080` works; `http://nas.local:8080` does not.
+
+### AI Chat on the harness
+
+`askClaude`, `askWintermute` and their JSON plumbing are gone — about 170 lines
+of duplicated protocol, along with the now-dead `claudeEndpointURL`,
+`claudeAPIVersion`, `claudeDefaultModel`, `wintermuteDefaultTitle`,
+`aiChatTokenUsage`, `wintermuteAnswer` and the app package's `isPrivateHost`
+(the harness has its own). `postJSON`, `stringField`, `validatedEndpoint` and
+`hostAllowed` stay: other modules use them.
+
+The page keeps choosing a provider per question rather than per install, which
+is why it does **not** use the Settings router. `aiChatProvider` builds a
+provider from the request and falls back field by field to the stored
+configuration, so a reviewer can still put one question to a different model or
+try a key before saving it — while the transport underneath is the shared
+harness. Verified: a typed credential still wins, and a blank form resolves
+entirely from Settings.
+
+The Claude endpoint override keeps its `api.anthropic.com` allowlist, now
+converted to an SDK base URL by `validatedClaudeBaseURL`. That field can
+retarget the path, not the server.
+
+`Response.Refused` is honoured here too, so a refusal reads as a refusal rather
+than as an empty answer.
+
+### Tests
+
+The nine tests in `ai_chat_test.go` all covered the deleted implementation.
+Their behaviour now lives in `internal/aiprovider`'s tests (turn flow, endpoint
+rules including the plaintext-host cases, usage extraction, and the failure
+modes). They are replaced by tests for what this page adds on top: the
+per-request/stored precedence for both providers, the error messages pointing at
+Settings, and the Claude host allowlist.
+
+### Verified end to end
+
+Against a stand-in wintermuted server: an AI Chat question with an empty key and
+empty endpoint field was answered by `local-8b` / `llama-3.1-8b` entirely from
+Settings; a deliberately wrong token typed into the form produced a 401 from the
+server, confirming the typed value still takes precedence; and the usage row was
+logged against the serving provider and model.
+
+### Also
+
+Two comments in `nfrenrich/analyze.go` referenced `internal/assistant`, a
+package that no longer exists in this repository. Corrected. There is no
+separate assistant module left to route.
+
+## 2026-08-13 (AI provider harness: local network models, not just the cloud)
+
+AI questions can now be answered by a model on your own network. The new
+`internal/aiprovider` harness sits in front of every AI field and routes each
+question to Claude or to a Wintermute server, which in turn dispatches to a
+self-hosted model (llama.cpp, Ollama, vLLM) or on to Claude.
+
+grc does not implement local-model clients: wintermuted already abstracts them
+behind one token, so the harness holds a server URL and a client token and
+never sees a model endpoint or a vendor key for that path.
+
+### Added
+
+| Path | Purpose |
+|---|---|
+| `internal/aiprovider/provider.go` | `Provider`, `Request`, `Response`, `Probe` |
+| `internal/aiprovider/claude.go` | Claude over the Anthropic Messages API |
+| `internal/aiprovider/wintermute.go` | Session/turn flow, endpoint validation, discovery |
+| `internal/aiprovider/router.go` | Provider selection, usage logging, status |
+| `internal/settings/preferences.go` | Non-secret settings, in the existing `app_state` table |
+
+### Choosing a provider
+
+The Settings page gains a provider selector and the Wintermute server URL,
+backend and model, alongside a **Test connection** button.
+
+- **auto** prefers Wintermute when it is configured and falls back to Claude.
+  A local model is cheaper and more private, and an operator who configured one
+  meant to use it; the fallback means selecting auto cannot leave the app unable
+  to answer.
+- **claude** and **wintermute** are explicit and do **not** fall back. Someone
+  who selects Wintermute may be doing so because questions must not leave the
+  network, and quietly reaching for the cloud would break exactly that
+  expectation. An unusable explicit choice is an error, not a silent reroute.
+
+The default is `claude`, so this release changes no existing install's
+behaviour until someone opts in. `WINTERMUTE_URL`/`_BACKEND`/`_MODEL` still
+work as fallbacks for an install already configured through the environment.
+
+### Discovery
+
+**Test connection** calls the server's `GET /api/v1/me`, so one request checks
+the URL, the token and discovery together. It reports the backends the server
+advertises along with its default and fallback, so an operator can see which
+local models are reachable and copy a name into the backend field rather than
+guessing. A backend pinned in Settings that the server does not have is
+reported then, rather than failing later at ask time with a vaguer message.
+
+`ValidateEndpoint` rejects a non-http(s) scheme, a missing host, and a URL
+carrying embedded credentials — those would be sent on every request and
+logged, and the client token belongs in Settings.
+
+### NFR Enrichment routed through the harness
+
+`ClaudeAnalyzer` is replaced by `RoutedAnalyzer`, which asks through the
+harness. The module no longer constructs an Anthropic client, holds a key, or
+knows that Claude exists; the credential, model and provider all resolve per
+request. `NFR_ENRICHMENT_MODEL` still overrides the model. Refusals survive the
+indirection: `aiprovider.Response.Refused` carries `stop_reason: refusal`, which
+is a successful response with empty or partial content and would otherwise read
+as a malformed answer.
+
+Usage is logged by the router against **what actually served the turn**, which
+for Wintermute is not always what was asked for — a failed backend is retried
+against the server's fallback.
+
+### Verified end to end
+
+Against a throwaway instance and a stand-in wintermuted server: configuring the
+URL, token and backend, then running an NFR enrichment analysis over an uploaded
+document, produced **42 model calls, every one logged as
+`wintermute` / `llama-3.1-8b`, with no Anthropic API key configured at all.**
+That is a real AI field in this app answered entirely by a local model. The
+connection test reported all three advertised backends, and a deliberately
+wrong backend name was caught by the test rather than at ask time.
+
+The unit tests cover the turn flow against a stub server — including the system
+prompt being folded into the message text, since wintermuted derives its own
+system prompt and takes message text only — plus the failure modes (bad token,
+server error, a turn that ends waiting on tool calls, an empty reply), endpoint
+validation, and every routing and fallback combination.
+
+### Not changed
+
+The AI Chat page keeps its own per-conversation provider picker. Choosing a
+provider per question is a legitimately different interaction from the
+install-wide default this harness sets, and folding one into the other would
+lose that.
+
 ## 2026-08-13 (Settings module: one place for AI credentials)
 
 AI credentials were handled two incompatible ways. AI Chat took a key pasted
@@ -86,6 +245,33 @@ non-plaintext in `app_secrets`; NFR Enrichment reported `configured: true`
 moments after the save **in the same process**, and `false` again after a clear;
 and AI Chat's "no key" error changed to an upstream authentication error once a
 key was stored, confirming the stored value is what gets sent.
+
+### Follow-up: the AI Chat page ignored stored credentials
+
+The server-side fallback landed working, but the AI Chat page still refused to
+use it. Two client-visible gaps, both fixed here:
+
+- The page's submit handler returned early with "Anthropic API key is required"
+  whenever its key field was empty, so the request was never sent and the
+  server-side fallback never ran. It now blocks only when the server has no
+  credential either — the same shape the Wintermute branch beside it already
+  used.
+- `GET /ai-chat/wintermute/status` reported `token_configured` from
+  `os.Getenv("WINTERMUTE_TOKEN")` alone, so a token stored in Settings was
+  invisible to the page. Availability now comes from the same resolver the
+  gateway uses, covering stored and environment credentials, and the payload
+  adds `claude_configured` for the Anthropic side. Neither credential is
+  returned — only whether one exists.
+
+The key fields are now optional rather than required: when a credential is
+configured server-side their placeholder reads "Using the key from Settings —
+paste one only to override it", and an explicitly pasted key still wins.
+
+Verified on a throwaway instance: `claude_configured` and `token_configured`
+flipped to true immediately after saving each credential, and a request with an
+empty `api_key` — exactly what the browser sends with a blank field — reached
+Anthropic and returned an upstream authentication error for the test value,
+confirming the stored key was the one sent.
 
 ### Also restored: `.gitignore`
 

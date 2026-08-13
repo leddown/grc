@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"grc/internal/aiprovider"
 	"grc/internal/authn"
 	"grc/internal/controlcatalog"
 	"grc/internal/db"
@@ -132,13 +133,14 @@ func Run(options Options) error {
 	// Built before the AI modules: they resolve their credentials through it.
 	settingsService := newSettingsService(sqliteDB, options)
 	configureAICredentials(settingsService)
+	aiRouter := newAIRouter(settingsService)
 
 	registerReportingRoutes(router)
-	registerSettingsRoutes(router, settingsService, adminMiddleware, options.LocalMode)
+	registerSettingsRoutes(router, settingsService, aiRouter, adminMiddleware, options.LocalMode)
 	policyService := registerPolicyDocRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
 	registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
 	registerNFREnrichmentRoutes(
-		router, sqliteDB, securityNFRHandler.Service(), settingsService, adminMiddleware, options.LocalMode)
+		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
@@ -390,6 +392,33 @@ func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *
 	templateHandler.RegisterAdminRoutes(admin)
 }
 
+// newAIRouter builds the provider harness every AI field asks questions
+// through. Both providers resolve their configuration per request, so a change
+// in the Settings page takes effect without a restart.
+func newAIRouter(settingsService *settings.Service) *aiprovider.Router {
+	claude := aiprovider.NewClaude(
+		func() string { return settingsService.Get(settings.AnthropicAPIKey) },
+		"",
+	)
+	wintermute := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
+		return aiprovider.WintermuteConfig{
+			URL:     settingsService.Preference(settings.PrefWintermuteURL),
+			Token:   settingsService.Get(settings.WintermuteToken),
+			Backend: settingsService.Preference(settings.PrefWintermuteBackend),
+			Model:   settingsService.Preference(settings.PrefWintermuteModel),
+		}
+	})
+	return aiprovider.NewRouter(
+		claude, wintermute,
+		func() string { return settingsService.Preference(settings.PrefAIProvider) },
+		// The app's usage log counts in int64; the harness keeps its own API
+		// free of that detail.
+		func(provider, model string, inputTokens, outputTokens int) {
+			logAIUsage(provider, model, int64(inputTokens), int64(outputTokens))
+		},
+	)
+}
+
 // newSettingsService builds the install-wide credential store.
 //
 // A missing master key disables storage but is deliberately not fatal: the
@@ -398,16 +427,19 @@ func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *
 // rather than the service refusing to start.
 func newSettingsService(sqliteDB *db.Conn, options Options) *settings.Service {
 	repo := settings.NewSQLRepository(sqliteDB)
+	prefs := settings.NewSQLPreferenceRepository(sqliteDB)
 	keyring, err := secrets.Load(secrets.Options{
 		DBPath:        options.SQLitePath,
 		AllowGenerate: true,
 	})
 	if err != nil {
+		// Credential storage is disabled, but the non-secret preferences are
+		// unaffected: provider routing still works from the environment.
 		log.Printf("settings: credential storage disabled: %v", err)
-		return settings.NewService(repo, nil)
+		return settings.NewService(repo, nil).WithPreferences(prefs)
 	}
 	log.Printf("settings: %s", keyring.Describe())
-	return settings.NewService(repo, keyring)
+	return settings.NewService(repo, keyring).WithPreferences(prefs)
 }
 
 // registerSettingsRoutes wires the admin Settings page and its API.
@@ -415,13 +447,15 @@ func newSettingsService(sqliteDB *db.Conn, options Options) *settings.Service {
 // Everything is admin-gated, including reads: nothing here is needed to *use*
 // the AI features, only to configure them, and a credential's status still
 // discloses something about the install.
-func registerSettingsRoutes(r gin.IRouter, service *settings.Service, adminMiddleware gin.HandlerFunc, localMode bool) {
+func registerSettingsRoutes(r gin.IRouter, service *settings.Service, router *aiprovider.Router, adminMiddleware gin.HandlerFunc, localMode bool) {
 	admin := r.Group("/")
 	if !localMode {
 		admin.Use(adminMiddleware)
 	}
 	admin.GET("/settings", settingsPage)
-	settings.NewHandler(service, sessionUsername).RegisterAdminRoutes(admin)
+	settings.NewHandler(service, sessionUsername).
+		WithInspector(router).
+		RegisterAdminRoutes(admin)
 }
 
 // registerNFREnrichmentRoutes wires the security-document enrichment module.
@@ -441,19 +475,18 @@ func registerNFREnrichmentRoutes(
 	r gin.IRouter,
 	sqliteDB *db.Conn,
 	nfrService *securitynfr.Service,
-	settingsService *settings.Service,
+	aiRouter *aiprovider.Router,
 	adminMiddleware gin.HandlerFunc,
 	localMode bool,
 ) {
 	service := nfrenrich.NewService(
 		nfrenrich.NewSQLiteRepository(sqliteDB),
 		nfrService,
-		// Resolved per request, so a key saved in Settings works immediately.
-		// This page used to instruct the operator to set an environment
-		// variable and restart the service.
-		nfrenrich.NewClaudeAnalyzer(logAIUsage, func() string {
-			return settingsService.Get(settings.AnthropicAPIKey)
-		}),
+		// Routed through the provider harness, so enrichment can be served by
+		// a model on the local network as readily as by Claude, and a change
+		// in Settings applies without a restart. The harness logs usage, so
+		// this module no longer does.
+		nfrenrich.NewRoutedAnalyzer(aiRouter),
 	)
 	handler := nfrenrich.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)

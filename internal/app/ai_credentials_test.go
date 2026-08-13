@@ -36,13 +36,24 @@ func (m *memSettingsRepo) List() ([]settings.Record, error) {
 	return out, nil
 }
 
+// memPrefRepo is an in-memory PreferenceRepository for the non-secret settings.
+type memPrefRepo struct{ rows map[string]string }
+
+func (m *memPrefRepo) GetPreference(key string) (string, error) { return m.rows[key], nil }
+
+func (m *memPrefRepo) SetPreference(key, value string) error {
+	m.rows[key] = value
+	return nil
+}
+
 func newTestSettings(t *testing.T) *settings.Service {
 	t.Helper()
 	ring, err := secrets.NewKeyForTesting(make([]byte, secrets.KeyLength))
 	if err != nil {
 		t.Fatalf("NewKeyForTesting: %v", err)
 	}
-	return settings.NewService(&memSettingsRepo{rows: map[string]string{}}, ring)
+	return settings.NewService(&memSettingsRepo{rows: map[string]string{}}, ring).
+		WithPreferences(&memPrefRepo{rows: map[string]string{}})
 }
 
 func TestStoredAICredential(t *testing.T) {

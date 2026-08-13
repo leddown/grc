@@ -29,7 +29,10 @@ var ErrNoKeyring = errors.New("credential storage is unavailable: no master key"
 // an install that has always used ANTHROPIC_API_KEY keeps working untouched
 // while the Settings page takes over the moment a key is saved there.
 type Service struct {
-	repo    Repository
+	repo Repository
+	// prefs holds the non-secret, operator-visible settings. It may be nil in
+	// tests that only exercise credentials.
+	prefs   PreferenceRepository
 	keyring *secrets.Keyring
 
 	// cache holds decrypted credentials so the common path — every AI request
@@ -52,6 +55,17 @@ func NewService(repo Repository, keyring *secrets.Keyring) *Service {
 		loaded:  map[string]bool{},
 	}
 }
+
+// WithPreferences attaches the non-secret preference store and returns the
+// service, so the two halves can be wired in one expression at startup.
+func (s *Service) WithPreferences(prefs PreferenceRepository) *Service {
+	s.prefs = prefs
+	return s
+}
+
+// getenv is a variable so preference tests can stub the environment fallback
+// without touching the process environment.
+var getenv = os.Getenv
 
 // StorageAvailable reports whether credentials can be written.
 func (s *Service) StorageAvailable() bool { return s.keyring != nil }

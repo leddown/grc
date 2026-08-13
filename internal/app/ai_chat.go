@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	neturl "net/url"
 	"os"
@@ -14,19 +13,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"grc/internal/aiprovider"
 	"grc/internal/pageui"
 	"grc/internal/settings"
 )
 
-const (
-	claudeEndpointURL  = "https://api.anthropic.com/v1/messages"
-	claudeAPIVersion   = "2023-06-01"
-	claudeDefaultModel = "claude-opus-5"
-
-	// wintermuteDefaultTitle labels the conversations this app opens on a
-	// wintermuted server, so they are identifiable in that server's own UI.
-	wintermuteDefaultTitle = "GRC AI Chat"
-)
+// The Claude and Wintermute protocols, their endpoint rules and their session
+// titles live in internal/aiprovider, which this page now asks through.
 
 var aiProviderHTTPClient = &http.Client{Timeout: 90 * time.Second}
 
@@ -337,6 +330,11 @@ func aiChatPage(c *gin.Context) {
     const statusEl = document.getElementById('status');
     const chatBox = document.getElementById('chatBox');
     const wintermute = { configured: false, token_configured: false };
+    // Whether the server already has an Anthropic key (from Settings or the
+    // environment). Assumed false until the status call answers, so a failed
+    // status check falls back to demanding a key rather than submitting one
+    // the server cannot fulfil.
+    const claude = { configured: false };
 
     function esc(value) {
       return String(value || '')
@@ -372,13 +370,28 @@ func aiChatPage(c *gin.Context) {
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         wintermute.configured = Boolean(data.configured);
         wintermute.token_configured = Boolean(data.token_configured);
+        claude.configured = Boolean(data.claude_configured);
+        applyCredentialHints();
         if (!wintermuteEndpoint.value && data.default_endpoint) wintermuteEndpoint.value = data.default_endpoint;
         if (!wintermuteBackend.value && data.default_backend) wintermuteBackend.value = data.default_backend;
         if (!wintermuteModel.value && data.default_model) wintermuteModel.value = data.default_model;
       } catch (_) {
         wintermute.configured = false;
         wintermute.token_configured = false;
+        claude.configured = false;
+        applyCredentialHints();
       }
+    }
+
+    // Tells the operator the key fields are optional once a credential is
+    // configured server-side, so an empty field does not read as "broken".
+    function applyCredentialHints() {
+      claudeApiKey.placeholder = claude.configured
+        ? 'Using the key from Settings — paste one only to override it'
+        : 'Paste Anthropic API key';
+      wintermuteToken.placeholder = wintermute.token_configured
+        ? 'Using the token from Settings — paste one only to override it'
+        : 'Token from wintermuted -add-client';
     }
 
     provider.addEventListener('change', syncProviderView);
@@ -404,8 +417,12 @@ func aiChatPage(c *gin.Context) {
         statusEl.className = 'status warn';
         return;
       }
-      if (provider.value === 'claude' && !claudeApiKey.value.trim()) {
-        statusEl.textContent = 'Anthropic API key is required.';
+      // Only block when the server has no credential either. A key set in the
+      // Settings page (or inherited from the environment) is applied
+      // server-side, so requiring one in this field would refuse a question
+      // the server can answer.
+      if (provider.value === 'claude' && !claudeApiKey.value.trim() && !claude.configured) {
+        statusEl.textContent = 'Anthropic API key is required. Paste one here, or set one in Settings to use it everywhere.';
         statusEl.className = 'status warn';
         return;
       }
@@ -518,16 +535,23 @@ func aiChatPage(c *gin.Context) {
 }
 
 // aiChatWintermuteStatus reports the server-side Wintermute defaults so the
-// page can prefill them. The token itself is never returned — only whether one
-// is configured, so the UI knows it may leave the field blank.
+// page can prefill them, and whether a credential is available for each
+// provider so the page knows the key fields may be left blank.
+//
+// The credentials themselves are never returned — only whether one exists.
+// Availability comes from storedAICredential, so it covers a key set in the
+// Settings page as well as one inherited from the environment: checking only
+// the environment here would leave the page refusing to submit a question the
+// server could actually answer.
 func aiChatWintermuteStatus(c *gin.Context) {
 	endpoint := strings.TrimSpace(os.Getenv("WINTERMUTE_URL"))
 	c.JSON(http.StatusOK, gin.H{
-		"configured":       endpoint != "",
-		"token_configured": strings.TrimSpace(os.Getenv("WINTERMUTE_TOKEN")) != "",
-		"default_endpoint": endpoint,
-		"default_backend":  strings.TrimSpace(os.Getenv("WINTERMUTE_BACKEND")),
-		"default_model":    strings.TrimSpace(os.Getenv("WINTERMUTE_MODEL")),
+		"configured":        endpoint != "",
+		"token_configured":  storedAICredential("wintermute") != "",
+		"claude_configured": storedAICredential("claude") != "",
+		"default_endpoint":  endpoint,
+		"default_backend":   strings.TrimSpace(os.Getenv("WINTERMUTE_BACKEND")),
+		"default_model":     strings.TrimSpace(os.Getenv("WINTERMUTE_MODEL")),
 	})
 }
 
@@ -553,6 +577,14 @@ func storedAICredential(provider string) string {
 	default:
 		return activeSettings.Get(settings.AnthropicAPIKey)
 	}
+}
+
+// storedWintermuteURL returns the server URL configured in Settings, or "".
+func storedWintermuteURL() string {
+	if activeSettings == nil {
+		return ""
+	}
+	return activeSettings.Preference(settings.PrefWintermuteURL)
 }
 
 func aiChatAsk(c *gin.Context) {
@@ -583,271 +615,117 @@ func aiChatAsk(c *gin.Context) {
 		req.APIKey = storedAICredential(req.Provider)
 	}
 
-	switch req.Provider {
-	case "", "claude":
-		if req.APIKey == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "no Anthropic API key: paste one above, or set one in Settings to use it everywhere"})
-			return
-		}
-		answer, usage, err := askClaude(req)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-			return
-		}
-		logAIUsage("claude", req.Model, usage.InputTokens, usage.OutputTokens)
-		c.JSON(http.StatusOK, gin.H{"provider": "claude", "answer": answer})
-	case "wintermute":
-		result, err := askWintermute(req)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-			return
-		}
-		logAIUsage("wintermute", result.Model, result.Usage.InputTokens, result.Usage.OutputTokens)
-		c.JSON(http.StatusOK, gin.H{
-			"provider": "wintermute",
-			"answer":   result.Answer,
-			"backend":  result.Backend,
-			"model":    result.Model,
-		})
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "provider must be claude or wintermute"})
-	}
-}
-
-type aiChatTokenUsage struct {
-	InputTokens  int64
-	OutputTokens int64
-}
-
-func extractClaudeUsage(data map[string]any) aiChatTokenUsage {
-	usage, _ := data["usage"].(map[string]any)
-	if usage == nil {
-		return aiChatTokenUsage{}
-	}
-	in, _ := usage["input_tokens"].(float64)
-	out, _ := usage["output_tokens"].(float64)
-	return aiChatTokenUsage{InputTokens: int64(in), OutputTokens: int64(out)}
-}
-
-func askClaude(req aiChatRequest) (string, aiChatTokenUsage, error) {
-	model := req.Model
-	if model == "" {
-		model = claudeDefaultModel
-	}
-	endpoint, err := validatedClaudeEndpoint(req.Endpoint)
+	provider, err := aiChatProvider(req)
 	if err != nil {
-		return "", aiChatTokenUsage{}, err
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
-	payload := map[string]any{
-		"model":      model,
-		"max_tokens": 4096,
-		"messages":   []map[string]string{{"role": "user", "content": req.Question}},
-	}
-	if req.System != "" {
-		payload["system"] = req.System
-	}
-
-	data, err := postJSON(endpoint, map[string]string{
-		"x-api-key":         req.APIKey,
-		"anthropic-version": claudeAPIVersion,
-	}, payload)
-	if err != nil {
-		return "", aiChatTokenUsage{}, err
-	}
-	answer := extractClaudeMessageText(data)
-	if answer == "" {
-		return "", aiChatTokenUsage{}, fmt.Errorf("provider returned an empty answer")
-	}
-	return answer, extractClaudeUsage(data), nil
-}
-
-func validatedClaudeEndpoint(raw string) (string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return claudeEndpointURL, nil
-	}
-	return validatedEndpoint(raw, []string{"api.anthropic.com"})
-}
-
-func extractClaudeMessageText(data map[string]any) string {
-	content, ok := data["content"].([]any)
-	if !ok || len(content) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(content))
-	for _, block := range content {
-		item, ok := block.(map[string]any)
-		if !ok {
-			continue
-		}
-		if blockType, _ := item["type"].(string); blockType != "text" {
-			continue
-		}
-		text, _ := item["text"].(string)
-		if strings.TrimSpace(text) != "" {
-			parts = append(parts, strings.TrimSpace(text))
-		}
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n"))
-}
-
-// wintermuteAnswer is one completed turn on a wintermuted server. Backend and
-// Model report what actually served the turn, which is not always what was
-// asked for: a self-hosted backend that fails is retried against that server's
-// configured fallback.
-type wintermuteAnswer struct {
-	Answer  string
-	Backend string
-	Model   string
-	Usage   aiChatTokenUsage
-}
-
-// askWintermute runs one question through a wintermuted server: open a
-// conversation, post the question, read the reply. The server owns the
-// transcript and decides whether a self-hosted model or Claude answers, so
-// this app never sees a model endpoint or a vendor API key for that path.
-func askWintermute(req aiChatRequest) (wintermuteAnswer, error) {
-	base := req.Endpoint
-	if base == "" {
-		base = strings.TrimSpace(os.Getenv("WINTERMUTE_URL"))
-	}
-	if base == "" {
-		return wintermuteAnswer{}, fmt.Errorf("endpoint is required for wintermute")
-	}
-	base, err := validatedWintermuteEndpoint(base)
-	if err != nil {
-		return wintermuteAnswer{}, err
-	}
-
-	token := req.APIKey
-	if token == "" {
-		token = strings.TrimSpace(os.Getenv("WINTERMUTE_TOKEN"))
-	}
-	if token == "" {
-		return wintermuteAnswer{}, fmt.Errorf("api_key is required for wintermute")
-	}
-
-	backend := req.Backend
-	if backend == "" {
-		backend = strings.TrimSpace(os.Getenv("WINTERMUTE_BACKEND"))
-	}
-	model := req.Model
-	if model == "" {
-		model = strings.TrimSpace(os.Getenv("WINTERMUTE_MODEL"))
-	}
-
-	headers := map[string]string{"Authorization": "Bearer " + token}
-
-	session, err := postJSON(base+"/api/v1/sessions", headers, map[string]any{
-		"title":   wintermuteDefaultTitle,
-		"backend": backend,
-		"model":   model,
+	resp, err := provider.Ask(c.Request.Context(), aiprovider.Request{
+		System:    req.System,
+		Prompt:    req.Question,
+		Model:     req.Model,
+		MaxTokens: aiChatMaxTokens,
 	})
 	if err != nil {
-		return wintermuteAnswer{}, fmt.Errorf("wintermute session: %w", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
 	}
-	sessionID, _ := session["id"].(string)
-	if strings.TrimSpace(sessionID) == "" {
-		return wintermuteAnswer{}, fmt.Errorf("wintermute did not return a session id")
-	}
-
-	// The system prompt is prepended to the question: wintermuted derives the
-	// system prompt from its own configuration and takes only message text.
-	text := req.Question
-	if req.System != "" {
-		text = req.System + "\n\n" + req.Question
+	if resp.Refused {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "the model declined to answer this question"})
+		return
 	}
 
-	turn, err := postJSON(
-		base+"/api/v1/sessions/"+neturl.PathEscape(sessionID)+"/messages",
-		headers,
-		map[string]any{"text": text},
-	)
-	if err != nil {
-		return wintermuteAnswer{}, fmt.Errorf("wintermute turn: %w", err)
-	}
+	// Logged against what actually served the turn: a wintermuted server
+	// retries a failed backend against its fallback, so the model that
+	// answered is not always the one that was asked for.
+	logAIUsage(resp.Provider, resp.Model, int64(resp.Usage.InputTokens), int64(resp.Usage.OutputTokens))
+	c.JSON(http.StatusOK, gin.H{
+		"provider": resp.Provider,
+		"answer":   resp.Text,
+		"backend":  resp.Backend,
+		"model":    resp.Model,
+	})
+}
 
-	answer := strings.TrimSpace(stringField(turn, "reply"))
-	if answer == "" {
-		// A turn that ends waiting on client-side tool calls has no reply. This
-		// app declares no client tools, so that means the model asked for
-		// something only a harness can run.
-		if status := stringField(turn, "status"); status != "" && status != "complete" {
-			return wintermuteAnswer{}, fmt.Errorf("wintermute turn ended with status %q and no reply", status)
+// aiChatMaxTokens bounds one chat answer.
+const aiChatMaxTokens = 4096
+
+// aiChatProvider builds the provider for one request.
+//
+// This page is the one place a provider is chosen per question rather than per
+// install: a reviewer may want to put a single question to a different model,
+// or try a key before saving it. So it does not use the Settings router —
+// it builds a provider from the request, falling back field by field to the
+// stored configuration. The transport itself is the shared harness, so there
+// is one implementation of each protocol rather than two.
+func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
+	switch req.Provider {
+	case "", "claude":
+		key := req.APIKey
+		if key == "" {
+			key = storedAICredential("claude")
 		}
-		return wintermuteAnswer{}, fmt.Errorf("provider returned an empty answer")
-	}
+		if key == "" {
+			return nil, fmt.Errorf("no Anthropic API key: paste one above, or set one in Settings to use it everywhere")
+		}
+		// The endpoint override stays restricted to Anthropic's own host.
+		endpoint, err := validatedClaudeBaseURL(req.Endpoint)
+		if err != nil {
+			return nil, err
+		}
+		return aiprovider.NewClaude(func() string { return key }, req.Model).WithBaseURL(endpoint), nil
 
-	return wintermuteAnswer{
-		Answer:  answer,
-		Backend: stringField(turn, "backend"),
-		Model:   stringField(turn, "model"),
-		Usage:   extractWintermuteUsage(turn),
-	}, nil
+	case "wintermute":
+		cfg := aiprovider.WintermuteConfig{
+			URL:     req.Endpoint,
+			Token:   req.APIKey,
+			Backend: req.Backend,
+			Model:   req.Model,
+		}
+		if cfg.URL == "" {
+			cfg.URL = storedWintermuteURL()
+		}
+		if cfg.Token == "" {
+			cfg.Token = storedAICredential("wintermute")
+		}
+		if cfg.URL == "" {
+			return nil, fmt.Errorf("no Wintermute server URL: enter one above, or set one in Settings")
+		}
+		if cfg.Token == "" {
+			return nil, fmt.Errorf("no Wintermute client token: enter one above, or set one in Settings")
+		}
+		if _, err := aiprovider.ValidateEndpoint(cfg.URL); err != nil {
+			return nil, err
+		}
+		return aiprovider.NewWintermute(func() aiprovider.WintermuteConfig { return cfg }), nil
+
+	default:
+		return nil, fmt.Errorf("provider must be claude or wintermute")
+	}
+}
+
+// validatedClaudeBaseURL turns the page's optional endpoint override into an
+// API origin. Empty means the SDK default. The host allowlist is kept from the
+// previous implementation: this field can retarget the path, not the server.
+func validatedClaudeBaseURL(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	endpoint, err := validatedEndpoint(raw, []string{"api.anthropic.com"})
+	if err != nil {
+		return "", err
+	}
+	parsed, err := neturl.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid endpoint")
+	}
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func stringField(data map[string]any, key string) string {
 	value, _ := data[key].(string)
 	return strings.TrimSpace(value)
-}
-
-func extractWintermuteUsage(data map[string]any) aiChatTokenUsage {
-	usage, _ := data["usage"].(map[string]any)
-	if usage == nil {
-		return aiChatTokenUsage{}
-	}
-	in, _ := usage["prompt_tokens"].(float64)
-	out, _ := usage["completion_tokens"].(float64)
-	return aiChatTokenUsage{InputTokens: int64(in), OutputTokens: int64(out)}
-}
-
-// validatedWintermuteEndpoint accepts the base URL of a wintermuted server and
-// returns it without a trailing slash.
-//
-// Unlike the vendor endpoints, this one is normally a host on the operator's
-// own network, so plain HTTP is allowed — but only to a loopback or private
-// address. That keeps a caller-supplied URL from turning this handler into an
-// open proxy for arbitrary cleartext internet hosts while still letting a LAN
-// deployment work without TLS.
-func validatedWintermuteEndpoint(raw string) (string, error) {
-	endpoint := strings.TrimSpace(raw)
-	parsed, err := neturl.Parse(endpoint)
-	if err != nil {
-		return "", fmt.Errorf("invalid wintermute endpoint")
-	}
-	if parsed.Host == "" {
-		return "", fmt.Errorf("wintermute endpoint host is required")
-	}
-	if parsed.User != nil {
-		return "", fmt.Errorf("wintermute endpoint must not include user info")
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "https":
-	case "http":
-		if !isPrivateHost(parsed.Hostname()) {
-			return "", fmt.Errorf("wintermute endpoint must use https unless the host is loopback or private")
-		}
-	default:
-		return "", fmt.Errorf("wintermute endpoint must use http or https")
-	}
-	return strings.TrimRight(parsed.String(), "/"), nil
-}
-
-// isPrivateHost reports whether host is a literal address on a loopback,
-// link-local or private range, or the name "localhost". Names other than
-// "localhost" are rejected rather than resolved: a DNS lookup here would be
-// both a TOCTOU race and a request to an attacker-chosen name.
-func isPrivateHost(host string) bool {
-	host = strings.TrimSpace(strings.ToLower(host))
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }
 
 func validatedEndpoint(raw string, allowedHosts []string) (string, error) {

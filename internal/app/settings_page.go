@@ -27,8 +27,9 @@ func settingsPage(c *gin.Context) {
     h1 { margin:0 0 10px; }
     h2 { margin:24px 0 8px; font-size:16px; }
     p { color:#94a3b8; }
-    input, button { font:inherit; }
-    input { padding:8px 10px; border:1px solid #334155; border-radius:10px; background:#0f172a; color:#e2e8f0; }
+    input, button, select { font:inherit; }
+    input, select { padding:8px 10px; border:1px solid #334155; border-radius:10px; background:#0f172a; color:#e2e8f0; }
+    select { min-width:320px; }
     button { padding:8px 12px; border-radius:10px; border:1px solid #334155; background:#1e293b; color:#e2e8f0; cursor:pointer; }
     button.danger { border-color:#7f1d1d; }
     button:disabled { opacity:.5; cursor:not-allowed; }
@@ -61,6 +62,41 @@ func settingsPage(c *gin.Context) {
     <div id="notice" class="notice" hidden></div>
     <div id="status" class="status"></div>
     <div id="creds"></div>
+
+    <h2>Where questions are answered</h2>
+    <p>
+      Claude sends questions to Anthropic. Wintermute sends them to a server on
+      your network, which routes each one to a self-hosted model or on to Claude
+      &mdash; so a question can be answered without leaving the network.
+    </p>
+
+    <div class="cred">
+      <h3>AI provider <span id="activePill" class="pill off">unknown</span></h3>
+      <div class="row">
+        <select id="provider" aria-label="AI provider">
+          <option value="auto">Auto &mdash; prefer Wintermute, fall back to Claude</option>
+          <option value="claude">Claude only</option>
+          <option value="wintermute">Wintermute only (never leaves the network)</option>
+        </select>
+      </div>
+      <p class="meta" id="providerDetail"></p>
+
+      <div id="wintermuteFields">
+        <div class="row">
+          <input id="wmURL" type="text" class="mono" placeholder="http://wintermute.local:8080" aria-label="Wintermute server URL">
+        </div>
+        <div class="row">
+          <input id="wmBackend" type="text" class="mono" placeholder="backend (blank = server default)" aria-label="Wintermute backend">
+          <input id="wmModel" type="text" class="mono" placeholder="model (blank = backend default)" aria-label="Wintermute model">
+        </div>
+        <div class="row">
+          <button id="saveProvider">Save</button>
+          <button id="testProvider">Test connection</button>
+        </div>
+        <p class="meta" id="probeDetail"></p>
+        <p class="meta" id="backendList"></p>
+      </div>
+    </div>
 
     <p class="keyring" id="keyring"></p>
   </main>
@@ -200,7 +236,95 @@ func settingsPage(c *gin.Context) {
     }
   });
 
+  // --- provider routing -----------------------------------------------------
+
+  const providerEl = document.getElementById('provider');
+  const wmURL = document.getElementById('wmURL');
+  const wmBackend = document.getElementById('wmBackend');
+  const wmModel = document.getElementById('wmModel');
+  const activePill = document.getElementById('activePill');
+  const providerDetail = document.getElementById('providerDetail');
+  const probeDetail = document.getElementById('probeDetail');
+  const backendList = document.getElementById('backendList');
+
+  function renderProviders(data) {
+    const prefs = data.preferences || {};
+    providerEl.value = prefs['ai.provider'] || 'claude';
+    wmURL.value = prefs['ai.wintermute.url'] || '';
+    wmBackend.value = prefs['ai.wintermute.backend'] || '';
+    wmModel.value = prefs['ai.wintermute.model'] || '';
+
+    const st = data.status;
+    if (!st) {
+      activePill.className = 'pill off';
+      activePill.textContent = 'unknown';
+      providerDetail.textContent = '';
+      return;
+    }
+    if (st.active) {
+      activePill.className = 'pill on';
+      activePill.textContent = 'answering with ' + st.active;
+    } else {
+      activePill.className = 'pill off';
+      activePill.textContent = 'not configured';
+    }
+    providerDetail.textContent = st.detail || '';
+  }
+
+  async function loadProviders() {
+    try {
+      const res = await fetch('/api/settings/ai-providers');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      renderProviders(await res.json());
+    } catch (err) {
+      setStatus('Could not load provider settings: ' + err.message, true);
+    }
+  }
+
+  document.getElementById('saveProvider').addEventListener('click', async function () {
+    try {
+      const res = await fetch('/api/settings/ai-providers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: providerEl.value,
+          wintermute_url: wmURL.value.trim(),
+          wintermute_backend: wmBackend.value.trim(),
+          wintermute_model: wmModel.value.trim(),
+        }),
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      renderProviders(data);
+      setStatus('Saved. In use now — no restart needed.');
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+
+  document.getElementById('testProvider').addEventListener('click', async function () {
+    probeDetail.textContent = 'Testing...';
+    backendList.textContent = '';
+    try {
+      const res = await fetch('/api/settings/ai-providers/test', { method: 'POST' });
+      const probe = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(probe.error || ('HTTP ' + res.status));
+      probeDetail.textContent = (probe.ok ? '✓ ' : '✗ ') + (probe.detail || '');
+      if (probe.backends && probe.backends.length) {
+        // Showing the names lets an operator copy one into the backend field
+        // rather than guessing at what the server calls its models.
+        let line = 'Backends: ' + probe.backends.join(', ');
+        if (probe.default_backend) line += ' · server default: ' + probe.default_backend;
+        if (probe.fallback) line += ' · fallback: ' + probe.fallback;
+        backendList.textContent = line;
+      }
+    } catch (err) {
+      probeDetail.textContent = '✗ ' + err.message;
+    }
+  });
+
   load();
+  loadProviders();
 })();
 </script>
 </body>

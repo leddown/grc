@@ -9,16 +9,13 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-
+	"grc/internal/aiprovider"
 	"grc/internal/securitynfr"
 )
 
-// DefaultModel matches internal/assistant: one model choice for the app, one
-// edit to change it.
+// DefaultModel is retained for callers that reference it. The model actually
+// used is chosen by the provider harness, or by NFR_ENRICHMENT_MODEL.
 const DefaultModel = "claude-opus-5"
 
 // maxTokens bounds one analysis reply. Adaptive thinking is on and max_tokens
@@ -35,10 +32,10 @@ const maxTokens = 4096
 // chunk it cites. A model inclined to write what encryption in transit usually
 // looks like cannot produce a passing quote for it.
 //
-// The "return no proposal" instruction earns its place for the same reason the
-// tool-calling one does in internal/assistant: without it, a model asked to
-// find enrichment in an unrelated document will find some, because that is what
-// it was asked to do. Most NFRs against most documents should produce nothing.
+// The "return no proposal" instruction earns its place for the same reason:
+// without it, a model asked to find enrichment in an unrelated document will
+// find some, because that is what it was asked to do. Most NFRs against most
+// documents should produce nothing.
 const analysisSystemPrompt = `You review security documentation and propose enrichments to a
 catalog of security non-functional requirements (NFRs).
 
@@ -112,119 +109,87 @@ type replyCitation struct {
 	Quote   string `json:"quote"`
 }
 
-// KeyFunc returns the Anthropic API key to use for the next request. It is
-// consulted per call rather than once at startup so a key saved in the Settings
-// page takes effect immediately — this module used to tell the operator to set
-// an environment variable and restart the service.
+// Asker is the provider harness this module sends questions through. It is
+// satisfied by aiprovider.Router, so enrichment is served by whichever provider
+// the operator selected — a model on the local network as readily as Claude.
+type Asker interface {
+	Ask(ctx context.Context, req aiprovider.Request) (aiprovider.Response, error)
+	Available() bool
+	Describe() string
+}
+
+// RoutedAnalyzer implements Analyzer over the provider harness.
 //
-// It is a plain function rather than a settings dependency to keep this module
-// from importing the settings store; the caller supplies the closure.
-type KeyFunc func() string
-
-// ClaudeAnalyzer implements Analyzer against the Anthropic Messages API.
-type ClaudeAnalyzer struct {
-	keyFunc  KeyFunc
-	model    string
-	logUsage UsageLogger
-
-	// The SDK client is cached and rebuilt only when the resolved key changes,
-	// so the common path does not construct one per request.
-	mu     sync.Mutex
-	api    anthropic.Client
-	apiKey string
+// It replaces a direct Anthropic client: the credential, the model choice and
+// the provider all resolve per request inside the harness, so a change in the
+// Settings page applies without a restart and this module no longer needs to
+// know that Claude exists.
+type RoutedAnalyzer struct {
+	asker Asker
+	// model optionally overrides the provider's own model choice, preserving
+	// the NFR_ENRICHMENT_MODEL escape hatch.
+	model string
 }
 
-// NewClaudeAnalyzer builds an analyzer that resolves its credential through
-// keyFunc. A nil keyFunc falls back to ANTHROPIC_API_KEY, which keeps a
-// deployment that has only ever used the environment working untouched.
-func NewClaudeAnalyzer(logUsage UsageLogger, keyFunc KeyFunc) *ClaudeAnalyzer {
-	if keyFunc == nil {
-		keyFunc = func() string { return strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) }
-	}
-	model := strings.TrimSpace(os.Getenv("NFR_ENRICHMENT_MODEL"))
-	if model == "" {
-		model = DefaultModel
-	}
-	return &ClaudeAnalyzer{
-		keyFunc:  keyFunc,
-		model:    model,
-		logUsage: logUsage,
+// NewRoutedAnalyzer returns an analyzer over the given harness.
+func NewRoutedAnalyzer(asker Asker) *RoutedAnalyzer {
+	return &RoutedAnalyzer{
+		asker: asker,
+		model: strings.TrimSpace(os.Getenv("NFR_ENRICHMENT_MODEL")),
 	}
 }
 
-func (a *ClaudeAnalyzer) Model() string { return a.model }
-
-// Configured reports whether a credential is available right now.
-func (a *ClaudeAnalyzer) Configured() bool { return a.key() != "" }
-
-func (a *ClaudeAnalyzer) key() string {
-	if a.keyFunc == nil {
+// Model reports what will serve an analysis. With a harness in front, that is
+// the active provider and its configuration rather than a fixed model name.
+func (a *RoutedAnalyzer) Model() string {
+	if a.asker == nil {
 		return ""
 	}
-	return strings.TrimSpace(a.keyFunc())
+	if a.model != "" {
+		return a.model
+	}
+	return a.asker.Describe()
 }
 
-// client returns an SDK client bound to the current key, rebuilding it only
-// when the key has changed since the last call.
-func (a *ClaudeAnalyzer) client(key string) anthropic.Client {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.apiKey != key {
-		a.api = anthropic.NewClient(option.WithAPIKey(key))
-		a.apiKey = key
-	}
-	return a.api
+// Configured reports whether any provider can serve a request right now.
+func (a *RoutedAnalyzer) Configured() bool {
+	return a.asker != nil && a.asker.Available()
 }
 
 // Analyze sends one NFR-and-excerpts prompt and parses the reply.
-func (a *ClaudeAnalyzer) Analyze(ctx context.Context, req AnalysisRequest) (AnalysisReply, error) {
-	// Resolved once per call and reused below, so a key cleared mid-request
-	// cannot leave this method half-configured.
-	key := a.key()
-	if key == "" {
+func (a *RoutedAnalyzer) Analyze(ctx context.Context, req AnalysisRequest) (AnalysisReply, error) {
+	if !a.Configured() {
 		return AnalysisReply{}, ErrNotConfigured
 	}
-	api := a.client(key)
 
 	prompt := BuildPrompt(req)
 	hash := sha256.Sum256([]byte(analysisSystemPrompt + "\n" + prompt))
 	promptHash := hex.EncodeToString(hash[:])
 
-	resp, err := api.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(a.model),
+	resp, err := a.asker.Ask(ctx, aiprovider.Request{
+		System:    analysisSystemPrompt,
+		Prompt:    prompt,
+		Model:     a.model,
 		MaxTokens: maxTokens,
-		System:    []anthropic.TextBlockParam{{Text: analysisSystemPrompt}},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
 	})
 	if err != nil {
-		return AnalysisReply{}, fmt.Errorf("calling the Anthropic API: %w", err)
+		return AnalysisReply{}, fmt.Errorf("asking the model: %w", err)
 	}
-
-	// stop_reason before content: a refusal is a successful HTTP 200 with
-	// empty or partial content, so reading content[0] first breaks on it.
-	if resp.StopReason == anthropic.StopReasonRefusal {
+	if resp.Refused {
 		return AnalysisReply{}, fmt.Errorf("the model declined to analyse this document")
 	}
 
-	if a.logUsage != nil {
-		a.logUsage("claude", a.model, resp.Usage.InputTokens, resp.Usage.OutputTokens)
-	}
-
-	var text strings.Builder
-	for _, block := range resp.Content {
-		if variant, ok := block.AsAny().(anthropic.TextBlock); ok {
-			text.WriteString(variant.Text)
-		}
-	}
-
-	reply, err := ParseReply(text.String())
+	reply, err := ParseReply(resp.Text)
 	if err != nil {
 		return AnalysisReply{}, err
 	}
 	reply.PromptHash = promptHash
-	reply.Model = a.model
+	// What actually served the turn, which for a routed request is not
+	// necessarily what was asked for.
+	reply.Model = resp.Model
+	if reply.Model == "" {
+		reply.Model = resp.Provider
+	}
 	return reply, nil
 }
 
