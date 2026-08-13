@@ -3,6 +3,47 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-13 (manage-user.sh now uses the service's own database)
+
+Fixes a silent failure: resetting a password on a deployed host, restarting the
+service, and finding the account still could not log in.
+
+### The cause
+
+The service reads `SQLITE_PATH` from its `EnvironmentFile` (`/etc/grc/grc.env`),
+normally `/var/lib/grc/users.db`. `scripts/manage-user.sh` did not look at that
+file. With no `--db` flag, no `config/db.env`, and no exported `SQLITE_PATH`,
+the chain fell through to `userctl`'s built-in default — the *relative* path
+`users.db` — which, because the script has already `cd`'d to the repo root,
+resolved to `<checkout>/users.db`.
+
+The new hash was written to a database the service never opens. Nothing failed;
+the reset reported success. `sudo` made it more likely, since it strips
+`SQLITE_PATH` from the environment.
+
+### The fix
+
+`/etc/grc/grc.env` is now a step in the backend precedence chain, below an
+explicit `--db` or an exported `DATABASE_URL`/`SQLITE_PATH` and above the local
+`config/db.env` dev profile — on a host with the service installed, the
+service's database is the one a password reset has to touch. `$GRC_ENV_FILE`
+overrides the location, matching `update.sh`, `setup.sh` and `verify-install.sh`.
+
+Values are read through the same `sudo -n` subshell helper `verify-install.sh`
+uses: the file is root-owned `0600`, `-n` means a non-interactive run degrades
+to empty rather than hanging on a password prompt, and reading in a subshell
+keeps the rest of the file (`ADMIN_TOKEN` and friends) out of the caller's
+environment.
+
+When the service's database is known but the run is pointed elsewhere — an
+explicit `--db`, an exported variable, or the dev profile — the script now
+prints a warning naming both paths and the `--db` argument that would correct
+it. The warning mirrors `userctl`'s own resolution order, so when an
+environment variable wins it names the database that variable selects rather
+than the built-in default.
+
+Behaviour on a machine with no service installed is unchanged.
+
 ## 2026-08-13 (added regmap: regulation → NIST 800-53 crosswalk tool)
 
 New operator CLI, `cmd/regmap`, that ingests a cybersecurity or resilience

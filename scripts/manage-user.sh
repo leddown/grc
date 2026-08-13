@@ -26,8 +26,16 @@
 # Backend selection, in order of precedence:
 #   --db SPEC          postgres:// URL or SQLite file path
 #   $DATABASE_URL / $SQLITE_PATH
+#   /etc/grc/grc.env   the deployed service's own database ($GRC_ENV_FILE
+#                      overrides the location); this is what the running
+#                      service authenticates against, so on a deployed host it
+#                      is what a password reset has to touch
 #   config/db.env      the active profile set by scripts/db-switch.sh
 #   users.db
+#
+# When the service's database is known but this run is pointed somewhere else,
+# the script says so loudly: editing the wrong database is otherwise silent,
+# and the symptom is only noticed as a failed login after a restart.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -79,6 +87,41 @@ case "$COMMAND" in
   *) echo "unknown command: $COMMAND" >&2; usage >&2; exit 1 ;;
 esac
 
+SERVICE_ENV_FILE="${GRC_ENV_FILE:-/etc/grc/grc.env}"
+
+# Reads one key out of the service's EnvironmentFile without importing the rest
+# of it (it also holds ADMIN_TOKEN and friends) and without ever prompting: this
+# script runs from non-interactive shells where a sudo password prompt would
+# hang rather than fail. The file is normally root-owned 0600, so an
+# unprivileged run simply gets nothing back and falls through the chain.
+read_service_env() {
+  local key="$1"
+  local reader=(sh -c)
+  if [[ ! -r "$SERVICE_ENV_FILE" ]]; then
+    command -v sudo >/dev/null 2>&1 || return 0
+    reader=(sudo -n sh -c)
+  fi
+  "${reader[@]}" "set -a; . '${SERVICE_ENV_FILE}' 2>/dev/null; printf '%s' \"\${${key}:-}\"" 2>/dev/null || true
+}
+
+# Resolve a spec to something comparable: relative SQLite paths are relative to
+# the repo, since this script has already cd'd there.
+abs_spec() {
+  case "$1" in
+    postgres://*|postgresql://*|"") printf '%s' "$1" ;;
+    /*) printf '%s' "$1" ;;
+    *) printf '%s/%s' "$ROOT_DIR" "$1" ;;
+  esac
+}
+
+# What the running service actually authenticates against, when this host has
+# one installed. Mirrors userctl's own order: DATABASE_URL, then SQLITE_PATH.
+SERVICE_DB=""
+if [[ -e "$SERVICE_ENV_FILE" ]]; then
+  SERVICE_DB="$(read_service_env DATABASE_URL)"
+  [[ -z "$SERVICE_DB" ]] && SERVICE_DB="$(read_service_env SQLITE_PATH)"
+fi
+
 # Record where the backend came from, so a surprising "user not found" shows
 # which link in the precedence chain won (sudo drops DATABASE_URL/SQLITE_PATH).
 if [[ -n "$DB_SPEC" ]]; then
@@ -87,6 +130,11 @@ elif [[ -n "${DATABASE_URL:-}" ]]; then
   DB_SOURCE="\$DATABASE_URL"
 elif [[ -n "${SQLITE_PATH:-}" ]]; then
   DB_SOURCE="\$SQLITE_PATH"
+elif [[ -n "$SERVICE_DB" ]]; then
+  # A deployed host: the service's own database outranks the local dev profile,
+  # because a reset that does not touch it will not let anyone log in.
+  DB_SPEC="$SERVICE_DB"
+  DB_SOURCE="${SERVICE_ENV_FILE} (the service's own database)"
 elif [[ -f "$CONFIG" ]]; then
   DB_SOURCE="config/db.env profile"
 else
@@ -105,6 +153,22 @@ fi
 
 echo "manage-user: repo:     ${ROOT_DIR}" >&2
 echo "manage-user: backend:  from ${DB_SOURCE}" >&2
+
+# The whole point of the block above: never edit one database while the service
+# reads another. userctl's own fallback is the relative path users.db, so say
+# what will actually be opened rather than leaving it implied.
+if [[ -n "$SERVICE_DB" ]]; then
+  # Mirror userctl's own resolution order: when an environment variable wins,
+  # DB_SPEC stays empty and userctl reads the variable itself, so reporting the
+  # built-in default here would name a database this run never opens.
+  EFFECTIVE_DB="${DB_SPEC:-${DATABASE_URL:-${SQLITE_PATH:-users.db}}}"
+  if [[ "$(abs_spec "$EFFECTIVE_DB")" != "$(abs_spec "$SERVICE_DB")" ]]; then
+    echo "manage-user: WARNING: the installed service uses ${SERVICE_DB}," >&2
+    echo "manage-user:          but this run will use $(abs_spec "$EFFECTIVE_DB")." >&2
+    echo "manage-user:          Changes will not affect logins. Re-run with:" >&2
+    echo "manage-user:            --db ${SERVICE_DB}" >&2
+  fi
+fi
 
 USERCTL_BIN="${USERCTL_BIN:-}"
 run_userctl() {
