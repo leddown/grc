@@ -46,6 +46,10 @@ all backed by SQLite and served via Gin.
   versioned report that can be questioned and revised. Reuses
   `internal/regmap`'s extraction, segmentation and framework profiles rather
   than duplicating them — see `REGULATION_COVERAGE.md`
+- `internal/knowledge` — the read-only `/api/knowledge` surface an external AI
+  agent queries: NFRs, controls, regulation coverage, policies and risks, behind
+  its own read-only token. The agent itself lives in wintermuted, not here —
+  see `AI_AGENT.md`
 - `internal/db` — SQLite connection + schema setup
 - `internal/pageui` — shared side-nav tab rendering used across pages
 - `internal/data` — embedded/static seed JSON for the control and NFR

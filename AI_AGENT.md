@@ -1,0 +1,122 @@
+# Asking this installation questions
+
+Ask the AI dock *"how many of the Security NFRs are focused on network
+segmentation?"* and, until this existed, you got a polite essay about what the
+model would need in order to answer, and an offer to go through the list if you
+pasted it in. It could not know the list was one query away.
+
+This document is how the list gets to it: a read-only **knowledge API** over
+this installation's own data, and an **agent** on your Wintermute server that
+uses it.
+
+## Where the agent lives
+
+Not here. `wintermuted` already owns an agent loop, a tool registry and a
+transcript store; a second one in this application would mean two of each and
+two places to look when a model does something surprising. So this application
+publishes its data and routes its questions through that server.
+
+```
+  GRC (this app)                        wintermuted
+ ┌───────────────────────┐            ┌──────────────────────────┐
+ │ AI dock / AI Chat     │──question─▶│ agent loop               │
+ │                       │◀──answer───│  ├─ grc_search ──────────┼──┐
+ │ /api/knowledge/*      │◀───────────┼──┘  grc_list_nfrs, …     │  │
+ │  (read-only, tokened) │            │  ├─ search_documents     │  │
+ └───────────────────────┘            │  └─ web_search           │  │
+                                      └──────────────────────────┘  │
+                                        the agent's own library ◀────┘
+```
+
+The consequence to be deliberate about: **grc's AI must be pointed at
+Wintermute** for any of this to apply. Wintermute can forward the turn to
+Claude, so you keep whichever model you want and gain the tools. Pointed
+straight at Claude, grc's AI has no access to this data and will answer as it
+did before.
+
+## Setting it up
+
+1. **Give this installation a knowledge token.** Set `KNOWLEDGE_TOKEN` (or
+   `-knowledge-token`). Without one the API is registered only in local mode —
+   refusing to serve it otherwise is deliberate, because it reads the whole
+   catalog, the policy library and the risk register, and "we will set the
+   token later" is how that ends up on a network.
+2. **Tell wintermuted about this installation.** On that server, set `GRC_URL`
+   to this application's base URL and `GRC_KNOWLEDGE_TOKEN` to the same token.
+3. **Create an agent there** with the `grc` source (its Agents view, see that
+   repository's `docs/agents.md`).
+4. **Point this application at it.** Settings → AI providers → Wintermute:
+   server URL, client token, then pick the agent from the list. The list is
+   fetched from the server, so a mistyped id cannot silently produce a
+   confident, ungrounded answer.
+
+The Settings page and the AI Chat page then link to that agent's page on
+Wintermute, which is where documents are uploaded — that server owns the
+library, the extraction and the search over it.
+
+## The API
+
+Four endpoints under `/api/knowledge`, all GET, all read-only. There is no
+write path here to secure, forget to secure, or be talked into using.
+
+| Endpoint | Answers |
+|---|---|
+| `GET /overview` | How much of each kind exists, the NFR domains and control families with counts, the regulations analysed |
+| `GET /index/:kind` | An entire small catalog, compactly — the only honest way to answer "how many" |
+| `GET /search?kind=&q=&limit=` | Lexical search within one kind, with the counts below |
+| `GET /item?kind=&ref=` | One full record |
+
+Kinds: `nfr`, `control`, `regulation_clause`, `regulation`, `policy_clause`,
+`policy`, `risk`. Exceptions are absent because that page is a saved view over
+the NFR catalog rather than a record set of its own.
+
+Authenticate with `X-Knowledge-Token` or `Authorization: Bearer`.
+
+### Counting honestly
+
+Search returns two numbers:
+
+- `total_matches` — records matching **any** term.
+- `total_all_terms` — records matching **every** term.
+
+For "network segmentation" against the live catalog those are 26 and 3. Quoting
+the first as though it were the second is how a precise question becomes an
+inflated answer, so both are returned, along with the terms they refer to and,
+per record, which terms it actually matched. The tool prompt tells the model to
+say which one it is quoting.
+
+Neither number is authoritative. The search is lexical and does not stem, so a
+requirement saying "segmented" does not match "segmentation" — the response
+says so, and the fix is to search the other forms. For the NFR catalog, which
+runs to about a hundred entries, the reliable answer to a counting question is
+`index/nfr`: read all of it and count.
+
+## What it exposes
+
+Everything below is readable by anything holding the token, which is why the
+token is read-only and separate from `ADMIN_TOKEN`.
+
+- **Security NFRs** — key, summary, domain, description, NIST mapping, and the
+  controls that mapping resolved to.
+- **800-53 controls** — id, name, family, requirements, discussion, baselines.
+- **Regulation coverage** — each analysed article with what it requires, what
+  it mapped to, the gap, and the commentary (see
+  [REGULATION_COVERAGE.md](REGULATION_COVERAGE.md)).
+- **Policies** — documents and their sections, with the controls each section
+  claims to satisfy.
+- **Risk register** — open risks with scores, owners and current controls.
+
+Corpora are cached for 45 seconds, so an agent working through a question does
+not re-read every table per tool call.
+
+## Checking it works
+
+```sh
+curl -H "X-Knowledge-Token: $KNOWLEDGE_TOKEN" localhost:8080/api/knowledge/overview
+curl -H "X-Knowledge-Token: $KNOWLEDGE_TOKEN" \
+  'localhost:8080/api/knowledge/search?kind=nfr&q=network+segmentation'
+```
+
+On the Wintermute side, **Admin → Backends → Send a test question** confirms a
+backend answers at all, and asking the agent a catalog question confirms the
+tools reach this application.

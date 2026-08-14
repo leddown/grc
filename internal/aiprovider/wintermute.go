@@ -42,6 +42,14 @@ type WintermuteConfig struct {
 	Token   string
 	Backend string
 	Model   string
+	// Agent names an agent profile on the server: which document library and
+	// which external sources the conversation may consult. Empty is that
+	// server's general assistant.
+	//
+	// This is the difference between "the model answers from what it was
+	// trained on" and "the model answers from this installation's catalogs",
+	// so it is worth setting even though it is optional.
+	Agent string
 }
 
 // NewWintermute returns a Wintermute provider.
@@ -63,6 +71,7 @@ func (w *Wintermute) resolve() WintermuteConfig {
 	cfg.Token = strings.TrimSpace(cfg.Token)
 	cfg.Backend = strings.TrimSpace(cfg.Backend)
 	cfg.Model = strings.TrimSpace(cfg.Model)
+	cfg.Agent = strings.TrimSpace(cfg.Agent)
 	return cfg
 }
 
@@ -81,6 +90,9 @@ func (w *Wintermute) Describe() string {
 		return "Wintermute: no client token"
 	}
 	target := cfg.URL
+	if cfg.Agent != "" {
+		target += " as " + cfg.Agent
+	}
 	if cfg.Backend != "" {
 		target += " (" + cfg.Backend
 		if cfg.Model != "" {
@@ -118,6 +130,7 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 			"title":   sessionTitle,
 			"backend": cfg.Backend,
 			"model":   model,
+			"agent":   cfg.Agent,
 		})
 		if err != nil {
 			return Response{}, fmt.Errorf("wintermute session: %w", err)

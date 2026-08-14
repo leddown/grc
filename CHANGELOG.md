@@ -3,6 +3,68 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-14 (An agent that can read this installation)
+
+Asked "how many of the Security NFRs are focused on network segmentation?", the
+AI dock used to explain what it would need in order to answer and offer to work
+through the list if someone pasted it in. It could not know the list was one
+query away. Now it is: a read-only knowledge API over this installation's own
+data, and an agent on the Wintermute server that uses it. Full documentation in
+`AI_AGENT.md`.
+
+Against the live catalog that question now answers with 26 NFRs matching either
+word, 3 matching both, and the three named.
+
+### `internal/knowledge`
+
+Four GET endpoints under `/api/knowledge` — overview, index, search, item —
+over Security NFRs, 800-53 controls and their links, Regulation Coverage
+clauses and their findings, the policy library with its control claims, and the
+risk register. A small tool surface on purpose: a model uses a short vocabulary
+well and a long one badly.
+
+Search returns two counts, `total_matches` (any term) and `total_all_terms`
+(every term), because for a two-word question those differ — 26 against 3 here
+— and quoting the first as the second turns a precise question into an inflated
+answer. Each hit reports which terms it actually matched, so the borderline
+records are visible rather than silently counted. The response also says that
+matching is unstemmed, since "segmented" not matching "segmentation" is the
+trap this data walks into; a test asserts the caveat is actionable by checking
+the other form does find it.
+
+For counting questions the honest primitive is the whole catalog: `index/nfr`
+returns all ~109 entries compactly. It is refused for regulation clauses and
+the like, where dumping everything is not an index but a denial of service
+against the answer.
+
+Everything is read-only — the package has no method that writes — behind a
+`KNOWLEDGE_TOKEN` separate from `ADMIN_TOKEN`, because this credential lives in
+another service's configuration and must never be able to change the catalog.
+Without a token the API is registered only in local mode: it reads the whole
+catalog, the policies and the risk register, and "we will set the token later"
+is how that ends up exposed on a network.
+
+### Choosing an agent
+
+`aiprovider.WintermuteConfig` gained an `Agent`, sent when a session is opened,
+so every question this application asks runs against a named agent on that
+server — with its documents and its sources — rather than against a general
+assistant. Settings → AI providers lists the agents fetched from the server
+(proxied through `/api/settings/ai-providers/agents`, since the client token
+must not reach a browser) and stores the choice in `ai.wintermute.agent`. An
+agent the server no longer has is shown as such rather than silently dropped.
+
+The Settings and AI Chat pages link to that agent's page on Wintermute for
+document upload: that server owns the library, the extraction and the search,
+and a second upload page here would be a second copy of all three.
+
+### The consequence worth knowing
+
+This works when grc's AI provider is Wintermute. Wintermute can forward the
+turn to Claude, so the model is still whichever you choose — but pointed
+straight at Claude, this application's AI has no access to this data and
+answers as it did before.
+
 ## 2026-08-14 (Regulation Coverage: upload an EU regulation, get a mapped report)
 
 New module `internal/regcoverage`, at `/regulation-coverage` in the Compliance

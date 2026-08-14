@@ -335,6 +335,7 @@ func aiChatPage(c *gin.Context) {
         <span id="claudeChip" class="chip">Anthropic key: checking&hellip;</span>
         <span id="wintermuteChip" class="chip">Wintermute token: checking&hellip;</span>
         <a class="chip" href="/settings">Keys &amp; tokens &rarr; Settings</a>
+        <a class="chip" id="wintermuteDocsLink" href="/settings" hidden>Add documents in Wintermute &#8599;</a>
       </div>
     </header>
 
@@ -428,6 +429,7 @@ func aiChatPage(c *gin.Context) {
     const wintermuteModel = document.getElementById('wintermuteModel');
     const claudeChip = document.getElementById('claudeChip');
     const wintermuteChip = document.getElementById('wintermuteChip');
+    const wintermuteDocsLink = document.getElementById('wintermuteDocsLink');
     const systemPrompt = document.getElementById('systemPrompt');
     const question = document.getElementById('question');
     const chatForm = document.getElementById('chatForm');
@@ -504,6 +506,16 @@ func aiChatPage(c *gin.Context) {
         claude.configured = Boolean(data.claude_configured);
         applyCredentialChips();
         if (!wintermuteEndpoint.value && data.default_endpoint) wintermuteEndpoint.value = data.default_endpoint;
+        // Documents live on the Wintermute server, which owns the library and
+        // the search over it; this is the way there rather than a second
+        // upload page here.
+        if (data.default_endpoint) {
+          wintermuteDocsLink.href = String(data.default_endpoint).replace(/\/+$/, '') + '/#agents';
+          wintermuteDocsLink.hidden = false;
+          wintermuteDocsLink.target = '_blank';
+          wintermuteDocsLink.rel = 'noopener noreferrer';
+          if (data.default_agent) wintermuteDocsLink.textContent = 'Documents for ' + data.default_agent + ' \u2197';
+        }
         if (!wintermuteBackend.value && data.default_backend) wintermuteBackend.value = data.default_backend;
         if (!wintermuteModel.value && data.default_model) wintermuteModel.value = data.default_model;
       } catch (_) {
@@ -709,6 +721,7 @@ func aiChatWintermuteStatus(c *gin.Context) {
 		"claude_configured": storedAICredential("claude") != "",
 		"default_endpoint":  endpoint,
 		"default_backend":   aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
+		"default_agent":     aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
 		"default_model":     aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
 	})
 }

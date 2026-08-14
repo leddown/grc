@@ -23,6 +23,11 @@ const (
 	// PrefWintermuteModel pins a model within the chosen backend. Empty means
 	// the backend's default.
 	PrefWintermuteModel = "ai.wintermute.model"
+	// PrefWintermuteAgent names an agent profile on that server — which
+	// document library and which sources a question may be answered from.
+	// Without one, the assistant answers from its training data, which for a
+	// question about this installation's catalogs is no answer at all.
+	PrefWintermuteAgent = "ai.wintermute.agent"
 )
 
 // Provider choices for PrefAIProvider.
@@ -46,6 +51,7 @@ var prefDefaults = map[string]string{
 	PrefWintermuteURL:     "",
 	PrefWintermuteBackend: "",
 	PrefWintermuteModel:   "",
+	PrefWintermuteAgent:   "",
 }
 
 // prefEnvFallback maps a preference to the environment variable that supplies
@@ -54,6 +60,7 @@ var prefDefaults = map[string]string{
 var prefEnvFallback = map[string]string{
 	PrefWintermuteURL:     "WINTERMUTE_URL",
 	PrefWintermuteBackend: "WINTERMUTE_BACKEND",
+	PrefWintermuteAgent:   "WINTERMUTE_AGENT",
 	PrefWintermuteModel:   "WINTERMUTE_MODEL",
 }
 

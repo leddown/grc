@@ -15,6 +15,7 @@ import (
 	"grc/internal/db"
 	"grc/internal/dbsync"
 	"grc/internal/doctemplate"
+	"grc/internal/knowledge"
 	"grc/internal/nfrenrich"
 	"grc/internal/nfrlink"
 	"grc/internal/policydocs"
@@ -35,9 +36,13 @@ type Options struct {
 	SQLitePath string
 	// DatabaseURL, when set, selects the external PostgreSQL backend and is a
 	// standard connection string (postgres://user:pass@host:5432/db?sslmode=...).
-	DatabaseURL       string
-	AllowJSONSave     bool
-	AdminToken        string
+	DatabaseURL   string
+	AllowJSONSave bool
+	AdminToken    string
+	// KnowledgeToken guards /api/knowledge, the read-only surface an external
+	// agent queries. It is separate from AdminToken because it lives in another
+	// service's configuration and must never be able to write.
+	KnowledgeToken    string
 	LocalMode         bool
 	TrustProxyHeaders bool
 	// SyncTo / SyncFrom put the binary into one-shot database-sync mode instead
@@ -147,6 +152,7 @@ func Run(options Options) error {
 		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
 	registerRegulationCoverageRoutes(
 		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
+	registerKnowledgeRoutes(router, sqliteDB, options)
 	registerUtilitiesRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
@@ -447,6 +453,7 @@ func newAIRouter(settingsService *settings.Service) *aiprovider.Router {
 			URL:     settingsService.Preference(settings.PrefWintermuteURL),
 			Token:   settingsService.Get(settings.WintermuteToken),
 			Backend: settingsService.Preference(settings.PrefWintermuteBackend),
+			Agent:   settingsService.Preference(settings.PrefWintermuteAgent),
 			Model:   settingsService.Preference(settings.PrefWintermuteModel),
 		}
 	})
@@ -538,6 +545,25 @@ func registerNFREnrichmentRoutes(
 		admin.Use(adminMiddleware)
 	}
 	handler.RegisterAdminRoutes(admin)
+}
+
+// registerKnowledgeRoutes wires the read-only knowledge API — the machine-facing
+// view of this installation's catalogs that an AI agent consults. See
+// internal/knowledge for why the agent itself lives in wintermuted rather than
+// here.
+//
+// Without a token the API is registered only in local mode. Refusing to serve
+// it otherwise is deliberate: it reads the whole catalog, the policy library
+// and the risk register, and "we will set the token later" is how that ends up
+// exposed on a network.
+func registerKnowledgeRoutes(r gin.IRouter, sqliteDB *db.Conn, options Options) {
+	token := strings.TrimSpace(options.KnowledgeToken)
+	if token == "" && !options.LocalMode {
+		log.Printf("knowledge API disabled: set -knowledge-token / KNOWLEDGE_TOKEN to let an agent query this installation")
+		return
+	}
+	service := knowledge.NewService(knowledge.NewStore(sqliteDB))
+	knowledge.NewHandler(service, token).RegisterRoutes(r)
 }
 
 func registerPublicPageRoutes(r gin.IRouter, localMode bool) {

@@ -101,6 +101,19 @@ func settingsPage(c *gin.Context) {
           <input id="wmModel" type="text" class="mono" placeholder="model (blank = backend default)" aria-label="Wintermute model">
         </div>
         <div class="row">
+          <select id="wmAgent" aria-label="Wintermute agent">
+            <option value="">No agent &mdash; general assistant</option>
+          </select>
+          <button id="loadAgents" class="secondary" type="button">Refresh agents</button>
+        </div>
+        <p class="meta">
+          An <em>agent</em> is a named set of documents and sources on the Wintermute server.
+          Pick the one that can read this installation&rsquo;s catalogs and the documents for
+          this work, and questions asked here are answered from them rather than from the
+          model&rsquo;s training data. <span id="wmAgentDetail"></span>
+        </p>
+        <p class="meta" id="wmAgentLink"></p>
+        <div class="row">
           <button id="saveProvider">Save</button>
           <button id="testProvider">Test connection</button>
         </div>
@@ -264,6 +277,9 @@ func settingsPage(c *gin.Context) {
     wmURL.value = prefs['ai.wintermute.url'] || '';
     wmBackend.value = prefs['ai.wintermute.backend'] || '';
     wmModel.value = prefs['ai.wintermute.model'] || '';
+    const agent = prefs['ai.wintermute.agent'] || '';
+    wmAgent.value = agent;
+    if (wmURL.value.trim()) loadAgents(agent).catch(function () { /* reported inline */ });
 
     const st = data.status;
     if (!st) {
@@ -281,6 +297,73 @@ func settingsPage(c *gin.Context) {
     }
     providerDetail.textContent = st.detail || '';
   }
+
+  const wmAgent = document.getElementById('wmAgent');
+  const wmAgentDetail = document.getElementById('wmAgentDetail');
+  const wmAgentLink = document.getElementById('wmAgentLink');
+
+  // The agent list comes from the Wintermute server itself rather than being
+  // typed in, because a mistyped agent id is the difference between a grounded
+  // answer and a confident guess, and there is no way to tell from the answer
+  // which happened.
+  async function loadAgents(selected) {
+    const base = wmURL.value.trim();
+    wmAgentLink.textContent = '';
+    if (!base) {
+      wmAgentDetail.textContent = 'Enter the server URL to list its agents.';
+      return;
+    }
+    wmAgentDetail.textContent = 'Loading agents...';
+    try {
+      const res = await fetch('/api/settings/ai-providers/agents');
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+
+      const agents = data.agents || [];
+      const want = selected !== undefined ? selected : wmAgent.value;
+      while (wmAgent.options.length > 1) wmAgent.remove(1);
+      agents.forEach(function (agent) {
+        const opt = document.createElement('option');
+        opt.value = agent.id;
+        opt.textContent = agent.name + (agent.description ? ' — ' + agent.description : '');
+        wmAgent.appendChild(opt);
+      });
+      wmAgent.value = want || '';
+      // A stored agent the server no longer has must not be silently dropped:
+      // it would look configured here and answer ungrounded there.
+      if (want && wmAgent.value !== want) {
+        const opt = document.createElement('option');
+        opt.value = want;
+        opt.textContent = want + ' — not on this server';
+        wmAgent.appendChild(opt);
+        wmAgent.value = want;
+      }
+      wmAgentDetail.textContent = agents.length
+        ? agents.length + ' agent(s) on this server.'
+        : 'This server has no agents yet — create one there first.';
+      renderAgentLink(base);
+    } catch (err) {
+      wmAgentDetail.textContent = 'Could not list agents: ' + err.message;
+      renderAgentLink(base);
+    }
+  }
+
+  // Documents are uploaded on the Wintermute server, not here: it owns the
+  // library, the extraction and the search. This is the way there.
+  function renderAgentLink(base) {
+    if (!base) return;
+    wmAgentLink.textContent = '';
+    const link = document.createElement('a');
+    link.href = base.replace(/\/+$/, '') + '/#agents';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'Manage agents and upload documents on Wintermute \u2197';
+    wmAgentLink.appendChild(link);
+  }
+
+  document.getElementById('loadAgents').addEventListener('click', function () {
+    loadAgents().catch(function (err) { wmAgentDetail.textContent = err.message; });
+  });
 
   async function loadProviders() {
     try {
@@ -302,6 +385,7 @@ func settingsPage(c *gin.Context) {
           wintermute_url: wmURL.value.trim(),
           wintermute_backend: wmBackend.value.trim(),
           wintermute_model: wmModel.value.trim(),
+          wintermute_agent: wmAgent.value.trim(),
         }),
       });
       const data = await res.json().catch(function () { return {}; });

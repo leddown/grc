@@ -34,6 +34,7 @@ func BindFlags() *Options {
 	flag.StringVar(&options.DatabaseURL, "database-url", envOrDefault("DATABASE_URL", options.DatabaseURL), "PostgreSQL connection string (e.g. postgres://user:pass@host:5432/db?sslmode=require); when set, uses Postgres instead of SQLite")
 	flag.BoolVar(&options.AllowJSONSave, "allow-json-save", envBoolOrDefault("ALLOW_JSON_SAVE", false), "enable JSON save endpoints (/controls/save, /security-nfrs/save, and /jira/json/export)")
 	flag.StringVar(&options.AdminToken, "admin-token", envOrDefault("ADMIN_TOKEN", options.AdminToken), "admin bearer token for protected mutation endpoints")
+	flag.StringVar(&options.KnowledgeToken, "knowledge-token", envOrDefault("KNOWLEDGE_TOKEN", options.KnowledgeToken), "read-only bearer token for /api/knowledge, the machine-facing query surface an AI agent (wintermuted) consults; unset disables the API outside local mode")
 	flag.BoolVar(&options.LocalMode, "local-mode", envBoolOrDefault("LOCAL_MODE", false), "run with no login/user management; every page and admin action is open (intended for single-user laptop use)")
 	flag.StringVar(&options.SyncTo, "sync-to", envOrDefault("SYNC_TO", ""), "one-shot: copy the active database up to this target (postgres:// URL or SQLite path) with upsert/merge, then exit")
 	flag.StringVar(&options.SyncFrom, "sync-from", envOrDefault("SYNC_FROM", ""), "one-shot: copy from this source (postgres:// URL or SQLite path) into the active database with upsert/merge, then exit")

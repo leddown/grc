@@ -55,6 +55,7 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.GET("/api/settings/ai-providers", h.providers)
 	r.PUT("/api/settings/ai-providers", h.setPreferences)
 	r.POST("/api/settings/ai-providers/test", h.testProvider)
+	r.GET("/api/settings/ai-providers/agents", h.listAgents)
 }
 
 // providerResponse describes provider routing for the Settings page.
@@ -81,6 +82,7 @@ type preferenceRequest struct {
 	WintermuteURL     *string `json:"wintermute_url"`
 	WintermuteBackend *string `json:"wintermute_backend"`
 	WintermuteModel   *string `json:"wintermute_model"`
+	WintermuteAgent   *string `json:"wintermute_agent"`
 }
 
 func (h *Handler) setPreferences(c *gin.Context) {
@@ -98,6 +100,7 @@ func (h *Handler) setPreferences(c *gin.Context) {
 		{PrefWintermuteURL, req.WintermuteURL},
 		{PrefWintermuteBackend, req.WintermuteBackend},
 		{PrefWintermuteModel, req.WintermuteModel},
+		{PrefWintermuteAgent, req.WintermuteAgent},
 	}
 	for _, u := range updates {
 		if u.value == nil {
