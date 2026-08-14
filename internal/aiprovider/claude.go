@@ -81,6 +81,57 @@ func (c *Claude) client(key string) anthropic.Client {
 	return c.api
 }
 
+// claudeMessages turns a transcript and the new question into the message list
+// the Messages API accepts.
+//
+// The API requires the roles to alternate and the first message to be a user
+// turn, which a transcript from a chat page does not always satisfy: a turn
+// that errored leaves a question with no answer after it, and a cleared-then-
+// resent history can start on an assistant turn. Rather than let that surface
+// as an HTTP 400, consecutive same-role turns are joined and a leading
+// assistant turn is dropped.
+func claudeMessages(history []Message, prompt string) []anthropic.MessageParam {
+	type turn struct {
+		role string
+		text []string
+	}
+	turns := make([]turn, 0, len(history)+1)
+
+	add := func(role, text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		if role != RoleAssistant {
+			role = RoleUser
+		}
+		if len(turns) == 0 && role == RoleAssistant {
+			return
+		}
+		if n := len(turns); n > 0 && turns[n-1].role == role {
+			turns[n-1].text = append(turns[n-1].text, text)
+			return
+		}
+		turns = append(turns, turn{role: role, text: []string{text}})
+	}
+
+	for _, msg := range history {
+		add(msg.Role, msg.Text)
+	}
+	add(RoleUser, prompt)
+
+	messages := make([]anthropic.MessageParam, 0, len(turns))
+	for _, t := range turns {
+		block := anthropic.NewTextBlock(strings.Join(t.text, "\n\n"))
+		if t.role == RoleAssistant {
+			messages = append(messages, anthropic.NewAssistantMessage(block))
+			continue
+		}
+		messages = append(messages, anthropic.NewUserMessage(block))
+	}
+	return messages
+}
+
 // Ask sends one question and returns the answer.
 func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
 	key := c.key()
@@ -100,9 +151,7 @@ func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(model),
 		MaxTokens: int64(maxTokens),
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(req.Prompt)),
-		},
+		Messages:  claudeMessages(req.History, req.Prompt),
 	}
 	if system := strings.TrimSpace(req.System); system != "" {
 		params.System = []anthropic.TextBlockParam{{Text: system}}

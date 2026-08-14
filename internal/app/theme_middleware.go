@@ -1396,8 +1396,19 @@ const commandPaletteTag = `<div id="global-command-palette" role="dialog" aria-m
 </script>`
 
 const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Prompt">
+  <div id="global-ai-dock-panel" hidden>
+    <div id="global-ai-dock-head">
+      <span>Ask AI</span>
+      <span class="global-ai-dock-head-actions">
+        <a href="/ai-chat" target="_blank" rel="noopener noreferrer">Full chat &#8599;</a>
+        <button id="global-ai-dock-clear" type="button">Clear</button>
+        <button id="global-ai-dock-close" type="button" aria-label="Collapse AI panel">Close</button>
+      </span>
+    </div>
+    <div id="global-ai-dock-log" role="log" aria-live="polite"></div>
+  </div>
   <form id="global-ai-dock-form">
-    <input id="global-ai-dock-input" type="text" placeholder="Ask AI and open /ai-chat in a new tab" aria-label="Ask AI" autocomplete="off" autocapitalize="sentences" enterkeyhint="send">
+    <input id="global-ai-dock-input" type="text" placeholder="Ask AI" aria-label="Ask AI" autocomplete="off" autocapitalize="sentences" enterkeyhint="send">
     <button type="submit">Ask AI</button>
   </form>
 </div>
@@ -1413,6 +1424,82 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+}
+#global-ai-dock-panel {
+  max-width: 960px;
+  margin: 0 auto 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#global-ai-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font: 12px Arial, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.global-ai-dock-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#global-ai-dock-head a,
+#global-ai-dock-head button {
+  font: 12px Arial, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  min-height: 0;
+  text-decoration: none;
+  cursor: pointer;
+}
+#global-ai-dock-head a:hover,
+#global-ai-dock-head button:hover {
+  background: var(--hover);
+}
+#global-ai-dock-log {
+  /* Grows with the conversation up to a cap, so a short answer keeps the page
+     visible and a long one scrolls inside the dock instead of covering it. */
+  max-height: min(46vh, 420px);
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font: 14px Arial, sans-serif;
+}
+.global-ai-dock-msg {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  max-width: min(80ch, 92%);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+}
+.global-ai-dock-msg.user { align-self: flex-end; border-left: 4px solid var(--accent, #8b3d2e); }
+.global-ai-dock-msg.ai { align-self: flex-start; border-left: 4px solid #0b5d3b; }
+.global-ai-dock-msg.note { align-self: stretch; border-style: dashed; color: var(--muted); }
+.global-ai-dock-msg .role {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 #global-ai-dock-form {
   max-width: 960px;
@@ -1445,9 +1532,16 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
 #global-ai-dock-form button:hover {
   background: var(--hover);
 }
+#global-ai-dock-form button[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
 @media (max-width: 700px) {
   #global-ai-dock-form {
     grid-template-columns: 1fr;
+  }
+  #global-ai-dock-log {
+    max-height: 40vh;
   }
 }
 </style>
@@ -1455,16 +1549,116 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
 (() => {
   if (window.__globalAIDockInit) return;
   window.__globalAIDockInit = true;
+  const dock = document.getElementById('global-ai-dock');
   const form = document.getElementById('global-ai-dock-form');
   const input = document.getElementById('global-ai-dock-input');
-  if (!form || !input) return;
-  form.addEventListener('submit', (event) => {
+  const panel = document.getElementById('global-ai-dock-panel');
+  const log = document.getElementById('global-ai-dock-log');
+  const clearBtn = document.getElementById('global-ai-dock-clear');
+  const closeBtn = document.getElementById('global-ai-dock-close');
+  const sendBtn = form ? form.querySelector('button[type="submit"]') : null;
+  if (!dock || !form || !input || !panel || !log) return;
+
+  // The dock holds the conversation so a follow-up question means what it says.
+  // /ai-chat/ask is stateless, so the transcript goes back with each turn —
+  // except on Wintermute, which keeps it server-side and only needs the session
+  // id the previous answer carried. The server bounds both.
+  let history = [];
+  let sessionID = '';
+
+  // Which provider can answer is an install-wide setting, so the dock asks once
+  // and reuses the answer rather than making the reader pick on every page.
+  let providerReady = null;
+  async function pickProvider() {
+    if (providerReady) return providerReady;
+    providerReady = (async () => {
+      const resp = await fetch('/ai-chat/wintermute/status');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      if (data.claude_configured) return 'claude';
+      if (data.token_configured && data.configured) return 'wintermute';
+      throw new Error('No AI provider is configured. Set a key in Settings.');
+    })();
+    providerReady = providerReady.catch((err) => { providerReady = null; throw err; });
+    return providerReady;
+  }
+
+  function expand() {
+    panel.hidden = false;
+  }
+
+  function addMessage(role, text, kind) {
+    expand();
+    const row = document.createElement('div');
+    row.className = 'global-ai-dock-msg ' + (kind || '');
+    const label = document.createElement('span');
+    label.className = 'role';
+    label.textContent = role;
+    row.appendChild(label);
+    row.appendChild(document.createTextNode(String(text || '')));
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+    return row;
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      log.replaceChildren();
+      history = [];
+      sessionID = '';
+      panel.hidden = true;
+      input.focus();
+    });
+  }
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      panel.hidden = true;
+      input.focus();
+    });
+  }
+
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const value = String(input.value || '').trim();
     if (!value) return;
-    const target = '/ai-chat?q=' + encodeURIComponent(value);
-    window.open(target, '_blank', 'noopener,noreferrer');
     input.value = '';
+    addMessage('You', value, 'user');
+    const pending = addMessage('AI', 'Thinking…', 'note');
+    if (sendBtn) sendBtn.disabled = true;
+    input.disabled = true;
+    try {
+      const provider = await pickProvider();
+      const resp = await fetch('/ai-chat/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider,
+          question: value,
+          // A resumed Wintermute session already holds the transcript; sending
+          // it again would replay every earlier turn into the same session.
+          history: sessionID ? [] : history,
+          session_id: sessionID
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      pending.remove();
+      const answer = data.answer || '(empty answer)';
+      // Recorded only on success: a question that never got an answer would
+      // otherwise sit in the transcript as context for every later turn.
+      history.push({ role: 'user', content: value });
+      history.push({ role: 'assistant', content: answer });
+      sessionID = data.session_id || '';
+      addMessage(data.model ? 'AI · ' + data.model : 'AI', answer, 'ai');
+    } catch (err) {
+      pending.remove();
+      addMessage('Error', (err && err.message) || 'request failed', 'note');
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+      input.disabled = false;
+      input.focus();
+      log.scrollTop = log.scrollHeight;
+    }
   });
 })();
 </script>`

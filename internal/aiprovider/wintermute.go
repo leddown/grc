@@ -109,24 +109,37 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		model = cfg.Model
 	}
 
-	session, err := w.postJSON(ctx, base+"/api/v1/sessions", cfg.Token, map[string]any{
-		"title":   sessionTitle,
-		"backend": cfg.Backend,
-		"model":   model,
-	})
-	if err != nil {
-		return Response{}, fmt.Errorf("wintermute session: %w", err)
-	}
-	sessionID := stringField(session, "id")
-	if sessionID == "" {
-		return Response{}, fmt.Errorf("wintermute did not return a session id")
+	// The server owns the transcript, so a conversation continues by posting to
+	// the session the last answer came from rather than by resending it.
+	sessionID := strings.TrimSpace(req.SessionID)
+	resumed := sessionID != ""
+	if !resumed {
+		session, err := w.postJSON(ctx, base+"/api/v1/sessions", cfg.Token, map[string]any{
+			"title":   sessionTitle,
+			"backend": cfg.Backend,
+			"model":   model,
+		})
+		if err != nil {
+			return Response{}, fmt.Errorf("wintermute session: %w", err)
+		}
+		sessionID = stringField(session, "id")
+		if sessionID == "" {
+			return Response{}, fmt.Errorf("wintermute did not return a session id")
+		}
 	}
 
 	// wintermuted derives its own system prompt from its configuration and
 	// takes only message text, so the instruction is prepended to the question.
 	text := req.Prompt
+	// A History with no SessionID is a transcript this server has never seen —
+	// a caller that kept its own, or one whose session has expired — so it is
+	// folded into the first message. On a resumed session the server already
+	// has it and resending would duplicate every earlier turn.
+	if !resumed && len(req.History) > 0 {
+		text = transcriptPrefix(req.History) + text
+	}
 	if system := strings.TrimSpace(req.System); system != "" {
-		text = system + "\n\n" + req.Prompt
+		text = system + "\n\n" + text
 	}
 
 	turn, err := w.postJSON(ctx,
@@ -148,12 +161,36 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 	}
 
 	return Response{
-		Text:     answer,
-		Provider: NameWintermute,
-		Backend:  stringField(turn, "backend"),
-		Model:    stringField(turn, "model"),
-		Usage:    extractUsage(turn),
+		Text:      answer,
+		Provider:  NameWintermute,
+		Backend:   stringField(turn, "backend"),
+		Model:     stringField(turn, "model"),
+		SessionID: sessionID,
+		Usage:     extractUsage(turn),
 	}, nil
+}
+
+// transcriptPrefix renders earlier turns as labelled text, for the one case
+// where this provider cannot lean on the server's own transcript.
+func transcriptPrefix(history []Message) string {
+	var b strings.Builder
+	b.WriteString("Conversation so far:\n\n")
+	for _, msg := range history {
+		text := strings.TrimSpace(msg.Text)
+		if text == "" {
+			continue
+		}
+		label := "User"
+		if msg.Role == RoleAssistant {
+			label = "Assistant"
+		}
+		b.WriteString(label)
+		b.WriteString(": ")
+		b.WriteString(text)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("Now answer this:\n\n")
+	return b.String()
 }
 
 // Probe checks the server is reachable and reports the backends it advertises,

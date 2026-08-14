@@ -3,6 +3,140 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-14 (Ask AI dock answers in place)
+
+The global "Ask AI" dock at the bottom of every page used to throw the question
+away and open `/ai-chat?q=...` in a new tab, so the answer arrived somewhere
+other than where it was asked. It now expands in place: the dock grows a
+transcript panel above the input (`#global-ai-dock-panel`), posts the question
+to `POST /ai-chat/ask` from the current page, and appends the answer under the
+question. The reader keeps their page, their scroll position and their context.
+
+Provider selection stays out of the dock — it asks `GET
+/ai-chat/wintermute/status` once, on the first question, and uses Claude when a
+key is configured, otherwise a configured Wintermute server. When neither is
+set, the panel says "No AI provider is configured. Set a key in Settings."
+instead of failing silently. Errors and the pending "Thinking…" placeholder
+render as notes in the same transcript.
+
+The panel is capped at `min(46vh, 420px)` (40vh under 700px wide) and scrolls
+internally, so a long answer never buries the page behind it. Header controls:
+"Full chat ↗" (opens `/ai-chat` for provider/model/system-prompt control),
+"Clear", and "Close" to collapse back to the bare input. The dock starts
+collapsed and is unchanged in height until the first question. Messages are
+built with `createTextNode`, not innerHTML, so model output cannot inject markup
+into the host page.
+
+### The dock carries conversation context
+
+A follow-up in the dock now means what it says: "and the second one?" reaches
+the model with the question and answer above it. `aiprovider.Request` grew a
+`History []Message` (roles `user`/`assistant`, oldest first, excluding the
+prompt) and a `SessionID`, and `Response` returns the `SessionID` a turn
+belongs to. The harness itself stays stateless — it holds no transcript.
+
+The two providers carry context the way each one works:
+
+- **Claude** replays the transcript as prior messages. `claudeMessages` joins
+  consecutive same-role turns and drops a leading assistant turn, because the
+  Messages API requires alternating roles starting with a user turn and a
+  transcript with a failed turn in it does not always satisfy that — that would
+  otherwise surface as an HTTP 400.
+- **Wintermute** posts to the session the previous answer came from, so the
+  server keeps owning the transcript and nothing is resent. A `History` with no
+  `SessionID` (a caller holding its own transcript, or an expired session) is
+  folded into the message text instead, since that server takes text only.
+
+`POST /ai-chat/ask` accepts `history` (`[{role, content}]`) and `session_id`,
+and returns `session_id`. The transcript is client-held and therefore bounded
+server-side by `boundedHistory`: blank turns and unknown roles are dropped, and
+only the newest 20 turns / 24000 characters are forwarded — an unbounded one
+would grow every request until the model rejected it, at the operator's
+expense. The body itself is capped at 512 KiB (`http.MaxBytesReader`), which is
+new: the body used to be one typed question.
+
+In the dock, the transcript is recorded only when a turn succeeds, so a
+question that errored does not sit in the model's context for every later turn,
+and **Clear** drops the history and the session id along with the visible
+messages. **Close** only collapses the panel — the conversation survives it.
+
+### /ai-chat carries context too
+
+The full page follows the same rules as the dock: the transcript is held by the
+page and sent with each question, a Wintermute answer's `session_id` is carried
+back so the server keeps owning that transcript, and a turn is recorded only
+when it succeeds. **Clear** drops the conversation and the session along with
+the visible messages.
+
+Two things are specific to the page, because it can change per question what
+the dock cannot. A Wintermute session is pinned to the server URL, backend and
+model it was opened with, so changing the provider or any of those fields drops
+the session id — the next question opens a new session and sends the transcript
+with it, rather than continuing against a pin that is no longer what the form
+says. And since the transcript is resent, the Conversation header now states
+what is being carried ("3 turns of context"), so the cost of a long thread is
+visible rather than inferred from the bill.
+
+## 2026-08-13 (AI Chat keys move to Settings; chat-first layout)
+
+Credentials are now set in **one** place. The AI Chat Gateway no longer has an
+API key or client token field, and `POST /ai-chat/ask` no longer accepts an
+`api_key` — `aiChatRequest` has no such field, so a key cannot ride through the
+browser to this endpoint at all. `aiChatProvider` resolves both credentials
+from `storedAICredential`, which reads the Settings store with the existing
+environment fallback (`ANTHROPIC_API_KEY`, `WINTERMUTE_TOKEN`), so an install
+configured either way is unaffected.
+
+What stays per-question is what was never a secret: the **provider dropdown**
+(Anthropic Claude API, or Wintermute routing to a self-hosted backend), the
+model, the Claude endpoint override, and the Wintermute server URL, backend and
+model. A reviewer can still put one question to a different model or backend
+without touching the install-wide setting.
+
+Error text follows the move: "no Anthropic API key: set one in Settings" rather
+than "paste one above". The page reports readiness up front instead — two chips
+next to the title read "configured" / "not configured" per provider from
+`GET /ai-chat/wintermute/status` (which still returns only whether a credential
+exists, never the value), beside a link to Settings.
+
+That status endpoint now sources its Wintermute defaults from the Settings
+preferences rather than reading `WINTERMUTE_URL`/`_BACKEND`/`_MODEL` directly.
+`Preference` falls back to those same variables, so an env-configured install
+prefills exactly as before, and one configured in the Settings page — which
+previously left the chat page blank — now prefills too.
+
+### Layout
+
+The AI Chat page was a form column beside a chat column capped at `62vh`, with
+the composer buried at the bottom of the form. It is now chat-first: a fixed
+sidebar panel (provider, model/endpoint or URL/backend/model, system prompt,
+usage) beside a conversation panel that fills the viewport height, with the
+question composer docked under the transcript. Enter sends, Shift+Enter adds a
+line. Messages are bubbles — user right, assistant left, capped at 80ch for
+readability — and the whole layout collapses to one column under 980px.
+
+Colour fixes for the global themes, which repaint `--ink`/`--muted` with
+`!important`: the composer strip and the Wintermute notice are transparent
+rather than parchment-tinted (the strip read as a grey band on the dark themes,
+and the notice put a theme-dark `<code>` chip on a cream box), and the status
+chips carry literal text colours on their own opaque pills.
+
+### Settings page
+
+The credential cards sit in an auto-fit grid, so the two short forms are side by
+side on a wide screen instead of stacked full-width. The page also rendered
+`pageui.Nav` **outside** `<main>` — the only page that did — which meant the
+shared sidebar script skipped it and it showed a row of unstyled links across
+the top. The nav moved inside `<main>`, so Settings now gets the same sidebar
+shell and full-width content area as every other page.
+
+Verified by rendering both pages in a headless browser at 1600px, 1400px and
+820px with each provider selected: no credential field remains on the chat page
+(no `type="password"` input, no `api_key` in the payload), the chips report the
+Settings state, the composer stays docked under the transcript, and the layout
+stacks cleanly on the narrow viewport. `go fmt`, `go vet` and `go test ./...`
+(including `TestGosec` and `TestGovulncheck`) are clean.
+
 ## 2026-08-13 (AI Chat routed through the harness; SSRF fix in the harness)
 
 The AI Chat gateway now asks through `internal/aiprovider` rather than carrying

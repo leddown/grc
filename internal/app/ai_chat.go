@@ -23,16 +23,33 @@ import (
 
 var aiProviderHTTPClient = &http.Client{Timeout: 90 * time.Second}
 
+// aiChatRequest is one question from the page. It deliberately carries no
+// credential: keys and tokens are set once in the Settings page and resolved
+// server-side, so a secret never rides in a browser request to this endpoint.
 type aiChatRequest struct {
 	Provider string `json:"provider"`
 	Question string `json:"question"`
 	System   string `json:"system_prompt"`
-	APIKey   string `json:"api_key"`
 	Model    string `json:"model"`
 	Endpoint string `json:"endpoint"`
 	// Backend names a wintermuted backend (a local model server, or Claude)
 	// for the wintermute provider. Empty means that server's default.
 	Backend string `json:"backend"`
+	// History is the conversation before Question, oldest first, so a follow-up
+	// question can refer to what came before. The client holds the transcript —
+	// this endpoint is stateless — and the server bounds what it will accept
+	// (see boundedHistory).
+	History []aiChatTurn `json:"history"`
+	// SessionID continues a conversation the provider itself is holding, from a
+	// previous answer's session_id. Wintermute keeps transcripts server-side;
+	// when this is set, History is not resent.
+	SessionID string `json:"session_id"`
+}
+
+// aiChatTurn is one earlier message in the conversation.
+type aiChatTurn struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 func aiChatPage(c *gin.Context) {
@@ -87,21 +104,60 @@ func aiChatPage(c *gin.Context) {
     .tab.active { background: #e1d0b7; border-color: #b89d78; }
     h1 { margin: 0 0 8px; font-size: clamp(2rem, 4vw, 3.2rem); line-height: 0.95; letter-spacing: -0.03em; }
     p { color: var(--muted); }
+    .page-head {
+      display: flex;
+      gap: 16px 24px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+    .page-head p { margin: 6px 0 0; max-width: 78ch; font-size: 15px; }
+    .creds {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+    }
+    /* The chips carry their own opaque surface and literal text colours: the
+       global theme repaints --ink/--muted for the dark themes, which would
+       otherwise leave pale text on these light pills. */
+    .chip {
+      display: inline-block;
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fffaf0;
+      color: #5e6672;
+      white-space: nowrap;
+    }
+    .chip.on { border-color: #7fae94; color: #0b5d3b; background: #f0f7f2; }
+    .chip.off { border-color: #d7b271; color: #9a6700; background: #fff8e8; }
+    /* Transparent so the theme's own link colour stays legible on whichever
+       background the page is painted with. */
+    a.chip { text-decoration: none; background: transparent; }
     .layout {
-      margin-top: 18px;
+      margin-top: 16px;
       display: grid;
-      grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
+      grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
       gap: 16px;
-      align-items: start;
+      align-items: stretch;
+      /* Chat is the work; the page fills the viewport so the conversation gets
+         the leftover height rather than stopping at a fixed box. */
+      height: clamp(460px, calc(100dvh - 250px), 1400px);
     }
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
       background: rgba(255,255,255,0.86);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
     .panel-header {
-      padding: 14px 16px;
+      padding: 12px 16px;
       border-bottom: 1px solid rgba(215,206,191,0.9);
       background: rgba(236,227,210,0.55);
       font-family: Arial, sans-serif;
@@ -109,9 +165,28 @@ func aiChatPage(c *gin.Context) {
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex: 0 0 auto;
     }
-    .panel-body { padding: 16px; }
+    .panel-header button {
+      padding: 5px 12px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-family: Arial, sans-serif;
+    }
+    .panel-header-actions { display: flex; align-items: center; gap: 10px; }
+    /* The transcript is resent with every question, so what it is costing is
+       worth stating rather than leaving to be inferred from the bill. */
+    .context-note { font-size: 11px; letter-spacing: 0.06em; }
+    .panel-body { padding: 16px; overflow: auto; flex: 1; min-height: 0; }
+    .side .panel-body { display: flex; flex-direction: column; }
     .field { margin-bottom: 12px; }
+    .field.grow { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 120px; margin-bottom: 10px; }
+    .field.grow textarea { flex: 1; min-height: 90px; }
     .field label {
       display: block;
       margin-bottom: 6px;
@@ -155,21 +230,43 @@ func aiChatPage(c *gin.Context) {
       border: 1px solid var(--line);
     }
     .chat-box {
-      max-height: 62vh;
+      flex: 1;
+      min-height: 0;
       overflow: auto;
-      display: grid;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
       gap: 10px;
     }
     .msg {
       border: 1px solid var(--line);
       border-radius: 12px;
       background: white;
-      padding: 10px 12px;
+      padding: 10px 14px;
       white-space: pre-wrap;
       word-break: break-word;
+      max-width: min(80ch, 88%);
     }
-    .msg.user { border-left: 4px solid #8b3d2e; }
-    .msg.ai { border-left: 4px solid #0b5d3b; }
+    .msg.user { align-self: flex-end; border-left: 4px solid #8b3d2e; }
+    .msg.ai { align-self: flex-start; border-left: 4px solid #0b5d3b; }
+    .composer {
+      flex: 0 0 auto;
+      border-top: 1px solid rgba(215,206,191,0.9);
+      /* Transparent rather than tinted: the panel underneath is repainted by
+         the global theme, and a fixed tint here reads as a grey band on the
+         dark themes. */
+      background: transparent;
+      padding: 12px 16px;
+    }
+    .composer textarea { min-height: 70px; max-height: 34vh; }
+    .composer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .hint { font-family: Arial, sans-serif; font-size: 12px; color: var(--muted); }
     .meta {
       color: var(--muted);
       font-family: Arial, sans-serif;
@@ -182,13 +279,17 @@ func aiChatPage(c *gin.Context) {
       padding: 10px 12px;
       border: 1px dashed var(--line);
       border-radius: 12px;
-      background: #fffaf0;
+      /* Transparent for the same reason as the composer: it sits on a panel the
+         global theme repaints, and it contains a <code> chip the theme colours
+         for that panel, not for a cream box. */
+      background: transparent;
       color: var(--muted);
-      font-size: 14px;
-      margin-bottom: 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
     }
     .usage-panel {
       margin-top: 10px;
+      flex: 0 0 auto;
       border: 1px solid var(--line);
       border-radius: 12px;
       background: rgba(255,255,255,0.7);
@@ -214,98 +315,104 @@ func aiChatPage(c *gin.Context) {
       padding: 6px 0 2px;
     }
     @media (max-width: 980px) {
-      .layout { grid-template-columns: 1fr; }
+      .layout { grid-template-columns: 1fr; height: auto; }
+      .side .panel-body { display: block; }
+      .field.grow { display: block; min-height: 0; }
+      .chat { min-height: 70vh; }
+      .msg { max-width: 100%; }
     }
   </style>
 </head>
 <body>
   <main>
     ` + pageui.Nav("/ai-chat") + `
-    <h1>AI Chat Gateway</h1>
-    <p>Anthropic Claude API (key-based), or a Wintermute server that routes the question to a self-hosted model or on to Claude.</p>
+    <header class="page-head">
+      <div>
+        <h1>AI Chat Gateway</h1>
+        <p>Ask the Anthropic Claude API directly, or a Wintermute server that routes the question to a self-hosted model on your network or on to Claude.</p>
+      </div>
+      <div class="creds">
+        <span id="claudeChip" class="chip">Anthropic key: checking&hellip;</span>
+        <span id="wintermuteChip" class="chip">Wintermute token: checking&hellip;</span>
+        <a class="chip" href="/settings">Keys &amp; tokens &rarr; Settings</a>
+      </div>
+    </header>
 
     <div class="layout">
-      <section class="panel">
-        <div class="panel-header">Connection + Prompt</div>
+      <section class="panel side">
+        <div class="panel-header"><span>Session</span></div>
         <div class="panel-body">
-          <div id="wintermuteNotice" class="notice" style="display:none;">
-            Wintermute runs the turn on your own <code>wintermuted</code> server, which decides whether a
-            self-hosted model or Claude answers it. Set <code>WINTERMUTE_URL</code> and
-            <code>WINTERMUTE_TOKEN</code> on this server to prefill these fields.
+          <div class="field">
+            <label for="provider">Provider</label>
+            <select id="provider">
+              <option value="claude">Anthropic Claude API</option>
+              <option value="wintermute">Wintermute (self-hosted or Claude)</option>
+            </select>
           </div>
-          <form id="chatForm">
+
+          <div id="claudeFields">
             <div class="field">
-              <label for="provider">Provider</label>
-              <select id="provider">
-                <option value="claude">Anthropic Claude API</option>
-                <option value="wintermute">Wintermute (self-hosted or Claude)</option>
-              </select>
-            </div>
-
-            <div id="claudeFields">
-              <div class="field">
-                <label for="claudeApiKey">API Key</label>
-                <input id="claudeApiKey" type="password" autocomplete="off" placeholder="Paste Anthropic API key">
-              </div>
-              <div class="field">
-                <label for="claudeModel">Model</label>
-                <input id="claudeModel" class="mono" type="text" value="claude-opus-5">
-              </div>
-              <div class="field">
-                <label for="claudeEndpoint">Endpoint (optional)</label>
-                <input id="claudeEndpoint" class="mono" type="text" placeholder="https://api.anthropic.com/v1/messages">
-              </div>
-            </div>
-
-            <div id="wintermuteFields" style="display:none;">
-              <div class="field">
-                <label for="wintermuteEndpoint">Server URL</label>
-                <input id="wintermuteEndpoint" class="mono" type="text" placeholder="http://127.0.0.1:8080">
-              </div>
-              <div class="field">
-                <label for="wintermuteToken">Client Token</label>
-                <input id="wintermuteToken" type="password" autocomplete="off" placeholder="Token from wintermuted -add-client">
-              </div>
-              <div class="field">
-                <label for="wintermuteBackend">Backend (optional)</label>
-                <input id="wintermuteBackend" class="mono" type="text" placeholder="server default">
-              </div>
-              <div class="field">
-                <label for="wintermuteModel">Model (optional)</label>
-                <input id="wintermuteModel" class="mono" type="text" placeholder="backend default">
-              </div>
-            </div>
-
-            <div class="field">
-              <label for="systemPrompt">System Prompt (optional)</label>
-              <textarea id="systemPrompt" placeholder="You are a security controls assistant..."></textarea>
+              <label for="claudeModel">Model</label>
+              <input id="claudeModel" class="mono" type="text" value="claude-opus-5">
             </div>
             <div class="field">
-              <label for="question">Question</label>
-              <textarea id="question" required placeholder="Ask your question here"></textarea>
+              <label for="claudeEndpoint">Endpoint (optional)</label>
+              <input id="claudeEndpoint" class="mono" type="text" placeholder="https://api.anthropic.com/v1/messages">
             </div>
+          </div>
 
-            <div class="actions">
-              <button id="sendBtn" type="submit">Ask</button>
-              <button id="clearBtn" class="secondary" type="button">Clear Chat</button>
-              <button id="usageBtn" class="secondary" type="button">Usage &#9656;</button>
+          <div id="wintermuteFields" style="display:none;">
+            <div class="field">
+              <label for="wintermuteEndpoint">Server URL</label>
+              <input id="wintermuteEndpoint" class="mono" type="text" placeholder="http://127.0.0.1:8080">
             </div>
-            <div id="usagePanel" class="usage-panel" style="display:none;"></div>
-            <div id="status" class="status"></div>
-          </form>
+            <div class="field">
+              <label for="wintermuteBackend">Backend (optional)</label>
+              <input id="wintermuteBackend" class="mono" type="text" placeholder="server default">
+            </div>
+            <div class="field">
+              <label for="wintermuteModel">Model (optional)</label>
+              <input id="wintermuteModel" class="mono" type="text" placeholder="backend default">
+            </div>
+            <div id="wintermuteNotice" class="notice">
+              Wintermute runs the turn on your own <code>wintermuted</code> server, which decides whether a
+              self-hosted model or Claude answers it.
+            </div>
+          </div>
+
+          <div class="field grow">
+            <label for="systemPrompt">System Prompt (optional)</label>
+            <textarea id="systemPrompt" placeholder="You are a security controls assistant..."></textarea>
+          </div>
+
+          <div class="actions">
+            <button id="usageBtn" class="secondary" type="button">Usage &#9656;</button>
+          </div>
+          <div id="usagePanel" class="usage-panel" style="display:none;"></div>
         </div>
       </section>
 
-      <section class="panel">
-        <div class="panel-header">Conversation</div>
-        <div class="panel-body">
-          <div id="chatBox" class="chat-box">
-            <div class="msg">
-              <div class="meta">System</div>
-              Responses will appear here after you submit a question.
-            </div>
+      <section class="panel chat">
+        <div class="panel-header">
+          <span>Conversation</span>
+          <span class="panel-header-actions">
+            <span id="contextNote" class="context-note"></span>
+            <button id="clearBtn" class="secondary" type="button">Clear</button>
+          </span>
+        </div>
+        <div id="chatBox" class="chat-box">
+          <div class="msg">
+            <div class="meta">System</div>
+            Responses will appear here after you submit a question.
           </div>
         </div>
+        <form id="chatForm" class="composer">
+          <textarea id="question" required placeholder="Ask your question here" aria-label="Question"></textarea>
+          <div class="composer-row">
+            <span id="status" class="status hint">Enter sends &middot; Shift+Enter for a new line</span>
+            <button id="sendBtn" type="submit">Ask</button>
+          </div>
+        </form>
       </section>
     </div>
   </main>
@@ -313,15 +420,14 @@ func aiChatPage(c *gin.Context) {
   <script>
     const provider = document.getElementById('provider');
     const claudeFields = document.getElementById('claudeFields');
-    const claudeApiKey = document.getElementById('claudeApiKey');
     const claudeModel = document.getElementById('claudeModel');
     const claudeEndpoint = document.getElementById('claudeEndpoint');
     const wintermuteFields = document.getElementById('wintermuteFields');
-    const wintermuteNotice = document.getElementById('wintermuteNotice');
     const wintermuteEndpoint = document.getElementById('wintermuteEndpoint');
-    const wintermuteToken = document.getElementById('wintermuteToken');
     const wintermuteBackend = document.getElementById('wintermuteBackend');
     const wintermuteModel = document.getElementById('wintermuteModel');
+    const claudeChip = document.getElementById('claudeChip');
+    const wintermuteChip = document.getElementById('wintermuteChip');
     const systemPrompt = document.getElementById('systemPrompt');
     const question = document.getElementById('question');
     const chatForm = document.getElementById('chatForm');
@@ -329,12 +435,25 @@ func aiChatPage(c *gin.Context) {
     const clearBtn = document.getElementById('clearBtn');
     const statusEl = document.getElementById('status');
     const chatBox = document.getElementById('chatBox');
+    const contextNote = document.getElementById('contextNote');
+    const COMPOSER_HINT = 'Enter sends · Shift+Enter for a new line';
+
+    // The conversation is carried, so a follow-up question means what it says.
+    // /ai-chat/ask is stateless: the transcript goes back with each turn, except
+    // on a Wintermute session, which the server holds and only needs its id.
+    // The server bounds both.
+    let history = [];
+    let sessionID = '';
     const wintermute = { configured: false, token_configured: false };
-    // Whether the server already has an Anthropic key (from Settings or the
+    // Whether the server has an Anthropic key (from Settings or the
     // environment). Assumed false until the status call answers, so a failed
-    // status check falls back to demanding a key rather than submitting one
-    // the server cannot fulfil.
+    // status check says "unknown" rather than promising a key that is not there.
     const claude = { configured: false };
+
+    function setStatus(message, isWarning) {
+      statusEl.textContent = message || COMPOSER_HINT;
+      statusEl.className = 'status hint' + (isWarning ? ' warn' : '');
+    }
 
     function esc(value) {
       return String(value || '')
@@ -360,7 +479,19 @@ func aiChatPage(c *gin.Context) {
       const p = provider.value;
       claudeFields.style.display = p === 'claude' ? '' : 'none';
       wintermuteFields.style.display = p === 'wintermute' ? '' : 'none';
-      wintermuteNotice.style.display = p === 'wintermute' ? '' : 'none';
+    }
+
+    function renderContextNote() {
+      const turns = history.length / 2;
+      contextNote.textContent = turns ? turns + (turns === 1 ? ' turn of context' : ' turns of context') : '';
+    }
+
+    // A Wintermute session is pinned to the server, backend and model it was
+    // opened with, so changing any of those has to start a new one. The
+    // transcript survives that: it is the client's, and it is sent with the
+    // first question of the new session.
+    function dropSession() {
+      sessionID = '';
     }
 
     async function refreshWintermuteStatus() {
@@ -371,7 +502,7 @@ func aiChatPage(c *gin.Context) {
         wintermute.configured = Boolean(data.configured);
         wintermute.token_configured = Boolean(data.token_configured);
         claude.configured = Boolean(data.claude_configured);
-        applyCredentialHints();
+        applyCredentialChips();
         if (!wintermuteEndpoint.value && data.default_endpoint) wintermuteEndpoint.value = data.default_endpoint;
         if (!wintermuteBackend.value && data.default_backend) wintermuteBackend.value = data.default_backend;
         if (!wintermuteModel.value && data.default_model) wintermuteModel.value = data.default_model;
@@ -379,23 +510,32 @@ func aiChatPage(c *gin.Context) {
         wintermute.configured = false;
         wintermute.token_configured = false;
         claude.configured = false;
-        applyCredentialHints();
+        applyCredentialChips();
       }
     }
 
-    // Tells the operator the key fields are optional once a credential is
-    // configured server-side, so an empty field does not read as "broken".
-    function applyCredentialHints() {
-      claudeApiKey.placeholder = claude.configured
-        ? 'Using the key from Settings — paste one only to override it'
-        : 'Paste Anthropic API key';
-      wintermuteToken.placeholder = wintermute.token_configured
-        ? 'Using the token from Settings — paste one only to override it'
-        : 'Token from wintermuted -add-client';
+    // The credentials live in Settings, so this page only reports whether each
+    // provider can answer — an operator should not have to submit a question to
+    // find out that nothing is configured.
+    function setChip(el, label, ok) {
+      el.className = 'chip ' + (ok ? 'on' : 'off');
+      el.textContent = label + (ok ? ': configured' : ': not configured');
     }
 
-    provider.addEventListener('change', syncProviderView);
+    function applyCredentialChips() {
+      setChip(claudeChip, 'Anthropic key', claude.configured);
+      setChip(wintermuteChip, 'Wintermute token', wintermute.token_configured);
+    }
+
+    provider.addEventListener('change', () => {
+      syncProviderView();
+      dropSession();
+    });
     syncProviderView();
+
+    for (const field of [wintermuteEndpoint, wintermuteBackend, wintermuteModel]) {
+      field.addEventListener('change', dropSession);
+    }
 
     const query = new URLSearchParams(window.location.search);
     const prefilledQuestion = String(query.get('q') || '').trim();
@@ -406,35 +546,41 @@ func aiChatPage(c *gin.Context) {
     clearBtn.addEventListener('click', () => {
       chatBox.innerHTML =
         '<div class="msg"><div class="meta">System</div>Responses will appear here after you submit a question.</div>';
-      statusEl.textContent = '';
+      history = [];
+      dropSession();
+      renderContextNote();
+      setStatus('');
+    });
+
+    // Enter sends, so the composer behaves like a chat box rather than a form
+    // field; Shift+Enter still writes a multi-line question.
+    question.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        chatForm.requestSubmit();
+      }
     });
 
     chatForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const text = question.value.trim();
       if (!text) {
-        statusEl.textContent = 'Question is required.';
-        statusEl.className = 'status warn';
+        setStatus('Question is required.', true);
         return;
       }
-      // Only block when the server has no credential either. A key set in the
-      // Settings page (or inherited from the environment) is applied
-      // server-side, so requiring one in this field would refuse a question
-      // the server can answer.
-      if (provider.value === 'claude' && !claudeApiKey.value.trim() && !claude.configured) {
-        statusEl.textContent = 'Anthropic API key is required. Paste one here, or set one in Settings to use it everywhere.';
-        statusEl.className = 'status warn';
+      // Credentials are install-wide now, so the only thing this page can check
+      // is whether the server has one for the chosen provider.
+      if (provider.value === 'claude' && !claude.configured) {
+        setStatus('No Anthropic API key is configured. Set one in Settings.', true);
         return;
       }
       if (provider.value === 'wintermute') {
         if (!wintermuteEndpoint.value.trim() && !wintermute.configured) {
-          statusEl.textContent = 'Wintermute server URL is required.';
-          statusEl.className = 'status warn';
+          setStatus('Wintermute server URL is required.', true);
           return;
         }
-        if (!wintermuteToken.value.trim() && !wintermute.token_configured) {
-          statusEl.textContent = 'Wintermute client token is required.';
-          statusEl.className = 'status warn';
+        if (!wintermute.token_configured) {
+          setStatus('No Wintermute client token is configured. Set one in Settings.', true);
           return;
         }
       }
@@ -442,17 +588,19 @@ func aiChatPage(c *gin.Context) {
       const isClaude = provider.value === 'claude';
       const payload = {
         provider: provider.value,
-        api_key: isClaude ? claudeApiKey.value.trim() : wintermuteToken.value.trim(),
         question: text,
         system_prompt: systemPrompt.value.trim(),
         model: isClaude ? claudeModel.value.trim() : wintermuteModel.value.trim(),
         endpoint: isClaude ? claudeEndpoint.value.trim() : wintermuteEndpoint.value.trim(),
-        backend: wintermuteBackend.value.trim()
+        backend: wintermuteBackend.value.trim(),
+        // A resumed Wintermute session already holds the transcript; sending it
+        // again would replay every earlier turn into the same session.
+        history: sessionID ? [] : history,
+        session_id: sessionID
       };
 
       appendMessage('User', text);
-      statusEl.textContent = 'Waiting for model response...';
-      statusEl.className = 'status';
+      setStatus('Waiting for model response...');
       sendBtn.disabled = true;
 
       try {
@@ -463,18 +611,25 @@ func aiChatPage(c *gin.Context) {
         });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-        appendMessage('Assistant', data.answer || '(empty answer)');
+        const answer = data.answer || '(empty answer)';
+        appendMessage('Assistant', answer);
+        // Recorded only on success: a question that never got an answer would
+        // otherwise sit in the transcript as context for every later turn.
+        history.push({ role: 'user', content: text });
+        history.push({ role: 'assistant', content: answer });
+        sessionID = data.session_id || '';
+        renderContextNote();
         question.value = '';
         let served = data.provider || provider.value;
         if (data.backend) served += ' / ' + data.backend;
         if (data.model) served += ' (' + data.model + ')';
-        statusEl.textContent = 'Response received from ' + served + '.';
+        setStatus('Response received from ' + served + '.');
       } catch (err) {
         appendMessage('Assistant', 'Error: ' + (err.message || 'request failed'));
-        statusEl.textContent = 'Request failed.';
-        statusEl.className = 'status warn';
+        setStatus('Request failed.', true);
       } finally {
         sendBtn.disabled = false;
+        question.focus();
       }
     });
 
@@ -536,23 +691,36 @@ func aiChatPage(c *gin.Context) {
 
 // aiChatWintermuteStatus reports the server-side Wintermute defaults so the
 // page can prefill them, and whether a credential is available for each
-// provider so the page knows the key fields may be left blank.
+// provider so the page can say which one can answer before a question is sent.
 //
 // The credentials themselves are never returned — only whether one exists.
 // Availability comes from storedAICredential, so it covers a key set in the
-// Settings page as well as one inherited from the environment: checking only
-// the environment here would leave the page refusing to submit a question the
-// server could actually answer.
+// Settings page as well as one inherited from the environment.
+//
+// The defaults come from the Settings preferences rather than the environment
+// directly: Preference already falls back to the same variables, so an install
+// configured either way prefills, and one configured in Settings no longer
+// leaves this page blank.
 func aiChatWintermuteStatus(c *gin.Context) {
-	endpoint := strings.TrimSpace(os.Getenv("WINTERMUTE_URL"))
+	endpoint := aiChatPreference(settings.PrefWintermuteURL, "WINTERMUTE_URL")
 	c.JSON(http.StatusOK, gin.H{
 		"configured":        endpoint != "",
 		"token_configured":  storedAICredential("wintermute") != "",
 		"claude_configured": storedAICredential("claude") != "",
 		"default_endpoint":  endpoint,
-		"default_backend":   strings.TrimSpace(os.Getenv("WINTERMUTE_BACKEND")),
-		"default_model":     strings.TrimSpace(os.Getenv("WINTERMUTE_MODEL")),
+		"default_backend":   aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
+		"default_model":     aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
 	})
+}
+
+// aiChatPreference reads a Settings preference, falling back to its
+// environment variable when no store is configured (the unit tests, and any
+// build that runs without the settings service wired up).
+func aiChatPreference(key, envVar string) string {
+	if activeSettings == nil {
+		return strings.TrimSpace(os.Getenv(envVar))
+	}
+	return strings.TrimSpace(activeSettings.Preference(key))
 }
 
 // activeSettings is the install-wide credential store, wired at startup by
@@ -588,6 +756,10 @@ func storedWintermuteURL() string {
 }
 
 func aiChatAsk(c *gin.Context) {
+	// Bounded because the body now carries a client-held transcript, so its
+	// size is no longer a function of one typed question.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, aiChatMaxBodyBytes)
+
 	var req aiChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
@@ -597,22 +769,14 @@ func aiChatAsk(c *gin.Context) {
 	req.Provider = strings.TrimSpace(strings.ToLower(req.Provider))
 	req.Question = strings.TrimSpace(req.Question)
 	req.System = strings.TrimSpace(req.System)
-	req.APIKey = strings.TrimSpace(req.APIKey)
 	req.Model = strings.TrimSpace(req.Model)
 	req.Endpoint = strings.TrimSpace(req.Endpoint)
 	req.Backend = strings.TrimSpace(req.Backend)
+	req.SessionID = strings.TrimSpace(req.SessionID)
 
 	if req.Question == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
 		return
-	}
-
-	// A request that carries no credential falls back to the one stored in
-	// Settings, so the key does not have to be pasted into the browser on every
-	// visit. An explicit key in the request still wins, which keeps the page
-	// usable for trying a different key without changing the install-wide one.
-	if req.APIKey == "" {
-		req.APIKey = storedAICredential(req.Provider)
 	}
 
 	provider, err := aiChatProvider(req)
@@ -623,7 +787,9 @@ func aiChatAsk(c *gin.Context) {
 
 	resp, err := provider.Ask(c.Request.Context(), aiprovider.Request{
 		System:    req.System,
+		History:   boundedHistory(req.History),
 		Prompt:    req.Question,
+		SessionID: req.SessionID,
 		Model:     req.Model,
 		MaxTokens: aiChatMaxTokens,
 	})
@@ -641,33 +807,86 @@ func aiChatAsk(c *gin.Context) {
 	// answered is not always the one that was asked for.
 	logAIUsage(resp.Provider, resp.Model, int64(resp.Usage.InputTokens), int64(resp.Usage.OutputTokens))
 	c.JSON(http.StatusOK, gin.H{
-		"provider": resp.Provider,
-		"answer":   resp.Text,
-		"backend":  resp.Backend,
-		"model":    resp.Model,
+		"provider":   resp.Provider,
+		"answer":     resp.Text,
+		"backend":    resp.Backend,
+		"model":      resp.Model,
+		"session_id": resp.SessionID,
 	})
 }
 
 // aiChatMaxTokens bounds one chat answer.
 const aiChatMaxTokens = 4096
 
+// The transcript a client may send back is bounded on both axes: a long
+// conversation would otherwise grow every request until the model rejects it,
+// and the token cost of a turn is paid by the operator. The oldest turns are
+// dropped first, so a follow-up keeps the context that is actually near it.
+const (
+	aiChatMaxHistoryTurns = 20
+	aiChatMaxHistoryChars = 24000
+	// Comfortably above a full transcript at those limits, so the reader hits
+	// the trim above rather than a rejected request.
+	aiChatMaxBodyBytes = 512 << 10
+)
+
+// boundedHistory converts the client's transcript into harness turns, dropping
+// blanks and unknown roles, and keeping only the most recent turns within the
+// limits above.
+func boundedHistory(turns []aiChatTurn) []aiprovider.Message {
+	if len(turns) == 0 {
+		return nil
+	}
+
+	kept := make([]aiprovider.Message, 0, len(turns))
+	for _, turn := range turns {
+		text := strings.TrimSpace(turn.Content)
+		if text == "" {
+			continue
+		}
+		role := strings.TrimSpace(strings.ToLower(turn.Role))
+		if role != aiprovider.RoleUser && role != aiprovider.RoleAssistant {
+			continue
+		}
+		kept = append(kept, aiprovider.Message{Role: role, Text: text})
+	}
+
+	if len(kept) > aiChatMaxHistoryTurns {
+		kept = kept[len(kept)-aiChatMaxHistoryTurns:]
+	}
+
+	// Walk back from the newest turn, taking what fits.
+	budget := aiChatMaxHistoryChars
+	first := len(kept)
+	for i := len(kept) - 1; i >= 0; i-- {
+		if len(kept[i].Text) > budget {
+			break
+		}
+		budget -= len(kept[i].Text)
+		first = i
+	}
+	return kept[first:]
+}
+
 // aiChatProvider builds the provider for one request.
 //
 // This page is the one place a provider is chosen per question rather than per
-// install: a reviewer may want to put a single question to a different model,
-// or try a key before saving it. So it does not use the Settings router —
-// it builds a provider from the request, falling back field by field to the
-// stored configuration. The transport itself is the shared harness, so there
-// is one implementation of each protocol rather than two.
+// install: a reviewer may want to put a single question to a different model or
+// Wintermute backend. So it does not use the Settings router — it builds a
+// provider from the request, falling back field by field to the stored
+// configuration. The transport itself is the shared harness, so there is one
+// implementation of each protocol rather than two.
+//
+// Credentials are the exception to "per question": they are never taken from
+// the request. Both keys come from Settings (or the environment behind it), so
+// there is one place to set them and no path that carries a secret through the
+// browser.
 func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 	switch req.Provider {
 	case "", "claude":
-		key := req.APIKey
+		key := storedAICredential("claude")
 		if key == "" {
-			key = storedAICredential("claude")
-		}
-		if key == "" {
-			return nil, fmt.Errorf("no Anthropic API key: paste one above, or set one in Settings to use it everywhere")
+			return nil, fmt.Errorf("no Anthropic API key: set one in Settings")
 		}
 		// The endpoint override stays restricted to Anthropic's own host.
 		endpoint, err := validatedClaudeBaseURL(req.Endpoint)
@@ -679,21 +898,18 @@ func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 	case "wintermute":
 		cfg := aiprovider.WintermuteConfig{
 			URL:     req.Endpoint,
-			Token:   req.APIKey,
+			Token:   storedAICredential("wintermute"),
 			Backend: req.Backend,
 			Model:   req.Model,
 		}
 		if cfg.URL == "" {
 			cfg.URL = storedWintermuteURL()
 		}
-		if cfg.Token == "" {
-			cfg.Token = storedAICredential("wintermute")
-		}
 		if cfg.URL == "" {
 			return nil, fmt.Errorf("no Wintermute server URL: enter one above, or set one in Settings")
 		}
 		if cfg.Token == "" {
-			return nil, fmt.Errorf("no Wintermute client token: enter one above, or set one in Settings")
+			return nil, fmt.Errorf("no Wintermute client token: set one in Settings")
 		}
 		if _, err := aiprovider.ValidateEndpoint(cfg.URL); err != nil {
 			return nil, err

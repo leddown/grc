@@ -20,9 +20,11 @@ type stubWintermute struct {
 	status  string
 	backend string
 	model   string
-	// seenSession records the session-create payload for assertions.
-	seenSession map[string]any
-	seenText    string
+	// seenSession records the session-create payload for assertions, and
+	// sessionCreates how many times one was opened.
+	seenSession    map[string]any
+	sessionCreates int
+	seenText       string
 	// failWith, when non-zero, makes every authenticated call fail.
 	failWith int
 }
@@ -59,6 +61,7 @@ func (s *stubWintermute) server(t *testing.T) *httptest.Server {
 
 	mux.HandleFunc("/api/v1/sessions", authed(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&s.seenSession)
+		s.sessionCreates++
 		writeJSON(w, map[string]any{"id": "sess-123"})
 	}))
 
@@ -141,6 +144,75 @@ func TestWintermuteAsk(t *testing.T) {
 	// wintermuted takes message text only, so the system prompt is folded in.
 	if !strings.HasPrefix(stub.seenText, "be terse") || !strings.Contains(stub.seenText, "why?") {
 		t.Errorf("posted text = %q, want the system prompt prepended to the question", stub.seenText)
+	}
+}
+
+// A conversation continues in the session the last answer came from: the
+// server holds the transcript, so nothing is resent and no session is opened.
+func TestWintermuteAskResumesSession(t *testing.T) {
+	stub := &stubWintermute{token: "tok", reply: "still me"}
+	srv := stub.server(t)
+	w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "tok"})
+
+	first, err := w.Ask(context.Background(), Request{Prompt: "who are you?"})
+	if err != nil {
+		t.Fatalf("first Ask: %v", err)
+	}
+	if first.SessionID != "sess-123" {
+		t.Fatalf("SessionID = %q, want the server's session id", first.SessionID)
+	}
+
+	resp, err := w.Ask(context.Background(), Request{
+		Prompt:    "and again?",
+		SessionID: first.SessionID,
+		History: []Message{
+			{Role: RoleUser, Text: "who are you?"},
+			{Role: RoleAssistant, Text: "still me"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("second Ask: %v", err)
+	}
+	if resp.SessionID != "sess-123" {
+		t.Errorf("SessionID = %q, want it carried through", resp.SessionID)
+	}
+	if stub.sessionCreates != 1 {
+		t.Errorf("opened %d sessions, want 1 — the second turn must reuse the first", stub.sessionCreates)
+	}
+	if stub.seenText != "and again?" {
+		t.Errorf("posted text = %q, want the question alone: the server already has the transcript", stub.seenText)
+	}
+}
+
+// A transcript with no session id belongs to a conversation this server has
+// never seen, so it is folded into the message text instead.
+func TestWintermuteAskFoldsHistoryWithoutSession(t *testing.T) {
+	stub := &stubWintermute{token: "tok", reply: "sure"}
+	srv := stub.server(t)
+	w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "tok"})
+
+	if _, err := w.Ask(context.Background(), Request{
+		System: "be terse",
+		Prompt: "and the second?",
+		History: []Message{
+			{Role: RoleUser, Text: "name a control family"},
+			{Role: RoleAssistant, Text: "AC — Access Control"},
+			{Role: RoleUser, Text: "  "},
+		},
+	}); err != nil {
+		t.Fatalf("Ask: %v", err)
+	}
+
+	for _, want := range []string{"be terse", "User: name a control family", "Assistant: AC — Access Control", "and the second?"} {
+		if !strings.Contains(stub.seenText, want) {
+			t.Errorf("posted text %q is missing %q", stub.seenText, want)
+		}
+	}
+	if !strings.HasPrefix(stub.seenText, "be terse") {
+		t.Errorf("posted text = %q, want the system prompt first", stub.seenText)
+	}
+	if strings.Index(stub.seenText, "name a control family") > strings.Index(stub.seenText, "and the second?") {
+		t.Error("the transcript must come before the new question")
 	}
 }
 

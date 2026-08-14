@@ -34,6 +34,11 @@ func settingsPage(c *gin.Context) {
     button.danger { border-color:#7f1d1d; }
     button:disabled { opacity:.5; cursor:not-allowed; }
     .cred { border:1px solid #334155; border-radius:12px; padding:16px; margin-bottom:16px; background:#0f172a; }
+    /* The credential cards are one short form each: side by side on a wide
+       screen rather than a column of full-width cards with a lot of dead space
+       to the right of every input. */
+    #creds { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:16px; align-items:start; }
+    #creds .cred { margin-bottom:0; }
     .cred h3 { margin:0 0 4px; font-size:15px; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
     .row input { flex:1; min-width:280px; }
@@ -47,11 +52,17 @@ func settingsPage(c *gin.Context) {
     .status.error { color:#fca5a5; }
     .notice { border:1px solid #7f1d1d; background:#3f1d1d; color:#fecaca; padding:12px; border-radius:10px; margin-bottom:16px; }
     .keyring { font-size:12px; color:#64748b; margin-top:24px; }
+    /* The shared sidebar renders pageui.Nav as a.tab links; without these the
+       page inherits the browser's underlined-link default instead of the pill
+       every other page shows. */
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .tab { padding:9px 12px; border-radius:999px; border:1px solid #334155; background:#1e293b; color:#e2e8f0; text-decoration:none; font-size:13px; }
+    .tab.active { background:#334155; border-color:#64748b; }
   </style>
 </head>
 <body>
-` + pageui.Nav("/settings") + `
   <main>
+` + pageui.Nav("/settings") + `
     <h1>Settings</h1>
     <p>
       Credentials for the AI features. A key set here is used by every AI field in
@@ -114,12 +125,12 @@ func settingsPage(c *gin.Context) {
   const LABELS = {
     anthropic_api_key: {
       title: 'Anthropic API key',
-      blurb: 'Used for Claude requests: AI Chat, and the NFR Enrichment analyzer.',
+      blurb: 'Used for every Claude request: the AI Chat gateway, and the NFR Enrichment analyzer. This is the only place it is set.',
       placeholder: 'sk-ant-...',
     },
     wintermute_token: {
       title: 'Wintermute client token',
-      blurb: 'Used to reach a Wintermute server, which routes questions to self-hosted models on your network or on to Claude.',
+      blurb: 'Used to reach a Wintermute server, which routes questions to self-hosted models on your network or on to Claude. This is the only place it is set.',
       placeholder: 'Token from wintermuted -add-client',
     },
   };

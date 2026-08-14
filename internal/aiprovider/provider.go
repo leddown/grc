@@ -25,16 +25,42 @@ const (
 // credential, or no server URL. It is not a failure of the request.
 var ErrNotConfigured = errors.New("provider is not configured")
 
-// Request is one self-contained question. There is no conversation: each AI
-// field in this app asks a single question and uses the answer, so the harness
-// deliberately exposes no transcript.
+// Roles for a Message in a Request's History.
+const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+// Message is one earlier turn of a conversation. Role is RoleUser or
+// RoleAssistant.
+type Message struct {
+	Role string
+	Text string
+}
+
+// Request is one question. Most AI fields in this app ask a single
+// self-contained question and use the answer, so History is optional and
+// usually empty; the chat surfaces set it so a follow-up question means what it
+// says. The harness holds no conversation state of its own — a caller that
+// wants continuity either sends the transcript back on each turn (History) or,
+// where the provider keeps the transcript itself, hands back the SessionID the
+// previous answer carried.
 type Request struct {
 	// System is the instruction that frames the task. The Wintermute provider
 	// folds it into the message text, because wintermuted derives its own
 	// system prompt from its configuration.
 	System string
+	// History is the conversation so far, oldest first, excluding Prompt. The
+	// caller is responsible for bounding it: nothing here trims a transcript
+	// that has outgrown the model's context window.
+	History []Message
 	// Prompt is the question itself.
 	Prompt string
+	// SessionID continues a conversation a provider is itself holding, as
+	// returned by a previous Response. It is opaque and provider-specific;
+	// Claude has no such thing and ignores it. When it is set, the provider
+	// already has the transcript and History is not resent.
+	SessionID string
 	// Model optionally overrides the provider's configured model.
 	Model string
 	// MaxTokens bounds the answer. Zero means the provider's default.
@@ -59,7 +85,11 @@ type Response struct {
 	Backend string
 	// Model is the model that produced the answer.
 	Model string
-	Usage Usage
+	// SessionID identifies the conversation this turn belongs to, for providers
+	// that keep the transcript themselves. Passing it back on the next Request
+	// continues that conversation. Empty for providers that do not.
+	SessionID string
+	Usage     Usage
 	// Refused reports that the provider's safety classifiers declined the
 	// request. This is a successful HTTP 200 with empty or partial content, so
 	// a caller that reads Text without checking this misreads a refusal as a
