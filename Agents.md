@@ -41,6 +41,11 @@ all backed by SQLite and served via Gin.
 - `internal/riskregister`, `internal/reports` — risk register and
   reporting dashboards
 - `internal/jira` — Jira Cloud REST connector (issues/projects/search)
+- `internal/regcoverage` — Regulation Coverage: uploads an EU regulation,
+  maps every article to Security NFRs and 800-53 with AI, and keeps a
+  versioned report that can be questioned and revised. Reuses
+  `internal/regmap`'s extraction, segmentation and framework profiles rather
+  than duplicating them — see `REGULATION_COVERAGE.md`
 - `internal/db` — SQLite connection + schema setup
 - `internal/pageui` — shared side-nav tab rendering used across pages
 - `internal/data` — embedded/static seed JSON for the control and NFR

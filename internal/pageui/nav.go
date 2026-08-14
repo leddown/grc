@@ -50,6 +50,7 @@ var navGroups = []NavGroup{
 			{Path: "/policies", Label: "Policy Library"},
 			{Path: "/policies/manage", Label: "Policy Editor"},
 			{Path: "/policies/coverage", Label: "Policy Coverage"},
+			{Path: "/regulation-coverage", Label: "Regulation Coverage"},
 			{Path: "/wiz-rules", Label: "Wiz Rules"},
 		},
 	},

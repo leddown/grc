@@ -47,6 +47,36 @@ func Extract(path string) (*Extraction, error) {
 	}
 }
 
+// ExtractBytes is Extract for a document that arrived as bytes rather than as
+// a file — an HTTP upload. filename supplies the extension that selects the
+// reader; the content is written to a temporary file because both PDF readers
+// need one (pdftotext takes a path, and the library reader needs a size and a
+// ReaderAt over the whole document rather than a stream).
+//
+// The temporary file is removed before returning, so nothing an upload
+// contains outlives the call.
+func ExtractBytes(filename string, body []byte) (*Extraction, error) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == "" {
+		ext = ".txt"
+	}
+	tmp, err := os.CreateTemp("", "regmap-ingest-*"+ext)
+	if err != nil {
+		return nil, fmt.Errorf("create temporary file for %s: %w", filename, err)
+	}
+	path := tmp.Name()
+	defer func() { _ = os.Remove(path) }()
+
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("write temporary file for %s: %w", filename, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("close temporary file for %s: %w", filename, err)
+	}
+	return Extract(path)
+}
+
 // extractPDF prefers the pdftotext binary because its layout mode preserves
 // heading structure far better than a pure-Go extraction; it falls back to the
 // ledongthuc/pdf library when pdftotext is not installed.

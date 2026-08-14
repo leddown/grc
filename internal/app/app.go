@@ -18,6 +18,7 @@ import (
 	"grc/internal/nfrenrich"
 	"grc/internal/nfrlink"
 	"grc/internal/policydocs"
+	"grc/internal/regcoverage"
 	"grc/internal/reporting"
 	"grc/internal/reports"
 	"grc/internal/riskregister"
@@ -135,12 +136,17 @@ func Run(options Options) error {
 	configureAICredentials(settingsService)
 	aiRouter := newAIRouter(settingsService)
 
-	registerReportingRoutes(router)
+	// The reporting module's renderer is shared with Regulation Coverage rather
+	// than duplicated: both produce PDFs, and one pooled headless browser per
+	// process is enough.
+	pdfRenderer := registerReportingRoutes(router)
 	registerSettingsRoutes(router, settingsService, aiRouter, adminMiddleware, options.LocalMode)
 	policyService := registerPolicyDocRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
 	registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
 	registerNFREnrichmentRoutes(
 		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
+	registerRegulationCoverageRoutes(
+		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
@@ -315,7 +321,9 @@ func registerRoutes(r gin.IRouter, userHandler *user.Handler, authHandler *authn
 // headless browser starts lazily on the first report request and is pooled for
 // the process lifetime. Chrome behavior can be tuned via REPORTING_CHROME_PATH
 // and REPORTING_CHROME_NO_SANDBOX (see internal/reporting/README.md).
-func registerReportingRoutes(r gin.IRouter) {
+// It returns the renderer so other modules that produce PDFs can share the one
+// browser rather than each starting their own.
+func registerReportingRoutes(r gin.IRouter) reporting.Renderer {
 	var chromeOpts []reporting.ChromeOption
 	if path := envOrDefault("REPORTING_CHROME_PATH", ""); path != "" {
 		chromeOpts = append(chromeOpts, reporting.WithChromePath(path))
@@ -327,6 +335,40 @@ func registerReportingRoutes(r gin.IRouter) {
 	service := reporting.NewService(renderer, nil)
 	handler := reporting.NewHandler(service, nil)
 	handler.RegisterRoutes(r)
+	return renderer
+}
+
+// registerRegulationCoverageRoutes wires the Regulation Coverage module: upload
+// an EU regulation, analyse every article against the Security NFR catalog and
+// 800-53, and interrogate the resulting report.
+//
+// It follows the same read-open / write-admin split as NFR enrichment, with
+// analysis and chat on the admin side because both spend model calls. The
+// analyzer goes through the shared provider router, so keys, provider choice
+// and the ai_usage_log stay in one place — POLICY_MODULE_FRAMEWORK.md §2.5.
+func registerRegulationCoverageRoutes(
+	r gin.IRouter,
+	sqliteDB *db.Conn,
+	nfrService *securitynfr.Service,
+	aiRouter *aiprovider.Router,
+	pdfRenderer reporting.Renderer,
+	adminMiddleware gin.HandlerFunc,
+	localMode bool,
+) {
+	service := regcoverage.NewService(
+		regcoverage.NewSQLiteRepository(sqliteDB),
+		nfrService,
+		aiRouter,
+	).WithRenderer(pdfRenderer)
+
+	handler := regcoverage.NewHandler(service, sessionUsername)
+	handler.RegisterRoutes(r)
+
+	admin := r.Group("/")
+	if !localMode {
+		admin.Use(adminMiddleware)
+	}
+	handler.RegisterAdminRoutes(admin)
 }
 
 // registerPolicyDocRoutes wires the policy-authoring module, following the same

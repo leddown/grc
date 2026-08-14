@@ -1,6 +1,10 @@
 package profile
 
-import "testing"
+import (
+	"testing"
+
+	"grc/regmap/profiles"
+)
 
 func TestMatcher(t *testing.T) {
 	tests := []struct {
@@ -183,7 +187,11 @@ func TestShippedProfilesAreValid(t *testing.T) {
 		if _, ok := want[p.ID]; ok {
 			want[p.ID] = true
 		}
-		if p.SourceRef == "" {
+		// eu-generic is the fallback for an instrument that has no profile of
+		// its own, so there is no one act for it to name — a report built on it
+		// takes its header from the uploaded document instead. Every profile
+		// that does name a specific framework must say which.
+		if p.SourceRef == "" && p.ID != "eu-generic" {
 			t.Errorf("profile %s has no sourceRef; reports name it in the header", p.ID)
 		}
 	}
@@ -205,4 +213,25 @@ func indexOf(h, n string) int {
 		}
 	}
 	return -1
+}
+
+// The server reads the same profiles from the embedded copy rather than from a
+// directory next to the binary, so the two paths must agree.
+func TestLoadFSMatchesLoadDir(t *testing.T) {
+	fromDisk, err := LoadDir("../../../regmap/profiles")
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	fromEmbed, err := LoadFS(profiles.FS, ".")
+	if err != nil {
+		t.Fatalf("LoadFS: %v", err)
+	}
+	if len(fromEmbed.All()) != len(fromDisk.All()) {
+		t.Fatalf("embedded set has %d profiles, disk has %d", len(fromEmbed.All()), len(fromDisk.All()))
+	}
+	for i, p := range fromEmbed.All() {
+		if got, want := p.ID, fromDisk.All()[i].ID; got != want {
+			t.Errorf("profile %d = %q, want %q", i, got, want)
+		}
+	}
 }

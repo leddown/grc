@@ -1,0 +1,20 @@
+# Fallback profile for an EU regulation or directive that has no profile of its
+# own. It carries no detection patterns, so it is never auto-detected — it is
+# selected explicitly, which is what the Regulation Coverage module does when
+# nothing else matches an upload.
+#
+# It also carries no classification rules and no seed crosswalk: those are the
+# parts that require knowing the specific instrument. Everything here is what
+# EU legislative drafting gives you for free — articles, and annexes.
+id: eu-generic
+displayName: EU regulation (generic)
+sourceRef: ""
+idPrefix: EU-ART
+
+segmentation:
+  - type: article
+    label: Article
+    minBodyChars: 120
+  - type: annex
+    label: Annex
+    idPrefix: EU-ANNEX

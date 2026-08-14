@@ -151,6 +151,15 @@ rows, and `--approved-only` emits just the signed-off set.
 Write `regmap/profiles/<id>.yaml`. No Go code changes. The pipeline, the gates,
 the state store and the report engine contain no per-framework logic.
 
+Two things share these files with the CLI. The **`eu-generic` profile** is a
+deliberate non-framework: article and annex segmentation, no detect patterns,
+no classification and no crosswalk. It never wins detection — it is selected
+explicitly, as the fallback for an instrument that has no profile of its own.
+And the **web module** (`internal/regcoverage`, see `REGULATION_COVERAGE.md`)
+reads this directory from an embedded copy rather than from disk, so a new
+profile reaches the server on the next build, while the CLI keeps reading it
+live from `--profiles-dir`.
+
 ```yaml
 id: my-framework                 # required; used as --framework <id>
 displayName: My Framework v1.0   # shown in reports

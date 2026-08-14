@@ -6,7 +6,9 @@ package profile
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -364,11 +366,19 @@ func Load(path string) (*Profile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read profile %s: %w", path, err)
 	}
+	return Parse(path, raw)
+}
+
+// Parse builds a profile from YAML already in memory. name is used for error
+// messages and as the profile's reported path; it need not be a real file, so
+// a profile can come from an embedded filesystem or a literal as readily as
+// from the operator's --profiles-dir.
+func Parse(name string, raw []byte) (*Profile, error) {
 	var p Profile
 	if err := yaml.Unmarshal(raw, &p); err != nil {
-		return nil, fmt.Errorf("parse profile %s: %w", path, err)
+		return nil, fmt.Errorf("parse profile %s: %w", name, err)
 	}
-	p.path = path
+	p.path = name
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -380,11 +390,30 @@ type Registry struct {
 	profiles []*Profile
 }
 
+// NewRegistry builds a registry from profiles already in memory, for a caller
+// that assembles its own set rather than reading a directory.
+func NewRegistry(profiles ...*Profile) *Registry {
+	reg := &Registry{profiles: profiles}
+	reg.sort()
+	return reg
+}
+
 // LoadDir loads every *.yaml/*.yml profile in dir.
 func LoadDir(dir string) (*Registry, error) {
-	entries, err := os.ReadDir(dir)
+	return loadFS(os.DirFS(dir), ".", dir)
+}
+
+// LoadFS loads every *.yaml/*.yml profile in dir within fsys. It is what the
+// server uses: the web module ships the profiles embedded in the binary rather
+// than depending on a directory next to it.
+func LoadFS(fsys fs.FS, dir string) (*Registry, error) {
+	return loadFS(fsys, dir, dir)
+}
+
+func loadFS(fsys fs.FS, dir, label string) (*Registry, error) {
+	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
-		return nil, fmt.Errorf("read profiles directory %s: %w", dir, err)
+		return nil, fmt.Errorf("read profiles directory %s: %w", label, err)
 	}
 	reg := &Registry{}
 	for _, e := range entries {
@@ -395,19 +424,28 @@ func LoadDir(dir string) (*Registry, error) {
 		if ext != ".yaml" && ext != ".yml" {
 			continue
 		}
-		p, err := Load(filepath.Join(dir, e.Name()))
+		name := path.Join(dir, e.Name())
+		raw, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return nil, fmt.Errorf("read profile %s: %w", name, err)
+		}
+		p, err := Parse(filepath.Join(label, e.Name()), raw)
 		if err != nil {
 			return nil, err
 		}
 		reg.profiles = append(reg.profiles, p)
 	}
 	if len(reg.profiles) == 0 {
-		return nil, fmt.Errorf("no framework profiles found in %s", dir)
+		return nil, fmt.Errorf("no framework profiles found in %s", label)
 	}
-	sort.SliceStable(reg.profiles, func(i, j int) bool {
-		return reg.profiles[i].ID < reg.profiles[j].ID
-	})
+	reg.sort()
 	return reg, nil
+}
+
+func (r *Registry) sort() {
+	sort.SliceStable(r.profiles, func(i, j int) bool {
+		return r.profiles[i].ID < r.profiles[j].ID
+	})
 }
 
 // All returns every loaded profile, sorted by ID.

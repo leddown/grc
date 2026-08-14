@@ -291,7 +291,129 @@ func OpenSQLite(path string) (*Conn, error) {
 		settings_json TEXT NOT NULL DEFAULT '{}',
 		updated_at TEXT NOT NULL DEFAULT '',
 		updated_by TEXT NOT NULL DEFAULT ''
-	);`
+	);
+
+	CREATE TABLE IF NOT EXISTS reg_coverage_regulations (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		title TEXT NOT NULL DEFAULT '',
+		framework TEXT NOT NULL DEFAULT '',
+		framework_name TEXT NOT NULL DEFAULT '',
+		source_ref TEXT NOT NULL DEFAULT '',
+		detected INTEGER NOT NULL DEFAULT 0,
+		filename TEXT NOT NULL DEFAULT '',
+		media_type TEXT NOT NULL DEFAULT '',
+		sha256 TEXT NOT NULL DEFAULT '',
+		byte_size INTEGER NOT NULL DEFAULT 0,
+		extract_method TEXT NOT NULL DEFAULT '',
+		extract_notes TEXT NOT NULL DEFAULT '',
+		body_text TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'ingested',
+		status_detail TEXT NOT NULL DEFAULT '',
+		uploaded_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		analyzed_at TEXT NOT NULL DEFAULT ''
+	);
+
+	-- The upload itself, kept so the report can be read against the original
+	-- document rather than against this module's extraction of it. Separate
+	-- from the regulation row because every listing would otherwise carry a
+	-- multi-megabyte blob it never reads.
+	CREATE TABLE IF NOT EXISTS reg_coverage_sources (
+		regulation_id INTEGER PRIMARY KEY,
+		media_type TEXT NOT NULL DEFAULT '',
+		filename TEXT NOT NULL DEFAULT '',
+		byte_size INTEGER NOT NULL DEFAULT 0,
+		content BLOB NOT NULL,
+		FOREIGN KEY(regulation_id) REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS reg_coverage_sections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		regulation_id INTEGER NOT NULL,
+		ref TEXT NOT NULL DEFAULT '',
+		label TEXT NOT NULL DEFAULT '',
+		title TEXT NOT NULL DEFAULT '',
+		category TEXT NOT NULL DEFAULT '',
+		body TEXT NOT NULL DEFAULT '',
+		position INTEGER NOT NULL DEFAULT 0,
+		confidence TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(regulation_id) REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_reg_coverage_sections_regulation
+		ON reg_coverage_sections (regulation_id, position);
+
+	-- One row per section per revision. The current finding for a section is
+	-- the highest revision; the earlier ones are kept because a version
+	-- snapshot has to stay reproducible after a revision replaces it.
+	CREATE TABLE IF NOT EXISTS reg_coverage_findings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		regulation_id INTEGER NOT NULL,
+		section_id INTEGER NOT NULL,
+		relevant INTEGER NOT NULL DEFAULT 0,
+		requirement TEXT NOT NULL DEFAULT '',
+		commentary TEXT NOT NULL DEFAULT '',
+		gaps TEXT NOT NULL DEFAULT '',
+		quote TEXT NOT NULL DEFAULT '',
+		grounded INTEGER NOT NULL DEFAULT 0,
+		confidence TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		prompt_hash TEXT NOT NULL DEFAULT '',
+		revision INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(regulation_id) REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+		FOREIGN KEY(section_id) REFERENCES reg_coverage_sections(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_reg_coverage_findings_section
+		ON reg_coverage_findings (section_id, revision);
+
+	CREATE TABLE IF NOT EXISTS reg_coverage_mappings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		finding_id INTEGER NOT NULL,
+		kind TEXT NOT NULL DEFAULT '',
+		ref TEXT NOT NULL DEFAULT '',
+		title TEXT NOT NULL DEFAULT '',
+		rationale TEXT NOT NULL DEFAULT '',
+		confidence TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL DEFAULT '',
+		known INTEGER NOT NULL DEFAULT 0,
+		FOREIGN KEY(finding_id) REFERENCES reg_coverage_findings(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_reg_coverage_mappings_finding
+		ON reg_coverage_mappings (finding_id);
+
+	CREATE TABLE IF NOT EXISTS reg_coverage_versions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		regulation_id INTEGER NOT NULL,
+		number INTEGER NOT NULL DEFAULT 1,
+		summary TEXT NOT NULL DEFAULT '',
+		note TEXT NOT NULL DEFAULT '',
+		snapshot TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		created_by TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(regulation_id) REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE
+	);
+
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_coverage_versions_number
+		ON reg_coverage_versions (regulation_id, number);
+
+	CREATE TABLE IF NOT EXISTS reg_coverage_chat (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		regulation_id INTEGER NOT NULL,
+		version INTEGER NOT NULL DEFAULT 0,
+		role TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		actor TEXT NOT NULL DEFAULT '',
+		session_id TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(regulation_id) REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_reg_coverage_chat_regulation
+		ON reg_coverage_chat (regulation_id, id);`
 
 	const stateSchema = `
 	CREATE TABLE IF NOT EXISTS app_state (

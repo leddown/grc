@@ -319,6 +319,121 @@ CREATE TABLE IF NOT EXISTS doc_template_brand (
 	updated_by TEXT NOT NULL DEFAULT ''
 );
 
+-- Regulation Coverage: an uploaded regulation, its sections, the model's
+-- findings and mappings, the immutable report versions, and the conversation
+-- held about them. See internal/regcoverage.
+CREATE TABLE IF NOT EXISTS reg_coverage_regulations (
+	id BIGSERIAL PRIMARY KEY,
+	title TEXT NOT NULL DEFAULT '',
+	framework TEXT NOT NULL DEFAULT '',
+	framework_name TEXT NOT NULL DEFAULT '',
+	source_ref TEXT NOT NULL DEFAULT '',
+	detected INTEGER NOT NULL DEFAULT 0,
+	filename TEXT NOT NULL DEFAULT '',
+	media_type TEXT NOT NULL DEFAULT '',
+	sha256 TEXT NOT NULL DEFAULT '',
+	byte_size BIGINT NOT NULL DEFAULT 0,
+	extract_method TEXT NOT NULL DEFAULT '',
+	extract_notes TEXT NOT NULL DEFAULT '',
+	body_text TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'ingested',
+	status_detail TEXT NOT NULL DEFAULT '',
+	uploaded_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	analyzed_at TEXT NOT NULL DEFAULT ''
+);
+
+-- The upload itself, kept so the report can be read against the original
+-- document rather than against this module's extraction of it. Separate from
+-- the regulation row because every listing would otherwise carry a
+-- multi-megabyte blob it never reads.
+CREATE TABLE IF NOT EXISTS reg_coverage_sources (
+	regulation_id BIGINT PRIMARY KEY REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	media_type TEXT NOT NULL DEFAULT '',
+	filename TEXT NOT NULL DEFAULT '',
+	byte_size BIGINT NOT NULL DEFAULT 0,
+	content BYTEA NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_sections (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	ref TEXT NOT NULL DEFAULT '',
+	label TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	category TEXT NOT NULL DEFAULT '',
+	body TEXT NOT NULL DEFAULT '',
+	position INTEGER NOT NULL DEFAULT 0,
+	confidence TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_sections_regulation
+	ON reg_coverage_sections (regulation_id, position);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_findings (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	section_id BIGINT NOT NULL REFERENCES reg_coverage_sections(id) ON DELETE CASCADE,
+	relevant INTEGER NOT NULL DEFAULT 0,
+	requirement TEXT NOT NULL DEFAULT '',
+	commentary TEXT NOT NULL DEFAULT '',
+	gaps TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	grounded INTEGER NOT NULL DEFAULT 0,
+	confidence TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	revision INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_findings_section
+	ON reg_coverage_findings (section_id, revision);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_mappings (
+	id BIGSERIAL PRIMARY KEY,
+	finding_id BIGINT NOT NULL REFERENCES reg_coverage_findings(id) ON DELETE CASCADE,
+	kind TEXT NOT NULL DEFAULT '',
+	ref TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	confidence TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT '',
+	known INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_mappings_finding
+	ON reg_coverage_mappings (finding_id);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_versions (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	number INTEGER NOT NULL DEFAULT 1,
+	summary TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	snapshot TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_coverage_versions_number
+	ON reg_coverage_versions (regulation_id, number);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_chat (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	version INTEGER NOT NULL DEFAULT 0,
+	role TEXT NOT NULL DEFAULT '',
+	content TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	session_id TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_chat_regulation
+	ON reg_coverage_chat (regulation_id, id);
+
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_control_id ON rcsa_controls(control_id);
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_family_type ON rcsa_controls(family, control_type);
 CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain);

@@ -3,6 +3,97 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-14 (Regulation Coverage: upload an EU regulation, get a mapped report)
+
+New module `internal/regcoverage`, at `/regulation-coverage` in the Compliance
+& Risk group beside Policy Coverage. Upload an EU regulation as a PDF and every
+article is analysed against this installation's Security NFR catalog and NIST
+SP 800-53: what the article requires, whether it imposes a security obligation
+at all, which NFRs and controls satisfy it, what the catalog does not cover,
+and practitioner commentary on meeting it well. The result is a versioned
+report — an in-app page, a PDF, or JSON — that can then be interrogated in
+conversation and corrected. Full documentation in `REGULATION_COVERAGE.md`.
+
+This is the web counterpart to the `regmap` CLI and reuses its machinery rather
+than growing a second copy: PDF/DOCX extraction, article and annex
+segmentation, the framework profiles, and the embedded 800-53 catalog. What it
+adds is the half a crosswalk does not answer — NFR mapping, relevance,
+commentary, and a report someone can argue with.
+
+### How a mapping is produced
+
+Retrieval first, then judgement. A BM25 ranker (the scorer `internal/nfrenrich`
+already ships, reused rather than reimplemented) shortlists ten candidate
+controls and ten candidate NFRs per section out of the ~1200-item catalog, and
+only that shortlist enters the prompt. The model judges the shortlist and is
+told not to map to anything outside it — it never browses the catalog. Where
+the upload is recognised as a framework with a curated regmap crosswalk (DORA,
+NIS2, CRA, PCI-DSS), that crosswalk is supplied as a prior to confirm against
+the text, and a mapping both proposed and confirmed is marked `curated`.
+
+Three checks sit on the output, because none of it is trustworthy by
+construction: every reference is resolved against the catalog, so an invented
+control ID is tagged `unknown` rather than rendered into a client-facing report
+as though it were real; every finding must quote its section verbatim, and one
+that cannot is tagged `unverified quote` (whitespace, case and punctuation are
+normalised first, so a re-wrapped quote passes and an invented one does not);
+and every finding records the model and the SHA-256 of its prompt.
+
+### Versions, chat and revisions
+
+Report versions are immutable. `Revise` re-analyses one section with the
+reviewer's correction and appends the next version; the previous version keeps
+its JSON snapshot and stays downloadable exactly as it was, because these are
+artifacts that get sent to clients. The chat is grounded in the report rather
+than the raw regulation and carries its own history through the `aiprovider`
+harness — including resuming a Wintermute server-side session rather than
+resending the transcript, the same rule the AI Chat dock follows.
+
+### The original document
+
+The uploaded file is stored as it arrived, in its own table so a listing never
+drags a multi-megabyte blob it does not read, and served back byte-identical at
+`/regulation-coverage/:id/source` — inline for PDFs and text, `nosniff` and a
+`sandbox` CSP on the response, displayed in an iframe beside the report so the
+analysis can be read against the regulation as published.
+
+### Supporting changes
+
+- `internal/aiprovider` gained nothing here; this module uses the `History` /
+  `SessionID` plumbing added earlier today.
+- `internal/regmap/profile`: `Parse` (YAML from memory) and `LoadFS`, so the
+  profiles can be embedded. `regmap/profiles/embed.go` embeds them; the CLI
+  still reads the same files from disk.
+- `internal/regmap/ingest`: `ExtractBytes`, for a document that arrived as an
+  upload rather than a path.
+- New `eu-generic` profile: article and annex segmentation with no curated
+  knowledge, the fallback for an instrument with no profile. It carries no
+  detect patterns, so it never wins detection — a report built on it says
+  "generic segmentation" on its face, because it means nothing curated went
+  into the analysis.
+- `registerReportingRoutes` now returns its renderer, so Regulation Coverage
+  shares the one pooled headless browser instead of starting a second.
+- Six `reg_coverage_*` tables in both the SQLite and Postgres schemas.
+
+### Cost and failure behaviour
+
+One model call per section plus one for the summary, run synchronously behind a
+45-minute bound and cancelled if the reader navigates away. Uploading is
+separate from analysing, so a document that segmented badly costs nothing. A
+section that fails is recorded and the run continues — one bad section should
+not lose the other ninety-nine. Sections with almost no body (an inline "…
+pursuant to Article 20" cross-reference that the segmenter reads as a heading)
+are skipped rather than analysed: they can only produce an ungrounded finding,
+and they appear in the report as unanalysed.
+
+### UI note
+
+The report body is rendered once and used for both the page and the PDF, so the
+two cannot drift. On the page it needs a handful of narrow `!important` rules:
+the global theme layer paints every `<p>` with `--muted`, which is right for
+incidental page prose and wrong here, where the prose is the deliverable — the
+findings were rendering as grey secondary text in the dark themes.
+
 ## 2026-08-14 (Ask AI dock answers in place)
 
 The global "Ask AI" dock at the bottom of every page used to throw the question
