@@ -23,6 +23,7 @@ var protectedPrefixes = []string{
 	"/security-nfrs",
 	"/nfr-enrichment",
 	"/regulation-coverage",
+	"/crisis-exercises",
 	"/policies",
 	"/templates",
 	"/reports",

@@ -434,6 +434,317 @@ CREATE TABLE IF NOT EXISTS reg_coverage_chat (
 CREATE INDEX IF NOT EXISTS idx_reg_coverage_chat_regulation
 	ON reg_coverage_chat (regulation_id, id);
 
+-- ---- Risk & Crisis Exercise (internal/crisisexercise) ----
+--
+-- One exercise is one delivered instance: designed, run, and reported on.
+-- A re-run is a clone rather than a second pass over the same rows, so an
+-- exercise that has been reported on cannot silently acquire a different
+-- set of observations.
+CREATE TABLE IF NOT EXISTS crisis_ex_exercises (
+	id BIGSERIAL PRIMARY KEY,
+	reference TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL DEFAULT '',
+	format TEXT NOT NULL DEFAULT 'tabletop',
+	kind TEXT NOT NULL DEFAULT 'discussion',
+	audience TEXT NOT NULL DEFAULT 'management',
+	entity_name TEXT NOT NULL DEFAULT '',
+	entity_type TEXT NOT NULL DEFAULT '',
+	jurisdiction TEXT NOT NULL DEFAULT '',
+	supervision TEXT NOT NULL DEFAULT '',
+	critical_functions TEXT NOT NULL DEFAULT '',
+	threat_actor TEXT NOT NULL DEFAULT '',
+	threat_narrative TEXT NOT NULL DEFAULT '',
+	initial_vector TEXT NOT NULL DEFAULT '',
+	scenario_key TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'draft',
+	tlp TEXT NOT NULL DEFAULT 'TLP:AMBER',
+	scheduled_for TEXT NOT NULL DEFAULT '',
+	duration_minutes INTEGER NOT NULL DEFAULT 0,
+	started_at TEXT NOT NULL DEFAULT '',
+	ended_at TEXT NOT NULL DEFAULT '',
+	facilitator TEXT NOT NULL DEFAULT '',
+	control_team TEXT NOT NULL DEFAULT '',
+	evaluators TEXT NOT NULL DEFAULT '',
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crisis_ex_exercises_reference
+	ON crisis_ex_exercises (reference);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_objectives (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	text TEXT NOT NULL DEFAULT '',
+	capability TEXT NOT NULL DEFAULT '',
+	success_criteria TEXT NOT NULL DEFAULT '',
+	rating TEXT NOT NULL DEFAULT 'untested',
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_objectives_exercise
+	ON crisis_ex_objectives (exercise_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_phases (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	phase_key TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	purpose TEXT NOT NULL DEFAULT '',
+	entry_criteria TEXT NOT NULL DEFAULT '',
+	exit_criteria TEXT NOT NULL DEFAULT '',
+	lead_role TEXT NOT NULL DEFAULT '',
+	offset_minutes INTEGER NOT NULL DEFAULT 0,
+	duration_minutes INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL DEFAULT 'pending',
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_phases_exercise
+	ON crisis_ex_phases (exercise_id, ordinal);
+
+-- The Master Scenario Events List. Ordered by offset rather than by id
+-- because an inject inserted later in design still belongs at its own point
+-- on the clock.
+CREATE TABLE IF NOT EXISTS crisis_ex_injects (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	phase_id BIGINT NOT NULL DEFAULT 0,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	offset_minutes INTEGER NOT NULL DEFAULT 0,
+	title TEXT NOT NULL DEFAULT '',
+	body TEXT NOT NULL DEFAULT '',
+	channel TEXT NOT NULL DEFAULT '',
+	from_actor TEXT NOT NULL DEFAULT '',
+	to_actor TEXT NOT NULL DEFAULT '',
+	inject_type TEXT NOT NULL DEFAULT 'event',
+	expected_actions TEXT NOT NULL DEFAULT '',
+	expected_decision TEXT NOT NULL DEFAULT '',
+	decision_owner TEXT NOT NULL DEFAULT '',
+	evaluation_notes TEXT NOT NULL DEFAULT '',
+	difficulty TEXT NOT NULL DEFAULT 'challenge',
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	confidence TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_injects_exercise
+	ON crisis_ex_injects (exercise_id, offset_minutes, ordinal);
+
+-- One response per inject: re-recording corrects the record rather than
+-- appending a second account of the same moment.
+CREATE TABLE IF NOT EXISTS crisis_ex_responses (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	inject_id BIGINT NOT NULL,
+	delivered_at TEXT NOT NULL DEFAULT '',
+	responded_offset INTEGER NOT NULL DEFAULT -1,
+	outcome TEXT NOT NULL DEFAULT 'not_played',
+	actual_actions TEXT NOT NULL DEFAULT '',
+	observations TEXT NOT NULL DEFAULT '',
+	evaluator TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE,
+	FOREIGN KEY(inject_id) REFERENCES crisis_ex_injects(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crisis_ex_responses_inject
+	ON crisis_ex_responses (inject_id);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_decisions (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	phase_id BIGINT NOT NULL DEFAULT 0,
+	offset_minutes INTEGER NOT NULL DEFAULT 0,
+	title TEXT NOT NULL DEFAULT '',
+	options TEXT NOT NULL DEFAULT '',
+	decision TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	made_by TEXT NOT NULL DEFAULT '',
+	role TEXT NOT NULL DEFAULT '',
+	authority TEXT NOT NULL DEFAULT '',
+	reversible INTEGER NOT NULL DEFAULT 1,
+	regulatory_implication TEXT NOT NULL DEFAULT '',
+	customer_impact TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_decisions_exercise
+	ON crisis_ex_decisions (exercise_id, offset_minutes);
+
+-- The DORA materiality assessment, one row per exercise. Kept as its own
+-- table rather than as columns on the exercise because it is the artefact
+-- of one phase, it is re-entered as facts change, and it is what the clock
+-- arithmetic reads.
+CREATE TABLE IF NOT EXISTS crisis_ex_classification (
+	exercise_id BIGINT PRIMARY KEY REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE,
+	aware_offset INTEGER NOT NULL DEFAULT 0,
+	classified_offset INTEGER NOT NULL DEFAULT 0,
+	critical_services_affected INTEGER NOT NULL DEFAULT 0,
+	clients_affected TEXT NOT NULL DEFAULT '',
+	clients_material INTEGER NOT NULL DEFAULT 0,
+	transactions_affected TEXT NOT NULL DEFAULT '',
+	transactions_material INTEGER NOT NULL DEFAULT 0,
+	reputational_impact TEXT NOT NULL DEFAULT '',
+	reputational_material INTEGER NOT NULL DEFAULT 0,
+	downtime_minutes INTEGER NOT NULL DEFAULT 0,
+	duration_material INTEGER NOT NULL DEFAULT 0,
+	geographical_spread TEXT NOT NULL DEFAULT '',
+	geographical_material INTEGER NOT NULL DEFAULT 0,
+	data_losses TEXT NOT NULL DEFAULT '',
+	data_losses_material INTEGER NOT NULL DEFAULT 0,
+	economic_impact TEXT NOT NULL DEFAULT '',
+	economic_material INTEGER NOT NULL DEFAULT 0,
+	personal_data_breach INTEGER NOT NULL DEFAULT 0,
+	nis2_significant INTEGER NOT NULL DEFAULT 0,
+	major INTEGER NOT NULL DEFAULT 0,
+	rationale TEXT NOT NULL DEFAULT '',
+	team_verdict TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+-- actual_offset is -1 until a notification is recorded, which is why it is
+-- not an unsigned count of minutes.
+CREATE TABLE IF NOT EXISTS crisis_ex_clocks (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	regime TEXT NOT NULL DEFAULT '',
+	authority TEXT NOT NULL DEFAULT '',
+	label TEXT NOT NULL DEFAULT '',
+	basis TEXT NOT NULL DEFAULT '',
+	due_offset INTEGER NOT NULL DEFAULT 0,
+	actual_offset INTEGER NOT NULL DEFAULT -1,
+	status TEXT NOT NULL DEFAULT 'pending',
+	evidence TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_clocks_exercise
+	ON crisis_ex_clocks (exercise_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_findings (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	phase_id BIGINT NOT NULL DEFAULT 0,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	category TEXT NOT NULL DEFAULT '',
+	severity TEXT NOT NULL DEFAULT 'medium',
+	description TEXT NOT NULL DEFAULT '',
+	root_cause TEXT NOT NULL DEFAULT '',
+	evidence TEXT NOT NULL DEFAULT '',
+	recommendation TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	due_date TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'open',
+	risk_ref TEXT NOT NULL DEFAULT '',
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_findings_exercise
+	ON crisis_ex_findings (exercise_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_participants (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	name TEXT NOT NULL DEFAULT '',
+	role_key TEXT NOT NULL DEFAULT '',
+	org TEXT NOT NULL DEFAULT '',
+	player INTEGER NOT NULL DEFAULT 1,
+	attended INTEGER NOT NULL DEFAULT 0,
+	contact TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_participants_exercise
+	ON crisis_ex_participants (exercise_id);
+
+-- The link table that lets any part of an exercise cite any part of this
+-- installation's compliance vocabulary, plus the seeded authority catalog.
+-- Polymorphic on both ends because the alternative was thirty tables that
+-- would still have missed the pairing somebody wanted next.
+CREATE TABLE IF NOT EXISTS crisis_ex_references (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	owner_kind TEXT NOT NULL DEFAULT '',
+	owner_id BIGINT NOT NULL DEFAULT 0,
+	ref_kind TEXT NOT NULL DEFAULT '',
+	ref TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT 'manual',
+	known INTEGER NOT NULL DEFAULT 0,
+	url TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_references_owner
+	ON crisis_ex_references (exercise_id, owner_kind, owner_id);
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_references_target
+	ON crisis_ex_references (ref_kind, ref);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_versions (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	number INTEGER NOT NULL DEFAULT 1,
+	kind TEXT NOT NULL DEFAULT 'design',
+	summary TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	snapshot TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crisis_ex_versions_number
+	ON crisis_ex_versions (exercise_id, number);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_chat (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	persona TEXT NOT NULL DEFAULT '',
+	role TEXT NOT NULL DEFAULT '',
+	content TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL DEFAULT '',
+	session_id TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_chat_exercise
+	ON crisis_ex_chat (exercise_id, id);
+
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_control_id ON rcsa_controls(control_id);
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_family_type ON rcsa_controls(family, control_type);
 CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain);

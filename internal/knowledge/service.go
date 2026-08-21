@@ -67,6 +67,10 @@ func (s *Service) loader(kind string) (func() ([]Item, error), error) {
 		return s.store.PolicyClauses, nil
 	case KindRisk:
 		return s.store.Risks, nil
+	case KindExercise:
+		return s.store.Exercises, nil
+	case KindExerciseFinding:
+		return s.store.ExerciseFindings, nil
 	default:
 		return nil, invalidf("unknown kind %q (known kinds: %s)", kind, strings.Join(Kinds(), ", "))
 	}
@@ -144,7 +148,11 @@ func (s *Service) Overview() (*Overview, error) {
 // service against the answer.
 func (s *Service) Index(kind string) ([]Item, error) {
 	switch kind {
-	case KindNFR, KindControl, KindRegulation, KindPolicy, KindRisk:
+	// Exercises belong here for the same reason NFRs do: an installation holds
+	// a handful per year, and "how many exercises have we run, and how many
+	// reached the board phase" is answered by reading all of them and counting,
+	// which no top-k search can promise.
+	case KindNFR, KindControl, KindRegulation, KindPolicy, KindRisk, KindExercise:
 	default:
 		return nil, invalidf("no compact index for kind %q; use search instead", kind)
 	}

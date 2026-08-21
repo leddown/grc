@@ -12,6 +12,7 @@ import (
 	"grc/internal/aiprovider"
 	"grc/internal/authn"
 	"grc/internal/controlcatalog"
+	"grc/internal/crisisexercise"
 	"grc/internal/db"
 	"grc/internal/dbsync"
 	"grc/internal/doctemplate"
@@ -152,7 +153,18 @@ func Run(options Options) error {
 		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
 	registerRegulationCoverageRoutes(
 		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
-	registerKnowledgeRoutes(router, sqliteDB, options)
+
+	// One knowledge service, two consumers. It is the read-only view over every
+	// catalog in this installation, and both the machine-facing API an external
+	// agent queries and the Crisis Exercise module's reference resolver read
+	// through it — so a citation in an exercise report and a citation in an
+	// agent's answer name the same record. It is built here rather than inside
+	// registerKnowledgeRoutes because that function declines to serve the API
+	// without a token, and the resolver needs the service either way.
+	knowledgeService := knowledge.NewService(knowledge.NewStore(sqliteDB))
+	registerKnowledgeRoutes(router, knowledgeService, options)
+	registerCrisisExerciseRoutes(
+		router, sqliteDB, knowledgeService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
@@ -556,14 +568,53 @@ func registerNFREnrichmentRoutes(
 // it otherwise is deliberate: it reads the whole catalog, the policy library
 // and the risk register, and "we will set the token later" is how that ends up
 // exposed on a network.
-func registerKnowledgeRoutes(r gin.IRouter, sqliteDB *db.Conn, options Options) {
+func registerKnowledgeRoutes(r gin.IRouter, service *knowledge.Service, options Options) {
 	token := strings.TrimSpace(options.KnowledgeToken)
 	if token == "" && !options.LocalMode {
 		log.Printf("knowledge API disabled: set -knowledge-token / KNOWLEDGE_TOKEN to let an agent query this installation")
 		return
 	}
-	service := knowledge.NewService(knowledge.NewStore(sqliteDB))
 	knowledge.NewHandler(service, token).RegisterRoutes(r)
+}
+
+// registerCrisisExerciseRoutes wires the Risk & Crisis Exercise module: design,
+// deliver and report the exercises that run from a red-team detonation through
+// incident response, incident classification, crisis and continuity activation,
+// communications, the board and the supervisory authorities.
+//
+// It follows the same read-open / write-admin split as Regulation Coverage,
+// with one difference worth stating: the whole write surface is behind the
+// admin gate, including recording what happened during delivery. An exercise
+// record is evidence a supervisor may read, and "anyone with the page open
+// could edit the observations" is not a property it should have.
+//
+// Generation and the expert personas route through the shared provider harness,
+// so keys, provider choice and the ai_usage_log stay in one place — and so a
+// question can reach a wintermuted agent with tools over this installation's
+// catalogs. See POLICY_MODULE_FRAMEWORK.md §2.5 and AI_AGENT.md.
+func registerCrisisExerciseRoutes(
+	r gin.IRouter,
+	sqliteDB *db.Conn,
+	knowledgeService *knowledge.Service,
+	aiRouter *aiprovider.Router,
+	pdfRenderer reporting.Renderer,
+	adminMiddleware gin.HandlerFunc,
+	localMode bool,
+) {
+	service := crisisexercise.NewService(
+		crisisexercise.NewSQLiteRepository(sqliteDB),
+		crisisexercise.NewKnowledgeResolver(knowledgeService),
+		aiRouter,
+	).WithRenderer(pdfRenderer)
+
+	handler := crisisexercise.NewHandler(service, sessionUsername)
+	handler.RegisterRoutes(r)
+
+	admin := r.Group("/")
+	if !localMode {
+		admin.Use(adminMiddleware)
+	}
+	handler.RegisterAdminRoutes(admin)
 }
 
 func registerPublicPageRoutes(r gin.IRouter, localMode bool) {

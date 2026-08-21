@@ -57,6 +57,10 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
   billing
 - `internal/jira` — Jira Cloud REST connector (issues/projects/search)
 - `internal/db` — SQLite connection + schema setup
+- `internal/crisisexercise` — risk and crisis scenario planning and exercises:
+  the arc from red team through incident classification and its regulatory
+  clocks to the board and the supervisor, with everything referenceable back to
+  controls and frameworks (see [CRISIS_EXERCISE.md](CRISIS_EXERCISE.md))
 - `internal/pageui` — shared side-nav tab rendering
 - `internal/data` — embedded seed JSON for the control and NFR catalogs
 - `internal/regmap` — regulation → NIST 800-53 crosswalk tool with human review

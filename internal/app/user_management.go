@@ -20,6 +20,7 @@ var userManagementAllowedPages = []string{
 	"/policies/manage",
 	"/policies/coverage",
 	"/regulation-coverage",
+	"/crisis-exercises",
 	"/templates",
 	"/templates/manage",
 	"/reports",

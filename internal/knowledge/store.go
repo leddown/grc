@@ -419,6 +419,218 @@ func (s *Store) Risks() ([]Item, error) {
 	return out, rows.Err()
 }
 
+// Exercises returns the crisis exercises this installation has designed or run.
+//
+// The body is written for a model to reason over rather than for a page to
+// render: the scenario, what the exercise set out to test, how much of it was
+// played, and — the part no other corpus carries — whether the notification
+// clocks were met. An agent asked whether this institution has ever exercised
+// its board is answering from evidence here or from imagination everywhere
+// else.
+func (s *Store) Exercises() ([]Item, error) {
+	rows, err := s.conn.Query(`SELECT e.id, e.reference, e.title, e.summary, e.format, e.audience,
+		e.entity_name, e.jurisdiction, e.status, e.scheduled_for, e.threat_actor, e.threat_narrative,
+		e.critical_functions,
+		(SELECT COUNT(*) FROM crisis_ex_injects i WHERE i.exercise_id = e.id),
+		(SELECT COUNT(*) FROM crisis_ex_responses r WHERE r.exercise_id = e.id AND r.outcome <> 'not_played'),
+		(SELECT COUNT(*) FROM crisis_ex_findings f WHERE f.exercise_id = e.id),
+		(SELECT COUNT(*) FROM crisis_ex_clocks c WHERE c.exercise_id = e.id AND c.status = 'met'),
+		(SELECT COUNT(*) FROM crisis_ex_clocks c WHERE c.exercise_id = e.id AND c.status = 'missed')
+		FROM crisis_ex_exercises e ORDER BY e.id DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("read crisis exercises: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	objectives, err := s.exerciseObjectives()
+	if err != nil {
+		return nil, err
+	}
+	citations, err := s.exerciseCitations()
+	if err != nil {
+		return nil, err
+	}
+
+	out := []Item{}
+	for rows.Next() {
+		var id int64
+		var reference, title, summary, format, audience, entity, jurisdiction, status string
+		var scheduled, actor, narrative, functions string
+		var injects, played, findings, clocksMet, clocksMissed int
+		if err := rows.Scan(&id, &reference, &title, &summary, &format, &audience,
+			&entity, &jurisdiction, &status, &scheduled, &actor, &narrative, &functions,
+			&injects, &played, &findings, &clocksMet, &clocksMissed); err != nil {
+			return nil, err
+		}
+
+		parts := []string{summary}
+		if actor != "" {
+			parts = append(parts, "Adversary: "+actor)
+		}
+		if narrative != "" {
+			parts = append(parts, "Scenario: "+narrative)
+		}
+		if functions != "" {
+			parts = append(parts, "Critical functions in scope: "+strings.ReplaceAll(functions, "\n", "; "))
+		}
+		if objs := objectives[id]; len(objs) > 0 {
+			parts = append(parts, "Objectives: "+strings.Join(objs, " | "))
+		}
+		parts = append(parts, fmt.Sprintf("Delivery: %d of %d injects played. %d notification clocks met, %d missed. %d findings.",
+			played, injects, clocksMet, clocksMissed, findings))
+
+		out = append(out, Item{
+			Kind:    KindExercise,
+			Ref:     reference,
+			Title:   title,
+			Summary: oneLine(firstNonEmpty(summary, title), 240),
+			Body:    strings.TrimSpace(strings.Join(parts, "\n")),
+			Group:   status,
+			Related: citations[id],
+			Fields: nonEmptyFields(map[string]string{
+				"format":         format,
+				"audience":       audience,
+				"entity":         entity,
+				"jurisdiction":   jurisdiction,
+				"status":         status,
+				"scheduled_for":  scheduled,
+				"injects":        fmt.Sprint(injects),
+				"injects_played": fmt.Sprint(played),
+				"findings":       fmt.Sprint(findings),
+				"clocks_met":     fmt.Sprint(clocksMet),
+				"clocks_missed":  fmt.Sprint(clocksMissed),
+			}),
+			URL: fmt.Sprintf("/crisis-exercises/%d", id),
+		})
+	}
+	return out, rows.Err()
+}
+
+// ExerciseFindings returns the gaps exercises have exposed, which is the part
+// worth searching on its own: "what have we found about escalation" is a
+// different question from "what exercises have we run".
+func (s *Store) ExerciseFindings() ([]Item, error) {
+	rows, err := s.conn.Query(`SELECT f.id, f.code, f.title, f.category, f.severity, f.description,
+		f.root_cause, f.recommendation, f.owner, f.due_date, f.status, f.risk_ref,
+		e.id, e.reference, e.title, COALESCE(p.phase_key, '')
+		FROM crisis_ex_findings f
+		JOIN crisis_ex_exercises e ON e.id = f.exercise_id
+		LEFT JOIN crisis_ex_phases p ON p.id = f.phase_id
+		ORDER BY f.exercise_id DESC, f.ordinal`)
+	if err != nil {
+		return nil, fmt.Errorf("read exercise findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	citations, err := s.findingCitations()
+	if err != nil {
+		return nil, err
+	}
+
+	out := []Item{}
+	for rows.Next() {
+		var findingID, exerciseID int64
+		var code, title, category, severity, description, rootCause, recommendation string
+		var owner, dueDate, status, riskRef, exerciseRef, exerciseTitle, phaseKey string
+		if err := rows.Scan(&findingID, &code, &title, &category, &severity, &description,
+			&rootCause, &recommendation, &owner, &dueDate, &status, &riskRef,
+			&exerciseID, &exerciseRef, &exerciseTitle, &phaseKey); err != nil {
+			return nil, err
+		}
+
+		body := strings.TrimSpace(strings.Join([]string{
+			description,
+			"Root cause: " + rootCause,
+			"Recommendation: " + recommendation,
+			"Found in " + exerciseRef + " (" + exerciseTitle + ")",
+		}, "\n"))
+
+		out = append(out, Item{
+			Kind:    KindExerciseFinding,
+			Ref:     exerciseRef + "/" + code,
+			Title:   title,
+			Summary: oneLine(firstNonEmpty(description, title), 240),
+			Body:    body,
+			Group:   severity,
+			Related: citations[findingID],
+			Fields: nonEmptyFields(map[string]string{
+				"severity": severity,
+				"category": category,
+				"status":   status,
+				"owner":    owner,
+				"due_date": dueDate,
+				"risk_ref": riskRef,
+				"phase":    phaseKey,
+				"exercise": exerciseRef,
+			}),
+			URL: fmt.Sprintf("/crisis-exercises/%d#findings", exerciseID),
+		})
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) exerciseObjectives() (map[int64][]string, error) {
+	rows, err := s.conn.Query(`SELECT exercise_id, code, text, rating
+		FROM crisis_ex_objectives ORDER BY exercise_id, ordinal`)
+	if err != nil {
+		return nil, fmt.Errorf("read exercise objectives: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := map[int64][]string{}
+	for rows.Next() {
+		var id int64
+		var code, text, rating string
+		if err := rows.Scan(&id, &code, &text, &rating); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], code+": "+text+" ["+rating+"]")
+	}
+	return out, rows.Err()
+}
+
+// exerciseCitations collects every reference an exercise makes, which is what
+// lets an agent answer "which of our controls have we actually exercised".
+func (s *Store) exerciseCitations() (map[int64][]string, error) {
+	rows, err := s.conn.Query(`SELECT DISTINCT exercise_id, ref_kind, ref
+		FROM crisis_ex_references WHERE ref <> '' ORDER BY exercise_id, ref_kind, ref`)
+	if err != nil {
+		return nil, fmt.Errorf("read exercise references: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := map[int64][]string{}
+	for rows.Next() {
+		var id int64
+		var kind, ref string
+		if err := rows.Scan(&id, &kind, &ref); err != nil {
+			return nil, err
+		}
+		out[id] = appendUnique(out[id], kind+":"+ref)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) findingCitations() (map[int64][]string, error) {
+	rows, err := s.conn.Query(`SELECT owner_id, ref_kind, ref FROM crisis_ex_references
+		WHERE owner_kind = 'finding' AND ref <> '' ORDER BY owner_id`)
+	if err != nil {
+		return nil, fmt.Errorf("read finding references: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := map[int64][]string{}
+	for rows.Next() {
+		var id int64
+		var kind, ref string
+		if err := rows.Scan(&id, &kind, &ref); err != nil {
+			return nil, err
+		}
+		out[id] = appendUnique(out[id], kind+":"+ref)
+	}
+	return out, rows.Err()
+}
+
 func appendUnique(list []string, value string) []string {
 	value = strings.TrimSpace(value)
 	if value == "" {

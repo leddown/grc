@@ -3,6 +3,189 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-08-20 (Risk & Crisis Exercises)
+
+A bank's exercise programme usually rehearses its parts separately and fails at
+the joins. The SOC handles the intrusion and nobody says the word "crisis". The
+crisis team runs for six hours before anyone starts the four-hour regulatory
+clock. The board is briefed on a version of events three hours old. Every part
+passed; the institution failed.
+
+New module holding the whole arc as one artefact — red team, detection,
+incident, classification, crisis, continuity, communications, board,
+authorities, recovery, after-action — so the seams are what gets tested. Built
+for a financial entity in the Baltics. Page `/crisis-exercises`. Full
+documentation in `CRISIS_EXERCISE.md`.
+
+### `internal/crisisexercise`
+
+Twelve-phase arc seeded on creation, each phase with a purpose, entry and exit
+criteria, a lead role, a facilitator note and its own citations. A Master
+Scenario Events List of injects on a T+ clock, each with the behaviour it should
+provoke — ISACA's rule that expected and actual behaviour are tracked at every
+step, because an inject with no expected action is entertainment. Inject types
+include `stress` (removes what the plan assumed) and `ambiguous` (conflicting or
+simply wrong information), which is what the first hours of a real incident are
+made of and what most exercises omit.
+
+A response log per inject, a decision log that records what else was considered
+and who was entitled to decide, a roster, findings with severity and owners, and
+immutable versions: a report circulated to a board cannot silently change when
+somebody edits a finding.
+
+Eight seeded scenarios, each drawn from something that has happened to a
+European financial institution or to Baltic critical infrastructure — ransomware
+in core banking, a hacktivist DDoS wave, compromise at the outsourced core
+provider, hybrid connectivity loss, insider payment fraud, a malicious vendor
+update, a TIBER-EU red team reaching the payment rail, and a disinformation-driven
+digital deposit run. Each carries a trap door: the thing it is really designed to
+expose, shown to the control team and withheld from players.
+
+### The regulatory clock, modelled rather than narrated
+
+`clocks.go` applies the DORA major-incident combination rule from Commission
+Delegated Regulation (EU) 2024/1772 — critical services affected, *and* either
+the data-losses criterion or two or more of the rest — and derives every
+notification obligation the scenario started, on the right trigger for each.
+
+The DORA initial notification is due at the **earlier** of four hours from
+classification and twenty-four from awareness. Teams read the four hours as a
+budget and the twenty-four as the real deadline; it is the other way round, and
+the whichever-is-earlier arithmetic makes that visible. A team that classifies
+late has not bought time, it has spent it.
+
+Alongside it: the intermediate at 72 hours and the final at one month; the
+national NIS2 early warning and notification from awareness; GDPR Article 33
+from awareness of the *breach*, which is a different and usually later moment
+than awareness of the incident; the ECB channel for a significant institution;
+and the scheme and customer obligations that are shorter than all of them and
+never in the playbook. Obligations that do not apply are returned marked
+not-applicable rather than omitted, so the report can distinguish "we considered
+GDPR and it did not apply" from "we never thought about GDPR".
+
+The module applies the combination rule; it does not decide whether a criterion
+is met. The real thresholds are numeric, sector-specific and revised, and
+hard-coding one would produce an authoritative-looking answer that is wrong for
+some entities and out of date for the rest.
+
+Reclassifying rebuilds the clock set and **preserves the evidence already
+recorded** against a regime that survives the change. Losing "we notified at
+T+3h10" because someone corrected a downtime figure would destroy the
+exercise's only record of the notification.
+
+### Everything is referenceable
+
+Objectives, phases, injects, decisions, notification clocks and findings can
+each cite NIST 800-53 controls, this installation's Security NFRs, Regulation
+Coverage clauses, policy clauses, risk register entries, and a seeded catalog of
+frameworks and supervisory instruments (DORA articles and RTS, TIBER-EU and its
+purple-teaming guidance, the ECB CROE and SSM reporting, ESRB/EU-SCICF, NIS2,
+GDPR, ISO 22301/22361/22398/27035, NIST SP 800-84 and 800-61r3, CSF 2.0,
+ATT&CK, ISACA's exercise guidance, FSB, CPMI-IOSCO, G7, ENISA, and the Baltic
+national authorities).
+
+Catalog references resolve through `internal/knowledge` rather than through a
+second implementation, so a citation in an exercise report and a citation in an
+agent's answer name the same record and link to the same page. The authority
+catalog is seeded rather than stored because an entity must be able to cite DORA
+Article 18 on a fresh installation without first having uploaded DORA.
+
+The Coverage tab inverts the citations: which controls this exercise touched,
+what cited them, and which had a finding raised against them. "We tested
+incident response" becomes "we tested IR-4, IR-6, NFR-INC-02 and DORA Article
+17, and two of them failed."
+
+### Three documents, not one
+
+The after-action report as a paginated PDF, for circulation. The controller's
+MSEL as CSV, carrying the expected actions and evaluation notes, with the
+exercise's TLP marking in the first column of every row so a printed copy left
+on a table says what it is. And the player handout, which is the same exercise
+with the answers stripped out — because handing players the document that says
+what they are supposed to do turns an assessment into a rehearsal, and it has
+happened. A test asserts the handout leaks neither the expected actions nor the
+scenario's trap door.
+
+### Generation and the expert seat
+
+Everything works without a model: design by hand, run, record, report. An
+exercise programme that stops when the model is unavailable is not a programme.
+
+Generation is one call per phase, never one call for the whole exercise, because
+a single answer covering twelve phases degrades badly in the last four. Each
+call gets the institution, its jurisdiction and that jurisdiction's authorities,
+the scenario, the objectives, the phase's own criteria, and a shortlist of
+candidate references retrieved lexically. The model judges the shortlist rather
+than browsing the catalog, which keeps the prompt small enough to reason over
+and every citation traceable to why the candidate was offered.
+
+Every generated inject records the model, the prompt hash and its own
+confidence. Every generated citation resolves against the catalog before it is
+stored, so a model that invents `XX-99` produces a reference marked
+**unresolved** rather than one sitting in a client's report beside the real
+ones. Regeneration replaces the model's own work and never touches a
+hand-written inject — a designer who edited something made a decision.
+
+Twelve expert personas: facilitator, board trainer, CISO, supervisory examiner,
+communications lead, legal/DPO, red team lead, BCM lead, journalist, threat
+intelligence analyst, evaluator, and the adversary. Two ways to use them —
+Advisers, a conversation about the exercise, and Hot seat, which hands a persona
+one inject and what the team actually did with it and lets them push back in
+character. A team that has just written a holding statement learns more from
+thirty seconds of a journalist's follow-up than from an hour on communications
+principles.
+
+The evaluator persona also drafts after-action findings from the record. Every
+draft is marked as the model's proposal for a human to accept, edit or delete: a
+finding is an accusation about an organisation, and nobody should be able to say
+it was the software's.
+
+Standing constraints on every persona prompt: say when you do not know, never
+invent a control identifier or a threshold or a deadline, distinguish what the
+regulation requires from what good practice suggests, and produce narrative
+rather than attack capability. The adversary persona is asked by design what an
+attacker does next, and its prompt refuses exploit code, malware and working
+commands outright; a test asserts that constraint is still there.
+
+### `internal/knowledge`
+
+Two new read-only kinds, `exercise` and `exercise_finding`, so a Wintermute
+agent can answer questions no other corpus can: *have we ever exercised our
+major-incident classification, and how did it go?*, *which controls have we
+actually tested rather than documented?*, *what have our exercises found about
+escalation?* The control catalog describes an intention; the exercise record
+describes an outcome, and without the second an agent answers the first question
+from the first corpus and sounds confident. Exercises are in the compact index
+for the same reason NFRs are: an installation holds a handful per year and
+counting questions are answered by reading all of them.
+
+The knowledge service is now built once in `app.Run` and shared by the API and
+this module's reference resolver, rather than constructed inside
+`registerKnowledgeRoutes` — which declines to serve the API without a token,
+while the resolver needs the service either way.
+
+### Elsewhere
+
+- `internal/db` — thirteen `crisis_ex_*` tables on both backends, all cascading
+  from the exercise.
+- `internal/pageui` — "Crisis Exercises" under Compliance & Risk.
+- `internal/app` — `/crisis-exercises` added to the protected prefixes and to
+  the grantable page list. The whole write surface is behind the admin gate,
+  including recording what happened during delivery: an exercise record is
+  evidence a supervisor may read.
+- Cloning an exercise carries the design and the citations and leaves the
+  observations, findings and objective ratings behind, which is what makes a
+  year-on-year comparison possible — ISACA's campaign approach rather than a
+  fresh exercise each year.
+
+### Known, not introduced here
+
+`go test ./...` currently fails `TestGovulncheck` on seven Go standard-library
+advisories against toolchain `go1.25.12`, all fixed in `go1.25.13`. Verified
+present on `main` before this change with the same count. Per this repository's
+policy the toolchain bump belongs on a `security-patches` branch and has not
+been folded into this feature.
+
 ## 2026-08-14 (An agent that can read this installation)
 
 Asked "how many of the Security NFRs are focused on network segmentation?", the

@@ -51,6 +51,8 @@ const (
 	KindPolicy           = "policy"
 	KindPolicyClause     = "policy_clause"
 	KindRisk             = "risk"
+	KindExercise         = "exercise"
+	KindExerciseFinding  = "exercise_finding"
 )
 
 // Kinds lists every searchable kind, in the order the overview reports them.
@@ -58,10 +60,17 @@ const (
 // Exceptions are absent deliberately: the Exceptions page is a saved view over
 // the NFR catalog rather than a record set of its own, so there is nothing here
 // to search that searching NFRs does not already cover.
+//
+// Crisis exercises and their findings are present because they answer a
+// question none of the other corpora can: not what this installation requires,
+// but what it has actually tested and what failed when it did. An agent asked
+// "have we ever exercised our major-incident classification, and how did it
+// go?" needs the exercise record, and without it will answer from the control
+// catalog — which describes an intention, not an outcome.
 func Kinds() []string {
 	return []string{
 		KindNFR, KindControl, KindRegulationClause, KindRegulation,
-		KindPolicyClause, KindPolicy, KindRisk,
+		KindPolicyClause, KindPolicy, KindRisk, KindExercise, KindExerciseFinding,
 	}
 }
 
