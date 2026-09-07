@@ -300,6 +300,41 @@ body:not(:has(.global-shell)) main button.danger {
   color: var(--bg) !important;
 }
 
+/* An anchor drawn as a button — "Back to Exceptions", "Download database
+   backup", a control ID linking to its detail page — is styled by its own page
+   as a light parchment pill, and the rules above only reach <button>. Under a
+   dark palette those came out as white bricks. They take the same ghost
+   treatment as a button, so a link that looks like a button also looks like the
+   buttons beside it. */
+.global-content a.btn, .global-content a.button, .global-content .button-link,
+.global-content .control-chip, .global-content .row-open-link,
+.global-content .detail-open-link,
+body:not(:has(.global-shell)) main a.btn,
+body:not(:has(.global-shell)) main a.button,
+body:not(:has(.global-shell)) main .button-link,
+body:not(:has(.global-shell)) main .control-chip,
+body:not(:has(.global-shell)) main .row-open-link,
+body:not(:has(.global-shell)) main .detail-open-link {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  font-weight: 500 !important;
+}
+.global-content a.btn:hover, .global-content a.button:hover,
+.global-content .button-link:hover, .global-content .control-chip:hover,
+.global-content .row-open-link:hover, .global-content .detail-open-link:hover {
+  border-color: var(--accent) !important;
+  background: var(--surface-2) !important;
+}
+.global-content .button-link.secondary, .global-content a.btn.secondary {
+  background: transparent !important;
+}
+.global-content a.btn.danger, .global-content .button-link.danger {
+  background: transparent !important;
+  color: var(--error) !important;
+  border: 1px solid var(--error) !important;
+}
+
 /* ---- pills, chips, tags ---- */
 .pill, .chip, .tag, .badge {
   display: inline-block;

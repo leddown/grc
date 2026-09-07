@@ -708,8 +708,8 @@ func (h *Handler) Page(c *gin.Context) {
       }
 
       return ids.map((id) =>
-        '<a href="/controls/detail/' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer" ' +
-        'style="display:inline-block;margin:0 8px 8px 0;padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);text-decoration:none;font-family:Courier New,monospace;font-size:13px;">' +
+        '<a class="control-chip" href="/controls/detail/' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer" ' +
+        'style="display:inline-block;margin:0 8px 8px 0;padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2, #efe6d6);color:var(--ink);text-decoration:none;font-family:Courier New,monospace;font-size:13px;">' +
         esc(id) + '</a>'
       ).join('');
     }

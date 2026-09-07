@@ -3,6 +3,29 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (Anchors drawn as buttons were still white)
+
+The dark themes restyle every `<button>` on a page, but a link drawn to look
+like a button was never covered — so the control-ID pills under **NIST Mapping**
+on `/security-nfrs`, the "Open Detail" / "Open Full Detail" links in the control
+catalog, "Back to Exceptions", and the download links in Utilities all kept the
+light parchment or plain white their own page CSS gives them, and read as white
+bricks on a dark page.
+
+- `internal/app/theme_design.go`: the shared theme layer now gives `a.btn`,
+  `a.button`, `.button-link`, `.control-chip`, `.row-open-link` and
+  `.detail-open-link` the same ghost treatment as a `<button>` — `--surface-2`
+  fill, `--border` outline, accent border on hover — with the `.secondary` and
+  `.danger` variants kept distinct.
+- `internal/securitynfr/handler.go`: the NIST-mapping control-ID pills carried
+  `background:#fff` as an inline style with no class, so nothing in the theme
+  layer could reach them. They are now `class="control-chip"` and their inline
+  fallback is `var(--surface-2, #efe6d6)`.
+
+`go fmt`, `go vet` and `go test ./...` run clean apart from the pre-existing
+`TestGovulncheck` failure (Go standard library advisories fixed in go1.25.13;
+the toolchain here is go1.25.12), which this change does not touch.
+
 ## 2026-09-07 (Light theme removed; a UI review of what is left)
 
 Four themes now: **Dark**, **Matrix** (green, the falling-glyph rain),
