@@ -330,3 +330,32 @@ func TestWintermuteQuestionsCarryTheConfiguredAgent(t *testing.T) {
 		t.Errorf("Describe() = %q, want the configured agent in it", got)
 	}
 }
+
+// "no agent" and "not specified" are different instructions, which is why the
+// field is a pointer: the AI dock says nothing and gets the installation's
+// agent, while the AI Chat page says exactly which agent it means — including
+// none, which must not fall back to the configured one.
+func TestAIChatRequestAgent(t *testing.T) {
+	original := activeSettings
+	t.Cleanup(func() { activeSettings = original })
+
+	svc := newTestSettings(t)
+	if err := svc.SetPreference(settings.PrefWintermuteAgent, "configured-agent"); err != nil {
+		t.Fatalf("SetPreference: %v", err)
+	}
+	configureAICredentials(svc)
+
+	if got := aiChatRequestAgent(aiChatRequest{}); got != "configured-agent" {
+		t.Errorf("absent agent = %q, want the configured one", got)
+	}
+
+	none := ""
+	if got := aiChatRequestAgent(aiChatRequest{Agent: &none}); got != "" {
+		t.Errorf("empty agent = %q, want no agent", got)
+	}
+
+	chosen := "  incident-response  "
+	if got := aiChatRequestAgent(aiChatRequest{Agent: &chosen}); got != "incident-response" {
+		t.Errorf("chosen agent = %q, want it trimmed", got)
+	}
+}

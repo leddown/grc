@@ -668,6 +668,7 @@ func registerAIAuxRoutes(r gin.IRouter) {
 	r.GET("/ai-chat/usage", aiChatUsageHandler)
 	r.GET("/ai-chat/wintermute/status", aiChatWintermuteStatus)
 	r.GET("/ai-chat/wintermute/catalog", aiChatWintermuteCatalog)
+	r.GET("/ai-chat/wintermute/agents", aiChatWintermuteAgents)
 	r.GET("/ai-chat/claude/models", aiChatClaudeModels)
 }
 

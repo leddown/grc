@@ -697,6 +697,16 @@ main:has(> .global-shell) {
   white-space: nowrap;
 }
 .global-view-btn:hover { background: var(--hover); color: var(--ink); }
+/* A single-page section is a link, and the palette layer colours every link
+   with the accent — which would make one entry in the bar blue and the rest
+   not. It is a section entry first. */
+a.global-view-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--muted) !important;
+}
+a.global-view-btn:hover, a.global-view-btn.active { color: var(--ink) !important; }
 .global-view-btn.active {
   background: var(--surface-strong);
   border-color: var(--line);
@@ -922,15 +932,25 @@ main:has(> .global-shell) {
     const groups = Array.from(nav.querySelectorAll(".tab-group"));
     const viewButtons = groups.map((group, index) => {
       const labelEl = group.querySelector(".tab-group-label");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "global-view-btn";
+      const tabs = Array.from(group.querySelectorAll("a.tab"));
+      // A section holding one page is that page: switching to it and then
+      // clicking its only tab is two clicks for one destination, so the bar
+      // links straight there. AI Chat is the case this exists for.
+      const single = tabs.length === 1 ? tabs[0] : null;
+      const button = document.createElement(single ? "a" : "button");
+      if (single) {
+        button.href = single.getAttribute("href");
+        button.classList.add("global-view-link");
+      } else {
+        button.type = "button";
+        button.setAttribute("aria-pressed", "false");
+        button.addEventListener("click", () => showGroup(index));
+      }
+      button.classList.add("global-view-btn");
       if (group.classList.contains("tab-group-admin")) {
         button.classList.add("global-view-admin");
       }
       button.textContent = labelEl ? labelEl.textContent.trim() : "Section " + (index + 1);
-      button.setAttribute("aria-pressed", "false");
-      button.addEventListener("click", () => showGroup(index));
       views.appendChild(button);
       return button;
     });
@@ -941,7 +961,13 @@ main:has(> .global-shell) {
       groups.forEach((group, i) => { group.hidden = i !== index; });
       viewButtons.forEach((button, i) => {
         button.classList.toggle("active", i === index);
-        button.setAttribute("aria-pressed", i === index ? "true" : "false");
+        if (button.tagName === "BUTTON") {
+          button.setAttribute("aria-pressed", i === index ? "true" : "false");
+        } else if (i === index) {
+          button.setAttribute("aria-current", "page");
+        } else {
+          button.removeAttribute("aria-current");
+        }
       });
     }
 

@@ -3,6 +3,46 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (The agent is chosen per question, and AI Chat is a section)
+
+Which agent answers decides which documents an answer is grounded in, and it
+was an installation setting only: AI Chat sent every question under whatever
+Settings was last set to, and a question asked with no agent is answered from
+the model's training data while reading exactly like a grounded answer. It is
+now a field on the page, beside the backend and the model.
+
+- `internal/app/ai_chat.go`: an **Agent** select in the Wintermute fields,
+  filled from the server and defaulting to the agent Settings configured — so a
+  reader who changes nothing gets the answer they would have got anyway. The
+  hint under it says what the choice means (the agent's description and
+  sources, or that no agent means an ungrounded answer), an agent the server no
+  longer has is shown as missing rather than silently dropped, and the
+  "Documents in Wintermute" link now points at the chosen agent's library.
+- `GET /ai-chat/wintermute/agents` (new, in `registerAIAuxRoutes`): the same
+  shape as the backend/model catalog route — the page's URL override, the same
+  `ValidateEndpoint` rules, and the client token taken from Settings and never
+  from the request.
+- `aiChatRequest.Agent` is a `*string`, because "no agent" and "not specified"
+  are different instructions: the AI dock omits the field and gets the
+  configured agent, while the AI Chat page always says which agent it means,
+  including none. Changing the agent drops the Wintermute session, since a
+  session is created with its agent.
+- Tests: the new route against a stub server, its URL and token refusals, and
+  the pointer semantics of the agent field.
+
+### AI Chat is a top-level section
+
+It was one entry among Reporting & Data, which is where reports live, not the
+page most often reached from the middle of other work. It is its own section in
+`internal/pageui/nav.go` now, and the topbar renders a section holding a single
+page as a link straight to it — so AI Chat is one click from anywhere rather
+than a section switch followed by a tab.
+
+Checked headless on the AI Chat page under both providers and on Reports.
+`go fmt`, `go vet` and `go test ./...` clean apart from the pre-existing
+`TestGovulncheck` failure (Go standard library advisories fixed in go1.25.13;
+the toolchain here is go1.25.12).
+
 ## 2026-09-07 (The top level of the navigation moved to a topbar)
 
 The sidebar stacked all five groups — Catalog, Compliance & Risk, Reporting &

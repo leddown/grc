@@ -62,8 +62,17 @@ var navGroups = []NavGroup{
 			{Path: "/JSON_view", Label: "JSON_view"},
 			{Path: "/jira/json", Label: "Jira JSON"},
 			{Path: "/jira/reports", Label: "Jira Reports"},
-			{Path: "/ai-chat", Label: "AI Chat"},
 			{Path: "/changelog", Label: "Change Log"},
+		},
+	},
+	{
+		// A section of its own rather than one entry among the reports: it is
+		// the page most often reached from the middle of other work, and a
+		// single-page section is rendered as a link in the topbar, so it is one
+		// click from anywhere instead of a section switch and then a tab.
+		Label: "AI Chat",
+		Items: []NavItem{
+			{Path: "/ai-chat", Label: "AI Chat"},
 		},
 	},
 	{
