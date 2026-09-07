@@ -69,8 +69,10 @@ all backed by SQLite and served via Gin.
 
 - Module `grc`, Go 1.25 (see `go.mod` for the exact toolchain version)
   — don't downgrade
-- Gin for HTTP, `mattn/go-sqlite3` for storage, `golang.org/x/crypto/bcrypt`
-  for password hashing — prefer these existing deps over adding new ones
+- Gin for HTTP, `modernc.org/sqlite` for storage (pure Go — the module has no
+  cgo, and must not gain any: that is what keeps a build from needing a C
+  toolchain per target), `golang.org/x/crypto/bcrypt` for password hashing —
+  prefer these existing deps over adding new ones
 - Wrap errors with `fmt.Errorf("...: %w", err)`
 - No comments unless they explain a non-obvious WHY; avoid speculative
   abstractions or unrequested refactors

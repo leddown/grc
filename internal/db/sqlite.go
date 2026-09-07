@@ -5,10 +5,18 @@ import (
 	"fmt"
 )
 
-import _ "github.com/mattn/go-sqlite3"
+// modernc.org/sqlite is SQLite translated to Go rather than bound to it through
+// cgo. It is the driver here because the C one made every cold build pay a
+// single-threaded compile of the SQLite amalgamation — minutes on a modest
+// machine, and once per cross-compilation target — and required a C toolchain
+// for each of those targets. This one compiles like any other Go package and
+// cross-compiles with no toolchain at all. It also ships FTS5, which the C
+// driver only included behind a build tag.
+import _ "modernc.org/sqlite"
 
 func OpenSQLite(path string) (*Conn, error) {
-	db, err := sql.Open("sqlite3", path)
+	// The driver name is "sqlite", not the C driver's "sqlite3".
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}

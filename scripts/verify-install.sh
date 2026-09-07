@@ -384,15 +384,16 @@ else
   warn "  install chromium, or set REPORTING_CHROME_PATH in $ENV_FILE"
 fi
 
-# SQLite full-text search is a build tag, and its absence only shows up at
-# runtime when corpus search first runs. /version reports it so a binary built
-# without -tags fts5 is caught here instead.
+# SQLite full-text search used to be a build tag, and its absence only shows up
+# at runtime when corpus search first runs. The pure-Go driver always compiles
+# FTS5 in, so this should now always be true — a false here means the running
+# binary predates that change.
 FTS5="$(curl -s --max-time 10 "${BASE_URL}/version" 2>/dev/null \
   | sed -n 's/.*"fts5"[[:space:]]*:[[:space:]]*\([a-z]*\).*/\1/p')"
 case "$FTS5" in
   true)  ok "SQLite FTS5 compiled in (corpus search will work)" ;;
-  false) warn "binary built without -tags fts5 — SQLite full-text search unavailable"
-         warn "  rebuild via setup.sh/update.sh, which pass the tag" ;;
+  false) warn "binary predates the pure-Go SQLite driver — full-text search unavailable"
+         warn "  rebuild via setup.sh/update.sh" ;;
   *)     warn "could not determine FTS5 support from /version" ;;
 esac
 

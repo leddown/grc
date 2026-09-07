@@ -23,13 +23,11 @@ trap 'rm -f "$BUILD_TMP"' EXIT
 # Stamp the revision so verify-install.sh below can prove the running service is
 # actually serving this commit rather than the one it started with.
 BUILD_REV="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)"
-# -tags fts5 compiles SQLite's full-text search into the driver. It is off by
-# default in mattn/go-sqlite3, and without it the policy-document corpus search
-# fails at runtime with "no such module: fts5". Release binaries built by
-# goreleaser carry the same tag, so a source build and a release build behave
-# identically.
-(cd "$REPO_ROOT" && go build \
-  -tags fts5 \
+# CGO_ENABLED=0 because nothing here needs a C compiler any more: the SQLite
+# driver is pure Go, which also means the server this runs on does not need a
+# toolchain installed. -tags fts5 is gone with the C driver — that driver left
+# full-text search out unless asked for it, and this one always compiles it in.
+(cd "$REPO_ROOT" && CGO_ENABLED=0 go build \
   -ldflags "-X grc/internal/app.BuildVersion=${BUILD_REV}" \
   -o "$BUILD_TMP" ./cmd/api)
 sudo install -m 0755 "$BUILD_TMP" "$BIN_PATH"

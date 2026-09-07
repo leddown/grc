@@ -35,20 +35,26 @@ func TestVersionEndpointIsPublicAndReportsTheBuild(t *testing.T) {
 	if !strings.Contains(body, `"go":"go`) {
 		t.Errorf("body should report the Go version: %s", body)
 	}
-	// Reported so a deploy check catches a binary built without -tags fts5,
-	// whose absence would otherwise surface only when corpus search first runs.
+	// Reported so a deploy check can tell a binary that has full-text search
+	// from one that does not, whose absence would otherwise surface only when
+	// corpus search first runs.
 	if !strings.Contains(body, `"fts5":`) {
 		t.Errorf("body should report FTS5 availability: %s", body)
 	}
 }
 
-// FTS5Enabled must track the build tag rather than being hardcoded, or the
-// deploy check reports a constant.
-func TestFTS5EnabledTracksTheBuildTag(t *testing.T) {
-	// Whichever way this test binary was built, the constant has to agree with
-	// what SQLite can actually do. `go test` and `go test -tags fts5` therefore
-	// exercise both branches.
-	t.Logf("built with FTS5Enabled=%v", FTS5Enabled)
+// FTS5Enabled has to agree with what the driver can actually do, or /version
+// tells a deploy check something untrue.
+//
+// It is a plain constant now rather than a build-tag one: modernc.org/sqlite
+// compiles FTS5 in unconditionally, so there is no build that can turn it off.
+// What the constant claims is checked against a real database by
+// TestFTS5IsCompiledIn in internal/db — the assertion belongs where the driver
+// is opened, not here.
+func TestFTS5EnabledIsTrueWithThePureGoDriver(t *testing.T) {
+	if !FTS5Enabled {
+		t.Error("FTS5Enabled is false, but the driver always compiles FTS5 in")
+	}
 }
 
 // The path must not fall under a guarded prefix, or verify-install.sh gets a

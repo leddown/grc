@@ -11,6 +11,18 @@ import (
 	"time"
 )
 
+// skipIfShort lets `go test -short ./...` be the inner loop on a machine where
+// these two are the slowest thing in the suite: they analyse every package and
+// govulncheck fetches its database over the network, which together dwarf the
+// unit tests. Plain `go test ./...` still runs them, so the security gate the
+// repository documents is unchanged — -short has to be asked for.
+func skipIfShort(t *testing.T, tool string) {
+	t.Helper()
+	if testing.Short() {
+		t.Skipf("skipping %s in -short mode; run `go test ./...` for the security gate", tool)
+	}
+}
+
 type securityCommand struct {
 	name string
 	args []string
@@ -18,6 +30,7 @@ type securityCommand struct {
 
 func TestGosec(t *testing.T) {
 	t.Helper()
+	skipIfShort(t, "gosec")
 
 	tool, err := locateGosecCommand()
 	if err != nil {
@@ -47,6 +60,7 @@ func TestGosec(t *testing.T) {
 
 func TestGovulncheck(t *testing.T) {
 	t.Helper()
+	skipIfShort(t, "govulncheck")
 
 	tool, err := locateGovulncheckCommand()
 	if err != nil {

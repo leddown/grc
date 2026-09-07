@@ -229,9 +229,10 @@ than set globally.
 > to come and should reuse the same package.
 
 **Start with lexical search, not embeddings.** SQLite FTS5 with BM25 over
-section-aware chunks is available in-process (`-tags fts5` on the existing
-`mattn/go-sqlite3`, which already builds with `CGO_ENABLED=1`), needs no new
-service, no embedding API spend, and no vector store. Compliance retrieval is
+section-aware chunks is available in-process (compiled into the existing
+`modernc.org/sqlite` driver unconditionally — it needed `-tags fts5` back when
+the driver was `mattn/go-sqlite3`), needs no new service, no embedding API
+spend, and no vector store. Compliance retrieval is
 unusually keyword-friendly — users search for "AC-2", "cardholder data",
 "clause 7.5". Add embeddings later behind the same interface if recall proves
 insufficient; do not start there.

@@ -3,6 +3,104 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (Build time)
+
+A full build was taking 15+ minutes on a modest machine. Measured on a 12-core
+box, a cold `go build ./...` was 57s wall — of which 42s was a single serial C
+compile of the SQLite amalgamation in `mattn/go-sqlite3`, which cannot use more
+than one core. A warm build is 4.3s. So there were two questions: why the build
+was cold so often, and why cold cost so much. Both are answered below; the cold
+build is now 31.4s and needs no C compiler.
+
+### The build cache was being thrown away
+
+Both release scripts defaulted `GOCACHE` to `/tmp/gocache-grc`, and `/tmp` is
+cleared on reboot. Every cross-build after a restart therefore recompiled that
+amalgamation and the standard library from scratch, once per target — three cold
+cgo builds where there should have been none. It now defaults under
+`${XDG_CACHE_HOME:-$HOME/.cache}`, which survives a reboot. `GOCACHE_DIR` still
+overrides it.
+
+Worth knowing: release builds use `-tags fts5` and local ones do not, and a
+build tag is part of the cache key. The two never share the SQLite object, so
+each pays its own cold compile the first time.
+
+### The C driver is gone
+
+`mattn/go-sqlite3` replaced by `modernc.org/sqlite` — SQLite translated to Go
+rather than bound to it through cgo. The module now has no cgo at all, and
+`Agents.md` says it must not gain any: that property is what the rest of this
+entry rests on.
+
+| | cgo driver | pure Go |
+|---|---|---|
+| driver compile, cold | 42s wall / 56s CPU, one serial C compile | 18.9s wall / 58s CPU, spread across cores |
+| with `-tags fts5` | 47.6s | n/a — always compiled in |
+| cold `go build ./...` | 57.3s | **31.4s** |
+| cross-compiling | needs llvm-mingw / osxcross | `GOOS=windows go build`, no toolchain |
+
+The CPU total barely moves; what changes is that the work can be split. On two
+slow cores the difference is wider than these numbers suggest, because the C
+compile is one translation unit and cannot use a second core at all.
+
+`scripts/build-windows-cross.sh` lost its toolchain discovery and its hard
+failure — it sets `CGO_ENABLED=0` and compiles. Verified by building a PE32+
+binary on this Linux machine with no mingw installed. The goreleaser wrapper
+still discovers toolchains and still exports `WINDOWS_CC` / `DARWIN_CC` for a
+config that templates them, but a missing one is now a note rather than an
+`exit 1`. **The `.goreleaser.yaml` is not in this repository** — whoever holds
+it should set `CGO_ENABLED=0` and drop the `CC` entries to get the same benefit
+there.
+
+`setup.sh` and `update.sh` build with `CGO_ENABLED=0`, so a server no longer
+needs a C compiler to deploy from source.
+
+### `-tags fts5` retired
+
+The C driver left FTS5 out unless asked for it, which is why the tag existed and
+why `/version` reported it: a binary built without it failed only when the
+policy-document corpus search first ran. The pure-Go driver compiles FTS5 in
+unconditionally, so `internal/app/fts5_enabled.go` and `fts5_disabled.go` are
+one plain constant now.
+
+`FTS5Enabled` stays, and so does the `verify-install.sh` check, because a
+deployed binary predating this change can still answer false and that is worth
+seeing. What it claims is now proved rather than asserted: `TestFTS5IsCompiledIn`
+in `internal/db` creates a virtual table and runs a `MATCH` against a real
+database, which the old build-tag test could not do.
+
+### What was checked before this landed
+
+- The whole suite passes with `CGO_ENABLED=0` and no build tags.
+- govulncheck reports no new advisories — the same seven standard-library ones
+  from the go1.25.12 toolchain, and nothing from the six modules the driver
+  adds (`libc`, `mathutil`, `memory`, `go-humanize`, `go-strftime`, `bigfft`).
+- **A database written by the cgo build opens unchanged under the new one.** A
+  binary built from the previous commit created `legacy.db`, wrote preferences
+  and an encrypted credential; the pure-Go binary read both back, decrypted the
+  credential, and served the pages. The file format was never the risk, but a
+  live `users.db` is not the place to find that out.
+- WAL is still the journal mode after the swap (`TestOpenSQLiteUsesWAL`), which
+  the app depends on for readers not to block behind a writer.
+- Settings write, restart, read back; a Windows binary cross-builds with no C
+  toolchain present.
+
+One honest trade: a Go translation of SQLite is slower than the C original —
+commonly cited around 2x on write-heavy work. This application's queries run
+against a few thousand rows of catalog, so it is not expected to show, but it is
+a real cost paid for build time and portability. `PRAGMA busy_timeout` and
+`foreign_keys` are still applied per connection by `OpenSQLite` exactly as
+before, unreliably across a pooled `*sql.DB` — unchanged here on purpose, since
+fixing it would start enforcing foreign keys that are not enforced today.
+
+### `go test -short` for the inner loop
+
+`TestGosec` and `TestGovulncheck` skip under `-short`. They analyse every
+package and govulncheck fetches its database over the network — 16s of a 21s
+suite here, and far more on a slow machine or link. Plain `go test ./...` runs
+them exactly as before, so the security gate this repository documents is
+unchanged: -short has to be asked for.
+
 ## 2026-09-07 (Every model and backend is chosen from a list, not typed)
 
 The agent was already picked from a list fetched off the Wintermute server; the

@@ -76,7 +76,7 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
 
 ## Stack
 
-Module `grc`, Go 1.25. Gin for HTTP, `mattn/go-sqlite3` for
+Module `grc`, Go 1.25. Gin for HTTP, `modernc.org/sqlite` (pure Go, no cgo) for
 storage, `golang.org/x/crypto/bcrypt` for password hashing.
 
 ## Docs

@@ -4,7 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_FILE="${GORELEASER_CONFIG:-${ROOT_DIR}/.goreleaser.yaml}"
 DIST_DIR="${DIST_DIR:-${ROOT_DIR}/dist}"
-GOCACHE_DIR="${GOCACHE_DIR:-/tmp/gocache-grc}"
+# A cache that outlives one run. /tmp was the previous default and is cleared on
+# reboot, so every build after a restart started cold — which used to mean
+# recompiling the SQLite amalgamation once per target.
+GOCACHE_DIR="${GOCACHE_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/gocache-grc}"
 SMOKE_TEST_SCRIPT="${ROOT_DIR}/scripts/smoke-test-goreleaser-binaries.sh"
 DATA_FILES=(
   "internal/data/merged_nist_controls_master_replaced_from_controls_all.json"
@@ -59,6 +62,15 @@ if [[ ! -x "${SMOKE_TEST_SCRIPT}" ]]; then
   exit 1
 fi
 
+# The cross toolchains are optional now. Nothing in this module uses cgo — the
+# SQLite driver is pure Go — so a windows or darwin build needs no C compiler.
+# They are still discovered and exported, because a .goreleaser.yaml that sets
+# CGO_ENABLED=1 and templates {{ .Env.WINDOWS_CC }} would fail on an unset
+# variable; a config with CGO_ENABLED=0 ignores them. Missing toolchains are a
+# warning rather than the hard failure they used to be, so a machine with none
+# can still cut a release.
+WINDOWS_CC_DEFAULT=""
+WINDOWS_CXX_DEFAULT=""
 WINDOWS_TOOLCHAIN_DIR="$(find_windows_toolchain_dir || true)"
 if [[ -n "${WINDOWS_TOOLCHAIN_DIR}" ]]; then
   WINDOWS_CC_DEFAULT="${WINDOWS_TOOLCHAIN_DIR}/bin/x86_64-w64-mingw32-gcc"
@@ -67,11 +79,11 @@ elif command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 && command -v x86_64-w64-
   WINDOWS_CC_DEFAULT="$(command -v x86_64-w64-mingw32-gcc)"
   WINDOWS_CXX_DEFAULT="$(command -v x86_64-w64-mingw32-g++)"
 else
-  echo "missing windows toolchain" >&2
-  echo "install llvm-mingw under .toolchains/, set WINDOWS_TOOLCHAIN_DIR, or ensure x86_64-w64-mingw32-gcc/g++ are on PATH" >&2
-  exit 1
+  echo "note: no windows C toolchain found; fine unless the config sets CGO_ENABLED=1" >&2
 fi
 
+DARWIN_CC_DEFAULT=""
+DARWIN_CXX_DEFAULT=""
 DARWIN_TOOLCHAIN_BIN_DIR="$(find_darwin_toolchain_bin_dir || true)"
 if [[ -n "${DARWIN_TOOLCHAIN_BIN_DIR}" ]]; then
   DARWIN_CC_DEFAULT="${DARWIN_TOOLCHAIN_BIN_DIR}/o64-clang"
@@ -80,9 +92,7 @@ elif command -v o64-clang >/dev/null 2>&1 && command -v o64-clang++ >/dev/null 2
   DARWIN_CC_DEFAULT="$(command -v o64-clang)"
   DARWIN_CXX_DEFAULT="$(command -v o64-clang++)"
 else
-  echo "missing darwin toolchain" >&2
-  echo "install osxcross under .toolchains/, set DARWIN_TOOLCHAIN_BIN_DIR, or ensure o64-clang/o64-clang++ are on PATH" >&2
-  exit 1
+  echo "note: no darwin C toolchain found; fine unless the config sets CGO_ENABLED=1" >&2
 fi
 mkdir -p "${DIST_DIR}" "${GOCACHE_DIR}"
 
