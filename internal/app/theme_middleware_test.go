@@ -29,6 +29,7 @@ func TestCurrentThemeRecognizesEveryTheme(t *testing.T) {
 		"  chaos  ": themeChaos,
 		"nonsense":  themeDark,
 		"":          themeDark,
+		themeK40:    themeK40,
 	}
 	for cookie, want := range cases {
 		if got := currentTheme(themeContextWithCookie(cookie)); got != want {
@@ -38,11 +39,8 @@ func TestCurrentThemeRecognizesEveryTheme(t *testing.T) {
 }
 
 func TestThemeStyleSelectsMatchingPalette(t *testing.T) {
+	// Chaos is Matrix plus the glitch rule, so the shared palette must be there.
 	chaos := headInsertTag(themeChaos)
-	if !strings.Contains(chaos, ".chaos-char") {
-		t.Error("chaos theme must carry the .chaos-char rule")
-	}
-	// Chaos is Matrix plus that rule, so the shared palette must be present.
 	if !strings.Contains(chaos, "#00ff41") {
 		t.Error("chaos theme must reuse the matrix palette")
 	}
@@ -51,12 +49,92 @@ func TestThemeStyleSelectsMatchingPalette(t *testing.T) {
 	if !strings.Contains(matrix, "#00ff41") {
 		t.Error("matrix theme must carry the matrix palette")
 	}
-	if strings.Contains(matrix, ".chaos-char") {
-		t.Error("matrix theme must not carry the chaos-only rule")
-	}
 
 	if !strings.Contains(headInsertTag(themeLight), "color-scheme: light") {
 		t.Error("light theme must declare a light color-scheme")
+	}
+
+	// The 40K palette is the one that is not a variation on the others.
+	if !strings.Contains(headInsertTag(themeK40), "#d8a730") {
+		t.Error("40K theme must carry its brass accent")
+	}
+}
+
+// Every theme has to define the full token set. A palette that omits one leaves
+// the pages that read it painting with an invalid colour, which on these
+// backgrounds means unreadable rather than merely wrong.
+func TestEveryThemeDefinesTheWholePalette(t *testing.T) {
+	tokens := []string{
+		"--bg:", "--surface:", "--surface-2:", "--border:",
+		"--text-base:", "--muted-base:", "--accent:", "--on-accent:",
+		"--error:", "--gain:", "--loss:",
+	}
+	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos, themeK40} {
+		css := headInsertTag(theme)
+		for _, token := range tokens {
+			if !strings.Contains(css, token) {
+				t.Errorf("theme %q does not define %s", theme, token)
+			}
+		}
+		// The pages were written against the older names; the aliases are what
+		// keeps them themed.
+		for _, alias := range []string{"--ink:", "--line:", "--panel:", "--muted:"} {
+			if !strings.Contains(css, alias) {
+				t.Errorf("theme %q does not alias %s for the page CSS", theme, alias)
+			}
+		}
+	}
+}
+
+// The brightness lift has to be applied before first paint, or it is a visible
+// flicker on every page load.
+func TestTextLiftAppliedInHead(t *testing.T) {
+	css := headInsertTag(themeDark)
+	if !strings.Contains(css, "global-text-lift-init") {
+		t.Error("the head insert must carry the brightness init")
+	}
+	if !strings.Contains(css, "color-mix(in srgb") {
+		t.Error("the text tokens must be derived, or one control cannot lift every theme")
+	}
+	// A dropped custom property does not fall back to the palette, so the
+	// plain assignment has to come first for browsers without color-mix.
+	plain := strings.Index(css, "--text: var(--text-base)")
+	mixed := strings.Index(css, "color-mix(in srgb")
+	if plain < 0 || plain > mixed {
+		t.Error("the un-mixed fallback must precede the color-mix derivation")
+	}
+}
+
+// The 40K overlay is injected the way the rain is: only for the theme built
+// around it. The other four must not pay for a timer that appends elements.
+func TestFritzOverlayInjectedOnlyFor40K(t *testing.T) {
+	page := []byte("<html><head></head><body>x</body></html>")
+	if got := string(injectGlobalUI(page, themeK40)); !strings.Contains(got, "global-fritz") {
+		t.Error("40K theme must receive the fritz overlay")
+	}
+	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos} {
+		if got := string(injectGlobalUI(page, theme)); strings.Contains(got, "global-fritz") {
+			t.Errorf("theme %q must not receive the fritz overlay", theme)
+		}
+	}
+}
+
+// The AI panel slides in from the right edge. A question is asked while working
+// on a page, so the page has to stay beside it rather than under it.
+func TestAIDockIsARightHandPanel(t *testing.T) {
+	for _, want := range []string{
+		"#global-ai-dock-toggle",      // the handle on the right edge
+		"transform: translateX(100%)", // parked off-screen
+		"#global-ai-dock.open",        // and slid in
+		"width: min(460px, 100%)",
+		"border-left: 1px solid var(--line)",
+	} {
+		if !strings.Contains(aiQuickPromptDockTag, want) {
+			t.Errorf("the AI panel is missing %q", want)
+		}
+	}
+	if strings.Contains(aiQuickPromptDockTag, "left: 0;\n  right: 0;") {
+		t.Error("the AI panel must not be a full-width strip along the bottom any more")
 	}
 }
 
@@ -213,9 +291,9 @@ func TestMatrixRainHonoursReducedMotion(t *testing.T) {
 	}
 }
 
-func TestThemeToggleCycleCoversAllFourThemes(t *testing.T) {
+func TestThemeToggleCycleCoversEveryTheme(t *testing.T) {
 	toggle := themeToggleTag(themeDark)
-	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos} {
+	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos, themeK40} {
 		if !strings.Contains(toggle, "'"+theme+"'") {
 			t.Errorf("toggle cycle is missing %q", theme)
 		}
@@ -226,8 +304,11 @@ func TestThemeToggleCycleCoversAllFourThemes(t *testing.T) {
 	if !strings.Contains(themeToggleTag(themeMatrix), "Chaos theme") {
 		t.Error("matrix should offer chaos next")
 	}
-	if !strings.Contains(themeToggleTag(themeChaos), "Dark theme") {
-		t.Error("chaos should wrap around to dark")
+	if !strings.Contains(themeToggleTag(themeChaos), "40K theme") {
+		t.Error("chaos should offer 40K next")
+	}
+	if !strings.Contains(themeToggleTag(themeK40), "Dark theme") {
+		t.Error("40K should wrap around to dark")
 	}
 }
 

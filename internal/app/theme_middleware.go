@@ -20,289 +20,10 @@ const (
 	themeChaos  = "chaos"
 )
 
-// darkThemeStyleTag is the original dark palette. Selectors here mirror the
-// ones in lightThemeStyleTag so both themes cover the same elements
-// regardless of what each individual page's own <style> block declares.
-const darkThemeStyleTag = `<style id="global-theme-style">
-:root {
-  color-scheme: dark !important;
-  --ink: #e5e7eb !important;
-  --muted: #94a3b8 !important;
-  --line: #334155 !important;
-  --panel: rgba(15, 23, 42, 0.94) !important;
-  --surface-strong: #0f172a !important;
-  --hover: #334155 !important;
-  --accent: #93c5fd !important;
-  --accent-strong: #38bdf8 !important;
-  --accent-contrast: #0b1220 !important;
-  --bg: linear-gradient(160deg, #020617, #0b1220 50%, #111827) !important;
-}
-body {
-  background:
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.14), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(167, 139, 250, 0.12), transparent 30%),
-    linear-gradient(160deg, #020617, #0b1220 52%, #111827) !important;
-  padding-bottom: 84px !important;
-  color: var(--ink) !important;
-}
-main, .panel, .list, .detail, .table-wrap, pre,
-.msg, .auth-box, .panel-body, .rows, .row, .control-item, .nfr-item {
-  background: rgba(15, 23, 42, 0.9) !important;
-  color: var(--ink) !important;
-  border-color: var(--line) !important;
-}
-.card, .summary-card, .status-card, .detail-card, .report-card, [class*="card"] {
-  background: #000 !important;
-  color: var(--ink) !important;
-  border-color: var(--line) !important;
-}
-.panel-header, .list-header, .detail-header, thead th {
-  background: rgba(30, 41, 59, 0.9) !important;
-  color: var(--muted) !important;
-  border-color: var(--line) !important;
-}
-.tab {
-  background: #1f2937 !important;
-  color: #e2e8f0 !important;
-  border-color: #334155 !important;
-}
-.tab.active {
-  background: #334155 !important;
-  border-color: #64748b !important;
-}
-input, select, textarea, button {
-  background: #0f172a !important;
-  color: #e2e8f0 !important;
-  border-color: #334155 !important;
-}
-button {
-  background: #1e293b !important;
-}
-button:hover {
-  background: #334155 !important;
-}
-a {
-  color: #93c5fd !important;
-}
-code, .mono, .tag {
-  background: #111827 !important;
-  color: #e2e8f0 !important;
-  border-color: #334155 !important;
-}
-.status, p, .meta, .row-sub, .nfr-meta, .muted {
-  color: var(--muted) !important;
-}
-</style>`
+// The palettes and the component layer live in theme_design.go, ported from
+// wintermute. What stays here is the machinery: which theme is current, and
+// where its style and its background engines are spliced into a page.
 
-// lightThemeStyleTag is a light, grey-and-maroon business palette. It
-// overrides the same selector set as darkThemeStyleTag so switching themes
-// produces a consistent look across every page regardless of that page's
-// own default styling.
-const lightThemeStyleTag = `<style id="global-theme-style">
-:root {
-  color-scheme: light !important;
-  --ink: #2a2a2a !important;
-  --muted: #6b6f76 !important;
-  --line: #d4d2cf !important;
-  --panel: #ffffff !important;
-  --surface-strong: #f1efec !important;
-  --hover: #f1dde1 !important;
-  --accent: #7a1f2e !important;
-  --accent-strong: #5c1622 !important;
-  --accent-contrast: #ffffff !important;
-  --bg: linear-gradient(160deg, #f4f3f1, #ece9e5 50%, #e4e0da) !important;
-}
-body {
-  background:
-    radial-gradient(circle at top left, rgba(122, 31, 46, 0.06), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(107, 111, 118, 0.08), transparent 30%),
-    linear-gradient(160deg, #f4f3f1, #ece9e5 52%, #e4e0da) !important;
-  padding-bottom: 84px !important;
-  color: var(--ink) !important;
-}
-main, .panel, .list, .detail, .table-wrap, pre,
-.msg, .auth-box, .panel-body, .rows, .row, .control-item, .nfr-item {
-  background: #ffffff !important;
-  color: var(--ink) !important;
-  border-color: var(--line) !important;
-}
-.card, .summary-card, .status-card, .detail-card, .report-card, [class*="card"] {
-  background: #f7f6f4 !important;
-  color: var(--ink) !important;
-  border-color: var(--line) !important;
-}
-.panel-header, .list-header, .detail-header, thead th {
-  background: #7a1f2e !important;
-  color: #f8ecee !important;
-  border-color: #5c1622 !important;
-}
-.tab {
-  background: #ece9e5 !important;
-  color: #2a2a2a !important;
-  border-color: #d4d2cf !important;
-}
-.tab.active {
-  background: #7a1f2e !important;
-  color: #ffffff !important;
-  border-color: #5c1622 !important;
-}
-input, select, textarea, button {
-  background: #ffffff !important;
-  color: #2a2a2a !important;
-  border-color: #c9c6c1 !important;
-}
-button {
-  background: #ece9e5 !important;
-}
-button:hover {
-  background: #f1dde1 !important;
-  border-color: #7a1f2e !important;
-}
-a {
-  color: #7a1f2e !important;
-}
-a:hover {
-  color: #5c1622 !important;
-}
-code, .mono, .tag {
-  background: #f1efec !important;
-  color: #2a2a2a !important;
-  border-color: #d4d2cf !important;
-}
-.status, p, .meta, .row-sub, .nfr-meta, .muted {
-  color: var(--muted) !important;
-}
-</style>`
-
-// matrixPaletteCSS is the shared body of the Matrix and Chaos themes. Chaos is
-// Matrix plus the per-character colour glitches driven by chaosEngineTag, so it
-// reuses the whole palette — the same split the morpheus app uses. Colour
-// values are morpheus's Matrix palette mapped onto this app's variable names:
-// surface #001a00, surface-alt #002b00, surface-raised #003d00, border #00611a,
-// text #00ff41, text-dim #00a82c, accent-dim #00601c.
-const matrixPaletteCSS = `
-:root {
-  color-scheme: dark !important;
-  --ink: #00ff41 !important;
-  --muted: #00a82c !important;
-  --line: #00611a !important;
-  --panel: #001a00 !important;
-  --surface-strong: #001a00 !important;
-  --hover: #002b00 !important;
-  --accent: #00ff41 !important;
-  --accent-strong: #00ff41 !important;
-  --accent-contrast: #000000 !important;
-  --danger: #ff3b3b !important;
-  --success: #00ff41 !important;
-  --bg: #000000 !important;
-}
-body {
-  background: #000000 !important;
-  padding-bottom: 84px !important;
-  color: var(--ink) !important;
-  font-family: "Courier New", Courier, monospace !important;
-}
-main, .panel, .list, .detail, .table-wrap, pre,
-.msg, .auth-box, .panel-body, .rows, .row, .control-item, .nfr-item {
-  background: #001a00 !important;
-  color: var(--ink) !important;
-  border-color: #00611a !important;
-  font-family: "Courier New", Courier, monospace !important;
-}
-.card, .summary-card, .status-card, .detail-card, .report-card, [class*="card"] {
-  background: #000000 !important;
-  color: var(--ink) !important;
-  border-color: #00611a !important;
-  border-style: solid !important;
-}
-.panel-header, .list-header, .detail-header, thead th {
-  background: #002b00 !important;
-  color: #00ff41 !important;
-  border-color: #00611a !important;
-}
-.tab {
-  background: #001a00 !important;
-  color: #00a82c !important;
-  border-color: #00611a !important;
-  font-family: "Courier New", Courier, monospace !important;
-}
-.tab.active {
-  background: #003d00 !important;
-  color: #00ff41 !important;
-  border-color: #00ff41 !important;
-}
-input, select, textarea {
-  background: #001a00 !important;
-  color: #00ff41 !important;
-  border-color: #00611a !important;
-  font-family: "Courier New", Courier, monospace !important;
-}
-button {
-  background: #002b00 !important;
-  color: #00ff41 !important;
-  border-color: #00611a !important;
-  font-family: "Courier New", Courier, monospace !important;
-}
-button:hover {
-  background: #003d00 !important;
-  border-color: #00ff41 !important;
-}
-a {
-  color: #00ff41 !important;
-  text-decoration: underline !important;
-}
-a:hover {
-  color: #66ff88 !important;
-}
-code, .mono, .tag {
-  background: #000000 !important;
-  color: #00ff41 !important;
-  border-color: #00611a !important;
-  font-family: "Courier New", Courier, monospace !important;
-}
-.status, p, .meta, .row-sub, .nfr-meta, .muted {
-  color: #00a82c !important;
-}
-h1, h2, h3, h4 {
-  color: #00ff41 !important;
-  text-shadow: 0 0 8px rgba(0, 255, 65, 0.5) !important;
-}
-::selection {
-  background: #00ff41 !important;
-  color: #000000 !important;
-}
-`
-
-const matrixThemeStyleTag = `<style id="global-theme-style">` + matrixPaletteCSS + `</style>`
-
-// chaosThemeStyleTag is the Matrix palette plus the one rule the glitch engine
-// needs. The glitch colour itself is set inline per character by chaosEngineTag;
-// the class only marks a span as engine-owned so a re-sample can find it, and
-// the transition softens the recolour so a glitch cycle fades rather than snaps.
-const chaosThemeStyleTag = `<style id="global-theme-style">` + matrixPaletteCSS + `
-.chaos-char {
-  transition: color 140ms linear;
-}
-</style>`
-
-// chaosEngineTag ports morpheus's chaos.js: on a timer it recolours a random
-// sample of the characters currently on screen, clearing the previous sample
-// first so each cycle is a fresh glitch. Injected only when Chaos is active.
-//
-// Adapted for this app's server-rendered multi-page architecture. morpheus is a
-// single-page app: it samples inside its #app root and app.js calls repaint()
-// on every client-side view change. Here each navigation is a full page load,
-// so the root is document.body and no repaint hook exists or is needed — the
-// interval re-samples on its own, and a reload discards the spans with the rest
-// of the DOM. The template literal in morpheus's randomColour is rewritten as
-// concatenation because this source lives inside a Go raw string literal, which
-// cannot contain a backtick.
-//
-// Both knobs are read from localStorage on every tick, so they can be changed
-// from the browser console and take effect on the next glitch without a reload:
-//
-//	grc-chaos-interval : seconds between glitches (default 60)
-//	grc-chaos-density  : characters recoloured per 300 on screen (default 2)
 const chaosEngineTag = `<script id="global-chaos-engine">
 (() => {
   if (window.__globalChaosInit) return;
@@ -792,9 +513,10 @@ html {
   text-size-adjust: 100%;
 }
 body {
-  /* The AI dock is fixed to the bottom; reserve its height plus the iPhone
-     home-indicator inset so it never sits on top of the last row of content. */
-  padding-bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+  /* The AI panel slides in from the right rather than sitting along the
+     bottom, so the page keeps its full height; only the home-indicator inset
+     is reserved. */
+  padding-bottom: env(safe-area-inset-bottom) !important;
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
   overflow-x: hidden;
@@ -917,17 +639,15 @@ main:has(> .global-shell) {
   position: fixed;
   top: 0;
   left: 0;
-  /* The AI prompt dock is fixed to the bottom of every page at ~84px tall;
-     without this the sidebar's own scroll area would run underneath it and
-     the last couple of nav items would be unreachable. */
-  bottom: calc(84px + env(safe-area-inset-bottom));
+  /* The AI panel is on the right now, so the sidebar runs the full height. */
+  bottom: 0;
   width: 260px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  padding: 60px 10px 20px;
+  padding: 60px 12px 20px;
   z-index: 9500;
   transform: translateX(0);
   transition: transform 0.2s ease;
@@ -958,13 +678,14 @@ main:has(> .global-shell) {
 .global-sidenav nav.tabs {
   display: flex !important;
   flex-direction: column !important;
-  gap: 3px !important;
+  gap: 4px !important;
   margin: 0 !important;
 }
 .global-sidenav .tab {
   display: block !important;
-  padding: 7px 10px !important;
+  padding: 8px 10px !important;
   border-radius: 8px !important;
+  font-size: 13px !important;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1010,11 +731,11 @@ main:has(> .global-shell) {
   margin-top: 12px;
 }
 .global-sidenav .tab-group-label {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   padding: 0 10px;
-  font: 700 11px Arial, sans-serif;
+  font: 600 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   color: var(--muted);
 }
 /* Admin/utility pages are operational, not day-to-day work, so they get a
@@ -1220,7 +941,7 @@ const commandPaletteTag = `<div id="global-command-palette" role="dialog" aria-m
   flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius, 10px);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
   overflow: hidden;
 }
@@ -1242,23 +963,32 @@ const commandPaletteTag = `<div id="global-command-palette" role="dialog" aria-m
 #global-command-palette-results li {
   display: block;
 }
+/* A grid rather than a flex row: the group caption varies from "ADMIN" to
+   "COMPLIANCE & RISK", and inline that ragged width pushed every page name to
+   a different indent, so the list could not be read down its left edge. The
+   caption gets a fixed column and the names line up. */
 #global-command-palette-results a {
-  display: flex;
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr);
   align-items: baseline;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-radius: 8px;
   text-decoration: none;
-  color: var(--ink);
+  color: var(--ink) !important;
+  font-size: 14px;
 }
 #global-command-palette-results a .cp-group {
-  font: 11px Arial, sans-serif;
+  font: 600 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--muted);
-  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-#global-command-palette-results li.cp-active a {
+#global-command-palette-results li.cp-active a,
+#global-command-palette-results a:hover {
   background: var(--hover);
 }
 #global-command-palette-empty {
@@ -1395,103 +1125,114 @@ const commandPaletteTag = `<div id="global-command-palette" role="dialog" aria-m
 })();
 </script>`
 
-const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Prompt">
-  <div id="global-ai-dock-panel" hidden>
-    <div id="global-ai-dock-head">
-      <span>Ask AI</span>
-      <span class="global-ai-dock-head-actions">
-        <a href="/ai-chat" target="_blank" rel="noopener noreferrer">Full chat &#8599;</a>
-        <button id="global-ai-dock-clear" type="button">Clear</button>
-        <button id="global-ai-dock-close" type="button" aria-label="Collapse AI panel">Close</button>
-      </span>
-    </div>
-    <div id="global-ai-dock-log" role="log" aria-live="polite"></div>
+const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" aria-controls="global-ai-dock" aria-expanded="false" aria-label="Open the AI panel">
+  <span aria-hidden="true">&#10022;</span><span id="global-ai-dock-toggle-label">Ask AI</span>
+</button>
+<aside id="global-ai-dock" class="dock" aria-label="Ask AI" hidden>
+  <div id="global-ai-dock-head">
+    <strong>Ask AI</strong>
+    <a href="/ai-chat" target="_blank" rel="noopener noreferrer">Full chat &#8599;</a>
+    <button id="global-ai-dock-clear" type="button">Clear</button>
+    <button id="global-ai-dock-close" type="button" aria-label="Close the AI panel">Close</button>
   </div>
+  <div id="global-ai-dock-log" role="log" aria-live="polite"></div>
   <form id="global-ai-dock-form">
     <input id="global-ai-dock-input" type="text" placeholder="Ask AI" aria-label="Ask AI" autocomplete="off" autocapitalize="sentences" enterkeyhint="send">
-    <button type="submit">Ask AI</button>
+    <button type="submit">Ask</button>
   </form>
-</div>
+</aside>
 <style id="global-ai-dock-style">
-#global-ai-dock {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9999;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+/* The panel slides in from the right edge rather than sitting along the bottom.
+   A question asked here is asked *while* working on a page — the page has to
+   stay legible beside it, which a full-width strip across the bottom of the
+   viewport does not allow. Ported from wintermute's chat dock.
+
+   Below the 40K theme's fritz overlay (z-index 40) on purpose, so the
+   scanlines run across it like everything else. */
+#global-ai-dock-toggle {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+  z-index: 9600;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 10px;
+  border: 1px solid var(--line); border-right: none;
+  border-radius: 10px 0 0 10px;
+  background: var(--surface-strong); color: var(--ink);
+  font: 12px Arial, sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
 }
-#global-ai-dock-panel {
-  max-width: 960px;
-  margin: 0 auto 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-strong);
+#global-ai-dock-toggle:hover { border-color: var(--accent); color: var(--accent); }
+#global-ai-dock-toggle-label { writing-mode: vertical-rl; letter-spacing: 0.08em; }
+/* Open, the handle would sit under the panel; it is the one control the panel
+   already carries its own version of. */
+#global-ai-dock-toggle[aria-expanded="true"] { display: none; }
+
+#global-ai-dock[hidden] { display: none; }
+/* Starts below the floating theme and brightness controls rather than at the
+   ceiling: the point of the panel is to ask something *while* working on a
+   page, which means the controls pinned above it have to stay reachable with
+   it open. Same reason wintermute's dock starts below its topbar. */
+#global-ai-dock {
+  position: fixed; top: calc(56px + env(safe-area-inset-top)); right: 0; bottom: 0;
+  z-index: 9601;
+  width: min(460px, 100%);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.45);
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+}
+#global-ai-dock.open { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  #global-ai-dock { transition: none; }
 }
 #global-ai-dock-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
   font: 12px Arial, sans-serif;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
 }
-.global-ai-dock-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* The title takes the slack so Close stays pinned right. */
+#global-ai-dock-head strong { flex: 1; font-size: 13px; color: var(--ink); }
 #global-ai-dock-head a,
 #global-ai-dock-head button {
   font: 12px Arial, sans-serif;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 10px;
-  min-height: 0;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 0;
   text-decoration: none;
   cursor: pointer;
 }
 #global-ai-dock-head a:hover,
-#global-ai-dock-head button:hover {
-  background: var(--hover);
-}
+#global-ai-dock-head button:hover { color: var(--ink); }
 #global-ai-dock-log {
-  /* Grows with the conversation up to a cap, so a short answer keeps the page
-     visible and a long one scrolls inside the dock instead of covering it. */
-  max-height: min(46vh, 420px);
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font: 14px Arial, sans-serif;
+  gap: 10px;
+  font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 .global-ai-dock-msg {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px 12px;
-  max-width: min(80ch, 92%);
+  max-width: 92%;
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--ink);
+  background: var(--surface-strong);
 }
-.global-ai-dock-msg.user { align-self: flex-end; border-left: 4px solid var(--accent, #8b3d2e); }
-.global-ai-dock-msg.ai { align-self: flex-start; border-left: 4px solid #0b5d3b; }
+.global-ai-dock-msg.user { align-self: flex-end; border-left: 3px solid var(--accent); }
+.global-ai-dock-msg.ai { align-self: flex-start; border-left: 3px solid var(--good); }
 .global-ai-dock-msg.note { align-self: stretch; border-style: dashed; color: var(--muted); }
 .global-ai-dock-msg .role {
   display: block;
@@ -1502,47 +1243,43 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
   color: var(--muted);
 }
 #global-ai-dock-form {
-  max-width: 960px;
-  margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 8px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
 }
 #global-ai-dock-input {
   width: 100%;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: var(--bg);
   color: var(--ink);
   /* 16px, not 14px: iOS Safari zooms the whole page when a focused field is
-     smaller than that, and the dock is fixed so the zoom never scrolls back. */
+     smaller than that, and the panel is fixed so the zoom never scrolls back. */
   font: 16px Arial, sans-serif;
 }
+#global-ai-dock-input:focus { border-color: var(--accent); outline: none; }
 #global-ai-dock-form button {
-  min-height: 44px;
+  min-height: 40px;
   padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
-  color: var(--ink);
-  font: 15px Arial, sans-serif;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: 600 14px Arial, sans-serif;
   cursor: pointer;
-}
-#global-ai-dock-form button:hover {
-  background: var(--hover);
 }
 #global-ai-dock-form button[disabled] {
   opacity: 0.6;
   cursor: progress;
 }
-@media (max-width: 700px) {
-  #global-ai-dock-form {
-    grid-template-columns: 1fr;
-  }
-  #global-ai-dock-log {
-    max-height: 40vh;
-  }
+/* At the width where the sidebar goes off-canvas, the panel takes the whole
+   screen: a 460px panel over a 600px window is a worse version of the page it
+   covers. Close is in the head, so nothing is unreachable. */
+@media (max-width: 720px) {
+  #global-ai-dock { width: 100%; border-left: none; }
 }
 </style>
 <script>
@@ -1552,12 +1289,12 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
   const dock = document.getElementById('global-ai-dock');
   const form = document.getElementById('global-ai-dock-form');
   const input = document.getElementById('global-ai-dock-input');
-  const panel = document.getElementById('global-ai-dock-panel');
   const log = document.getElementById('global-ai-dock-log');
+  const toggleBtn = document.getElementById('global-ai-dock-toggle');
   const clearBtn = document.getElementById('global-ai-dock-clear');
   const closeBtn = document.getElementById('global-ai-dock-close');
   const sendBtn = form ? form.querySelector('button[type="submit"]') : null;
-  if (!dock || !form || !input || !panel || !log) return;
+  if (!dock || !form || !input || !log) return;
 
   // The dock holds the conversation so a follow-up question means what it says.
   // /ai-chat/ask is stateless, so the transcript goes back with each turn —
@@ -1574,8 +1311,27 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
   // existed, which quietly ignored Settings: an install pinned to Wintermute
   // still sent every docked question to Anthropic.
 
+  // hidden is removed first and .open set on the next frame, or the panel is
+  // laid out already-open and the transform has nothing to animate from.
+  function open() {
+    if (dock.classList.contains('open')) return;
+    dock.hidden = false;
+    requestAnimationFrame(() => dock.classList.add('open'));
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
+    input.focus();
+  }
+
+  function close() {
+    dock.classList.remove('open');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+    // Hidden only once it has finished sliding out, so the panel is not
+    // removed from the page mid-animation.
+    setTimeout(() => { if (!dock.classList.contains('open')) dock.hidden = true; }, 200);
+    if (toggleBtn) toggleBtn.focus();
+  }
+
   function expand() {
-    panel.hidden = false;
+    open();
   }
 
   function addMessage(role, text, kind) {
@@ -1592,21 +1348,24 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
     return row;
   }
 
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', open);
+  }
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
       log.replaceChildren();
       history = [];
       sessionID = '';
-      panel.hidden = true;
       input.focus();
     });
   }
   if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      panel.hidden = true;
-      input.focus();
-    });
+    closeBtn.addEventListener('click', close);
   }
+  // Escape closes the panel, as it closes the command palette.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && dock.classList.contains('open')) close();
+  });
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1665,6 +1424,9 @@ func themeToggleTag(theme string) string {
 		label = "Chaos theme"
 		icon = "⚡"
 	case themeChaos:
+		label = "40K theme"
+		icon = "⚙"
+	case themeK40:
 		label = "Dark theme"
 		icon = "🌙"
 	default:
@@ -1672,11 +1434,12 @@ func themeToggleTag(theme string) string {
 		icon = "☀"
 	}
 	return `<button id="global-theme-toggle" type="button" aria-label="Switch to ` + label + `" title="Switch to ` + label + `">` + icon + ` ` + label + `</button>
+<button id="global-text-lift" type="button" aria-label="Text brightness" title="Text brightness">Aa</button>
 <style id="global-theme-toggle-style">
 #global-theme-toggle {
   position: fixed;
   top: calc(12px + env(safe-area-inset-top));
-  right: calc(12px + env(safe-area-inset-right));
+  right: calc(60px + env(safe-area-inset-right));
   z-index: 10000;
   min-height: 36px;
   padding: 8px 14px;
@@ -1689,28 +1452,72 @@ func themeToggleTag(theme string) string {
   touch-action: manipulation;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
-#global-theme-toggle:hover {
+#global-text-lift {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  z-index: 10000;
+  min-height: 36px;
+  min-width: 36px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--ink);
+  font: 13px Arial, sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+#global-theme-toggle:hover,
+#global-text-lift:hover {
   background: var(--hover);
 }
 @media (max-width: 700px) {
-  #global-theme-toggle {
+  #global-theme-toggle,
+  #global-text-lift {
     top: calc(8px + env(safe-area-inset-top));
-    right: calc(8px + env(safe-area-inset-right));
     min-height: 44px;
     min-width: 44px;
     padding: 8px 12px;
     font-size: 12px;
   }
+  #global-theme-toggle { right: calc(60px + env(safe-area-inset-right)); }
+  #global-text-lift { right: calc(8px + env(safe-area-inset-right)); }
 }
 </style>
 <script>
 (() => {
   if (window.__globalThemeToggleInit) return;
   window.__globalThemeToggleInit = true;
+
+  // Text brightness, per browser. Every palette but Light is dark and was
+  // tuned on one screen; on a phone in daylight, or a panel with the contrast
+  // wound down, the same colours are genuinely hard to read. It lifts the two
+  // text tokens towards white and leaves the backgrounds and accents alone, so
+  // a theme survives being made legible. 100 is the palette as designed.
+  const lift = document.getElementById('global-text-lift');
+  if (lift) {
+    const STEPS = [100, 125, 150, 175];
+    const apply = (value) => {
+      document.documentElement.style.setProperty('--text-lift', (value - 100) + '%');
+      lift.title = 'Text brightness ' + value + '%';
+      lift.setAttribute('aria-label', 'Text brightness ' + value + '%, click to change');
+    };
+    const saved = parseInt(localStorage.getItem('grc-text-lift'), 10);
+    apply(STEPS.includes(saved) ? saved : 100);
+    lift.addEventListener('click', () => {
+      const current = parseInt(localStorage.getItem('grc-text-lift'), 10);
+      const next = STEPS[(STEPS.indexOf(STEPS.includes(current) ? current : 100) + 1) % STEPS.length];
+      localStorage.setItem('grc-text-lift', String(next));
+      apply(next);
+    });
+  }
+
   const btn = document.getElementById('global-theme-toggle');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    const cycle = ['` + themeDark + `', '` + themeLight + `', '` + themeMatrix + `', '` + themeChaos + `'];
+    const cycle = ['` + themeDark + `', '` + themeLight + `', '` + themeMatrix + `', '` + themeChaos + `', '` + themeK40 + `'];
     const match = document.cookie.split('; ').find((row) => row.startsWith('` + themeCookieName + `='));
     const current = match ? match.split('=')[1] : '` + themeDark + `';
     const idx = cycle.indexOf(current);
@@ -1774,6 +1581,8 @@ func currentTheme(c *gin.Context) string {
 		return themeMatrix
 	case themeChaos:
 		return themeChaos
+	case themeK40:
+		return themeK40
 	default:
 		return themeDark
 	}
@@ -1837,16 +1646,7 @@ func injectGlobalUI(payload []byte, theme string) []byte {
 // headInsertTag is everything that belongs at the end of <head>: the palette
 // followed by the responsive layer.
 func headInsertTag(theme string) string {
-	switch theme {
-	case themeLight:
-		return lightThemeStyleTag + mobileStyleTag
-	case themeMatrix:
-		return matrixThemeStyleTag + mobileStyleTag
-	case themeChaos:
-		return chaosThemeStyleTag + mobileStyleTag
-	default:
-		return darkThemeStyleTag + mobileStyleTag
-	}
+	return themeStyleTag(theme) + mobileStyleTag
 }
 
 // bodyInsertTag is everything that belongs at the end of <body>. The falling-
@@ -1861,6 +1661,9 @@ func bodyInsertTag(theme string) string {
 	}
 	if theme == themeChaos {
 		tags += chaosEngineTag
+	}
+	if theme == themeK40 {
+		tags += fritzOverlayTag
 	}
 	return tags
 }

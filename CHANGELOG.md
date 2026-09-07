@@ -3,6 +3,99 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (One design system, shared with wintermute)
+
+The two applications are used by the same people, often side by side, and they
+did not look like they came from the same place. This ports wintermute's design
+system — `internal/web/static/style.css` in that repository: its palettes, its
+token names, its component vocabulary and its chat dock — onto every page here.
+
+The mechanism is not ported and could not be. wintermute is a single-page app
+that owns its markup, so it styles `.card` and `.pane` directly. Every page here
+renders its own HTML with its own `<style>` block, so the same look has to be
+imposed from outside — which is what the theme middleware already did. What
+changed is what it paints, not how.
+
+### `internal/app/theme_design.go`
+
+New file holding the whole system: five palettes in wintermute's token names
+(`--bg`, `--surface`, `--surface-2`, `--border`, `--text-base`, `--muted-base`,
+`--accent`, `--error`, `--gain`, `--loss`), the alias block that maps this
+application's existing `--ink` / `--line` / `--panel` / `--muted` onto them, and
+one component layer addressed at both wintermute's class names and the ones the
+pages here already use. About three hundred rules across the page handlers read
+those older names; aliasing is what restyles thirty pages without editing
+thirty handlers.
+
+Dark, Matrix and Chaos are that stylesheet's palettes unchanged — Matrix already
+matched to the hex. **40K is new here**: bone text and brass rule on a warm
+near-black, Courier throughout, stamped uppercase headings, and the failing-CRT
+overlay (static scanlines and vignette, a roll bar drifting down the glass, and
+irregular tear bursts from a timer rather than a keyframe loop, because a
+predictable glitch reads as decoration rather than as a fault). It is injected
+only for that theme, the way the rain is injected only for Matrix and Chaos.
+Light has no counterpart in wintermute, which is dark-only, so this
+application's grey-and-maroon business palette is kept and re-expressed in the
+same names — deleting the one theme that prints well is not what porting a
+design system means.
+
+**Text brightness**, also from wintermute: an `Aa` control beside the theme
+toggle lifts the two text tokens towards white in four steps without touching
+the backgrounds or the accents, so a theme survives being made legible on a
+phone in daylight. Applied at the end of `<head>` from localStorage, because
+after paint it is a visible flicker on every page load.
+
+### Buttons: one deliberate divergence
+
+wintermute fills every button with the accent and letters it in the palette's
+near-black, because there a button is an action. Here it is also a filter chip,
+a list row, a domain pill and a section toggle — most of the buttons on these
+pages are one of those. Both were built and looked at: filled, a catalog page is
+a column of accent bricks with no emphasis left for the control that actually
+submits. So the default is wintermute's **ghost** button, and the fill is kept
+for `[type=submit]` and `.primary`.
+
+Everything else is literal: `.ghost-btn` / `.secondary` outlined, `.link-btn`
+bare, `.danger` in the error colour, and the lettering on a filled button taken
+from the palette (`--on-accent`) rather than hard-coded — which is how the
+phosphor green and the brass get readable lettering on their own accent instead
+of a dark that disappears into both. Two additions the port needed: whatever a
+filled button holds is lettered on the accent too (a button there holds a word;
+one here can hold a label the page paints in the muted tone, which on the fill
+is grey on blue), and a selected row keeps an accent border, or the layer above
+would flatten every state a page draws with a button into one surface.
+
+### The AI panel comes from the right
+
+It was a full-width strip along the bottom of every page. It is now wintermute's
+chat dock: a vertical handle pinned to the right edge, and a `min(460px, 100%)`
+panel that slides out over the page, full-screen below 720px. A question is
+asked *while* working on a page, and the page has to stay legible beside it,
+which a strip across the bottom does not allow.
+
+It starts below the floating theme controls rather than at the ceiling — same
+reason wintermute's starts below its topbar: the controls pinned above it have
+to stay reachable with it open. Escape closes it. The body no longer reserves
+84px of bottom padding and the sidebar runs the full height again.
+
+### Tabs and menus
+
+The sidebar takes wintermute's list vocabulary — 12px gutter, 8px radius rows,
+muted until hovered, `surface-2` when active — and its group captions the
+caption one. The command palette's rows were a flex line whose ragged group
+caption ("ADMIN" to "COMPLIANCE & RISK") pushed every page name to a different
+indent; they are a grid now, so the list can be read down its left edge.
+
+### Checked
+
+Rendered through headless Chrome at 1440x900 on Security NFRs, Controls and Risk
+Register in all five themes, with the AI panel open and the command palette
+open. New tests assert every theme defines the whole token set and the aliases,
+that the brightness fallback precedes the `color-mix` derivation (a dropped
+custom property does not fall back to the palette — it makes every colour that
+uses it invalid), that the fritz overlay reaches 40K and nothing else, and that
+the AI panel is a right-hand slide-out rather than a bottom strip.
+
 ## 2026-09-07 (The AI dock ignored the provider setting)
 
 Setting the AI provider in Settings did not change what the **Ask AI** box
