@@ -712,6 +712,19 @@ func aiChatPage(c *gin.Context) {
           ensureOption(wintermuteModel, data.default_model, data.default_model);
           wintermuteModel.value = data.default_model;
         }
+        // Open on whichever provider Settings routes to. "auto" prefers
+        // Wintermute when it is configured, which is what the router does, so
+        // the page shows the provider a question would actually go to.
+        if (!providerTouched) {
+          const preferred = String(data.provider || '');
+          if (preferred === 'wintermute'
+              || (preferred === 'auto' && wintermute.configured && wintermute.token_configured)) {
+            provider.value = 'wintermute';
+          } else if (preferred === 'claude' || preferred === 'auto') {
+            provider.value = 'claude';
+          }
+          syncProviderView();
+        }
         if (provider.value === 'wintermute') {
           loadCatalog(wintermuteBackend.value, wintermuteModel.value).catch(() => { /* reported inline */ });
         }
@@ -739,7 +752,12 @@ func aiChatPage(c *gin.Context) {
       setChip(wintermuteChip, 'Wintermute token', wintermute.token_configured);
     }
 
+    // Set once the reader picks a provider, so a status response arriving late
+    // cannot move the selector under them.
+    let providerTouched = false;
+
     provider.addEventListener('change', () => {
+      providerTouched = true;
       syncProviderView();
       dropSession();
     });
@@ -936,6 +954,10 @@ func aiChatPage(c *gin.Context) {
 func aiChatWintermuteStatus(c *gin.Context) {
 	endpoint := aiChatPreference(settings.PrefWintermuteURL, "WINTERMUTE_URL")
 	c.JSON(http.StatusOK, gin.H{
+		// Which provider Settings routes to, so this page opens on it rather
+		// than always on Claude. It is a default here, not a rule: this is the
+		// one page where a provider is chosen per question.
+		"provider":          aiChatPreference(settings.PrefAIProvider, ""),
 		"configured":        endpoint != "",
 		"token_configured":  storedAICredential("wintermute") != "",
 		"claude_configured": storedAICredential("claude") != "",
@@ -1010,6 +1032,33 @@ func aiChatClaudeModels(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"models": models, "default": aiprovider.DefaultClaudeModel})
 }
+
+// aiChatClaudeProvider builds the Claude provider for one request.
+func aiChatClaudeProvider(req aiChatRequest) (aiprovider.Provider, error) {
+	key := storedAICredential("claude")
+	if key == "" {
+		return nil, fmt.Errorf("no Anthropic API key: set one in Settings")
+	}
+	// The endpoint override stays restricted to Anthropic's own host.
+	endpoint, err := validatedClaudeBaseURL(req.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	return aiprovider.NewClaude(func() string { return key }, req.Model).WithBaseURL(endpoint), nil
+}
+
+// activeAIRouter is the shared provider harness, wired at startup. It follows
+// the same configured-singleton shape as activeSettings because these handlers
+// are package-level functions rather than methods on a service.
+//
+// Usage is logged by aiChatAsk rather than by the router: Selected returns the
+// provider itself, so a docked question is counted once, in the same place a
+// page question is.
+var activeAIRouter *aiprovider.Router
+
+// configureAIRouter wires the harness the AI dock routes through. A nil router
+// means the dock falls back to Claude, which is what the unit tests exercise.
+func configureAIRouter(router *aiprovider.Router) { activeAIRouter = router }
 
 // aiChatPreference reads a Settings preference, falling back to its
 // environment variable when no store is configured (the unit tests, and any
@@ -1181,17 +1230,21 @@ func boundedHistory(turns []aiChatTurn) []aiprovider.Message {
 // browser.
 func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 	switch req.Provider {
-	case "", "claude":
-		key := storedAICredential("claude")
-		if key == "" {
-			return nil, fmt.Errorf("no Anthropic API key: set one in Settings")
+	case "":
+		// No provider named means "whatever Settings says" — the AI dock, which
+		// has no provider control and should not have one. It used to mean
+		// Claude, so an install set to Wintermute still sent every docked
+		// question to Anthropic and nothing in the UI said so.
+		//
+		// The router is the same one every other AI field asks through, so it
+		// carries the stored backend, model and agent, and honours "auto".
+		if activeAIRouter != nil {
+			return activeAIRouter.Selected()
 		}
-		// The endpoint override stays restricted to Anthropic's own host.
-		endpoint, err := validatedClaudeBaseURL(req.Endpoint)
-		if err != nil {
-			return nil, err
-		}
-		return aiprovider.NewClaude(func() string { return key }, req.Model).WithBaseURL(endpoint), nil
+		return aiChatClaudeProvider(req)
+
+	case "claude":
+		return aiChatClaudeProvider(req)
 
 	case "wintermute":
 		cfg := aiprovider.WintermuteConfig{
@@ -1199,6 +1252,11 @@ func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 			Token:   storedAICredential("wintermute"),
 			Backend: req.Backend,
 			Model:   req.Model,
+			// The agent is not a per-question field on this page, and a
+			// question asked without one is answered from the model's training
+			// data rather than from this installation's catalogs — which reads
+			// exactly like a grounded answer. So it comes from Settings.
+			Agent: aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
 		}
 		if cfg.URL == "" {
 			cfg.URL = storedWintermuteURL()

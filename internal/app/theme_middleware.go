@@ -1566,22 +1566,13 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
   let history = [];
   let sessionID = '';
 
-  // Which provider can answer is an install-wide setting, so the dock asks once
-  // and reuses the answer rather than making the reader pick on every page.
-  let providerReady = null;
-  async function pickProvider() {
-    if (providerReady) return providerReady;
-    providerReady = (async () => {
-      const resp = await fetch('/ai-chat/wintermute/status');
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-      if (data.claude_configured) return 'claude';
-      if (data.token_configured && data.configured) return 'wintermute';
-      throw new Error('No AI provider is configured. Set a key in Settings.');
-    })();
-    providerReady = providerReady.catch((err) => { providerReady = null; throw err; });
-    return providerReady;
-  }
+  // The dock names no provider. Which one answers is an install-wide setting,
+  // and the server reads it per question — including "auto", the stored
+  // backend, model and agent, all of which this box has no way to express.
+  //
+  // It used to ask /ai-chat/wintermute/status and pick Claude whenever a key
+  // existed, which quietly ignored Settings: an install pinned to Wintermute
+  // still sent every docked question to Anthropic.
 
   function expand() {
     panel.hidden = false;
@@ -1627,12 +1618,10 @@ const aiQuickPromptDockTag = `<div id="global-ai-dock" aria-label="Global AI Pro
     if (sendBtn) sendBtn.disabled = true;
     input.disabled = true;
     try {
-      const provider = await pickProvider();
       const resp = await fetch('/ai-chat/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: provider,
           question: value,
           // A resumed Wintermute session already holds the transcript; sending
           // it again would replay every earlier turn into the same session.

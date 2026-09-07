@@ -85,7 +85,11 @@ func TestAIChatProviderPrecedence(t *testing.T) {
 			wantProvider: aiprovider.NameClaude,
 		},
 		{
-			name:         "an empty provider means claude",
+			// With no router wired — the shape these unit tests run in — an
+			// unnamed provider still falls back to Claude. What it must not do
+			// is ignore a wired router: TestUnnamedProviderFollowsTheSetting
+			// covers that.
+			name:         "an empty provider falls back to claude with no router",
 			req:          aiChatRequest{Provider: ""},
 			wantProvider: aiprovider.NameClaude,
 		},
@@ -236,5 +240,93 @@ func TestAIChatProviderWithNothingConfigured(t *testing.T) {
 				t.Errorf("error %q should point at Settings", err)
 			}
 		})
+	}
+}
+
+// The AI dock names no provider, so an unnamed one has to mean "whatever
+// Settings routes to".
+//
+// It used to mean Claude: the dock asked which credentials existed and picked
+// Claude whenever a key was configured, so an install set to Wintermute sent
+// every docked question to Anthropic and nothing said so. The question looked
+// answered — by the wrong provider, from the wrong data.
+func TestUnnamedProviderFollowsTheSetting(t *testing.T) {
+	originalSettings := activeSettings
+	originalRouter := activeAIRouter
+	t.Cleanup(func() { activeSettings = originalSettings; activeAIRouter = originalRouter })
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("WINTERMUTE_TOKEN", "")
+	t.Setenv("WINTERMUTE_URL", "")
+
+	svc := newTestSettings(t)
+	// Both providers are configured, so the choice can only come from the
+	// preference — which is the case that was broken.
+	if err := svc.Set(settings.AnthropicAPIKey, "sk-ant-stored", "alice"); err != nil {
+		t.Fatalf("Set anthropic: %v", err)
+	}
+	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
+		t.Fatalf("Set wintermute token: %v", err)
+	}
+	if err := svc.SetPreference(settings.PrefWintermuteURL, "https://wintermute.example.com"); err != nil {
+		t.Fatalf("SetPreference url: %v", err)
+	}
+	configureAICredentials(svc)
+	configureAIRouter(newAIRouter(svc))
+
+	for _, tc := range []struct {
+		preference string
+		want       string
+	}{
+		{settings.ProviderWintermute, aiprovider.NameWintermute},
+		{settings.ProviderClaude, aiprovider.NameClaude},
+		// "auto" prefers a configured Wintermute, which is what the router does
+		// for every other AI field in the app.
+		{settings.ProviderAuto, aiprovider.NameWintermute},
+	} {
+		t.Run(tc.preference, func(t *testing.T) {
+			if err := svc.SetPreference(settings.PrefAIProvider, tc.preference); err != nil {
+				t.Fatalf("SetPreference provider: %v", err)
+			}
+			provider, err := aiChatProvider(aiChatRequest{})
+			if err != nil {
+				t.Fatalf("aiChatProvider: %v", err)
+			}
+			if provider.Name() != tc.want {
+				t.Errorf("with ai.provider=%q the dock asked %q, want %q", tc.preference, provider.Name(), tc.want)
+			}
+		})
+	}
+}
+
+// A Wintermute question carries the agent from Settings, because this page has
+// no field for one and a question asked without an agent is answered from the
+// model's training data rather than from this installation's catalogs — which
+// reads exactly like a grounded answer.
+func TestWintermuteQuestionsCarryTheConfiguredAgent(t *testing.T) {
+	original := activeSettings
+	t.Cleanup(func() { activeSettings = original })
+	t.Setenv("WINTERMUTE_TOKEN", "")
+	t.Setenv("WINTERMUTE_URL", "")
+	t.Setenv("WINTERMUTE_AGENT", "")
+
+	svc := newTestSettings(t)
+	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
+		t.Fatalf("Set token: %v", err)
+	}
+	if err := svc.SetPreference(settings.PrefWintermuteURL, "https://wintermute.example.com"); err != nil {
+		t.Fatalf("SetPreference url: %v", err)
+	}
+	if err := svc.SetPreference(settings.PrefWintermuteAgent, "grc"); err != nil {
+		t.Fatalf("SetPreference agent: %v", err)
+	}
+	configureAICredentials(svc)
+
+	provider, err := aiChatProvider(aiChatRequest{Provider: "wintermute"})
+	if err != nil {
+		t.Fatalf("aiChatProvider: %v", err)
+	}
+	// Describe renders the agent the next question would run against.
+	if got := provider.Describe(); !strings.Contains(got, "as grc") {
+		t.Errorf("Describe() = %q, want the configured agent in it", got)
 	}
 }

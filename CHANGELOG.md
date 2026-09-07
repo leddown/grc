@@ -3,6 +3,72 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (The AI dock ignored the provider setting)
+
+Setting the AI provider in Settings did not change what the **Ask AI** box
+asked. It was not a stale value or a caching problem: the dock decided for
+itself.
+
+```js
+if (data.claude_configured) return 'claude';
+if (data.token_configured && data.configured) return 'wintermute';
+```
+
+It asked which credentials existed and picked Claude whenever an Anthropic key
+was configured. `ai.provider` was never consulted — the status endpoint it
+called did not even report it. An install pinned to **Wintermute only**, chosen
+so questions do not leave the network, sent every docked question to Anthropic,
+and the answer came back looking exactly like a local one.
+
+### The routing
+
+An unnamed provider on `POST /ai-chat/ask` now means "whatever Settings routes
+to", resolved through the same `aiprovider.Router` every other AI field in the
+app asks through — so it honours `auto`, and carries the stored backend, model
+and agent. It used to mean Claude. The dock sends no provider at all now, which
+is right for a box with no provider control: the decision belongs to the one
+place that is configured.
+
+The router's own usage logging is bypassed (`Selected()` returns the provider,
+`Ask` is called on it directly), so a docked question is still counted once, in
+the same place a page question is. Verified against a stand-in server: four
+questions, four rows.
+
+### The second half of it, which was quieter
+
+A question routed to Wintermute carried **no agent**. `aiChatProvider` built its
+config from the request only, and neither the dock nor the AI Chat page has an
+agent field — so every question this app asked through that path ran against the
+server's general assistant instead of the agent holding this installation's
+catalogs. That is the failure `AI_AGENT.md` describes: an answer from the
+model's training data, wearing the same confidence as a grounded one. The agent
+now comes from Settings, as the backend and model already did for the dock.
+
+### AI Chat page
+
+Opens on the provider Settings routes to, rather than always on Claude —
+including `auto`, which resolves the way the router resolves it. It remains the
+one page where a provider is chosen per question, so the selection is only a
+default, and a reader who changes it is not overridden by a status response
+arriving late.
+
+### Checked against a stand-in wintermuted and a stand-in Anthropic API
+
+With both credentials configured, so the preference is the only thing that can
+decide:
+
+| `ai.provider` | docked question served by |
+|---|---|
+| `claude` | claude / claude-opus-5 |
+| `auto` | wintermute / gemma3:12b |
+| `wintermute` | wintermute / gemma3:12b |
+
+The session the Wintermute server was asked to open carried
+`backend=workshop, model=gemma3:12b, agent=grc` — the configured values, none of
+which the dock can express. `TestUnnamedProviderFollowsTheSetting` covers all
+three preferences and would have caught the original bug;
+`TestWintermuteQuestionsCarryTheConfiguredAgent` covers the agent.
+
 ## 2026-09-07 (Build time)
 
 A full build was taking 15+ minutes on a modest machine. Measured on a 12-core

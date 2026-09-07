@@ -141,6 +141,9 @@ func Run(options Options) error {
 	settingsService := newSettingsService(sqliteDB, options)
 	configureAICredentials(settingsService)
 	aiRouter := newAIRouter(settingsService)
+	// The AI dock asks through this too, so a provider chosen in Settings
+	// applies to it rather than only to the modules wired with it below.
+	configureAIRouter(aiRouter)
 
 	// The reporting module's renderer is shared with Regulation Coverage rather
 	// than duplicated: both produce PDFs, and one pooled headless browser per
