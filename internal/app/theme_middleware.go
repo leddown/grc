@@ -613,6 +613,16 @@ pre, code {
 // the top bar. Consolidating onto one implementation here means every page,
 // including Home, now shares the same nav chrome and the same mobile
 // handling instead of home.go duplicating and diverging from it.
+//
+// The sidebar carries one section at a time. Its top level — Catalog,
+// Compliance & Risk, Reporting & Data, Documents, Admin — is a switcher in a
+// fixed topbar, which is wintermute's shape: .topbar holds the view buttons,
+// the sidebar holds the tabs of the view you are in. Stacking all five groups
+// and their thirty-odd items in one column meant the section you were working
+// in was a sixth of a scrolling list, and the group heads were doing the work
+// of navigation while looking like captions. Switching a section is a DOM
+// swap, not a page load: the pages are separate documents here, so the bar
+// re-derives which section you are in from the active tab on every load.
 const sideNavTag = `<style id="global-side-nav-style">
 /* Every page's own <main> still carries whatever box-model CSS it defined
    before this sidebar existed: a max-width, centering auto-margins, its own
@@ -633,10 +643,73 @@ main:has(> .global-shell) {
 }
 .global-shell {
   min-height: 100vh;
+  --global-topbar-h: 52px;
 }
-.global-sidenav {
+/* The topbar is fixed to the window rather than placed in the shell: the
+   sidebar and the AI dock are already fixed, and a bar that scrolls away
+   takes the section switcher with it. Its right padding is the room the
+   floating theme and brightness controls occupy — they sit on the bar rather
+   than over it. */
+.global-topbar {
   position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  z-index: 9700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 max(210px, calc(12px + env(safe-area-inset-right))) 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.global-brand-link {
+  flex: none;
+  font: 700 15px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+  color: var(--ink) !important;
+  text-decoration: none !important;
+  padding: 6px 8px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  background: none !important;
+  border: none !important;
+}
+.global-views {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.global-views::-webkit-scrollbar { display: none; }
+.global-view-btn {
+  flex: none;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 13px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.global-view-btn:hover { background: var(--hover); color: var(--ink); }
+.global-view-btn.active {
+  background: var(--surface-strong);
+  border-color: var(--line);
+  color: var(--ink);
+}
+/* Admin is operational rather than day-to-day, so it sits apart at the end of
+   the bar instead of competing at the same weight — what the dashed rule in
+   the sidebar used to say when every group was stacked in one column. */
+.global-view-btn.global-view-admin { margin-left: auto; opacity: 0.75; }
+.global-view-btn.global-view-admin:hover { opacity: 1; }
+.global-sidenav {
+  position: fixed;
+  top: var(--global-topbar-h, 52px);
   left: 0;
   /* The AI panel is on the right now, so the sidebar runs the full height. */
   bottom: 0;
@@ -646,14 +719,14 @@ main:has(> .global-shell) {
   overscroll-behavior: contain;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  padding: 60px 12px 20px;
+  padding: 14px 12px 20px;
   z-index: 9500;
   transform: translateX(0);
   transition: transform 0.2s ease;
 }
 .global-content {
   margin-left: 260px;
-  padding: 20px 24px;
+  padding: calc(var(--global-topbar-h, 52px) + 20px) 24px 20px;
   min-width: 0;
   transition: margin-left 0.2s ease;
 }
@@ -723,46 +796,33 @@ main:has(> .global-shell) {
   background: var(--panel);
   color: var(--muted);
 }
-.global-sidenav .tab-group {
-  margin-top: 16px;
-}
-.global-sidenav .tab-group:first-of-type {
-  margin-top: 12px;
-}
+/* One group is shown at a time; the topbar says which. The hidden ones stay
+   in the DOM so switching sections is a class toggle rather than a fetch. */
+.global-sidenav .tab-group { margin-top: 0; }
+.global-sidenav .tab-group[hidden] { display: none; }
 .global-sidenav .tab-group-label {
-  margin: 0 0 4px;
+  margin: 0 0 8px;
   padding: 0 10px;
   font: 600 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--muted);
 }
-/* Admin/utility pages are operational, not day-to-day work, so they get a
-   visual break from the primary groups rather than competing for attention
-   at the same weight — standard sidebar guidance for this app's shape. */
-.global-sidenav .tab-group-admin {
-  margin-top: 22px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--line);
-  opacity: 0.82;
-}
 
+/* Lives in the topbar now, where wintermute's ☰ is, rather than floating over
+   the page at the same corner the bar occupies. */
 #global-nav-toggle {
-  position: fixed;
-  top: calc(12px + env(safe-area-inset-top));
-  left: calc(12px + env(safe-area-inset-left));
-  z-index: 10000;
+  flex: none;
   min-height: 36px;
   min-width: 36px;
   padding: 8px 10px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--ink);
   font: 15px Arial, sans-serif;
   cursor: pointer;
   touch-action: manipulation;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
 #global-nav-toggle:hover {
   background: var(--hover);
@@ -791,13 +851,21 @@ main:has(> .global-shell) {
   }
   .global-content {
     margin-left: 0 !important;
-    padding: 58px 14px 20px;
+    padding: calc(var(--global-topbar-h, 52px) + 14px) 14px 20px;
   }
   .global-sidenav .tab {
     min-height: 40px;
     display: flex !important;
     align-items: center;
   }
+  /* Less room reserved for the floating theme controls than on desktop —
+     they shrink to icons-and-a-word at this width — and the switcher scrolls
+     sideways under what is left. */
+  .global-topbar {
+    padding-right: max(165px, calc(8px + env(safe-area-inset-right)));
+    gap: 6px;
+  }
+  .global-brand-link { font-size: 14px !important; padding: 6px 4px !important; }
 }
 </style>
 <script>
@@ -832,6 +900,56 @@ main:has(> .global-shell) {
     aside.appendChild(searchTrigger);
 
     aside.appendChild(nav);
+
+    // The top level of the sidebar becomes the topbar switcher: one button per
+    // group, and the sidebar then shows that group alone. Home is the brand
+    // link at the left rather than a tab, which is where it was being read as
+    // anyway.
+    const topbar = document.createElement("header");
+    topbar.className = "global-topbar";
+    topbar.id = "globalTopbar";
+
+    if (homeTab) {
+      homeTab.classList.add("global-brand-link");
+      homeTab.textContent = "GRC";
+      homeTab.title = "Home";
+      topbar.appendChild(homeTab);
+    }
+
+    const views = document.createElement("nav");
+    views.className = "global-views";
+    views.setAttribute("aria-label", "Sections");
+    const groups = Array.from(nav.querySelectorAll(".tab-group"));
+    const viewButtons = groups.map((group, index) => {
+      const labelEl = group.querySelector(".tab-group-label");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "global-view-btn";
+      if (group.classList.contains("tab-group-admin")) {
+        button.classList.add("global-view-admin");
+      }
+      button.textContent = labelEl ? labelEl.textContent.trim() : "Section " + (index + 1);
+      button.setAttribute("aria-pressed", "false");
+      button.addEventListener("click", () => showGroup(index));
+      views.appendChild(button);
+      return button;
+    });
+    topbar.appendChild(views);
+    document.body.appendChild(topbar);
+
+    function showGroup(index) {
+      groups.forEach((group, i) => { group.hidden = i !== index; });
+      viewButtons.forEach((button, i) => {
+        button.classList.toggle("active", i === index);
+        button.setAttribute("aria-pressed", i === index ? "true" : "false");
+      });
+    }
+
+    // Which section a page belongs to is answered by the tab it marks active,
+    // so a link followed from anywhere lands with its own section open. Home
+    // marks no tab; it opens on the first section rather than on nothing.
+    const activeIndex = groups.findIndex((group) => group.querySelector("a.tab.active"));
+    showGroup(activeIndex >= 0 ? activeIndex : 0);
 
     const content = document.createElement("section");
     content.className = "global-content";
@@ -875,7 +993,12 @@ main:has(> .global-shell) {
   toggle.setAttribute("aria-label", "Toggle navigation");
   toggle.title = "Toggle navigation";
   toggle.textContent = "☰";
-  document.body.appendChild(toggle);
+  const topbar = document.getElementById("globalTopbar");
+  if (topbar) {
+    topbar.insertBefore(toggle, topbar.firstChild);
+  } else {
+    document.body.appendChild(toggle);
+  }
 
   toggle.addEventListener("click", () => {
     if (isMobile()) {

@@ -3,6 +3,40 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (The top level of the navigation moved to a topbar)
+
+The sidebar stacked all five groups — Catalog, Compliance & Risk, Reporting &
+Data, Documents, Admin — and their thirty-odd items in one scrolling column, so
+the section you were actually working in was a sixth of a list and the group
+heads were doing the work of navigation while looking like captions. The top
+level is now a switcher in a fixed topbar and the sidebar carries one section at
+a time, which is wintermute's shape (`.topbar` holds the view buttons, the
+sidebar holds the tabs of the view you are in).
+
+- `internal/app/theme_middleware.go` (`sideNavTag`): a fixed `.global-topbar`
+  holds the ☰ collapse toggle (moved in from where it floated over the page at
+  that same corner), a **GRC** brand link — the Home tab, which was already
+  being read as one — and a `.global-view-btn` per group. Admin sits apart at
+  the right end of the bar, which is what the dashed rule in the sidebar used to
+  say. The bar reserves the width the floating theme and brightness controls
+  occupy, so they sit on it rather than over it.
+- The sidebar and page content start below the bar (`--global-topbar-h`), and
+  the sidebar's group padding lost the stacked-column spacing it no longer
+  needs.
+- Switching sections is a DOM swap, not a page load. Because the pages are
+  separate documents, the bar re-derives the open section from the active tab on
+  every load — a link followed from anywhere lands with its own section open,
+  and Home, which marks no tab, opens on the first section.
+- Phone widths keep the drawer: the bar stays, the switcher scrolls sideways
+  under a smaller reserve for the theme controls, and the sidebar is still
+  off-canvas behind the same ☰.
+
+Checked headless at 1440x900 and 430x860 on Home, Controls, Risk Register and
+Settings, including switching sections from the bar. `go fmt`, `go vet` and
+`go test ./...` clean apart from the pre-existing `TestGovulncheck` failure (Go
+standard library advisories fixed in go1.25.13; the toolchain here is
+go1.25.12).
+
 ## 2026-09-07 (Anchors drawn as buttons were still white)
 
 The dark themes restyle every `<button>` on a page, but a link drawn to look
