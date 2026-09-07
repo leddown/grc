@@ -15,7 +15,6 @@ const themeCookieName = "go_rcsa_theme"
 
 const (
 	themeDark   = "dark"
-	themeLight  = "light"
 	themeMatrix = "matrix"
 	themeChaos  = "chaos"
 )
@@ -1458,28 +1457,39 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
 </script>`
 
 // themeToggleTag renders a small fixed-position control that flips the
-// go_rcsa_theme cookie and reloads the page. It is generated server-side per
-// request so the label always names the theme a click will switch *to*.
+// go_rcsa_theme cookie and reloads the page.
+//
+// The button names the theme you are *in*, not the one a click switches to.
+// It used to do the opposite, and since this control is the only place a theme
+// is ever named, that made every theme appear to be called the next one along:
+// the green palette with no glitch — Matrix — sat under a button reading
+// "Chaos theme". What a click does is in the tooltip and the accessible name,
+// where a control's action belongs.
 func themeToggleTag(theme string) string {
-	var label, icon string
-	switch theme {
-	case themeLight:
-		label = "Matrix theme"
-		icon = "▓"
-	case themeMatrix:
-		label = "Chaos theme"
-		icon = "⚡"
-	case themeChaos:
-		label = "40K theme"
-		icon = "⚙"
-	case themeK40:
-		label = "Dark theme"
-		icon = "🌙"
-	default:
-		label = "Light theme"
-		icon = "☀"
+	name := map[string]string{
+		themeDark:   "Dark",
+		themeMatrix: "Matrix",
+		themeChaos:  "Chaos",
+		themeK40:    "40K",
 	}
-	return `<button id="global-theme-toggle" type="button" aria-label="Switch to ` + label + `" title="Switch to ` + label + `">` + icon + ` ` + label + `</button>
+	icon := map[string]string{
+		themeDark:   "🌙",
+		themeMatrix: "▓",
+		themeChaos:  "⚡",
+		themeK40:    "⚙",
+	}
+	next := map[string]string{
+		themeDark:   themeMatrix,
+		themeMatrix: themeChaos,
+		themeChaos:  themeK40,
+		themeK40:    themeDark,
+	}
+	current, ok := name[theme]
+	if !ok {
+		theme, current = themeDark, name[themeDark]
+	}
+	action := "Switch to " + name[next[theme]]
+	return `<button id="global-theme-toggle" type="button" aria-label="Theme: ` + current + `. ` + action + `" title="` + action + `">` + icon[theme] + ` ` + current + `</button>
 <button id="global-text-lift" type="button" aria-label="Text brightness" title="Text brightness">Aa</button>
 <style id="global-theme-toggle-style">
 #global-theme-toggle {
@@ -1563,7 +1573,7 @@ func themeToggleTag(theme string) string {
   const btn = document.getElementById('global-theme-toggle');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    const cycle = ['` + themeDark + `', '` + themeLight + `', '` + themeMatrix + `', '` + themeChaos + `', '` + themeK40 + `'];
+    const cycle = ['` + themeDark + `', '` + themeMatrix + `', '` + themeChaos + `', '` + themeK40 + `'];
     const match = document.cookie.split('; ').find((row) => row.startsWith('` + themeCookieName + `='));
     const current = match ? match.split('=')[1] : '` + themeDark + `';
     const idx = cycle.indexOf(current);
@@ -1612,17 +1622,18 @@ func themeMiddleware() gin.HandlerFunc {
 	}
 }
 
-// currentTheme reads the user's theme preference cookie, defaulting to the
-// original dark theme when absent or unrecognized so existing sessions keep
-// their current look until they explicitly opt into the light theme.
+// currentTheme reads the user's theme preference cookie, defaulting to dark
+// when it is absent or unrecognised.
+//
+// That default is also the migration: a browser still carrying the retired
+// "light" cookie falls through to dark rather than to a palette that no longer
+// exists, with no cookie to clear and nothing to explain.
 func currentTheme(c *gin.Context) string {
 	value, err := c.Cookie(themeCookieName)
 	if err != nil {
 		return themeDark
 	}
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case themeLight:
-		return themeLight
 	case themeMatrix:
 		return themeMatrix
 	case themeChaos:

@@ -21,29 +21,13 @@ const themeK40 = "40k"
 
 // palettes are the per-theme token values, in wintermute's names.
 //
-// dark, matrix, chaos and 40k are that stylesheet's palettes unchanged. Light
-// has no counterpart there — wintermute is dark-only — so this application's
-// existing grey-and-maroon business palette is kept and re-expressed in the
-// same names, because deleting the one theme that prints well on a projector
-// is not what porting a design system means.
+// All four are that stylesheet's palettes unchanged. There is no light theme
+// here for the same reason there is none there: every one of these is drawn for
+// a screen in a room, and a light palette maintained alongside them was a fifth
+// set of colours that had to be re-checked on every change and was chosen by
+// nobody.
 func palettes(theme string) string {
 	switch theme {
-	case themeLight:
-		return `
-  color-scheme: light !important;
-  --bg: #f4f3f1 !important;
-  --bg-image: linear-gradient(160deg, #f4f3f1, #ece9e5 52%, #e4e0da) !important;
-  --surface: #ffffff !important;
-  --surface-2: #f1efec !important;
-  --border: #d4d2cf !important;
-  --text-base: #2a2a2a !important;
-  --muted-base: #6b6f76 !important;
-  --accent: #7a1f2e !important;
-  --on-accent: #ffffff !important;
-  --error: #b3261e !important;
-  --gain: #2f6b3f !important;
-  --loss: #b3261e !important;`
-
 	case themeMatrix, themeChaos:
 		return `
   color-scheme: dark !important;
@@ -163,8 +147,13 @@ body {
   font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
 }
 
-/* ---- surfaces ---- */
-main, .panel, .list, .detail, .table-wrap, pre, .msg, .auth-box, .panel-body,
+/* ---- surfaces ----
+
+   The page itself is the background; panels and cards are what sit on it. main
+   is deliberately not in this list: painting it --surface too flattened page,
+   panel and card into one colour, and every boundary on the screen came down to
+   a 1px border. wintermute's shell is --bg for the same reason. */
+.panel, .list, .detail, .table-wrap, pre, .msg, .auth-box, .panel-body,
 .rows, .row, .control-item, .nfr-item, .pane, .cred {
   background: var(--surface) !important;
   color: var(--text) !important;
@@ -176,6 +165,12 @@ main, .panel, .list, .detail, .table-wrap, pre, .msg, .auth-box, .panel-body,
   color: var(--text) !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
+}
+/* A card inside a panel is a step further from the page, so it takes the next
+   surface up rather than the same one with a line drawn between them. */
+.panel [class*="card"], .panel-body [class*="card"], .pane [class*="card"],
+.list [class*="card"], .detail [class*="card"] {
+  background: var(--surface-2) !important;
 }
 /* A section head is a caption for what is under it, not a heading competing
    with the page title: small, spaced, and in the muted tone. */
@@ -335,6 +330,12 @@ body:not(:has(.global-shell)) main button.danger {
 
 /* ---- text ---- */
 a { color: var(--accent) !important; }
+/* The sidebar is injected inside each page's own <main>, so a page that
+   underlines its links underlined the navigation as well — 25 rules of rules
+   rather than a list. */
+.global-sidenav a, .global-sidenav .tab {
+  text-decoration: none !important;
+}
 code, .mono, pre code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
   color: var(--text) !important;

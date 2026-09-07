@@ -3,6 +3,39 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (Light theme removed; a UI review of what is left)
+
+Four themes now: **Dark**, **Matrix** (green, the falling-glyph rain),
+**Chaos** (the same green plus the per-character colour glitch) and **40K**
+(brass and bone, the failing-CRT overlay). Light is gone — wintermute is
+dark-only, and a fifth palette beside these four was a set of colours that had
+to be re-checked on every change and was chosen by nobody. A browser still
+carrying the retired `light` cookie falls through to Dark: that is the existing
+default for an unrecognised value, so there is no migration and nothing to
+clear.
+
+### The themes were named as the one after them
+
+The theme toggle is the only place a theme is ever named, and it named the theme
+a **click switches to**. So the green palette with no glitch — Matrix — sat
+under a button reading "Chaos theme", and every theme appeared to be called its
+successor. The button now names the theme you are in (`▓ Matrix`), and what a
+click does lives in the tooltip and the accessible name, where a control's
+action belongs.
+
+### Two regressions the review caught
+
+- **Everything was one flat surface.** `main` was being painted `--surface`
+  along with the panels and cards on it, so page, panel and card were the same
+  colour and every boundary on screen came down to a 1px border. The page is
+  `--bg` again, as wintermute's shell is; a card nested inside a panel takes
+  `--surface-2` rather than repeating its parent's colour.
+- **The sidebar links were underlined** on any page whose own CSS underlines
+  links — the injected sidebar lives inside that page's `<main>`, so it
+  inherited the rule. Cured once in the shared layer rather than in each page.
+
+Checked across all four themes on the catalog, module and settings pages.
+
 ## 2026-09-07 (Why the agent did not reach the Ask AI box)
 
 Three separate causes, all reproduced against a stand-in wintermuted that
@@ -134,10 +167,9 @@ overlay (static scanlines and vignette, a roll bar drifting down the glass, and
 irregular tear bursts from a timer rather than a keyframe loop, because a
 predictable glitch reads as decoration rather than as a fault). It is injected
 only for that theme, the way the rain is injected only for Matrix and Chaos.
-Light has no counterpart in wintermute, which is dark-only, so this
-application's grey-and-maroon business palette is kept and re-expressed in the
-same names — deleting the one theme that prints well is not what porting a
-design system means.
+Light was carried over at first and then removed (below): wintermute is
+dark-only, and a fifth palette maintained beside these four was re-checked on
+every change and chosen by nobody.
 
 **Text brightness**, also from wintermute: an `Aa` control beside the theme
 toggle lifts the two text tokens towards white in four steps without touching

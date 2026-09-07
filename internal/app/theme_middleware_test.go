@@ -21,8 +21,10 @@ func themeContextWithCookie(value string) *gin.Context {
 
 func TestCurrentThemeRecognizesEveryTheme(t *testing.T) {
 	cases := map[string]string{
-		themeDark:   themeDark,
-		themeLight:  themeLight,
+		themeDark: themeDark,
+		// A browser still carrying the retired light cookie falls through to
+		// dark rather than to a palette that no longer exists.
+		"light":     themeDark,
 		themeMatrix: themeMatrix,
 		themeChaos:  themeChaos,
 		"MATRIX":    themeMatrix,
@@ -50,10 +52,6 @@ func TestThemeStyleSelectsMatchingPalette(t *testing.T) {
 		t.Error("matrix theme must carry the matrix palette")
 	}
 
-	if !strings.Contains(headInsertTag(themeLight), "color-scheme: light") {
-		t.Error("light theme must declare a light color-scheme")
-	}
-
 	// The 40K palette is the one that is not a variation on the others.
 	if !strings.Contains(headInsertTag(themeK40), "#d8a730") {
 		t.Error("40K theme must carry its brass accent")
@@ -69,7 +67,7 @@ func TestEveryThemeDefinesTheWholePalette(t *testing.T) {
 		"--text-base:", "--muted-base:", "--accent:", "--on-accent:",
 		"--error:", "--gain:", "--loss:",
 	}
-	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos, themeK40} {
+	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
 		css := headInsertTag(theme)
 		for _, token := range tokens {
 			if !strings.Contains(css, token) {
@@ -112,7 +110,7 @@ func TestFritzOverlayInjectedOnlyFor40K(t *testing.T) {
 	if got := string(injectGlobalUI(page, themeK40)); !strings.Contains(got, "global-fritz") {
 		t.Error("40K theme must receive the fritz overlay")
 	}
-	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos} {
+	for _, theme := range []string{themeDark, themeMatrix, themeChaos} {
 		if got := string(injectGlobalUI(page, theme)); strings.Contains(got, "global-fritz") {
 			t.Errorf("theme %q must not receive the fritz overlay", theme)
 		}
@@ -144,7 +142,7 @@ func TestChaosEngineInjectedOnlyForChaosTheme(t *testing.T) {
 	if got := string(injectGlobalUI(page, themeChaos)); !strings.Contains(got, "global-chaos-engine") {
 		t.Error("chaos theme must receive the glitch engine")
 	}
-	for _, theme := range []string{themeDark, themeLight, themeMatrix} {
+	for _, theme := range []string{themeDark, themeMatrix} {
 		if got := string(injectGlobalUI(page, theme)); strings.Contains(got, "global-chaos-engine") {
 			t.Errorf("%s theme must not receive the glitch engine", theme)
 		}
@@ -258,7 +256,7 @@ func TestMatrixRainInjectedOnlyForMatrixAndChaos(t *testing.T) {
 			t.Errorf("%s theme must receive the rain engine", theme)
 		}
 	}
-	for _, theme := range []string{themeDark, themeLight} {
+	for _, theme := range []string{themeDark} {
 		if got := string(injectGlobalUI(page, theme)); strings.Contains(got, "global-matrix-rain") {
 			t.Errorf("%s theme must not receive the rain", theme)
 		}
@@ -293,22 +291,32 @@ func TestMatrixRainHonoursReducedMotion(t *testing.T) {
 
 func TestThemeToggleCycleCoversEveryTheme(t *testing.T) {
 	toggle := themeToggleTag(themeDark)
-	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos, themeK40} {
+	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
 		if !strings.Contains(toggle, "'"+theme+"'") {
 			t.Errorf("toggle cycle is missing %q", theme)
 		}
 	}
 
-	// The label must name the theme a click switches *to*, so the cycle
-	// advances rather than dead-ending on the last entry.
-	if !strings.Contains(themeToggleTag(themeMatrix), "Chaos theme") {
-		t.Error("matrix should offer chaos next")
-	}
-	if !strings.Contains(themeToggleTag(themeChaos), "40K theme") {
-		t.Error("chaos should offer 40K next")
-	}
-	if !strings.Contains(themeToggleTag(themeK40), "Dark theme") {
-		t.Error("40K should wrap around to dark")
+	// The visible label names the theme you are *in*. This control is the only
+	// place a theme is ever named, so naming the next one made every theme
+	// appear to be called the one after it — the green palette with no glitch,
+	// which is Matrix, sat under a button reading "Chaos theme".
+	for _, tc := range []struct{ theme, label, action string }{
+		{themeDark, ">🌙 Dark</button>", "Switch to Matrix"},
+		{themeMatrix, ">▓ Matrix</button>", "Switch to Chaos"},
+		{themeChaos, ">⚡ Chaos</button>", "Switch to 40K"},
+		{themeK40, ">⚙ 40K</button>", "Switch to Dark"},
+	} {
+		toggle := themeToggleTag(tc.theme)
+		if !strings.Contains(toggle, tc.label) {
+			t.Errorf("in %s the button should read %q", tc.theme, tc.label)
+		}
+		// What a click does belongs in the accessible name and the tooltip,
+		// where a control's action belongs — and the cycle has to advance
+		// rather than dead-ending on the last entry.
+		if !strings.Contains(toggle, tc.action) {
+			t.Errorf("in %s the button should offer %q", tc.theme, tc.action)
+		}
 	}
 }
 
@@ -328,7 +336,7 @@ func TestInjectGlobalUIWiresChaosEndToEnd(t *testing.T) {
 func TestMobileStyleFollowsThemeStyleInEveryTheme(t *testing.T) {
 	page := []byte("<html><head></head><body>hello</body></html>")
 
-	for _, theme := range []string{themeDark, themeLight, themeMatrix, themeChaos} {
+	for _, theme := range []string{themeDark, themeMatrix, themeChaos} {
 		got := string(injectGlobalUI(page, theme))
 
 		themeIdx := strings.Index(got, `id="global-theme-style"`)
