@@ -97,9 +97,20 @@ func settingsPage(c *gin.Context) {
           <input id="wmURL" type="text" class="mono" placeholder="http://wintermute.local:8080" aria-label="Wintermute server URL">
         </div>
         <div class="row">
-          <input id="wmBackend" type="text" class="mono" placeholder="backend (blank = server default)" aria-label="Wintermute backend">
-          <input id="wmModel" type="text" class="mono" placeholder="model (blank = backend default)" aria-label="Wintermute model">
+          <select id="wmBackend" aria-label="Wintermute backend">
+            <option value="">Server default backend</option>
+          </select>
+          <select id="wmModel" aria-label="Wintermute model">
+            <option value="">Backend default model</option>
+          </select>
+          <button id="loadCatalog" class="secondary" type="button">Refresh backends &amp; models</button>
         </div>
+        <p class="meta">
+          A <em>backend</em> is one model server Wintermute can route to &mdash; a local
+          llama.cpp, Ollama or vLLM host, or a cloud vendor it forwards on to. Both lists
+          come from the server itself, so a name here is one it actually has.
+          <span id="wmCatalogDetail"></span>
+        </p>
         <div class="row">
           <select id="wmAgent" aria-label="Wintermute agent">
             <option value="">No agent &mdash; general assistant</option>
@@ -275,11 +286,21 @@ func settingsPage(c *gin.Context) {
     const prefs = data.preferences || {};
     providerEl.value = prefs['ai.provider'] || 'claude';
     wmURL.value = prefs['ai.wintermute.url'] || '';
-    wmBackend.value = prefs['ai.wintermute.backend'] || '';
-    wmModel.value = prefs['ai.wintermute.model'] || '';
+    // A stored backend or model is shown before the server has been asked for
+    // its lists, so the select carries the saved value even when the lookup is
+    // slow or fails — otherwise pressing Save would quietly clear it.
+    const backend = prefs['ai.wintermute.backend'] || '';
+    const model = prefs['ai.wintermute.model'] || '';
+    ensureOption(wmBackend, backend, backend);
+    ensureOption(wmModel, model, model);
+    wmBackend.value = backend;
+    wmModel.value = model;
     const agent = prefs['ai.wintermute.agent'] || '';
     wmAgent.value = agent;
-    if (wmURL.value.trim()) loadAgents(agent).catch(function () { /* reported inline */ });
+    if (wmURL.value.trim()) {
+      loadAgents(agent).catch(function () { /* reported inline */ });
+      loadCatalog(backend, model).catch(function () { /* reported inline */ });
+    }
 
     const st = data.status;
     if (!st) {
@@ -297,6 +318,130 @@ func settingsPage(c *gin.Context) {
     }
     providerDetail.textContent = st.detail || '';
   }
+
+  const wmCatalogDetail = document.getElementById('wmCatalogDetail');
+
+  // Keeps a select's current value selectable while its list is being rebuilt,
+  // and lets a stored value be shown before any list has arrived.
+  function ensureOption(select, value, label) {
+    if (!value) return;
+    for (let i = 0; i < select.options.length; i++) {
+      if (select.options[i].value === value) return;
+    }
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label || value;
+    select.appendChild(opt);
+  }
+
+  function clearOptions(select) {
+    while (select.options.length > 1) select.remove(1);
+  }
+
+  // The backend and model lists come from the Wintermute server rather than
+  // being typed in, for the same reason the agent list does: a name that is
+  // one character out is not an error anyone sees here — it is a question that
+  // fails at ask time, or goes to the server's default and looks like it worked.
+  let catalog = { backends: [], models: [], default_backend: '', fallback: '' };
+
+  function renderBackends(selected) {
+    const want = selected !== undefined ? selected : wmBackend.value;
+    clearOptions(wmBackend);
+    wmBackend.options[0].textContent = catalog.default_backend
+      ? 'Server default backend \u2014 ' + catalog.default_backend
+      : 'Server default backend';
+    catalog.backends.forEach(function (backend) {
+      const opt = document.createElement('option');
+      opt.value = backend.name;
+      let label = backend.name;
+      const notes = [];
+      if (backend.kind) notes.push(backend.kind);
+      if (backend.status && backend.status !== 'ok') notes.push(backend.status);
+      if (notes.length) label += ' (' + notes.join(', ') + ')';
+      opt.textContent = label;
+      wmBackend.appendChild(opt);
+    });
+    // A pinned backend the server no longer has must not be silently dropped:
+    // it would look configured here and fail at ask time there.
+    ensureOption(wmBackend, want, want + ' \u2014 not on this server');
+    wmBackend.value = want || '';
+  }
+
+  function renderModels(selected) {
+    const want = selected !== undefined ? selected : wmModel.value;
+    const backend = wmBackend.value;
+    clearOptions(wmModel);
+    wmModel.options[0].textContent = backend
+      ? 'Default model for ' + backend
+      : 'Backend default model';
+    catalog.models
+      .filter(function (model) { return !backend || model.backend === backend; })
+      .forEach(function (model) {
+        const opt = document.createElement('option');
+        opt.value = model.id;
+        let label = model.id;
+        const notes = [];
+        // Without a backend chosen the same model id can come from more than
+        // one of them, so say which reported it.
+        if (!backend && model.backend) notes.push(model.backend);
+        if (model.params_b) notes.push(model.params_b + 'B');
+        if (model.loaded) notes.push('loaded');
+        if (notes.length) label += ' (' + notes.join(', ') + ')';
+        opt.textContent = label;
+        wmModel.appendChild(opt);
+      });
+    ensureOption(wmModel, want, want + ' \u2014 not listed on this server');
+    wmModel.value = want || '';
+  }
+
+  async function loadCatalog(selectedBackend, selectedModel) {
+    const base = wmURL.value.trim();
+    if (!base) {
+      wmCatalogDetail.textContent = 'Enter the server URL to list its backends and models.';
+      return;
+    }
+    wmCatalogDetail.textContent = 'Loading backends and models...';
+    try {
+      const res = await fetch('/api/settings/ai-providers/catalog');
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+
+      catalog = {
+        backends: data.backends || [],
+        models: data.models || [],
+        default_backend: data.default_backend || '',
+        fallback: data.fallback || '',
+      };
+      renderBackends(selectedBackend);
+      renderModels(selectedModel);
+
+      let detail = catalog.backends.length
+        ? catalog.backends.length + ' backend(s), ' + catalog.models.length + ' model(s) on this server.'
+        : 'This server has no backends yet — declare one there first.';
+      if (catalog.fallback) detail += ' Fallback: ' + catalog.fallback + '.';
+      // The model list is fetched separately and is allowed to fail on its own:
+      // a backend is still choosable without it.
+      if (data.models_error) detail += ' Models could not be listed: ' + data.models_error;
+      wmCatalogDetail.textContent = detail;
+    } catch (err) {
+      wmCatalogDetail.textContent = 'Could not list backends: ' + err.message;
+    }
+  }
+
+  wmBackend.addEventListener('change', function () {
+    // The chosen model belongs to the backend that was chosen before, so keep
+    // it only where the new backend serves it too: carrying it over silently
+    // would pin a model this backend cannot answer with.
+    const current = wmModel.value;
+    const served = catalog.models.some(function (model) {
+      return model.id === current && (!wmBackend.value || model.backend === wmBackend.value);
+    });
+    renderModels(served ? current : '');
+  });
+
+  document.getElementById('loadCatalog').addEventListener('click', function () {
+    loadCatalog().catch(function (err) { wmCatalogDetail.textContent = err.message; });
+  });
 
   const wmAgent = document.getElementById('wmAgent');
   const wmAgentDetail = document.getElementById('wmAgentDetail');
@@ -406,8 +551,9 @@ func settingsPage(c *gin.Context) {
       if (!res.ok) throw new Error(probe.error || ('HTTP ' + res.status));
       probeDetail.textContent = (probe.ok ? '✓ ' : '✗ ') + (probe.detail || '');
       if (probe.backends && probe.backends.length) {
-        // Showing the names lets an operator copy one into the backend field
-        // rather than guessing at what the server calls its models.
+        // The dropdown above is the place a backend is chosen; this line is
+        // what the server said just now, which is how a pinned backend that
+        // has since disappeared shows up.
         let line = 'Backends: ' + probe.backends.join(', ');
         if (probe.default_backend) line += ' · server default: ' + probe.default_backend;
         if (probe.fallback) line += ' · fallback: ' + probe.fallback;

@@ -642,6 +642,8 @@ func registerAIAuxRoutes(r gin.IRouter) {
 	r.POST("/ai-chat/ask", aiChatAsk)
 	r.GET("/ai-chat/usage", aiChatUsageHandler)
 	r.GET("/ai-chat/wintermute/status", aiChatWintermuteStatus)
+	r.GET("/ai-chat/wintermute/catalog", aiChatWintermuteCatalog)
+	r.GET("/ai-chat/claude/models", aiChatClaudeModels)
 }
 
 func registerAuthRoutes(r gin.IRouter, authHandler *authn.Handler) {

@@ -48,7 +48,9 @@ did before.
 4. **Point this application at it.** Settings → AI providers → Wintermute:
    server URL, client token, then pick the agent from the list. The list is
    fetched from the server, so a mistyped id cannot silently produce a
-   confident, ungrounded answer.
+   confident, ungrounded answer. The backend and model dropdowns beside it are
+   fetched the same way; leaving both on their default hands the routing back
+   to the server.
 
 The Settings page and the AI Chat page then link to that agent's page on
 Wintermute, which is where documents are uploaded — that server owns the

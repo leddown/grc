@@ -1,99 +1,51 @@
 package settings
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"grc/internal/aiprovider"
 )
 
-// agentListTimeout bounds the lookup. It is a small GET against a server on the
-// operator's own network.
-const agentListTimeout = 15 * time.Second
-
-// agentsClient fetches the agent list from the configured Wintermute server.
-//
-// The Settings page cannot call that server itself: the client token lives here
-// and must not be handed to a browser, and the server is often on a network the
-// browser cannot reach. So this proxies one read — the list of agents — and
-// nothing else.
-var agentsClient = &http.Client{Timeout: agentListTimeout}
-
-// Agent is one agent profile on the Wintermute server, as the page needs it.
-type Agent struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Sources     []string `json:"sources"`
+// listAgents proxies the Wintermute server's agent list for the Settings page,
+// which cannot fetch it itself: the client token lives here and must not be
+// handed to a browser.
+func (h *Handler) listAgents(c *gin.Context) {
+	provider, ok := h.wintermuteProvider(c)
+	if !ok {
+		return
+	}
+	agents, err := provider.Agents(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"agents": agents})
 }
 
-// listAgents proxies GET /api/v1/agents on the configured Wintermute server.
-func (h *Handler) listAgents(c *gin.Context) {
-	base := strings.TrimRight(strings.TrimSpace(h.service.Preference(PrefWintermuteURL)), "/")
+// wintermuteProvider builds a provider over the stored server URL and token.
+// It reports the misconfiguration itself — a missing URL or token, or one the
+// provider would refuse at ask time — and returns false when it has.
+func (h *Handler) wintermuteProvider(c *gin.Context) (*aiprovider.Wintermute, bool) {
+	base := strings.TrimSpace(h.service.Preference(PrefWintermuteURL))
 	token := strings.TrimSpace(h.service.Get(WintermuteToken))
 	if base == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no Wintermute server URL is configured"})
-		return
+		return nil, false
 	}
 	if token == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no Wintermute client token is configured"})
-		return
+		return nil, false
 	}
-	// The same validation the provider applies, so a URL that would be refused
-	// at ask time is refused here rather than fetched.
-	validated, err := aiprovider.ValidateEndpoint(base)
-	if err != nil {
+	// The same validation the provider applies at ask time, so a URL that would
+	// be refused there is refused here rather than fetched.
+	if _, err := aiprovider.ValidateEndpoint(base); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return nil, false
 	}
-
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet,
-		validated+"/api/v1/agents", nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not build the request"})
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := agentsClient.Do(req)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("could not reach Wintermute: %v", err)})
-		return
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not read Wintermute's reply"})
-		return
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": "this Wintermute server has no agents endpoint — it predates agent profiles"})
-		return
-	}
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": fmt.Sprintf("Wintermute returned HTTP %d", resp.StatusCode)})
-		return
-	}
-
-	var payload struct {
-		Agents []Agent `json:"agents"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Wintermute returned unreadable JSON"})
-		return
-	}
-	if payload.Agents == nil {
-		payload.Agents = []Agent{}
-	}
-	c.JSON(http.StatusOK, gin.H{"agents": payload.Agents})
+	return aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
+		return aiprovider.WintermuteConfig{URL: base, Token: token}
+	}), true
 }

@@ -3,6 +3,85 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (Every model and backend is chosen from a list, not typed)
+
+The agent was already picked from a list fetched off the Wintermute server; the
+backend and the model beside it were still free text. That asymmetry was the
+wrong way round — a mistyped agent id answers ungrounded, but a mistyped backend
+name is a question that fails at ask time, in a feature nobody is watching, with
+an error that reads like the model is broken.
+
+Both are dropdowns now, populated from the server itself.
+
+### `internal/settings`
+
+New `GET /api/settings/ai-providers/catalog`, proxying that server's
+`/api/v1/backends` and `/api/v1/models` for the same reason the agents route
+exists: the client token lives here and must not reach a browser, and the server
+is often on a network the browser cannot reach. It returns only what the page
+renders — name, kind, health, and each model's backend, size and whether it is
+resident. The server's backend records carry base URLs and the names of the
+environment variables holding vendor keys, and a test asserts none of that
+survives into the response.
+
+The two lists are fetched separately and only the backends are fatal. A server
+that cannot produce a model list (an older API, an unreachable backend) still
+lets an operator choose a backend, which answers on its own default; the failure
+is reported next to the dropdown rather than swallowed, so an empty list is
+never mistaken for a complete one.
+
+### Settings page
+
+The backend select filters the model select, so the models offered are the ones
+that backend reported. Changing backends drops a model the new one does not
+serve rather than carrying it over into a pin that cannot be honoured. A stored
+value the server no longer has is shown as "not on this server" instead of
+disappearing — the same rule the agent list already followed — and stored values
+are rendered before the lookup returns, so pressing Save while the server is
+unreachable cannot quietly clear a working configuration.
+
+### AI Chat
+
+The same two dropdowns on that page's own per-question fields, against whichever
+server it is pointed at: `GET /ai-chat/wintermute/catalog`, with the page's
+server-URL override as an optional `url` parameter. That parameter reaches no
+further than `/ai-chat/ask` already does — the same `ValidateEndpoint` rules
+apply, and the client token comes from Settings rather than from the request.
+
+The lists are fetched when the Wintermute fields are first shown rather than on
+page load, since the page opens on Claude, and refetched when the server URL
+changes: a different server has different backends, and leaving the old ones on
+screen is how a name that exists nowhere gets picked.
+
+### Shared, rather than a second copy
+
+`Wintermute.Catalog` and `Wintermute.Agents` in `internal/aiprovider`, where the
+protocol, the endpoint validation and the HTTP client already live. Both pages
+call the same lookup through their own thin proxy handler — Settings' over the
+stored configuration, AI Chat's over the per-question one — instead of the two
+of them growing separate clients. `request` now decodes into a typed value, and
+a non-2xx reply carries its status, so a 404 can be reported as an older server
+rather than as a wrong URL.
+
+### Claude's model, too
+
+`Claude.Models` over the Anthropic Models API (`GET /v1/models`), behind
+`GET /ai-chat/claude/models`, so that page's Claude model field is a dropdown of
+what this key can actually address. A model id typed by hand ages badly: the id
+that was right last quarter answers with a 404 today, and the failure surfaces
+on the question rather than on the field that caused it. It is a metadata call —
+nothing here is billed as tokens — the page's endpoint override is carried
+through and stays restricted to Anthropic's own host, and the list is fetched
+only once the status call says a key exists, so an install without one makes no
+request at all. A model the key is not offered is labelled rather than dropped,
+since it is what the next question would be asked with.
+
+### Not changed
+
+Settings still has no Claude model field: every AI field in the app answers on
+`aiprovider.DefaultClaudeModel`, and the per-question override lives on the AI
+Chat page.
+
 ## 2026-08-20 (Risk & Crisis Exercises)
 
 A bank's exercise programme usually rehearses its parts separately and fails at

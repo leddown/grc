@@ -81,6 +81,57 @@ func (c *Claude) client(key string) anthropic.Client {
 	return c.api
 }
 
+// ClaudeModel is one model the Anthropic API offers, as a page needs it to
+// present a choice.
+type ClaudeModel struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name,omitempty"`
+	// MaxInputTokens is the context window and MaxTokens the answer ceiling.
+	// They are what distinguishes two models on a list where the ids alone say
+	// little about which one a long document will fit in.
+	MaxInputTokens int64 `json:"max_input_tokens,omitempty"`
+	MaxTokens      int64 `json:"max_tokens,omitempty"`
+}
+
+// modelListLimit asks for the whole list in one page. The API's default is 20,
+// which silently truncates a catalog that is longer than that.
+const modelListLimit = 1000
+
+// Models lists the models this key can address, newest first as the API orders
+// them.
+//
+// This is a metadata call, not a question: nothing here is billed as tokens,
+// and a model id typed by hand is a request that fails with a 404 at ask time
+// rather than a choice that was never available.
+func (c *Claude) Models(ctx context.Context) ([]ClaudeModel, error) {
+	key := c.key()
+	if key == "" {
+		return nil, ErrNotConfigured
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+	defer cancel()
+
+	api := c.client(key)
+	pager := api.Models.ListAutoPaging(ctx, anthropic.ModelListParams{
+		Limit: anthropic.Int(modelListLimit),
+	})
+	models := []ClaudeModel{}
+	for pager.Next() {
+		info := pager.Current()
+		models = append(models, ClaudeModel{
+			ID:             info.ID,
+			DisplayName:    info.DisplayName,
+			MaxInputTokens: info.MaxInputTokens,
+			MaxTokens:      info.MaxTokens,
+		})
+	}
+	if err := pager.Err(); err != nil {
+		return nil, fmt.Errorf("list Claude models: %w", err)
+	}
+	return models, nil
+}
+
 // claudeMessages turns a transcript and the new question into the message list
 // the Messages API accepts.
 //

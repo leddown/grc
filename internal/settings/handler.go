@@ -56,6 +56,7 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.PUT("/api/settings/ai-providers", h.setPreferences)
 	r.POST("/api/settings/ai-providers/test", h.testProvider)
 	r.GET("/api/settings/ai-providers/agents", h.listAgents)
+	r.GET("/api/settings/ai-providers/catalog", h.listCatalog)
 }
 
 // providerResponse describes provider routing for the Settings page.

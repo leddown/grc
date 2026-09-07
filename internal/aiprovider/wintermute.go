@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -263,6 +264,158 @@ func (w *Wintermute) Probe(ctx context.Context) Probe {
 	return probe
 }
 
+// Agent is one agent profile on a wintermuted server: which document library
+// and which external sources a conversation opened against it may consult.
+type Agent struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Sources     []string `json:"sources"`
+}
+
+// Agents lists the agent profiles the server has, so an agent is chosen from
+// what exists rather than typed. A name that is one character out is not an
+// error anyone sees: it is an answer from the model's training data wearing the
+// same confidence as one from this installation's catalogs.
+func (w *Wintermute) Agents(ctx context.Context) ([]Agent, error) {
+	cfg := w.resolve()
+	if cfg.URL == "" || cfg.Token == "" {
+		return nil, ErrNotConfigured
+	}
+	base, err := ValidateEndpoint(cfg.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+	defer cancel()
+
+	var payload struct {
+		Agents []Agent `json:"agents"`
+	}
+	if err := w.requestInto(ctx, http.MethodGet, base+"/api/v1/agents",
+		cfg.Token, nil, &payload); err != nil {
+		var status *statusError
+		if errors.As(err, &status) && status.code == http.StatusNotFound {
+			return nil, fmt.Errorf("this Wintermute server has no agents endpoint — it predates agent profiles")
+		}
+		return nil, err
+	}
+	if payload.Agents == nil {
+		payload.Agents = []Agent{}
+	}
+	return payload.Agents, nil
+}
+
+// catalogTimeout bounds the backend and model lookups. They read configuration
+// off a server on the operator's own network; nothing here waits on a model.
+const catalogTimeout = 15 * time.Second
+
+// Backend is one backend on a wintermuted server: a model server it can route
+// a question to, or a cloud vendor it forwards one on to.
+type Backend struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	// Status is the server's last health verdict — "ok", "unreachable" or
+	// "unknown" — so a backend that answers nothing is visible as such before
+	// it is pinned rather than at ask time.
+	Status string `json:"status"`
+	Cloud  bool   `json:"cloud"`
+	// Model is the model this backend pins for itself, where it pins one.
+	Model string `json:"model,omitempty"`
+}
+
+// Model is one model a backend reported it can serve.
+type Model struct {
+	ID      string  `json:"id"`
+	Backend string  `json:"backend"`
+	Family  string  `json:"family,omitempty"`
+	ParamsB float64 `json:"params_b,omitempty"`
+	Loaded  bool    `json:"loaded"`
+}
+
+// Catalog is what a server can route to, as a page needs it to offer a backend
+// and a model as choices rather than as free text.
+//
+// It carries only what is rendered. The server's own backend records hold base
+// URLs and the names of the environment variables holding vendor keys, and none
+// of that has any business reaching a browser.
+type Catalog struct {
+	Backends []Backend `json:"backends"`
+	Models   []Model   `json:"models"`
+	// DefaultBackend and Fallback are the server's own routing defaults, so
+	// "leave it to the server" can say what that means.
+	DefaultBackend string `json:"default_backend,omitempty"`
+	Fallback       string `json:"fallback,omitempty"`
+	// ModelsError reports a model list that could not be fetched. It is not
+	// fatal: the backends are still a usable choice, and a backend with no
+	// listed models still answers on its own default.
+	ModelsError string `json:"models_error,omitempty"`
+}
+
+// Catalog lists the backends the server has and the models they reported.
+//
+// A backend or model named by hand is the difference between a question going
+// to the model someone meant and it going somewhere else — or nowhere, as an
+// ask-time error in a feature nobody is watching.
+func (w *Wintermute) Catalog(ctx context.Context) (Catalog, error) {
+	cfg := w.resolve()
+	if cfg.URL == "" || cfg.Token == "" {
+		return Catalog{}, ErrNotConfigured
+	}
+	base, err := ValidateEndpoint(cfg.URL)
+	if err != nil {
+		return Catalog{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+	defer cancel()
+
+	var backends struct {
+		Backends []Backend `json:"backends"`
+		Default  string    `json:"default"`
+		Fallback string    `json:"fallback"`
+	}
+	if err := w.requestInto(ctx, http.MethodGet, base+"/api/v1/backends",
+		cfg.Token, nil, &backends); err != nil {
+		return Catalog{}, missingEndpoint(err, "backends")
+	}
+
+	catalog := Catalog{
+		Backends:       backends.Backends,
+		Models:         []Model{},
+		DefaultBackend: backends.Default,
+		Fallback:       backends.Fallback,
+	}
+	if catalog.Backends == nil {
+		catalog.Backends = []Backend{}
+	}
+
+	// The model list is fetched second and separately: a server that cannot
+	// produce one — an older API, an unreachable backend — should still leave a
+	// backend choosable rather than failing the whole lookup.
+	var models struct {
+		Models []Model `json:"models"`
+	}
+	if err := w.requestInto(ctx, http.MethodGet, base+"/api/v1/models",
+		cfg.Token, nil, &models); err != nil {
+		catalog.ModelsError = missingEndpoint(err, "models").Error()
+	} else if models.Models != nil {
+		catalog.Models = models.Models
+	}
+	return catalog, nil
+}
+
+// missingEndpoint turns a 404 into the reason there is one: an older server
+// that never had the endpoint, rather than a wrong URL.
+func missingEndpoint(err error, what string) error {
+	var status *statusError
+	if errors.As(err, &status) && status.code == http.StatusNotFound {
+		return fmt.Errorf("this Wintermute server has no %s endpoint", what)
+	}
+	return err
+}
+
 func contains(values []string, want string) bool {
 	for _, v := range values {
 		if strings.EqualFold(v, want) {
@@ -277,18 +430,41 @@ func (w *Wintermute) postJSON(ctx context.Context, url, token string, payload ma
 }
 
 func (w *Wintermute) request(ctx context.Context, method, url, token string, payload map[string]any) (map[string]any, error) {
+	var decoded map[string]any
+	if err := w.requestInto(ctx, method, url, token, payload, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
+}
+
+// statusError reports a non-2xx reply, so a caller can tell an endpoint this
+// server does not have from a request that failed.
+type statusError struct {
+	code   int
+	detail string
+}
+
+func (e *statusError) Error() string {
+	if e.code == http.StatusUnauthorized {
+		return "wintermute rejected the client token (HTTP 401)"
+	}
+	return fmt.Sprintf("wintermute returned HTTP %d: %s", e.code, e.detail)
+}
+
+// requestInto performs one request and decodes the JSON reply into out.
+func (w *Wintermute) requestInto(ctx context.Context, method, url, token string, payload map[string]any, out any) error {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
-			return nil, fmt.Errorf("encode request: %w", err)
+			return fmt.Errorf("encode request: %w", err)
 		}
 		body = bytes.NewReader(encoded)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	if payload != nil {
@@ -297,7 +473,7 @@ func (w *Wintermute) request(ctx context.Context, method, url, token string, pay
 
 	resp, err := w.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("reach wintermute: %w", err)
+		return fmt.Errorf("reach wintermute: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -305,24 +481,20 @@ func (w *Wintermute) request(ctx context.Context, method, url, token string, pay
 	// exhaust memory here.
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, fmt.Errorf("read wintermute response: %w", err)
+		return fmt.Errorf("read wintermute response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		detail := strings.TrimSpace(string(raw))
 		if len(detail) > 300 {
 			detail = detail[:300] + "..."
 		}
-		if resp.StatusCode == http.StatusUnauthorized {
-			return nil, fmt.Errorf("wintermute rejected the client token (HTTP 401)")
-		}
-		return nil, fmt.Errorf("wintermute returned HTTP %d: %s", resp.StatusCode, detail)
+		return &statusError{code: resp.StatusCode, detail: detail}
 	}
 
-	var decoded map[string]any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return nil, fmt.Errorf("wintermute returned a non-JSON response: %w", err)
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("wintermute returned a non-JSON response: %w", err)
 	}
-	return decoded, nil
+	return nil
 }
 
 // ValidateEndpoint normalises a Wintermute base URL and rejects the shapes that
