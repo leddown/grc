@@ -659,6 +659,7 @@ func registerPublicPageRoutes(r gin.IRouter, localMode bool) {
 	r.GET("/exceptions/detail", exceptionsDetailPage)
 	r.GET("/ai-chat", aiChatPage)
 	r.GET("/wiz-rules", wizRulesPage)
+	r.GET("/help", helpPage)
 	r.GET("/docs", openAPIPage)
 	r.GET("/openapi.json", openAPIJSON)
 }

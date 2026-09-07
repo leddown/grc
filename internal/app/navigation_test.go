@@ -48,6 +48,7 @@ var fullNavLinks = []string{
 	`href="/ai-chat"`,
 	`href="/templates"`,
 	`href="/templates/manage"`,
+	`href="/help"`,
 	`href="/docs"`,
 	`href="/utilities"`,
 }
@@ -333,6 +334,7 @@ func navigationTestPagePaths() []string {
 		"/exceptions/detail",
 		"/ai-chat",
 		"/wiz-rules",
+		"/help",
 		"/controls",
 		"/controls/manage",
 		"/controls/family-visibility",

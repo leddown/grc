@@ -94,6 +94,9 @@ var navGroups = []NavGroup{
 var adminGroup = NavGroup{
 	Label: "Admin",
 	Items: []NavItem{
+		// First in the group because it is the one page here that is for
+		// everyone rather than for whoever runs the installation.
+		{Path: "/help", Label: "Help"},
 		{Path: "/settings", Label: "Settings"},
 		{Path: "/docs", Label: "API Docs"},
 		{Path: "/utilities", Label: "Utilities"},

@@ -3,6 +3,37 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (A Help page: what this application does, as work)
+
+There was no page that answered "what can this do, and how do I do it" — the
+answer lived in the repository's markdown and in whoever had used the app
+before. `/help` is that page, first in the Admin section.
+
+- `internal/app/help.go` (new): the modules here are steps in a few long
+  processes — the control catalog feeds the requirements catalog, which feeds
+  policy, regulation coverage and the exercises that cite them — so it is
+  organised as jobs rather than as a feature list: maintaining the two catalogs,
+  growing them from a document, scoping by asset type, the risk register,
+  exceptions, policy from draft to approved, regulation coverage, crisis
+  exercises, detection rules, reporting and extracts, Jira, asking the AI,
+  client-ready documents, and running the installation (settings, users, backup
+  and transfer, reference surfaces). A table of every page and what it is for
+  closes it, and a short orientation section covers the topbar sections, the
+  Ctrl K page search, the Ask AI dock and the theme controls.
+- Registered in `registerPublicPageRoutes` and deliberately left out of
+  `protectedPrefixes`: it describes the application and carries none of its
+  data, exactly like the home page, and a help page an operator cannot reach
+  until they are already inside helps nobody. For the same reason it is not in
+  `userManagementAllowedPages` — there is no gate to grant.
+- `internal/pageui/nav.go`: **Help** is first in the Admin group, above
+  Settings, API Docs and Utilities.
+- `internal/app/navigation_test.go`: `/help` joins the pages asserted to render
+  the shared navigation, palette and main spacing.
+
+`go fmt`, `go vet` and `go test ./...` clean apart from the pre-existing
+`TestGovulncheck` failure (Go standard library advisories fixed in go1.25.13;
+the toolchain here is go1.25.12).
+
 ## 2026-09-07 (The agent is chosen per question, and AI Chat is a section)
 
 Which agent answers decides which documents an answer is grounded in, and it
