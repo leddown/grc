@@ -1131,6 +1131,7 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
 <aside id="global-ai-dock" class="dock" aria-label="Ask AI" hidden>
   <div id="global-ai-dock-head">
     <strong>Ask AI</strong>
+    <span id="global-ai-dock-who"></span>
     <a href="/ai-chat" target="_blank" rel="noopener noreferrer">Full chat &#8599;</a>
     <button id="global-ai-dock-clear" type="button">Clear</button>
     <button id="global-ai-dock-close" type="button" aria-label="Close the AI panel">Close</button>
@@ -1197,8 +1198,17 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
   font: 12px Arial, sans-serif;
   color: var(--muted);
 }
-/* The title takes the slack so Close stays pinned right. */
-#global-ai-dock-head strong { flex: 1; font-size: 13px; color: var(--ink); }
+#global-ai-dock-head strong { font-size: 13px; color: var(--ink); }
+/* What is actually answering takes the slack, so Close stays pinned right. */
+#global-ai-dock-who {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 #global-ai-dock-head a,
 #global-ai-dock-head button {
   font: 12px Arial, sans-serif;
@@ -1291,6 +1301,7 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
   const input = document.getElementById('global-ai-dock-input');
   const log = document.getElementById('global-ai-dock-log');
   const toggleBtn = document.getElementById('global-ai-dock-toggle');
+  const whoEl = document.getElementById('global-ai-dock-who');
   const clearBtn = document.getElementById('global-ai-dock-clear');
   const closeBtn = document.getElementById('global-ai-dock-close');
   const sendBtn = form ? form.querySelector('button[type="submit"]') : null;
@@ -1313,12 +1324,47 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
 
   // hidden is removed first and .open set on the next frame, or the panel is
   // laid out already-open and the transform has nothing to animate from.
+  // Which provider and agent a question will go to. It is the one thing this
+  // box could not previously be asked: an agent chosen in Settings and a
+  // conversation answering without one look identical from here.
+  //
+  // The session id is dropped when the agent changes, because wintermuted pins
+  // a session to the agent it was opened with and never re-reads it — so a
+  // conversation already in progress would keep answering as the old one, with
+  // nothing on screen to say why the new choice had no effect.
+  let answeringAs = null;
+  async function refreshWho() {
+    try {
+      const resp = await fetch('/ai-chat/wintermute/status');
+      const data = await resp.json();
+      if (!resp.ok) return;
+      const provider = String(data.provider || 'claude');
+      const wintermute = provider === 'wintermute'
+        || (provider === 'auto' && data.configured && data.token_configured);
+      const agent = wintermute ? String(data.default_agent || '') : '';
+      const label = wintermute
+        ? 'Wintermute' + (agent ? ' · ' + agent : ' · no agent')
+        : 'Claude';
+      whoEl.textContent = label;
+      whoEl.title = wintermute && !agent
+        ? 'No agent is set, so answers come from the model rather than from this installation\'s catalogs.'
+        : 'Set in Settings → AI providers';
+      if (answeringAs !== null && answeringAs !== label) sessionID = '';
+      answeringAs = label;
+    } catch (_) {
+      // The panel still works; it just cannot say what will answer.
+    }
+  }
+
   function open() {
     if (dock.classList.contains('open')) return;
     dock.hidden = false;
     requestAnimationFrame(() => dock.classList.add('open'));
     if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
     input.focus();
+    // Asked each time it is opened rather than once per page: Settings is
+    // changed in another tab, and this is the moment the answer matters.
+    refreshWho();
   }
 
   function close() {

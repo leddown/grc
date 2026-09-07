@@ -3,6 +3,106 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-07 (Why the agent did not reach the Ask AI box)
+
+Three separate causes, all reproduced against a stand-in wintermuted that
+records what each session is opened with. Only the first was a bug in the sense
+of code doing the wrong thing; the other two are the same complaint from the
+operator's chair.
+
+**1. Until earlier today it genuinely never transferred.** The dock chose its
+own provider — Claude whenever a key existed — and `aiChatProvider` set no agent
+at all. Both are fixed above. A binary built before that still behaves the old
+way, which is worth knowing if the box being tested is a deployed one.
+
+**2. The agent only applies when questions go to Wintermute, and the default
+provider is Claude.** The Settings page showed the whole Wintermute block —
+server, backend, model, agent — at full strength whatever the provider was, so
+an agent could be chosen, stored and displayed while every question went to
+Anthropic, where agents do not exist. That block is now dimmed with a line
+saying so: *"Not in use: questions are going to Claude, which has no agents.
+These settings are kept, and apply as soon as the provider is Auto or
+Wintermute."*
+
+**3. A conversation keeps the agent it was opened with.** wintermuted owns the
+transcript, so `aiprovider.Wintermute.Ask` sends the agent when it opens a
+session and never again — a resumed one carries only its id. Changing the agent
+in Settings therefore did nothing to a conversation already on screen, with
+nothing to say why. Demonstrated: same conversation, still answered as `grc`
+after the setting moved to `policy`; a fresh one used `policy`.
+
+### The Ask AI panel now says what will answer
+
+Its head carries `Wintermute · grc`, `Wintermute · no agent` (with a tooltip
+explaining that answers then come from the model rather than this
+installation's catalogs), or `Claude`. It is re-read every time the panel is
+opened, because Settings is changed in another tab and that is the moment it
+matters — and when what will answer has changed, the session id is dropped so
+the next question opens a conversation against the new agent instead of
+continuing one pinned to the old.
+
+Checked end to end in a browser: a question answered as `grc`, the agent changed
+to `policy` behind the page's back, the panel closed and re-opened, and the next
+question answered as `policy` — a new session, opened with the new agent.
+
+### Not this application's half
+
+An agent that transfers can still answer ungrounded if it has no `grc` source,
+or if that server has no `GRC_URL` / `GRC_KNOWLEDGE_TOKEN` — steps 1 to 3 in
+`AI_AGENT.md`. From here that looks exactly like the agent not transferring; the
+panel's new line is what separates the two.
+
+## 2026-09-07 (The agent was being saved over, not not-saved)
+
+"AI provider settings do not survive a restart, including the agent." They do —
+`ai.provider`, the server URL, the backend, the model, the agent and both
+encrypted credentials are written to SQLite and read back on the next start.
+Verified rather than assumed: `TestAIProviderSettingsSurviveARestart` closes the
+database, rebuilds the whole service including the keyring from disk, and reads
+every one of them back.
+
+What actually happened is worse than a value not being written, because it looks
+identical from the outside.
+
+### The agent select wrote its own emptiness back
+
+The agent list is fetched from the Wintermute server. When that server is
+unreachable — which it is on every restart until it comes up, and permanently if
+it lives on a laptop that is off — the select fell back to its only option, "No
+agent", and the *next Save stored exactly that*. One press of a button nobody
+associated with the agent, and a setting that was never touched was gone.
+
+Nothing announced it. Questions kept being answered, from the model's training
+data rather than from this installation's catalogs, which is the failure
+`AI_AGENT.md` exists to describe.
+
+The backend and model selects had been given this guard already; the agent had
+not. It now shows the stored value before any lookup returns, says
+"Keeping the saved agent, grc." when the list cannot be fetched, and labels a
+value the server no longer offers rather than dropping it.
+
+### And the other reason settings "disappear"
+
+The service defaults to `users.db`; `run_local.sh` defaults to `local.db`. They
+are different databases, so anything configured under one is absent under the
+other — which reads as "nothing was saved", the one explanation that is not
+true. The Settings page now names the file it is writing to, beside the existing
+line about where the encryption key came from.
+
+### Tests
+
+`TestAIProviderSettingsSurviveARestart` (every preference and both credentials
+across a real restart, agent named explicitly), `TestClearedAgentStaysCleared`
+(clearing is a decision that has to persist too), and
+`TestStoredAgentOutranksTheEnvironmentAcrossARestart` (an install configured
+through `WINTERMUTE_AGENT` keeps working, and a value stored in the page takes
+over from it). On the page side, `TestSettingsPageKeepsStoredSelectionsItCannotList`
+covers all three selects.
+
+Checked end to end as well: with the Wintermute server stopped, the Settings
+page shows `grc`, explains that it is keeping it, and pressing Save round-trips
+it. Before this, the same sequence stored an empty agent.
+
 ## 2026-09-07 (One design system, shared with wintermute)
 
 The two applications are used by the same people, often side by side, and they

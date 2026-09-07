@@ -91,6 +91,7 @@ func settingsPage(c *gin.Context) {
         </select>
       </div>
       <p class="meta" id="providerDetail"></p>
+      <p class="meta" id="providerUnused" hidden></p>
 
       <div id="wintermuteFields">
         <div class="row">
@@ -224,7 +225,13 @@ func settingsPage(c *gin.Context) {
           'or give the service a writable state directory. Keys already set in the ' +
           'environment still work.';
       }
-      keyringEl.textContent = 'Credential encryption: ' + (data.keyring || 'unknown');
+      // Where these values live, named on the page. This application is run
+      // two ways against two different databases — the service on users.db,
+      // run_local.sh on local.db — and settings configured under one are
+      // absent under the other, which reads as "nothing was saved".
+      keyringEl.textContent =
+        (data.storage ? 'Settings are stored in ' + data.storage + ' · ' : '') +
+        'credential encryption: ' + (data.keyring || 'unknown');
       render(data.credentials || []);
     } catch (err) {
       setStatus('Could not load settings: ' + err.message, true);
@@ -274,6 +281,8 @@ func settingsPage(c *gin.Context) {
   // --- provider routing -----------------------------------------------------
 
   const providerEl = document.getElementById('provider');
+  const providerUnused = document.getElementById('providerUnused');
+  const wintermuteFields = document.getElementById('wintermuteFields');
   const wmURL = document.getElementById('wmURL');
   const wmBackend = document.getElementById('wmBackend');
   const wmModel = document.getElementById('wmModel');
@@ -282,9 +291,26 @@ func settingsPage(c *gin.Context) {
   const probeDetail = document.getElementById('probeDetail');
   const backendList = document.getElementById('backendList');
 
+  // Everything below the provider select configures Wintermute, and none of it
+  // does anything when questions are going to Claude — which is the default. An
+  // agent chosen in that state is stored, displayed, and never used, and the
+  // page gave no hint of it: the reason "the agent does not reach the Ask AI
+  // box" is usually that nothing is going to Wintermute at all.
+  function renderProviderUse() {
+    const wintermuteInUse = providerEl.value !== 'claude';
+    wintermuteFields.style.opacity = wintermuteInUse ? '' : '0.55';
+    providerUnused.hidden = wintermuteInUse;
+    if (!wintermuteInUse) {
+      providerUnused.textContent =
+        'Not in use: questions are going to Claude, which has no agents. ' +
+        'These settings are kept, and apply as soon as the provider is Auto or Wintermute.';
+    }
+  }
+
   function renderProviders(data) {
     const prefs = data.preferences || {};
     providerEl.value = prefs['ai.provider'] || 'claude';
+    renderProviderUse();
     wmURL.value = prefs['ai.wintermute.url'] || '';
     // A stored backend or model is shown before the server has been asked for
     // its lists, so the select carries the saved value even when the lookup is
@@ -295,7 +321,13 @@ func settingsPage(c *gin.Context) {
     ensureOption(wmModel, model, model);
     wmBackend.value = backend;
     wmModel.value = model;
+    // The stored agent is shown before the server has been asked for its list,
+    // for the same reason the backend and model are: a lookup that is slow or
+    // fails would otherwise leave the select on "No agent", and the next Save
+    // would write that back — losing a setting nobody touched, and quietly
+    // turning every question ungrounded.
     const agent = prefs['ai.wintermute.agent'] || '';
+    ensureOption(wmAgent, agent, agent);
     wmAgent.value = agent;
     if (wmURL.value.trim()) {
       loadAgents(agent).catch(function () { /* reported inline */ });
@@ -473,22 +505,18 @@ func settingsPage(c *gin.Context) {
         opt.textContent = agent.name + (agent.description ? ' — ' + agent.description : '');
         wmAgent.appendChild(opt);
       });
-      wmAgent.value = want || '';
       // A stored agent the server no longer has must not be silently dropped:
       // it would look configured here and answer ungrounded there.
-      if (want && wmAgent.value !== want) {
-        const opt = document.createElement('option');
-        opt.value = want;
-        opt.textContent = want + ' — not on this server';
-        wmAgent.appendChild(opt);
-        wmAgent.value = want;
-      }
+      ensureOption(wmAgent, want, want + ' — not on this server');
+      wmAgent.value = want || '';
       wmAgentDetail.textContent = agents.length
         ? agents.length + ' agent(s) on this server.'
         : 'This server has no agents yet — create one there first.';
       renderAgentLink(base);
     } catch (err) {
-      wmAgentDetail.textContent = 'Could not list agents: ' + err.message;
+      const kept = wmAgent.value;
+      wmAgentDetail.textContent = 'Could not list agents: ' + err.message
+        + (kept ? ' Keeping the saved agent, ' + kept + '.' : '');
       renderAgentLink(base);
     }
   }
@@ -519,6 +547,8 @@ func settingsPage(c *gin.Context) {
       setStatus('Could not load provider settings: ' + err.message, true);
     }
   }
+
+  providerEl.addEventListener('change', renderProviderUse);
 
   document.getElementById('saveProvider').addEventListener('click', async function () {
     try {

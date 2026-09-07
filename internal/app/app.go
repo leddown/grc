@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -149,7 +150,7 @@ func Run(options Options) error {
 	// than duplicated: both produce PDFs, and one pooled headless browser per
 	// process is enough.
 	pdfRenderer := registerReportingRoutes(router)
-	registerSettingsRoutes(router, settingsService, aiRouter, adminMiddleware, options.LocalMode)
+	registerSettingsRoutes(router, settingsService, aiRouter, settingsStorage(options), adminMiddleware, options.LocalMode)
 	policyService := registerPolicyDocRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
 	registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
 	registerNFREnrichmentRoutes(
@@ -455,6 +456,26 @@ func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *
 	templateHandler.RegisterAdminRoutes(admin)
 }
 
+// settingsStorage names where the Settings page's values are written.
+//
+// The two launch paths use two different databases — the service defaults to
+// users.db, run_local.sh to local.db — so a value configured under one is
+// absent under the other. Saying which file is open turns that from "my
+// settings were not saved" into "this is the other database".
+func settingsStorage(options Options) string {
+	if options.DatabaseURL != "" {
+		return "PostgreSQL (-database-url)"
+	}
+	path := options.SQLitePath
+	if path == "" {
+		path = sqliteDBPath
+	}
+	if absolute, err := filepath.Abs(path); err == nil {
+		return absolute
+	}
+	return path
+}
+
 // newAIRouter builds the provider harness every AI field asks questions
 // through. Both providers resolve their configuration per request, so a change
 // in the Settings page takes effect without a restart.
@@ -511,7 +532,7 @@ func newSettingsService(sqliteDB *db.Conn, options Options) *settings.Service {
 // Everything is admin-gated, including reads: nothing here is needed to *use*
 // the AI features, only to configure them, and a credential's status still
 // discloses something about the install.
-func registerSettingsRoutes(r gin.IRouter, service *settings.Service, router *aiprovider.Router, adminMiddleware gin.HandlerFunc, localMode bool) {
+func registerSettingsRoutes(r gin.IRouter, service *settings.Service, router *aiprovider.Router, storageDescription string, adminMiddleware gin.HandlerFunc, localMode bool) {
 	admin := r.Group("/")
 	if !localMode {
 		admin.Use(adminMiddleware)
@@ -519,6 +540,7 @@ func registerSettingsRoutes(r gin.IRouter, service *settings.Service, router *ai
 	admin.GET("/settings", settingsPage)
 	settings.NewHandler(service, sessionUsername).
 		WithInspector(router).
+		WithStorage(storageDescription).
 		RegisterAdminRoutes(admin)
 }
 

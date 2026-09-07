@@ -29,6 +29,8 @@ type Handler struct {
 	service   *Service
 	actor     ActorFunc
 	inspector ProviderInspector
+	// storage names where these settings are written, for the page to show.
+	storage string
 }
 
 // NewHandler returns a Handler.
@@ -40,6 +42,19 @@ func NewHandler(service *Service, actor ActorFunc) *Handler {
 // provider is active and test the connection to the local-model server.
 func (h *Handler) WithInspector(inspector ProviderInspector) *Handler {
 	h.inspector = inspector
+	return h
+}
+
+// WithStorage names the database these settings are written to, so the page can
+// say where they live.
+//
+// It is worth showing because this application is run two ways against two
+// different files — the service on users.db, run_local.sh on local.db — and
+// settings configured under one are simply absent under the other. Without this
+// line that reads as "the settings were not saved", which is the one
+// explanation that is not true.
+func (h *Handler) WithStorage(description string) *Handler {
+	h.storage = strings.TrimSpace(description)
 	return h
 }
 
@@ -143,6 +158,8 @@ type listResponse struct {
 	// Keyring describes where the master key came from. It never contains key
 	// material.
 	Keyring string `json:"keyring"`
+	// Storage names the database these settings persist in.
+	Storage string `json:"storage,omitempty"`
 }
 
 func (h *Handler) list(c *gin.Context) {
@@ -155,6 +172,7 @@ func (h *Handler) list(c *gin.Context) {
 		Credentials:      statuses,
 		StorageAvailable: h.service.StorageAvailable(),
 		Keyring:          h.service.KeyringDescription(),
+		Storage:          h.storage,
 	})
 }
 

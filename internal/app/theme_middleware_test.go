@@ -363,3 +363,31 @@ func TestMobileStyleCarriesIOSFixes(t *testing.T) {
 		}
 	}
 }
+
+// The AI panel says which provider and agent will answer.
+//
+// Without it, "I chose an agent in Settings and it did not reach the Ask AI
+// box" is unanswerable from the screen: a grounded answer and an ungrounded one
+// look identical, and the three things that can be wrong — the provider is
+// Claude, no agent is set, or the conversation was opened before the change —
+// are all invisible.
+func TestAIDockNamesWhatWillAnswer(t *testing.T) {
+	for _, want := range []string{
+		"global-ai-dock-who",
+		"/ai-chat/wintermute/status", // where the answer comes from
+		"Wintermute",
+		"no agent",
+		"Claude",
+	} {
+		if !strings.Contains(aiQuickPromptDockTag, want) {
+			t.Errorf("the AI panel does not report what will answer: missing %q", want)
+		}
+	}
+
+	// wintermuted pins a session to the agent it was opened with and never
+	// re-reads it, so a conversation already in progress has to be dropped when
+	// the agent changes or it keeps answering as the old one.
+	if !strings.Contains(aiQuickPromptDockTag, "if (answeringAs !== null && answeringAs !== label) sessionID = '';") {
+		t.Error("the panel must drop a session opened against a different agent")
+	}
+}
