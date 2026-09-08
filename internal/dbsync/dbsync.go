@@ -9,6 +9,16 @@
 // key and is regenerated from its sources; ephemeral login sessions
 // (auth_sessions) are skipped.
 //
+// Two modules are outside Sync entirely -- Regulation Coverage and the crisis
+// exercises. Each of their records is a tree of rows joined by autoincrement
+// ids, which is an identity two deployments do not share, so there is no honest
+// merge to perform (see skipInSync). Export and Import still carry them, and
+// that is the supported way to move them between deployments.
+//
+// Export and Import cover every managed table regardless of strategy: a
+// snapshot is a backup, and a backup that quietly omitted two modules is the
+// bug this package already shipped once.
+//
 // Two tables are deliberately left out, and it is worth being explicit about
 // why, because "the backup is missing a table" is otherwise discovered at
 // restore time: app_state holds this deployment's own configuration (which AI
@@ -33,6 +43,23 @@ const (
 	upsert strategy = iota
 	// replace clears the destination table, then inserts every source row.
 	replace
+	// skipInSync excludes a table from Sync while leaving it in Export and
+	// Import. It is for data Sync cannot reconcile honestly: a record that is a
+	// tree of rows joined by autoincrement ids has no identity two deployments
+	// agree on, so neither merge strategy is correct. Upserting on id rewrites
+	// whatever unrelated record happens to hold that id on the destination, and
+	// replace would delete every record the destination has and the source does
+	// not -- and could not even do that safely, because copyTable commits one
+	// table at a time, so a failure part-way through a multi-table replace
+	// leaves parents deleted and children not yet reinserted, with nothing to
+	// roll back.
+	//
+	// Import has neither problem: it is one transaction over every table, it
+	// deletes children before parents, and it is a full replace by design. So
+	// moving one of these modules between deployments is the JSON snapshot's
+	// job, and Sync stays what it is good at -- merging the flat,
+	// natural-keyed catalogs.
+	skipInSync
 )
 
 // tableSpec describes how one table is copied. cols is the ordered set of
@@ -211,6 +238,7 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		// The original uploaded file. It travels so a restored report can still
@@ -220,12 +248,14 @@ var syncOrder = []tableSpec{
 		cols:         []string{"regulation_id", "media_type", "filename", "byte_size", "content"},
 		conflictCols: []string{"regulation_id"},
 		blobCols:     []string{"content"},
+		strat:        skipInSync,
 	},
 	{
 		table:        "reg_coverage_sections",
 		cols:         []string{"id", "regulation_id", "ref", "label", "title", "category", "body", "position", "confidence"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table: "reg_coverage_findings",
@@ -235,24 +265,28 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table:        "reg_coverage_mappings",
 		cols:         []string{"id", "finding_id", "kind", "ref", "title", "rationale", "confidence", "source", "known"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table:        "reg_coverage_versions",
 		cols:         []string{"id", "regulation_id", "number", "summary", "note", "snapshot", "created_at", "created_by"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table:        "reg_coverage_chat",
 		cols:         []string{"id", "regulation_id", "version", "role", "content", "model", "actor", "session_id", "created_at"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 
 	// ---- Risk & Crisis Exercises (internal/crisisexercise) ----
@@ -273,12 +307,14 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table:        "crisis_ex_objectives",
 		cols:         []string{"id", "exercise_id", "ordinal", "code", "text", "capability", "success_criteria", "rating", "notes"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table: "crisis_ex_phases",
@@ -289,6 +325,7 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table: "crisis_ex_injects",
@@ -300,6 +337,7 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table: "crisis_ex_responses",
@@ -309,6 +347,7 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table: "crisis_ex_decisions",
@@ -319,6 +358,7 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		// One row per exercise, keyed by the exercise rather than an id of its
@@ -333,6 +373,7 @@ var syncOrder = []tableSpec{
 			"major", "rationale", "team_verdict", "notes", "updated_at", "updated_by",
 		},
 		conflictCols: []string{"exercise_id"},
+		strat:        skipInSync,
 	},
 	{
 		table: "crisis_ex_clocks",
@@ -342,6 +383,7 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table: "crisis_ex_findings",
@@ -352,12 +394,14 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table:        "crisis_ex_participants",
 		cols:         []string{"id", "exercise_id", "name", "role_key", "org", "player", "attended", "contact", "notes"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		// The citations tying an exercise (or one of its parts) to the controls,
@@ -371,18 +415,21 @@ var syncOrder = []tableSpec{
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table:        "crisis_ex_versions",
 		cols:         []string{"id", "exercise_id", "number", "kind", "summary", "note", "snapshot", "created_at", "created_by"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 	{
 		table:        "crisis_ex_chat",
 		cols:         []string{"id", "exercise_id", "persona", "role", "content", "model", "actor", "scope", "session_id", "created_at"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
 	},
 
 	{
@@ -402,10 +449,14 @@ type Report struct {
 	Tables []TableResult
 }
 
-// TableResult is the per-table outcome of a sync.
+// TableResult is the per-table outcome of a sync. Skipped distinguishes a table
+// Sync deliberately did not touch from one that was copied and had no rows --
+// both report 0, and only one of them means the destination still holds data
+// this sync did not look at.
 type TableResult struct {
-	Table string
-	Rows  int
+	Table   string
+	Rows    int
+	Skipped bool
 }
 
 // Total returns the number of rows copied across all tables.
@@ -424,6 +475,10 @@ func (r Report) Total() int {
 func Sync(src, dst *db.Conn) (Report, error) {
 	var report Report
 	for _, spec := range syncOrder {
+		if spec.strat == skipInSync {
+			report.Tables = append(report.Tables, TableResult{Table: spec.table, Skipped: true})
+			continue
+		}
 		rows, err := copyTable(src, dst, spec)
 		report.Tables = append(report.Tables, TableResult{Table: spec.table, Rows: rows})
 		if err != nil {

@@ -113,10 +113,23 @@ row count and exits non-zero on the first error.
   `email`, `family`, `session_id`, …). Existing destination rows are updated;
   rows that exist **only** on the destination are left untouched. Re-running a
   sync is therefore safe and idempotent.
-- **CRM tables preserve ids.** `crm_clients` / `crm_engagements` /
-  `crm_time_entries` (and `stored_json_documents`) carry their primary keys
-  across so foreign-key relationships stay intact; on PostgreSQL the identity
-  sequences are realigned afterwards so future inserts don't collide.
+- **Id-keyed tables preserve ids.** The policy library (`policy_documents` /
+  `policy_sections` / `policy_versions` / `policy_section_controls`), the NFR
+  enrichment corpus (`nfr_source_documents` / `nfr_source_chunks` /
+  `nfr_enrichment_proposals`), `stored_json_documents`, `doc_template_brand` and
+  `ai_usage_log` carry their primary keys across so foreign-key relationships
+  stay intact; on PostgreSQL the identity sequences are realigned afterwards so
+  future inserts don't collide.
+- **Two modules are outside the sync entirely.** Regulation Coverage
+  (`reg_coverage_*`) and Risk & Crisis Exercises (`crisis_ex_*`) are skipped,
+  and the run prints `skip` for them rather than a row count. Each of their
+  records is a *tree* of rows joined by autoincrement ids, and an autoincrement
+  id is not an identity two deployments share: upserting on it would rewrite
+  whatever unrelated exercise happened to hold that id on the destination,
+  producing one record stitched from two. To move either module between
+  deployments, use the JSON export/import on the Utilities page — that path is a
+  single transaction and a full replace, which is the only coherent way to
+  transfer tree-shaped records.
 - **The derived link table is rebuilt.** `security_nfr_control_links` has no
   stable key (it is regenerated from the catalogs + overrides), so it is
   replaced wholesale on the destination to stay consistent with the rows just

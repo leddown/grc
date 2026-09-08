@@ -42,7 +42,10 @@ The API binary accepts command-line flags for runtime behavior.
   One-shot database sync: copy the active backend (the one selected by
   `-database-url`/`-sqlite-path`) **up to** the given target, then exit
   without serving. The target is a `postgres://` URL or a SQLite file path
-  (engine auto-detected). Upsert/merge semantics. Mutually exclusive with
+  (engine auto-detected). Upsert/merge semantics. Regulation Coverage and
+  Risk & Crisis Exercises are skipped (they are tree-shaped and cannot be
+  merged honestly — move them with the Utilities JSON export/import instead);
+  the run prints `skip` for those tables. Mutually exclusive with
   `-sync-from`. See `docs/DATABASE.md`.  
   Default: empty (serve normally)
 

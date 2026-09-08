@@ -206,13 +206,22 @@ func runDBSync(options Options, active *db.Conn) error {
 
 	log.Printf("database sync starting (%s)", direction)
 	report, err := dbsync.Sync(src, dst)
+	skipped := 0
 	for _, t := range report.Tables {
+		if t.Skipped {
+			skipped++
+			// Said out loud, because a silent 0 here would read as "that module
+			// is empty" rather than "that module was not looked at".
+			log.Printf("  %-28s %6s  (not mergeable; move it with the JSON export/import)", t.Table, "skip")
+			continue
+		}
 		log.Printf("  %-28s %6d rows", t.Table, t.Rows)
 	}
 	if err != nil {
 		return fmt.Errorf("database sync failed: %w", err)
 	}
-	log.Printf("database sync complete: %d rows across %d tables", report.Total(), len(report.Tables))
+	log.Printf("database sync complete: %d rows across %d tables (%d skipped)",
+		report.Total(), len(report.Tables)-skipped, skipped)
 	return nil
 }
 

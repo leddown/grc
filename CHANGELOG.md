@@ -3,6 +3,57 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-08 (Sync stops pretending it can merge a tree)
+
+A code review of the backup work above found that the 21 tables just added to
+`syncOrder` upsert on `id`, and an autoincrement id is not an identity two
+deployments share. The package doc promises "rows that exist only on the
+destination are left untouched"; that guarantee did not hold. Server B has
+exercise id 4 "Payments outage" with phases 1-5, server A has id 4 "Ransomware"
+with phases 1-3, and `-sync-to` from A to B leaves B holding one exercise
+stitched out of two, with no error raised.
+
+The fix is not the other merge strategy. `replace` would delete every record the
+destination has and the source does not, inverting Sync's contract for exactly
+the records that are most expensive to recreate — and could not do it safely
+anyway, because `copyTable` commits one table at a time, so a failure part-way
+through a 14-table replace leaves parents deleted and children not yet
+reinserted, with nothing to roll back.
+
+- `internal/dbsync/dbsync.go`: a third strategy, `skipInSync`. The 20
+  `reg_coverage_*` and `crisis_ex_*` tables carry it. `Export` and `Import` are
+  untouched and still cover every managed table — a backup that quietly omitted
+  two modules is the bug this list was widened to fix, and skipping them here
+  must not be a quiet way to reintroduce it.
+- `TableResult.Skipped` and `internal/app/app.go`: the sync log prints
+  `skip  (not mergeable; move it with the JSON export/import)` rather than `0
+  rows`. Both read as zero otherwise, and only one of them means the destination
+  still holds data this run never looked at.
+- `internal/dbsync/modules_test.go`: `TestSync_SkipsTheTreeShapedModules`
+  replaces the test that asserted the opposite — a destination-only exercise
+  sharing an id with the source's survives untouched, the catalogs still merge,
+  and the report marks 20 tables skipped.
+  `TestExport_CarriesTablesSyncSkips` pins that skipping in Sync never removes a
+  table from the snapshot.
+- `docs/DATABASE.md`: the semantics section gained the skip, and its "CRM tables
+  preserve ids" bullet was corrected — `crm_clients` / `crm_engagements` /
+  `crm_time_entries` have not existed in this schema for some time. The id-keyed
+  tables are actually the policy library, the NFR enrichment corpus,
+  `stored_json_documents`, `doc_template_brand` and `ai_usage_log`.
+- `RUNTIME_ARGS.md`: the `-sync-to` entry says what is skipped and what to use
+  instead.
+
+Still open from the same review, and deliberately not fixed here:
+`nfr_source_documents` / `nfr_source_chunks` / `nfr_enrichment_proposals` carry
+explicit ids but omit `idKeyed`, so their PostgreSQL sequences are never
+realigned (the next upload after a restore fails on a duplicate key); the
+`SnapshotVersion` v4-v6 history documents eight tables that have never existed
+in this schema; `Import` reports a post-commit `resetSequence` failure as
+"rolled back" when the data is in fact committed; and `regulation_clause` refs
+are not unique across regulations, which the new bundle makes load-bearing.
+
+`go fmt`, `go vet` and `go test ./...` clean.
+
 ## 2026-09-08 (The merge procedure named a branch that does not exist)
 
 `FAQ.md` and `RUNTIME_ARGS.md` both documented the `security-patches` merge as

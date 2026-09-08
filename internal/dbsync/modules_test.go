@@ -118,17 +118,93 @@ func TestExportImport_CarriesRegulationCoverageAndCrisisExercises(t *testing.T) 
 	checkModules(t, dst)
 }
 
-// Sync carries the same rows over a live connection, where the blob stays bytes
-// rather than passing through base64.
-func TestSync_CarriesRegulationCoverageAndCrisisExercises(t *testing.T) {
+// Sync deliberately does not touch either module. Each record is a tree of rows
+// joined by autoincrement ids, which two deployments do not agree on: upserting
+// on id would rewrite whatever unrelated exercise happened to hold that id on
+// the destination, stitching one record out of two.
+func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 	src := openTemp(t, "src.db")
 	dst := openTemp(t, "dst.db")
 	seedModules(t, src)
 
-	if _, err := Sync(src, dst); err != nil {
+	// A destination-only exercise sharing an id with the source's. Under an
+	// id-keyed upsert this row is what gets silently overwritten.
+	mustExec(t, dst, `INSERT INTO crisis_ex_exercises (id, reference, title, format, status)
+		VALUES (4, 'CX-2026-99', 'Destination only', 'tabletop', 'planned')`)
+	mustExec(t, dst, `INSERT INTO crisis_ex_phases (id, exercise_id, ordinal, phase_key, name)
+		VALUES (77, 4, 0, 'containment', 'Containment')`)
+
+	report, err := Sync(src, dst)
+	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	checkModules(t, dst)
+
+	// The destination's own record is untouched, which is Sync's whole contract.
+	if got := scalar(t, dst, `SELECT title FROM crisis_ex_exercises WHERE id = 4`); got != "Destination only" {
+		t.Errorf("destination exercise title=%q, want it left alone", got)
+	}
+	if got := count(t, dst, "crisis_ex_exercises"); got != 1 {
+		t.Errorf("crisis_ex_exercises count=%d want 1 (source's must not arrive)", got)
+	}
+	if got := count(t, dst, "crisis_ex_phases"); got != 1 {
+		t.Errorf("crisis_ex_phases count=%d want 1 (source's must not arrive)", got)
+	}
+	if got := count(t, dst, "reg_coverage_regulations"); got != 0 {
+		t.Errorf("reg_coverage_regulations count=%d want 0", got)
+	}
+
+	// The mergeable catalogs still sync, so the skip is scoped, not a stoppage.
+	mustExec(t, src, `INSERT INTO rcsa_controls (control_id, family, name, mapping_baselines_json, threats_json)
+		VALUES ('AC-1', 'AC', 'Policy', '[]', '[]')`)
+	if _, err := Sync(src, dst); err != nil {
+		t.Fatalf("Sync (second): %v", err)
+	}
+	if got := count(t, dst, "rcsa_controls"); got != 1 {
+		t.Errorf("rcsa_controls count=%d want 1; the skip should not stop the catalogs", got)
+	}
+
+	// The report says "skipped" rather than reporting zero rows, so an operator
+	// is not told a module is empty when it was never looked at.
+	skipped := map[string]bool{}
+	for _, tr := range report.Tables {
+		if tr.Skipped {
+			skipped[tr.Table] = true
+		}
+	}
+	if len(skipped) != 20 {
+		t.Errorf("report marks %d tables skipped, want 20", len(skipped))
+	}
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat"} {
+		if !skipped[want] {
+			t.Errorf("%s is not reported as skipped", want)
+		}
+	}
+}
+
+// Skipping in Sync must not remove a table from the backup: that is the exact
+// bug this module list was widened to fix, and it would be a quiet way to
+// reintroduce it.
+func TestExport_CarriesTablesSyncSkips(t *testing.T) {
+	src := openTemp(t, "src.db")
+	seedModules(t, src)
+
+	snap, err := Export(src)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	for _, spec := range syncOrder {
+		if spec.strat != skipInSync {
+			continue
+		}
+		rows, ok := snap.Tables[spec.table]
+		if !ok {
+			t.Errorf("%s is missing from the snapshot entirely", spec.table)
+			continue
+		}
+		if len(rows) == 0 {
+			t.Errorf("%s exported 0 rows; the seed writes one to every table", spec.table)
+		}
+	}
 }
 
 // An older snapshot predates both modules. It has to restore with them empty
