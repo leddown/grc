@@ -82,7 +82,7 @@ all backed by SQLite and served via Gin.
 
 ## Git / Branch / PR Workflow
 
-- This repo currently commits directly to `master`; no enforced
+- This repo currently commits directly to `main`; no enforced
   branch-naming or PR process exists today, but prefer a short-lived
   feature branch + merge for any non-trivial change if asked to use one
 - Always update `CHANGELOG.md` for every substantive code, test, security,
@@ -103,7 +103,7 @@ all backed by SQLite and served via Gin.
   `security-patches` branch and add a `CHANGELOG.md` entry noting the
   impacted library/module and remediation status; after patching, run
   `go test ./...` and update `CHANGELOG.md` to confirm remediation
-- See `FAQ.md` / `RUNTIME_ARGS.md` for the `security-patches` → `master`
+- See `FAQ.md` / `RUNTIME_ARGS.md` for the `security-patches` → `main`
   merge procedure
 
 ## CI / Deployment

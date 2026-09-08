@@ -14,10 +14,14 @@ first command. Both files now say `main` throughout (`FAQ.md` in full, and
 Found by following the procedure during the go1.25.13 toolchain merge above and
 having to substitute the branch name by hand.
 
-`Agents.md` carries the same two stale references (its Git workflow section and
-its pointer to these files). Left alone deliberately: it is the instruction file
-agents read, so a correction there is worth making as its own deliberate change
-rather than as a side effect of a docs fix.
+`Agents.md` carried the same two stale references and has now been corrected as
+well: "commits directly to `master`" -> "`main`" in its Git workflow section,
+and the `security-patches` -> `main` pointer to the two files above. It is the
+instruction file agents read at the start of a session, so it was worth changing
+deliberately rather than as a side effect of a docs fix — the first of the two
+is a claim about how this repository is actually worked, not only a name.
+
+No `master` reference now remains in any of the three files.
 
 ## 2026-09-08 (security-patches: Go toolchain to go1.25.13)
 
