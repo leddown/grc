@@ -366,16 +366,16 @@ or:
 - Enforce long random secrets and rotate `ADMIN_TOKEN` regularly.
 - Prefer dedicated named admin users over shared credentials.
 
-## How-to: Merge tested security patches back to master
+## How-to: Merge tested security patches back to main
 
 After `security-patches` is fully tested and approved:
 
 ```bash
-git checkout master
-git pull origin master
+git checkout main
+git pull origin main
 git merge --no-ff security-patches
 go test ./...
-git push origin master
+git push origin main
 ```
 
 Optional cleanup:

@@ -3,6 +3,22 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-08 (The merge procedure named a branch that does not exist)
+
+`FAQ.md` and `RUNTIME_ARGS.md` both documented the `security-patches` merge as
+going back to `master`. This repository's default branch is `main`, and
+`master` does not exist — so the procedure, followed literally, fails at its
+first command. Both files now say `main` throughout (`FAQ.md` in full, and
+`RUNTIME_ARGS.md`'s "How-to: Merge tested security patches back to main").
+
+Found by following the procedure during the go1.25.13 toolchain merge above and
+having to substitute the branch name by hand.
+
+`Agents.md` carries the same two stale references (its Git workflow section and
+its pointer to these files). Left alone deliberately: it is the instruction file
+agents read, so a correction there is worth making as its own deliberate change
+rather than as a side effect of a docs fix.
+
 ## 2026-09-08 (security-patches: Go toolchain to go1.25.13)
 
 `TestGovulncheck` had been failing for several releases against seven Go
