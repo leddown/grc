@@ -28,12 +28,31 @@ The seven, all reachable from this application and all fixed in go1.25.13:
 | GO-2026-5972 | `encoding/asn1` | `doctemplate.Dir` |
 | GO-2026-5026 | `net/http` (x/net/idna) | `nfrenrich.Fetcher.Fetch` |
 
-Still outstanding, and deliberately not fixed here: four advisories in
-`golang.org/x/crypto@v0.54.0` (GO-2026-6355, GO-2026-6354, GO-2026-6303,
-GO-2026-5932). govulncheck reports none of them as called by this code — the
-module is here for `bcrypt` — so they are informational rather than reachable.
-Three are fixed in v0.55.0/v0.56.0 and GO-2026-5932 has no fix at all, which is
-the reason to track them rather than assume a version bump closes the set.
+### golang.org/x/crypto v0.54.0 -> v0.55.0
+
+Four advisories were also open against `golang.org/x/crypto@v0.54.0`
+(GO-2026-6355, GO-2026-6354, GO-2026-6303, GO-2026-5932). govulncheck reports
+none of them as called by this code — the module is here for `bcrypt` — so they
+are informational rather than reachable, but a patch was available for some.
+
+Impacted library: `golang.org/x/crypto`. Remediation status: **partially
+remediated**, and the reason the rest is left alone matters more than the part
+that was fixed.
+
+- GO-2026-6303 is fixed in v0.55.0, which still requires only Go 1.25. Applied,
+  pulling `golang.org/x/text` v0.40.0 -> v0.41.0 as an indirect dependency.
+- GO-2026-6354 and GO-2026-6355 are fixed only in v0.56.0, and **v0.56.0
+  requires Go >= 1.26**: `go get` responds by rewriting the language directive
+  to `go 1.26.0`, dropping the `toolchain` line, and pulling a go1.26 toolchain.
+  That is a language-version migration for the whole module, not a security
+  patch, and it undoes the pin directly above. Not done here — it needs to be a
+  deliberate decision with its own testing.
+- GO-2026-5932 has no fixed version at all, so no bump closes it.
+
+After the two changes: `go build`, `go vet` and `go test ./...` all clean,
+`TestGosec` and `TestGovulncheck` passing, and govulncheck reporting **0
+vulnerabilities called by this code** (3 remain in required modules, unreached,
+as above).
 
 ## 2026-09-08 (Backing up all of it, and handing it to the agent)
 
