@@ -3,6 +3,38 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-08 (security-patches: Go toolchain to go1.25.13)
+
+`TestGovulncheck` had been failing for several releases against seven Go
+standard library advisories, all of them fixed in go1.25.13 while the toolchain
+here was pinned to go1.25.12. `go.mod`: `toolchain go1.25.12` -> `go1.25.13`
+(the `go 1.25.0` language directive is unchanged, so nothing about the source
+requirements moves).
+
+Impacted library: the Go standard library. Remediation status: **remediated**,
+confirmed by `go test ./...` — `TestGovulncheck` and `TestGosec` both pass, and
+for the first time in a while the whole suite is clean with no known failure to
+note.
+
+The seven, all reachable from this application and all fixed in go1.25.13:
+
+| Advisory | Package | Reached via |
+|---|---|---|
+| GO-2026-6218 | `net/url` | `nfrenrich.Fetcher.Fetch` -> `http.Client.Do` |
+| GO-2026-6091 | `html/template` | `reporting.renderHTML` |
+| GO-2026-6090 | `crypto/tls` | `app.Run` -> `gin.Engine.Run`; `secrets.Keyring.Seal` |
+| GO-2026-6089 | `net/http` | `app.Run` -> `http.Server.ListenAndServe` |
+| GO-2026-6088 | `encoding/xml` | `ingest.extractDOCX`; `crisisexercise` chat reads |
+| GO-2026-5972 | `encoding/asn1` | `doctemplate.Dir` |
+| GO-2026-5026 | `net/http` (x/net/idna) | `nfrenrich.Fetcher.Fetch` |
+
+Still outstanding, and deliberately not fixed here: four advisories in
+`golang.org/x/crypto@v0.54.0` (GO-2026-6355, GO-2026-6354, GO-2026-6303,
+GO-2026-5932). govulncheck reports none of them as called by this code — the
+module is here for `bcrypt` — so they are informational rather than reachable.
+Three are fixed in v0.55.0/v0.56.0 and GO-2026-5932 has no fix at all, which is
+the reason to track them rather than assume a version bump closes the set.
+
 ## 2026-09-08 (Backing up all of it, and handing it to the agent)
 
 Two separate holes in the same sentence — "back up all the data as JSON". The
