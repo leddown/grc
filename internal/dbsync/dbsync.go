@@ -8,6 +8,14 @@
 // table (security_nfr_control_links) is fully replaced because it has no stable
 // key and is regenerated from its sources; ephemeral login sessions
 // (auth_sessions) are skipped.
+//
+// Two tables are deliberately left out, and it is worth being explicit about
+// why, because "the backup is missing a table" is otherwise discovered at
+// restore time: app_state holds this deployment's own configuration (which AI
+// provider it talks to, which Wintermute agent it asks), which should not
+// follow the data onto another server, and app_secrets holds ciphertext whose
+// key file never travels in a snapshot, so copying it would move an unreadable
+// blob and hide the fact that the credential has to be set again.
 package dbsync
 
 import (
@@ -32,13 +40,26 @@ const (
 // matched on a natural/business key the auto-increment id is intentionally
 // omitted so the destination assigns its own. idKeyed marks tables whose id is
 // referenced by foreign keys (so the id is carried over and, on PostgreSQL,
-// the identity sequence is realigned afterwards).
+// the identity sequence is realigned afterwards). blobCols names the columns
+// holding binary data, which have to be kept as bytes rather than coerced to
+// text (and are base64-encoded in a JSON snapshot -- see transfer.go).
 type tableSpec struct {
 	table        string
 	cols         []string
 	conflictCols []string
 	strat        strategy
 	idKeyed      bool
+	blobCols     []string
+}
+
+// isBlob reports whether col holds binary data on this table.
+func (s tableSpec) isBlob(col string) bool {
+	for _, c := range s.blobCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
 }
 
 // syncOrder lists tables parent-before-child so foreign keys are satisfied as
@@ -174,6 +195,196 @@ var syncOrder = []tableSpec{
 		conflictCols: []string{"id"},
 		idKeyed:      true,
 	},
+	// ---- Regulation Coverage (internal/regcoverage) ----
+	//
+	// All id-keyed: sections, findings, mappings, versions and the chat
+	// transcript all carry a foreign key up the chain, so the ids have to
+	// survive the copy. Regulations come first, then the upload, then the
+	// analysis derived from it.
+	{
+		table: "reg_coverage_regulations",
+		cols: []string{
+			"id", "title", "framework", "framework_name", "source_ref", "detected",
+			"filename", "media_type", "sha256", "byte_size", "extract_method",
+			"extract_notes", "body_text", "status", "status_detail", "uploaded_by",
+			"created_at", "analyzed_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		// The original uploaded file. It travels so a restored report can still
+		// be read against the document it was written about; content is a BLOB,
+		// carried through JSON as base64 (see blobCols).
+		table:        "reg_coverage_sources",
+		cols:         []string{"regulation_id", "media_type", "filename", "byte_size", "content"},
+		conflictCols: []string{"regulation_id"},
+		blobCols:     []string{"content"},
+	},
+	{
+		table:        "reg_coverage_sections",
+		cols:         []string{"id", "regulation_id", "ref", "label", "title", "category", "body", "position", "confidence"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "reg_coverage_findings",
+		cols: []string{
+			"id", "regulation_id", "section_id", "relevant", "requirement", "commentary",
+			"gaps", "quote", "grounded", "confidence", "model", "prompt_hash", "revision", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "reg_coverage_mappings",
+		cols:         []string{"id", "finding_id", "kind", "ref", "title", "rationale", "confidence", "source", "known"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "reg_coverage_versions",
+		cols:         []string{"id", "regulation_id", "number", "summary", "note", "snapshot", "created_at", "created_by"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "reg_coverage_chat",
+		cols:         []string{"id", "regulation_id", "version", "role", "content", "model", "actor", "session_id", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+
+	// ---- Risk & Crisis Exercises (internal/crisisexercise) ----
+	//
+	// The exercise is the parent of everything below it, and phases are the
+	// parent of injects, decisions and findings, so the order here is exercise,
+	// objectives, phases, then the rest. All id-keyed for the same reason as
+	// above.
+	{
+		table: "crisis_ex_exercises",
+		cols: []string{
+			"id", "reference", "title", "summary", "format", "kind", "audience",
+			"entity_name", "entity_type", "jurisdiction", "supervision", "critical_functions",
+			"threat_actor", "threat_narrative", "initial_vector", "scenario_key",
+			"status", "tlp", "scheduled_for", "duration_minutes", "started_at", "ended_at",
+			"facilitator", "control_team", "evaluators", "ai_generated", "model", "prompt_hash",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "crisis_ex_objectives",
+		cols:         []string{"id", "exercise_id", "ordinal", "code", "text", "capability", "success_criteria", "rating", "notes"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "crisis_ex_phases",
+		cols: []string{
+			"id", "exercise_id", "ordinal", "phase_key", "name", "purpose",
+			"entry_criteria", "exit_criteria", "lead_role", "offset_minutes",
+			"duration_minutes", "status", "notes",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "crisis_ex_injects",
+		cols: []string{
+			"id", "exercise_id", "phase_id", "ordinal", "code", "offset_minutes", "title", "body",
+			"channel", "from_actor", "to_actor", "inject_type", "expected_actions",
+			"expected_decision", "decision_owner", "evaluation_notes", "difficulty",
+			"ai_generated", "model", "prompt_hash", "confidence", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "crisis_ex_responses",
+		cols: []string{
+			"id", "exercise_id", "inject_id", "delivered_at", "responded_offset", "outcome",
+			"actual_actions", "observations", "evaluator", "created_at", "updated_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "crisis_ex_decisions",
+		cols: []string{
+			"id", "exercise_id", "phase_id", "offset_minutes", "title", "options", "decision",
+			"rationale", "made_by", "role", "authority", "reversible",
+			"regulatory_implication", "customer_impact", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		// One row per exercise, keyed by the exercise rather than an id of its
+		// own — the DORA classification of the incident being exercised.
+		table: "crisis_ex_classification",
+		cols: []string{
+			"exercise_id", "aware_offset", "classified_offset", "critical_services_affected",
+			"clients_affected", "clients_material", "transactions_affected", "transactions_material",
+			"reputational_impact", "reputational_material", "downtime_minutes", "duration_material",
+			"geographical_spread", "geographical_material", "data_losses", "data_losses_material",
+			"economic_impact", "economic_material", "personal_data_breach", "nis2_significant",
+			"major", "rationale", "team_verdict", "notes", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"exercise_id"},
+	},
+	{
+		table: "crisis_ex_clocks",
+		cols: []string{
+			"id", "exercise_id", "ordinal", "regime", "authority", "label", "basis",
+			"due_offset", "actual_offset", "status", "evidence", "notes", "source",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "crisis_ex_findings",
+		cols: []string{
+			"id", "exercise_id", "phase_id", "ordinal", "code", "title", "category", "severity",
+			"description", "root_cause", "evidence", "recommendation", "owner", "due_date",
+			"status", "risk_ref", "ai_generated", "model", "created_at", "created_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "crisis_ex_participants",
+		cols:         []string{"id", "exercise_id", "name", "role_key", "org", "player", "attended", "contact", "notes"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		// The citations tying an exercise (or one of its parts) to the controls,
+		// NFRs, regulation clauses and risks it exercises. owner_id is a
+		// polymorphic reference into the tables above, which is why this comes
+		// after all of them.
+		table: "crisis_ex_references",
+		cols: []string{
+			"id", "exercise_id", "owner_kind", "owner_id", "ref_kind", "ref",
+			"title", "note", "source", "known", "url", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "crisis_ex_versions",
+		cols:         []string{"id", "exercise_id", "number", "kind", "summary", "note", "snapshot", "created_at", "created_by"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "crisis_ex_chat",
+		cols:         []string{"id", "exercise_id", "persona", "role", "content", "model", "actor", "scope", "session_id", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+
 	{
 		// Derived from the catalogs + overrides; no stable key, so replace it
 		// wholesale to keep it consistent with the rows just copied.
@@ -266,7 +477,11 @@ func copyTable(src, dst *db.Conn, spec tableSpec) (int, error) {
 		}
 		for i := range values {
 			// SQLite hands back TEXT columns as []byte; normalize to string so
-			// they bind as text (not bytea) on PostgreSQL.
+			// they bind as text (not bytea) on PostgreSQL. A genuinely binary
+			// column is left as bytes, because that coercion would corrupt it.
+			if spec.isBlob(spec.cols[i]) {
+				continue
+			}
 			if b, ok := values[i].([]byte); ok {
 				values[i] = string(b)
 			}

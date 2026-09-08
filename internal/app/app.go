@@ -169,7 +169,7 @@ func Run(options Options) error {
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
 		router, sqliteDB, knowledgeService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
-	registerUtilitiesRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
+	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
 		return fmt.Errorf("server failed: %w", err)

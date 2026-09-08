@@ -14,6 +14,7 @@ import (
 
 	"grc/internal/db"
 	"grc/internal/dbsync"
+	"grc/internal/knowledge"
 	"grc/internal/pageui"
 )
 
@@ -21,11 +22,13 @@ import (
 // export/import/backup endpoints. Export/import move an entire data set
 // between two disconnected deployments: one server exports a JSON snapshot,
 // the other imports it to overwrite its database. Backup produces a raw
-// engine-native copy of the live database for disaster recovery. Because
-// export and backup both expose every row (including password hashes) and
-// import is destructive, all routes sit behind the admin middleware (and are
-// open only in local single-user mode).
-func registerUtilitiesRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware gin.HandlerFunc, localMode bool) {
+// engine-native copy of the live database for disaster recovery. The knowledge
+// export is a third shape of the same data — denormalized and readable, for
+// uploading into a Wintermute agent's library. Because all three expose every
+// row (including password hashes, in the first two) and import is destructive,
+// all routes sit behind the admin middleware (and are open only in local
+// single-user mode).
+func registerUtilitiesRoutes(r gin.IRouter, sqliteDB *db.Conn, knowledgeService *knowledge.Service, adminMiddleware gin.HandlerFunc, localMode bool) {
 	group := r.Group("/")
 	if !localMode {
 		group.Use(adminMiddleware)
@@ -34,7 +37,35 @@ func registerUtilitiesRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware g
 	group.GET("/utilities/export", utilitiesExport(sqliteDB))
 	group.POST("/utilities/import", utilitiesImport(sqliteDB))
 	group.GET("/utilities/backup", utilitiesBackup(sqliteDB))
+	group.GET("/utilities/knowledge-export", utilitiesKnowledgeExport(knowledgeService))
 	group.GET("/utilities/integrity-check", utilitiesIntegrityCheck(sqliteDB))
+}
+
+// utilitiesKnowledgeExport downloads the AI-facing bundle: every NFR, control,
+// regulation clause and coverage finding, policy section, risk and crisis
+// exercise, denormalized into one readable JSON document (see
+// knowledge.Bundle).
+//
+// It is the same payload as GET /api/knowledge/export, offered here because
+// that route needs the knowledge token and this one is for a signed-in admin
+// who wants the file in their browser — typically to upload it into a
+// Wintermute agent's library so the agent knows this installation's current
+// state without querying it live.
+func utilitiesKnowledgeExport(knowledgeService *knowledge.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		bundle, err := knowledgeService.Bundle()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to build knowledge export: %v", err)})
+			return
+		}
+		payload, err := json.MarshalIndent(bundle, "", "  ")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to encode knowledge export: %v", err)})
+			return
+		}
+		c.Header("Content-Disposition", `attachment; filename="`+knowledge.BundleFilename(bundle)+`"`)
+		c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
+	}
 }
 
 func utilitiesExport(sqliteDB *db.Conn) gin.HandlerFunc {
@@ -350,7 +381,7 @@ func utilitiesPage(c *gin.Context) {
     ` + pageui.Nav("/utilities") + `
 
     <h1>Utilities</h1>
-    <p class="lede">Back up this server's database, move an entire data set between two disconnected deployments, or verify the database is not corrupted before relying on a backup.</p>
+    <p class="lede">Back up this server's database, move an entire data set between two disconnected deployments, hand the whole data set to an AI agent, or verify the database is not corrupted before relying on a backup.</p>
 
     <section class="grid">
       <section class="panel">
@@ -378,9 +409,19 @@ func utilitiesPage(c *gin.Context) {
       <section class="panel">
         <div class="panel-header">Export full data set</div>
         <div class="panel-body">
-          <p class="section-note">Download a single JSON snapshot containing every managed table (controls, security NFRs, links, risk register, users, CRM, stored JSON and more). Use this to move data to a disconnected deployment, including across a SQLite/PostgreSQL boundary &mdash; the raw backup above only works within the same engine.</p>
+          <p class="section-note">Download a single JSON snapshot containing every managed table &mdash; controls, security NFRs and their links, the risk register, the policy library, Regulation Coverage, Risk &amp; Crisis Exercises, users and stored JSON. Use this to move data to a disconnected deployment, including across a SQLite/PostgreSQL boundary &mdash; the raw backup above only works within the same engine. Deployment configuration and stored credentials are deliberately excluded, so set those again on the destination.</p>
           <div class="actions">
             <a class="btn" href="/utilities/export">Download data set</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">Export for the AI agent</div>
+        <div class="panel-body">
+          <p class="section-note">Download every record this installation holds &mdash; security NFRs, 800-53 controls, regulation clauses and their coverage findings, policy sections, risks, and crisis exercises and their findings &mdash; as one readable JSON document, each record with its full text, its identifier and a link back to its page here. Upload it into a Wintermute agent's library so the agent knows this installation's current state. It is a point-in-time copy stamped with its export date: take a fresh one after a round of edits. An agent that can reach this server should pull <code>/api/knowledge/export</code> instead of being handed a file.</p>
+          <div class="actions">
+            <a class="btn" href="/utilities/knowledge-export">Download knowledge export</a>
           </div>
         </div>
       </section>

@@ -58,7 +58,7 @@ library, the extraction and the search over it.
 
 ## The API
 
-Four endpoints under `/api/knowledge`, all GET, all read-only. There is no
+Five endpoints under `/api/knowledge`, all GET, all read-only. There is no
 write path here to secure, forget to secure, or be talked into using.
 
 | Endpoint | Answers |
@@ -67,12 +67,54 @@ write path here to secure, forget to secure, or be talked into using.
 | `GET /index/:kind` | An entire small catalog, compactly — the only honest way to answer "how many" |
 | `GET /search?kind=&q=&limit=` | Lexical search within one kind, with the counts below |
 | `GET /item?kind=&ref=` | One full record |
+| `GET /export` | Everything, in one document — see below |
 
 Kinds: `nfr`, `control`, `regulation_clause`, `regulation`, `policy_clause`,
-`policy`, `risk`. Exceptions are absent because that page is a saved view over
-the NFR catalog rather than a record set of its own.
+`policy`, `risk`, `exercise`, `exercise_finding`. Exceptions are absent because
+that page is a saved view over the NFR catalog rather than a record set of its
+own.
 
 Authenticate with `X-Knowledge-Token` or `Authorization: Bearer`.
+
+## Handing the agent the whole thing
+
+The four query endpoints answer a question at the moment it is asked, which
+needs this application to be reachable from wherever the agent runs. That is the
+better arrangement when it holds. When it does not — the agent is on a network
+that cannot reach this server, or you would rather it read the data than call
+for it — `GET /api/knowledge/export` returns the same data as one file:
+
+```json
+{
+  "format_version": 1,
+  "generated_at": "2026-09-08T09:12:44Z",
+  "note": "Full export of one GRC installation's compliance data, taken at ...",
+  "overview": { "counts": { "nfr": 104, "control": 1189, ... } },
+  "corpora": [
+    { "kind": "nfr", "count": 104, "items": [ { "kind": "nfr", "ref": "56",
+      "title": "...", "summary": "...", "body": "...", "group": "Data Security",
+      "related": ["SC-7"], "fields": {...}, "url": "/security-nfrs?key=56" } ] },
+    { "kind": "control", ... }
+  ]
+}
+```
+
+Every record of every kind, with its **full text** rather than the snippet a
+search result carries — the same `Item` shape the query endpoints return, so an
+agent that already knows one knows the other. Upload it into the agent's library
+on Wintermute and it can answer about this installation without a round trip.
+
+An admin can download the same file from **Utilities → Export for the AI
+agent** (`/utilities/knowledge-export`), which is behind the session rather than
+the knowledge token — for the case where a person, not a process, is doing the
+uploading.
+
+The thing to be deliberate about is staleness. A bundle is a point in time, and
+an uploaded one goes on answering confidently after the catalog moves under it.
+So `generated_at` is stamped on the document and repeated in `note`, where a
+model will read it: an answer from an uploaded bundle should say how old the
+bundle is. An agent that *can* reach this server should fetch `/export` on a
+schedule, or use the four query endpoints and skip the problem entirely.
 
 ### Counting honestly
 
@@ -117,6 +159,8 @@ not re-read every table per tool call.
 curl -H "X-Knowledge-Token: $KNOWLEDGE_TOKEN" localhost:8080/api/knowledge/overview
 curl -H "X-Knowledge-Token: $KNOWLEDGE_TOKEN" \
   'localhost:8080/api/knowledge/search?kind=nfr&q=network+segmentation'
+curl -H "X-Knowledge-Token: $KNOWLEDGE_TOKEN" \
+  -o grc-knowledge.json localhost:8080/api/knowledge/export
 ```
 
 On the Wintermute side, **Admin → Backends → Send a test question** confirms a

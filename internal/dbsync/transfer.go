@@ -2,6 +2,7 @@ package dbsync
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -44,17 +45,32 @@ import (
 // empty, which reads as "no usage recorded yet" rather than losing anything
 // that was actually in the older backup.
 //
+// v8 added the two modules that had never been in the table list at all:
+// Regulation Coverage (reg_coverage_regulations and the sources, sections,
+// findings, mappings, versions and chat below it) and Risk & Crisis Exercises
+// (crisis_ex_exercises and its objectives, phases, injects, responses,
+// decisions, classification, clocks, findings, participants, references,
+// versions and chat). Every "full data set" export taken before this silently
+// carried none of that — a restore from one looks successful and comes up with
+// an empty Regulation Coverage and no exercise history. A v7-or-older backup
+// still restores; those tables simply come up empty, which is what the backup
+// actually contains.
+//
 // The import handler enforces that range. Bumping this constant must never make
 // an existing backup unrestorable — that was the effect when the handler
 // compared for equality, and it is the failure mode to watch for on the next
 // bump.
-const SnapshotVersion = 7
+const SnapshotVersion = 8
 
 // Snapshot is a portable, engine-independent dump of every managed table — the
 // same tables (and columns) dbsync.Sync copies. It is the on-the-wire format
 // for transferring a full data set between two disconnected deployments via the
 // Utilities page: one server exports a Snapshot to a file, the other imports it
 // to overwrite its database.
+//
+// Values keep the columns' own types, with one exception: a binary column (see
+// tableSpec.blobCols) is carried as a base64 string, because JSON has no bytes
+// and coercing one to text corrupts it silently rather than failing.
 type Snapshot struct {
 	Version    int                         `json:"version"`
 	ExportedAt string                      `json:"exported_at"`
@@ -100,10 +116,18 @@ func exportTable(src *db.Conn, spec tableSpec) ([]map[string]any, error) {
 		row := make(map[string]any, len(spec.cols))
 		for i, col := range spec.cols {
 			v := values[i]
-			// SQLite hands TEXT columns back as []byte; normalize to string so
-			// they serialize as JSON strings rather than base64 blobs.
 			if b, ok := v.([]byte); ok {
-				v = string(b)
+				if spec.isBlob(col) {
+					// Genuinely binary: base64 it rather than let
+					// encoding/json replace every invalid UTF-8 byte with
+					// U+FFFD, which would produce a snapshot that imports
+					// cleanly and restores a corrupt file.
+					v = base64.StdEncoding.EncodeToString(b)
+				} else {
+					// SQLite hands TEXT columns back as []byte; normalize to
+					// string so they serialize as JSON strings.
+					v = string(b)
+				}
 			}
 			row[col] = v
 		}
@@ -227,7 +251,15 @@ func importTable(tx *db.Tx, spec tableSpec, rows []map[string]any) (int, error) 
 
 		values := make([]any, len(p.cols))
 		for i, col := range p.cols {
-			values[i] = row[col]
+			v := row[col]
+			if spec.isBlob(col) {
+				decoded, err := decodeBlob(v)
+				if err != nil {
+					return count, fmt.Errorf("%s.%s: %w", spec.table, col, err)
+				}
+				v = decoded
+			}
+			values[i] = v
 		}
 		if _, err := p.stmt.Exec(values...); err != nil {
 			return count, err
@@ -235,4 +267,23 @@ func importTable(tx *db.Tx, spec tableSpec, rows []map[string]any) (int, error) 
 		count++
 	}
 	return count, nil
+}
+
+// decodeBlob turns a snapshot's representation of a binary column back into
+// bytes. Export writes base64; a nil stays nil so a NULL column round-trips.
+func decodeBlob(v any) (any, error) {
+	switch value := v.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		decoded, err := base64.StdEncoding.DecodeString(value)
+		if err != nil {
+			return nil, fmt.Errorf("not valid base64: %w", err)
+		}
+		return decoded, nil
+	case []byte:
+		return value, nil
+	default:
+		return nil, fmt.Errorf("expected a base64 string, got %T", v)
+	}
 }

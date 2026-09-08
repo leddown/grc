@@ -13,6 +13,7 @@ import (
 
 	"grc/internal/db"
 	"grc/internal/dbsync"
+	"grc/internal/knowledge"
 )
 
 func newUtilitiesTestRouter(t *testing.T) *gin.Engine {
@@ -28,7 +29,7 @@ func newUtilitiesTestRouter(t *testing.T) *gin.Engine {
 	router := gin.New()
 	// localMode = true keeps the admin middleware out of the way; this test is
 	// about the import gate, not about who may reach it.
-	registerUtilitiesRoutes(router, conn, noAuthMiddleware, true)
+	registerUtilitiesRoutes(router, conn, knowledge.NewService(knowledge.NewStore(conn)), noAuthMiddleware, true)
 	return router
 }
 
@@ -117,7 +118,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 
 	router := gin.New()
-	registerUtilitiesRoutes(router, conn, noAuthMiddleware, true)
+	registerUtilitiesRoutes(router, conn, knowledge.NewService(knowledge.NewStore(conn)), noAuthMiddleware, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/utilities/export", nil)
 	rec := httptest.NewRecorder()
@@ -140,5 +141,50 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 	if title != "Access Control Policy" {
 		t.Errorf("title = %q after round trip", title)
+	}
+}
+
+// The knowledge export is the file a person downloads to upload into a
+// Wintermute agent, so the route has to serve a named JSON attachment carrying
+// the records — not an empty 200.
+func TestKnowledgeExportServesTheBundle(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	conn, err := db.OpenSQLite(filepath.Join(t.TempDir(), "knowledge-export.db"))
+	if err != nil {
+		t.Fatalf("OpenSQLite: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	if _, err := conn.Exec(`INSERT INTO security_nfrs
+		(record_key, nfr_id, summary, description, nist_mapping, domain, issue_type,
+		 additional_details, implementation)
+		VALUES ('7', 'NFR-7', 'Backups are restorable', 'Restores are exercised quarterly.',
+		        'CP-9', 'Resilience', 'Requirement', '', '')`); err != nil {
+		t.Fatalf("seed NFR: %v", err)
+	}
+
+	router := gin.New()
+	registerUtilitiesRoutes(router, conn, knowledge.NewService(knowledge.NewStore(conn)), noAuthMiddleware, true)
+
+	req := httptest.NewRequest(http.MethodGet, "/utilities/knowledge-export", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("knowledge-export = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if disposition := rec.Header().Get("Content-Disposition"); !strings.Contains(disposition, "grc-knowledge-") {
+		t.Errorf("Content-Disposition=%q, want a stamped grc-knowledge-* filename", disposition)
+	}
+
+	var bundle knowledge.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &bundle); err != nil {
+		t.Fatalf("decode bundle: %v", err)
+	}
+	if bundle.TotalItems() == 0 {
+		t.Fatal("exported bundle carries no records")
+	}
+	if bundle.Overview == nil || bundle.Overview.Counts[knowledge.KindNFR] != 1 {
+		t.Errorf("overview should report the one seeded NFR, got %+v", bundle.Overview)
 	}
 }

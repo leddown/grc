@@ -25,8 +25,10 @@ func NewHandler(service *Service, token string) *Handler {
 
 // RegisterRoutes attaches the API.
 //
-// Four endpoints, deliberately: this is a tool surface, and a model uses a
-// small vocabulary better than a large one. They are all GETs — there is no
+// Four query endpoints, deliberately: this is a tool surface, and a model uses
+// a small vocabulary better than a large one. Beside them sits /export, which
+// is not a tool but a download — the whole data set as one file, for uploading
+// into an agent's own library (see Bundle). They are all GETs — there is no
 // write path here to secure, forget to secure, or be talked into using.
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	api := r.Group("/api/knowledge")
@@ -35,6 +37,23 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	api.GET("/index/:kind", h.Index)
 	api.GET("/search", h.Search)
 	api.GET("/item", h.Get)
+	api.GET("/export", h.Export)
+}
+
+// Export returns the full Bundle. It is behind the same read-only token as the
+// rest: it exposes no more than reading every index and every item would, and
+// pulling it in one request is what lets an agent's ingestion be a scheduled
+// fetch rather than a person remembering to re-upload a file.
+func (h *Handler) Export(c *gin.Context) {
+	bundle, err := h.service.Bundle()
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(c.Query("download")), "true") {
+		c.Header("Content-Disposition", `attachment; filename="`+BundleFilename(bundle)+`"`)
+	}
+	c.JSON(http.StatusOK, bundle)
 }
 
 // authenticate checks the read-only service token.

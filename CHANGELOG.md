@@ -3,6 +3,79 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-08 (Backing up all of it, and handing it to the agent)
+
+Two separate holes in the same sentence — "back up all the data as JSON". The
+JSON data-set export had never carried Regulation Coverage or the crisis
+exercises at all, and there was no shape of the data an AI agent could be handed
+as a file.
+
+**The whole data set, this time.** `internal/dbsync/dbsync.go`: `syncOrder`
+covered 19 tables; the schema has 40. The 21 it never mentioned are the entire
+Regulation Coverage module (`reg_coverage_regulations`, `_sources`, `_sections`,
+`_findings`, `_mappings`, `_versions`, `_chat`) and the entire Risk & Crisis
+Exercise module (`crisis_ex_exercises` and its objectives, phases, injects,
+responses, decisions, classification, clocks, findings, participants,
+references, versions and chat). Both are now in the list, parent-before-child
+and id-keyed so the foreign keys survive. The failure this fixes is quiet: an
+export ran clean, an import reported success, and the destination came up with
+an empty Regulation Coverage and no exercise history.
+
+- `SnapshotVersion` 7 → 8. A v7-or-older backup still restores, with those
+  tables empty, which is what the file actually contains.
+- `app_state` and `app_secrets` stay out, now with the reason written down: the
+  first is this deployment's own configuration (which AI provider, which
+  Wintermute agent) and should not follow the data onto another server; the
+  second is ciphertext whose key file never travels, so copying it would move an
+  unreadable blob and hide that the credential has to be set again.
+- `tableSpec.blobCols` and base64 in `internal/dbsync/transfer.go`:
+  `reg_coverage_sources.content` is the original uploaded regulation, a BLOB.
+  Export coerced every `[]byte` to a string, so `encoding/json` replaced each
+  invalid UTF-8 byte with U+FFFD — a snapshot that imports cleanly and restores
+  a corrupt PDF. Binary columns now travel as base64 and are decoded on import;
+  `Sync` leaves them as bytes. `TestExportImport_CarriesRegulationCoverageAndCrisisExercises`
+  fails with `[255 254 128]` → `[239 191 189 ...]` if that handling is removed.
+- `internal/dbsync/coverage_test.go` (new) is the guard that would have caught
+  this years earlier: every table in the live schema is either in `syncOrder` or
+  in `skippedTables` with its reason, and every column of a managed table is
+  listed (bar the `id` that natural-key tables omit on purpose). A new module
+  can no longer ship without being in the backup.
+- `internal/dbsync/modules_test.go` (new): both modules round-trip through
+  JSON with their foreign keys resolving, the same via `Sync`, and a v7 snapshot
+  still imports.
+
+**The data as something an agent can read.** `internal/knowledge/export.go`
+(new): `Service.Bundle` returns every record of every kind — NFRs, 800-53
+controls, regulation clauses and their coverage findings, policy sections,
+risks, crisis exercises and their findings — each with its full body, its `ref`,
+its `related` records and a `url` back to its page here. It is the same `Item`
+shape the four query endpoints already return, so an agent that knows one knows
+the other.
+
+- `GET /api/knowledge/export` (read-only knowledge token, like the rest) and
+  **Utilities → Export for the AI agent** (`/utilities/knowledge-export`, admin
+  session) serve it. The first is for an agent that can reach this server on a
+  schedule; the second is for a person uploading the file into a Wintermute
+  agent's library by hand.
+- Corpora are read from the database, not from the 45-second query cache. That
+  cache is the right trade for answering a question and the wrong one for an
+  export: a backup taken ten seconds after an edit that silently predates it is
+  the failure this is meant to prevent. `TestBundleIsNotServedFromTheCache`
+  pins it.
+- `generated_at` is stamped on the document and repeated in `note`, because an
+  uploaded bundle goes on answering confidently after the catalog moves under
+  it, and a model that can read the date can say how old its answer is.
+- `internal/app/utilities.go`: the new panel, and the data-set panel's text
+  corrected — it advertised CRM tables that no longer exist and did not mention
+  the two modules that are now actually in the file.
+- `AI_AGENT.md`: the fifth endpoint, a worked example of the document, and the
+  staleness trade written down beside it. The kinds list also gained `exercise`
+  and `exercise_finding`, which it had been missing.
+
+`go fmt`, `go vet` and `go test ./...` clean apart from the pre-existing
+`TestGovulncheck` failure (Go standard library advisories fixed in go1.25.13;
+the toolchain here is go1.25.12).
+
 ## 2026-09-07 (A Help page: what this application does, as work)
 
 There was no page that answered "what can this do, and how do I do it" — the
