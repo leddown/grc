@@ -390,6 +390,9 @@ func registerRegulationCoverageRoutes(
 		regcoverage.NewSQLiteRepository(sqliteDB),
 		nfrService,
 		aiRouter,
+		// Regulations live in the agent's library on the Wintermute server,
+		// which extracted them; this reads that text back and segments it.
+		aiRouter.Library,
 	).WithRenderer(pdfRenderer)
 
 	handler := regcoverage.NewHandler(service, sessionUsername)
@@ -582,6 +585,10 @@ func registerNFREnrichmentRoutes(
 		// in Settings applies without a restart. The harness logs usage, so
 		// this module no longer does.
 		nfrenrich.NewRoutedAnalyzer(aiRouter),
+		// The document library lives on the Wintermute server, so it is
+		// resolved through the same router: a Settings change picks a different
+		// agent, and the next import reads that agent's library.
+		aiRouter.Library,
 	)
 	handler := nfrenrich.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)

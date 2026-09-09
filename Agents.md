@@ -41,11 +41,14 @@ all backed by SQLite and served via Gin.
 - `internal/riskregister`, `internal/reports` — risk register and
   reporting dashboards
 - `internal/jira` — Jira Cloud REST connector (issues/projects/search)
-- `internal/regcoverage` — Regulation Coverage: uploads an EU regulation,
-  maps every article to Security NFRs and 800-53 with AI, and keeps a
-  versioned report that can be questioned and revised. Reuses
-  `internal/regmap`'s extraction, segmentation and framework profiles rather
-  than duplicating them — see `REGULATION_COVERAGE.md`
+- `internal/regcoverage` — Regulation Coverage: imports an EU regulation from
+  the AI agent's library on the Wintermute server, maps every article to
+  Security NFRs and 800-53 with AI, and keeps a versioned report that can be
+  questioned and revised. Uses `internal/regmap`'s segmentation and framework
+  profiles — see `REGULATION_COVERAGE.md`
+- `internal/nfrenrich` — NFR Enrichment: imports a security document from the
+  same library and proposes enrichments to the NFR catalog, which a human
+  accepts or rejects
 - `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
   the exercise arc from red team through incident response, DORA incident
   classification and its notification clocks, crisis and continuity activation,
@@ -60,6 +63,12 @@ all backed by SQLite and served via Gin.
 - `internal/pageui` — shared side-nav tab rendering used across pages
 - `internal/data` — embedded/static seed JSON for the control and NFR
   catalogs
+- **No document ingestion here.** This application does not accept document
+  uploads and does not extract text from PDFs, DOCX or images. Documents are
+  uploaded to an agent's library on the Wintermute server, which owns the
+  extraction, the OCR and the chunking; `internal/aiprovider/library.go` reads
+  the text back. Do not reintroduce a parser, an upload endpoint or an
+  outbound document fetch here — see `AI_AGENT.md`
 - `scripts/` — goreleaser cross-build, smoke-test, and artifact-upload
   helpers
 - Root helper scripts: `admin_setup_login.sh` (first-boot bootstrap),

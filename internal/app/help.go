@@ -198,14 +198,16 @@ func helpPage(c *gin.Context) {
           <p class="purpose">Turn a standard, runbook or vendor requirement into catalog entries
           without typing them twice.</p>
           <ol>
-            <li>Add a source document by URL or upload at
-              <a href="/nfr-enrichment">NFR Enrichment</a>.</li>
+            <li>Upload the document to the AI agent's library on the Wintermute server, then
+              import it at <a href="/nfr-enrichment">NFR Enrichment</a>. That server does the
+              reading &mdash; including scans, which it OCRs.</li>
             <li>Analyse it against the existing requirements. The model proposes additions and
               improvements; it does not reassign anyone's NIST mapping.</li>
             <li>Review each proposal and accept or reject it. <strong>Nothing reaches the catalog
               until you accept it.</strong></li>
           </ol>
-          <p class="note">Needs an AI provider configured in <a href="/settings">Settings</a>.</p>
+          <p class="note">Needs a Wintermute server and an agent, and an AI provider, configured
+          in <a href="/settings">Settings</a>. Documents are never uploaded here.</p>
         </div>
       </article>
 
@@ -284,8 +286,8 @@ func helpPage(c *gin.Context) {
           <p class="purpose">Answer "does what we have already satisfy this regulation" article by
           article.</p>
           <ol>
-            <li>Upload a regulation at
-              <a href="/regulation-coverage">Regulation Coverage</a>.</li>
+            <li>Upload the regulation to the AI agent's library on the Wintermute server, then
+              import it at <a href="/regulation-coverage">Regulation Coverage</a>.</li>
             <li>Run the analysis: every article is mapped against this installation's Security NFRs
               and 800-53 — what it requires, what already satisfies it, what does not, and how to
               close the gap.</li>
@@ -293,7 +295,8 @@ func helpPage(c *gin.Context) {
             <li>Question the report in conversation and have it revised where you disagree; each
               revision is a new version rather than an overwrite.</li>
           </ol>
-          <p class="note">Needs an AI provider configured in <a href="/settings">Settings</a>.</p>
+          <p class="note">Needs a Wintermute server and an agent, and an AI provider, configured
+          in <a href="/settings">Settings</a>. Documents are never uploaded here.</p>
         </div>
       </article>
 
@@ -467,7 +470,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Catalog</td><td class="page"><a href="/security-nfrs">/security-nfrs</a></td><td>Browse the Security NFR catalog and its NIST mappings.</td></tr>
           <tr><td class="section">Catalog</td><td class="page"><a href="/security-nfrs/manage">/security-nfrs/manage</a></td><td>Add, edit and delete requirements.</td></tr>
           <tr><td class="section">Catalog</td><td class="page"><a href="/security-nfrs/links">/security-nfrs/links</a></td><td>Requirement ↔ control cross-reference, with overrides and rebuild.</td></tr>
-          <tr><td class="section">Catalog</td><td class="page"><a href="/nfr-enrichment">/nfr-enrichment</a></td><td>Propose catalog entries from a source document, for review.</td></tr>
+          <tr><td class="section">Catalog</td><td class="page"><a href="/nfr-enrichment">/nfr-enrichment</a></td><td>Propose catalog entries from a document in the agent's library, for review.</td></tr>
           <tr><td class="section">Catalog</td><td class="page"><a href="/asset-types">/asset-types</a></td><td>Resolve the baseline and controls for an asset tier.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register/manage">/risk-register/manage</a></td><td>Create and edit risk entries.</td></tr>

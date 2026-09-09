@@ -14,15 +14,14 @@ import (
 // version arithmetic, revision replacement — is the part that must not be
 // exercised only through SQL.
 type Repository interface {
-	CreateRegulation(reg Regulation, text string, sections []Section, source Source) (Regulation, error)
+	CreateRegulation(reg Regulation, text string, sections []Section) (Regulation, error)
 	GetRegulation(id int64) (Regulation, error)
 	RegulationBySHA(sha string) (Regulation, error)
+	RegulationByLibraryID(libraryDocID int64) (Regulation, error)
 	ListRegulations() ([]Regulation, error)
 	DeleteRegulation(id int64) error
 	SetStatus(id int64, status, detail, analyzedAt string) error
 	RegulationText(id int64) (string, error)
-
-	GetSource(id int64) (Source, error)
 
 	ListSections(regulationID int64) ([]Section, error)
 	GetSection(id int64) (Section, error)
@@ -50,13 +49,6 @@ type Repository interface {
 	ClearChat(regulationID int64) error
 }
 
-// Source is the uploaded file as it arrived.
-type Source struct {
-	MediaType string
-	Filename  string
-	Content   []byte
-}
-
 type SQLiteRepository struct {
 	conn *db.Conn
 }
@@ -67,10 +59,14 @@ func NewSQLiteRepository(conn *db.Conn) *SQLiteRepository {
 
 // ---- regulations ----
 
-// CreateRegulation writes the regulation, its extracted text, its sections and
-// the original upload in one transaction. A regulation row with no sections
-// would present as an analysable document that silently has nothing to analyse.
-func (r *SQLiteRepository) CreateRegulation(reg Regulation, text string, sections []Section, source Source) (Regulation, error) {
+// CreateRegulation writes the regulation, its extracted text and its sections
+// in one transaction. A regulation row with no sections would present as an
+// analysable document that silently has nothing to analyse.
+//
+// The file itself is not written: it lives in the agent's library on the
+// Wintermute server, and a second copy here would be a second thing to keep in
+// step with a document that can be re-read there when a better tool arrives.
+func (r *SQLiteRepository) CreateRegulation(reg Regulation, text string, sections []Section) (Regulation, error) {
 	tx, err := r.conn.Begin()
 	if err != nil {
 		return Regulation{}, err
@@ -78,26 +74,20 @@ func (r *SQLiteRepository) CreateRegulation(reg Regulation, text string, section
 	defer func() { _ = tx.Rollback() }()
 
 	const insertReg = `INSERT INTO reg_coverage_regulations
-		(title, framework, framework_name, source_ref, detected, filename, media_type,
-		 sha256, byte_size, extract_method, extract_notes, body_text, status, status_detail,
-		 uploaded_by, created_at, analyzed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`
+		(title, framework, framework_name, source_ref, detected, library_doc_id, filename,
+		 media_type, sha256, byte_size, extract_method, extract_notes, body_text, status,
+		 status_detail, uploaded_by, created_at, analyzed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`
 
 	id, err := tx.Insert(insertReg,
 		reg.Title, reg.Framework, reg.FrameworkName, reg.SourceRef, boolToInt(reg.Detected),
-		reg.Filename, reg.MediaType, reg.SHA256, reg.ByteSize, reg.ExtractMethod,
+		reg.LibraryDocID, reg.Filename, reg.MediaType, reg.SHA256, reg.ByteSize, reg.ExtractMethod,
 		strings.Join(reg.ExtractNotes, "\n"), text, reg.Status, reg.StatusDetail,
-		reg.UploadedBy, reg.CreatedAt)
+		reg.ImportedBy, reg.CreatedAt)
 	if err != nil {
 		return Regulation{}, fmt.Errorf("insert regulation: %w", err)
 	}
 	reg.ID = id
-
-	if _, err := tx.Exec(`INSERT INTO reg_coverage_sources
-		(regulation_id, media_type, filename, byte_size, content) VALUES (?, ?, ?, ?, ?)`,
-		id, source.MediaType, source.Filename, len(source.Content), source.Content); err != nil {
-		return Regulation{}, fmt.Errorf("store original upload: %w", err)
-	}
 
 	stmt, err := tx.Prepare(`INSERT INTO reg_coverage_sections
 		(regulation_id, ref, label, title, category, body, position, confidence)
@@ -121,11 +111,12 @@ func (r *SQLiteRepository) CreateRegulation(reg Regulation, text string, section
 	return reg, nil
 }
 
-// regulationColumns deliberately omits body_text and the upload blob: a listing
-// reads neither, and both are large.
+// regulationColumns deliberately omits body_text: a listing does not read it,
+// and it is large.
 const regulationColumns = `g.id, g.title, g.framework, g.framework_name, g.source_ref, g.detected,
-	g.filename, g.media_type, g.sha256, g.byte_size, g.extract_method, g.extract_notes,
-	LENGTH(g.body_text), g.status, g.status_detail, g.uploaded_by, g.created_at, g.analyzed_at,
+	g.library_doc_id, g.filename, g.media_type, g.sha256, g.byte_size, g.extract_method,
+	g.extract_notes, LENGTH(g.body_text), g.status, g.status_detail, g.uploaded_by,
+	g.created_at, g.analyzed_at,
 	(SELECT COUNT(*) FROM reg_coverage_sections s WHERE s.regulation_id = g.id),
 	(SELECT COALESCE(MAX(v.number), 0) FROM reg_coverage_versions v WHERE v.regulation_id = g.id)`
 
@@ -134,9 +125,9 @@ func scanRegulation(scan func(...any) error) (Regulation, error) {
 	var detected int
 	var notes string
 	err := scan(&reg.ID, &reg.Title, &reg.Framework, &reg.FrameworkName, &reg.SourceRef, &detected,
-		&reg.Filename, &reg.MediaType, &reg.SHA256, &reg.ByteSize, &reg.ExtractMethod, &notes,
-		&reg.TextChars, &reg.Status, &reg.StatusDetail, &reg.UploadedBy, &reg.CreatedAt,
-		&reg.AnalyzedAt, &reg.SectionCount, &reg.LatestVersion)
+		&reg.LibraryDocID, &reg.Filename, &reg.MediaType, &reg.SHA256, &reg.ByteSize,
+		&reg.ExtractMethod, &notes, &reg.TextChars, &reg.Status, &reg.StatusDetail,
+		&reg.ImportedBy, &reg.CreatedAt, &reg.AnalyzedAt, &reg.SectionCount, &reg.LatestVersion)
 	reg.Detected = detected != 0
 	if notes != "" {
 		reg.ExtractNotes = strings.Split(notes, "\n")
@@ -153,9 +144,22 @@ func (r *SQLiteRepository) GetRegulation(id int64) (Regulation, error) {
 	return reg, err
 }
 
-// RegulationBySHA backs duplicate detection at upload.
+// RegulationBySHA backs duplicate detection on the extracted text.
 func (r *SQLiteRepository) RegulationBySHA(sha string) (Regulation, error) {
 	row := r.conn.QueryRow(`SELECT `+regulationColumns+` FROM reg_coverage_regulations g WHERE g.sha256 = ?`, sha)
+	reg, err := scanRegulation(row.Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Regulation{}, notFound("regulation")
+	}
+	return reg, err
+}
+
+// RegulationByLibraryID recognises a library document that is already imported,
+// before it is read again.
+func (r *SQLiteRepository) RegulationByLibraryID(libraryDocID int64) (Regulation, error) {
+	row := r.conn.QueryRow(`SELECT `+regulationColumns+
+		` FROM reg_coverage_regulations g WHERE g.library_doc_id = ? AND g.library_doc_id != 0`,
+		libraryDocID)
 	reg, err := scanRegulation(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Regulation{}, notFound("regulation")
@@ -230,17 +234,6 @@ func (r *SQLiteRepository) RegulationText(id int64) (string, error) {
 		return "", notFound("regulation")
 	}
 	return text, err
-}
-
-func (r *SQLiteRepository) GetSource(id int64) (Source, error) {
-	var src Source
-	err := r.conn.QueryRow(
-		`SELECT media_type, filename, content FROM reg_coverage_sources WHERE regulation_id = ?`, id).
-		Scan(&src.MediaType, &src.Filename, &src.Content)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Source{}, notFound("original document")
-	}
-	return src, err
 }
 
 // ---- sections ----

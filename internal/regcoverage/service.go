@@ -13,29 +13,63 @@ import (
 	"grc/internal/regmap/profile"
 )
 
-// Service orchestrates ingestion, analysis, reporting and revision.
+// LibraryFunc resolves the agent's document library, or says why there is
+// none. Resolved per call rather than captured, so a Settings change applies
+// without a restart — the same rule the AI provider harness follows.
+type LibraryFunc func() (aiprovider.Library, error)
+
+// Service orchestrates import, analysis, reporting and revision.
 type Service struct {
 	repo      Repository
 	nfrs      NFRLister
 	asker     Asker
 	retriever Retriever
 	renderer  Renderer
+	library   LibraryFunc
 	now       func() time.Time
 }
 
-func NewService(repo Repository, nfrs NFRLister, asker Asker) *Service {
+func NewService(repo Repository, nfrs NFRLister, asker Asker, library LibraryFunc) *Service {
 	return &Service{
 		repo:      repo,
 		nfrs:      nfrs,
 		asker:     asker,
 		retriever: NewLexicalRetriever(),
+		library:   library,
 		now:       time.Now,
 	}
 }
 
-// Configured reports whether analysis can run. Upload, browsing and PDF export
-// work without a provider; only the analysis and chat steps need one.
+// Configured reports whether analysis can run. Importing, browsing and PDF
+// export work without a provider; only the analysis and chat steps need one.
 func (s *Service) Configured() bool { return s.asker != nil && s.asker.Available() }
+
+// LibraryAvailable reports whether there is a library to import from, so the
+// page can say what is missing rather than offering a button that fails.
+func (s *Service) LibraryAvailable() bool {
+	_, err := s.resolveLibrary()
+	return err == nil
+}
+
+// LibraryURL is where the agent's library is managed, for a link out.
+func (s *Service) LibraryURL() string {
+	lib, err := s.resolveLibrary()
+	if err != nil {
+		return ""
+	}
+	return lib.LibraryURL()
+}
+
+func (s *Service) resolveLibrary() (aiprovider.Library, error) {
+	if s.library == nil {
+		return nil, ErrNoLibrary
+	}
+	lib, err := s.library()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrNoLibrary, err.Error())
+	}
+	return lib, nil
+}
 
 // Model describes what will serve an analysis, for the UI.
 func (s *Service) Model() string {
@@ -76,21 +110,128 @@ type Framework struct {
 // Upload reads, segments and stores a regulation. It does not analyse it:
 // analysis is many model calls and is triggered separately, so an upload that
 // segmented badly can be deleted before any spend.
-func (s *Service) Upload(in UploadInput) (Regulation, error) {
-	ingested, err := Ingest(in)
+func (s *Service) Import(ctx context.Context, in ImportRequest) (Regulation, error) {
+	lib, err := s.resolveLibrary()
 	if err != nil {
 		return Regulation{}, err
 	}
+	if in.LibraryDocID <= 0 {
+		return Regulation{}, invalid("a library document is required")
+	}
 
-	if existing, err := s.repo.RegulationBySHA(ingested.Regulation.SHA256); err == nil {
-		return Regulation{}, invalidf("this document is already uploaded as %q (#%d)",
+	// Checked before the read, which is the expensive part: the same regulation
+	// imported twice is two reports on one instrument, and the second one is
+	// the one somebody circulates.
+	if existing, err := s.repo.RegulationByLibraryID(in.LibraryDocID); err == nil {
+		return Regulation{}, invalidf("that document is already imported as %q (#%d)",
 			existing.Title, existing.ID)
 	} else if !isNotFound(err) {
 		return Regulation{}, err
 	}
 
-	ingested.Regulation.CreatedAt = s.timestamp()
-	return s.repo.CreateRegulation(ingested.Regulation, ingested.Text, ingested.Sections, ingested.Source)
+	content, err := lib.ReadLibraryDocument(ctx, in.LibraryDocID)
+	if err != nil {
+		return Regulation{}, fmt.Errorf("read the document from wintermute: %w", err)
+	}
+	if !content.Document.Ready() {
+		return Regulation{}, invalidf(
+			"%q is still being read on the Wintermute server — import it once that has finished",
+			content.Document.Title)
+	}
+
+	imported, err := Import(ImportInput{
+		Title:      in.Title,
+		Framework:  in.Framework,
+		Content:    content,
+		ImportedBy: in.ImportedBy,
+	})
+	if err != nil {
+		return Regulation{}, err
+	}
+
+	if existing, err := s.repo.RegulationBySHA(imported.Regulation.SHA256); err == nil {
+		return Regulation{}, invalidf("this document is already imported as %q (#%d)",
+			existing.Title, existing.ID)
+	} else if !isNotFound(err) {
+		return Regulation{}, err
+	}
+
+	imported.Regulation.CreatedAt = s.timestamp()
+	return s.repo.CreateRegulation(imported.Regulation, imported.Text, imported.Sections)
+}
+
+// ImportRequest names a regulation in the agent's library to bring in.
+type ImportRequest struct {
+	// LibraryDocID is the document's id on the Wintermute server. It is the
+	// only way to name a regulation: there is no upload path here, because the
+	// extraction that would follow one lives on that server.
+	LibraryDocID int64
+	Title        string
+	Framework    string
+	ImportedBy   string
+}
+
+// ListLibrary lists what the agent's library holds, marking what is already
+// imported so the picker does not offer the same regulation twice.
+func (s *Service) ListLibrary(ctx context.Context) ([]LibraryEntry, error) {
+	lib, err := s.resolveLibrary()
+	if err != nil {
+		return nil, err
+	}
+	docs, err := lib.LibraryDocuments(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list the wintermute library: %w", err)
+	}
+
+	imported, err := s.repo.ListRegulations()
+	if err != nil {
+		return nil, err
+	}
+	byLibraryID := make(map[int64]int64, len(imported))
+	for _, reg := range imported {
+		if reg.LibraryDocID > 0 {
+			byLibraryID[reg.LibraryDocID] = reg.ID
+		}
+	}
+
+	out := make([]LibraryEntry, 0, len(docs))
+	for _, doc := range docs {
+		entry := LibraryEntry{
+			ID:         doc.ID,
+			Title:      doc.Title,
+			Filename:   doc.Filename,
+			MediaType:  doc.MediaType,
+			ByteSize:   doc.ByteSize,
+			ChunkCount: doc.ChunkCount,
+			ExtractVia: doc.ExtractVia,
+			Ready:      doc.Ready(),
+			ImportedAs: byLibraryID[doc.ID],
+		}
+		if doc.Processing != nil {
+			entry.Processing = "being read"
+			if doc.Processing.Failed {
+				entry.Processing = "could not be read: " + doc.Processing.LastError
+			}
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// LibraryEntry is one library document as the import picker needs it.
+type LibraryEntry struct {
+	ID         int64  `json:"id"`
+	Title      string `json:"title"`
+	Filename   string `json:"filename,omitempty"`
+	MediaType  string `json:"media_type,omitempty"`
+	ByteSize   int64  `json:"byte_size"`
+	ChunkCount int    `json:"chunk_count"`
+	ExtractVia string `json:"extract_via,omitempty"`
+	Ready      bool   `json:"ready"`
+	Processing string `json:"processing,omitempty"`
+	// ImportedAs is the local regulation id when this document is already
+	// imported, and zero when it is not.
+	ImportedAs int64 `json:"imported_as,omitempty"`
 }
 
 func (s *Service) ListRegulations() ([]Regulation, error) { return s.repo.ListRegulations() }
@@ -98,14 +239,6 @@ func (s *Service) ListRegulations() ([]Regulation, error) { return s.repo.ListRe
 func (s *Service) GetRegulation(id int64) (Regulation, error) { return s.repo.GetRegulation(id) }
 
 func (s *Service) DeleteRegulation(id int64) error { return s.repo.DeleteRegulation(id) }
-
-// Source returns the original upload, for viewing the regulation as published.
-func (s *Service) Source(id int64) (Source, error) {
-	if _, err := s.repo.GetRegulation(id); err != nil {
-		return Source{}, err
-	}
-	return s.repo.GetSource(id)
-}
 
 func (s *Service) ListSections(id int64) ([]Section, error) { return s.repo.ListSections(id) }
 

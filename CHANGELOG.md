@@ -3,6 +3,113 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-09 (Documents are read on the Wintermute server, not here)
+
+This application had its own document ingestion: a PDF reader, a DOCX reader, an
+HTML-to-text pass, a chunker, an SSRF-guarded outbound fetcher, two upload
+endpoints and a copy of every uploaded file. The Wintermute server the AI
+already routes through has all of that and more — a text layer where there is
+one, `ocrmypdf` and Tesseract for a scan, LibreOffice for the office formats,
+and a fleet node to run them on. Two extractors, and the weaker one was the one
+a regulation went through: a scanned PDF was refused here outright.
+
+So the extraction moves out and the analysis stays. Regulations and security
+documents are uploaded to an agent's library on that server; the two modules
+that work on documents read the extracted text back and do what is actually
+theirs — segmenting a regulation into articles, retrieving passages against the
+NFR catalog.
+
+**Nothing here parses a document any more.** No upload endpoint, no PDF
+dependency, no outbound document fetch. `Agents.md` says so as a rule, because
+this is the kind of thing that grows back.
+
+### The library client
+
+- `internal/aiprovider/library.go`: `LibraryDocuments` and
+  `ReadLibraryDocument` over the agent's library, using the server URL, client
+  token and agent already in Settings. `Router.Library()` resolves it per call,
+  so a Settings change applies without a restart, and it is deliberately not
+  routed the way a question is — there is no Claude equivalent, because a
+  library is a thing that exists on one server rather than a capability two
+  providers both have.
+- Reading a document follows the server's paging until `next_from` is absent,
+  rather than doing arithmetic over a chunk count it would have to trust. A
+  `next_from` that does not advance is refused by name; the alternative is
+  re-reading one page until a cap, quietly, with the text duplicated.
+- Over 12 MiB of text is refused rather than truncated. Reading the first N
+  characters produces a coverage report that says nothing about the rest of the
+  instrument while looking exactly like one that does.
+
+### Regulation Coverage
+
+- `internal/regcoverage/ingest.go`: `Ingest(UploadInput)` becomes
+  `Import(ImportInput)` over `aiprovider.LibraryContent`. Extraction is gone;
+  profile detection and segmentation are unchanged.
+- `POST /regulation-coverage/regulations` takes JSON naming a `library_doc_id`
+  instead of a multipart file. New `GET /regulation-coverage/library` lists the
+  agent's library for the picker, marking what is already imported and what is
+  still being read on that server — a document mid-processing has only some of
+  its passages, and importing it would silently analyse a fraction of the
+  instrument.
+- `GET /regulation-coverage/:id/source` is gone, and with it the iframe viewer.
+  The report page says how the text was read and links to the document in the
+  library. The original has one home now.
+- `reg_coverage_regulations` gains `library_doc_id`. `reg_coverage_sources` is
+  no longer written; its rows are left in place rather than dropped, so an
+  upgrade does not destroy an original somebody still has. `sha256` is now over
+  the extracted text — the same instrument exported twice is two files and one
+  document.
+- `Regulation.UploadedBy` → `ImportedBy` (`imported_by` in JSON); the column
+  keeps its name.
+
+### NFR Enrichment
+
+- `internal/nfrenrich/ingest.go` and `chunk.go` are deleted — with them the
+  `Fetcher` and its SSRF guard, `ExtractText`, `HTMLTitle` and `ChunkText`.
+  `tokenize` moved to `retrieve.go`, which is the only thing that still needed
+  it.
+- `AddUpload` and `AddURL` become `Import`, over a document in the library.
+  `POST /nfr-enrichment/documents` takes JSON, and `GET /nfr-enrichment/library`
+  backs the picker.
+- `nfr_source_documents` gains `library_doc_id` and `extract_via`; `origin` and
+  `url` stay for rows imported before this. `Document.UploadedBy` →
+  `ImportedBy`.
+- Retrieval is unchanged: passages are copied in at import, so proposals, their
+  citations and the review queue survive that server being unreachable.
+
+### regmap
+
+The CLI is deleted: `cmd/regmap`, `internal/regmap/cli`, and
+`internal/regmap/ingest/extract.go` — the shared extractor, and the last thing
+in the module that read a file. That leaves `internal/regmap/state`, `review`,
+`suggest`, `report` and `mapping` reachable from nothing, so they go too, along
+with `regmap/testdata` and `REGMAP.md`.
+
+What stays is what Regulation Coverage uses: `profile`, `ingest/segment.go`,
+`requirement` and `nist` — the framework profiles and the segmenter that applies
+them.
+
+`github.com/ledongthuc/pdf` is dropped from `go.mod`.
+
+### Elsewhere
+
+- `internal/db/sqlite.go`: `library_doc_id` on both tables, `extract_via` on
+  `nfr_source_documents`, via `ensureColumn` so an existing database migrates.
+- `internal/dbsync/dbsync.go`: the new columns added to both tables' sync
+  column lists, which `TestSyncOrderCoversEveryColumn` enforces.
+- `AI_AGENT.md` gains "Documents go one way: to the library", naming the
+  endpoints and what each module does with them. `REGULATION_COVERAGE.md`'s
+  "Extraction" section becomes "Extraction happens elsewhere". `README.md`,
+  `Agents.md` and the in-app Help say import rather than upload.
+
+### On the Wintermute side
+
+This needs `GET /api/v1/agents/{id}/documents/{docID}/text`, added in that
+repository (`internal/api/agents.go`, `internal/knowledge/ingest.go`) as a thin
+wrapper over the `ReadDocument` its tools already used. **Deploy that server
+before this build**: without the endpoint, importing fails with "this server
+predates its document API" and nothing can be imported.
+
 ## 2026-09-08 (Sync stops pretending it can merge a tree)
 
 A code review of the backup work above found that the 21 tables just added to

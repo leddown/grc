@@ -230,7 +230,11 @@ func reportBodyHTML(report *Report, inApp bool) string {
 	b.WriteString(`<p class="footnote">`)
 	b.WriteString("Every finding in this report was produced by a language model from the section text and a retrieved shortlist of catalog items, and carries the model name and the hash of the prompt that produced it. ")
 	b.WriteString("It is analysis to be reviewed, not a compliance determination. ")
-	b.WriteString(esc(fmt.Sprintf("Source document: %s (%s, %s). Extracted with %s.",
+	// Which extractor read the document belongs in the footnote of a report
+	// somebody circulates: a mapping built on an OCR'd scan deserves to be read
+	// differently from one built on a PDF's own text layer.
+	b.WriteString(esc(fmt.Sprintf(
+		"Source document: %s (%s, %s), held in the AI agent's library. Text read by %s.",
 		reg.Filename, reg.MediaType, humanBytes(reg.ByteSize), reg.ExtractMethod)))
 	b.WriteString("</p>\n")
 	return b.String()

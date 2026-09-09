@@ -34,7 +34,7 @@ func NewHandler(service *Service, actor ActorFunc) *Handler {
 
 // RegisterRoutes attaches the read surface. Mutations are registered separately
 // by RegisterAdminRoutes, matching the read-open / write-admin split the other
-// RCSA catalog modules use: ingesting a document and accepting a proposal both
+// RCSA catalog modules use: importing a document and accepting a proposal both
 // change what the catalog says, and the catalog is the deliverable.
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/nfr-enrichment", h.Page)
@@ -43,7 +43,12 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 }
 
 // RegisterAdminRoutes attaches everything that writes.
+//
+// Listing the library sits here rather than on the read surface: it reaches
+// out to the Wintermute server with this installation's client token, and that
+// is an admin's credential rather than a page anyone may spend.
 func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
+	r.GET("/nfr-enrichment/library", h.ListLibrary)
 	r.POST("/nfr-enrichment/documents", h.AddDocument)
 	r.DELETE("/nfr-enrichment/documents/:id", h.DeleteDocument)
 	r.POST("/nfr-enrichment/documents/:id/analyze", h.Analyze)
@@ -65,80 +70,52 @@ func (h *Handler) ListDocuments(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"documents":  docs,
-		"configured": h.service.Configured(),
-		"model":      h.service.Model(),
-		"fields":     EnrichableFields,
+		"documents":   docs,
+		"configured":  h.service.Configured(),
+		"model":       h.service.Model(),
+		"fields":      EnrichableFields,
+		"library":     h.service.LibraryAvailable(),
+		"library_url": h.service.LibraryURL(),
 	})
 }
 
-type addURLRequest struct {
-	URL   string `json:"url"`
-	Title string `json:"title"`
-}
-
-// AddDocument accepts either a multipart upload or a JSON body naming a URL.
-func (h *Handler) AddDocument(c *gin.Context) {
-	actor := h.actorOf(c)
-
-	if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
-		// The body is bounded before FormFile reads through it, so an oversized
-		// upload is refused rather than buffered first.
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxDocumentBytes+1024)
-
-		fileHeader, err := c.FormFile("file")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "a file is required"})
-			return
-		}
-		file, err := fileHeader.Open()
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the uploaded file"})
-			return
-		}
-		defer file.Close()
-
-		body := make([]byte, 0, fileHeader.Size)
-		buf := make([]byte, 32*1024)
-		for {
-			n, readErr := file.Read(buf)
-			body = append(body, buf[:n]...)
-			if len(body) > MaxDocumentBytes {
-				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-					"error": "the document exceeds the size limit"})
-				return
-			}
-			if readErr != nil {
-				break
-			}
-		}
-
-		doc, err := h.service.AddUpload(UploadInput{
-			Title:      c.PostForm("title"),
-			Filename:   fileHeader.Filename,
-			MediaType:  fileHeader.Header.Get("Content-Type"),
-			Body:       body,
-			UploadedBy: actor,
-		})
-		if err != nil {
-			writeServiceError(c, err)
-			return
-		}
-		c.JSON(http.StatusCreated, doc)
+// ListLibrary shows what the agent's library holds, so a document is chosen
+// from what exists rather than named.
+func (h *Handler) ListLibrary(c *gin.Context) {
+	entries, err := h.service.ListLibrary(c.Request.Context())
+	if err != nil {
+		writeServiceError(c, err)
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{"documents": entries, "library_url": h.service.LibraryURL()})
+}
 
-	var req addURLRequest
+type importRequest struct {
+	LibraryDocID int64  `json:"library_doc_id"`
+	Title        string `json:"title"`
+}
+
+// AddDocument imports one document from the agent's library.
+//
+// There is no upload path. Documents are uploaded to the Wintermute server,
+// which extracts and chunks them — including the scans and office formats this
+// application could never read — and this copies the text it produced.
+func (h *Handler) AddDocument(c *gin.Context) {
+	var req importRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
 		return
 	}
-	if strings.TrimSpace(req.URL) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "url is required"})
+	if req.LibraryDocID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "library_doc_id is required"})
 		return
 	}
 
-	doc, err := h.service.AddURL(c.Request.Context(), req.URL, req.Title, actor)
+	doc, err := h.service.Import(c.Request.Context(), ImportInput{
+		LibraryDocID: req.LibraryDocID,
+		Title:        req.Title,
+		ImportedBy:   h.actorOf(c),
+	})
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -301,9 +278,11 @@ func writeServiceError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 	case errors.Is(err, ErrNotConfigured):
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "AI analysis needs an Anthropic API key: set one in Settings (no restart needed)"})
-	case errors.Is(err, ErrUnsupportedMedia), errors.Is(err, ErrEmptyDocument):
-		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": err.Error()})
+			"error": "AI analysis needs an AI provider: set one in Settings (no restart needed)"})
+	case errors.Is(err, ErrNoLibrary):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+	case errors.Is(err, ErrEmptyDocument):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrInvalid):
 		c.JSON(http.StatusBadRequest, gin.H{"error": strings.TrimPrefix(err.Error(), ErrInvalid.Error()+": ")})
 	default:

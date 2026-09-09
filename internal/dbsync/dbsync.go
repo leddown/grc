@@ -125,8 +125,9 @@ var syncOrder = []tableSpec{
 		// The uploaded/fetched security-document corpus behind the NFR
 		// enrichment module, and the AI proposals derived from it. Chunks and
 		// proposals reference a document id, so documents sync first.
-		table:        "nfr_source_documents",
-		cols:         []string{"id", "title", "origin", "url", "filename", "media_type", "sha256", "byte_size", "uploaded_by", "created_at"},
+		table: "nfr_source_documents",
+		cols: []string{"id", "title", "origin", "url", "filename", "media_type", "sha256",
+			"byte_size", "library_doc_id", "extract_via", "uploaded_by", "created_at"},
 		conflictCols: []string{"id"},
 	},
 	{
@@ -232,7 +233,7 @@ var syncOrder = []tableSpec{
 		table: "reg_coverage_regulations",
 		cols: []string{
 			"id", "title", "framework", "framework_name", "source_ref", "detected",
-			"filename", "media_type", "sha256", "byte_size", "extract_method",
+			"library_doc_id", "filename", "media_type", "sha256", "byte_size", "extract_method",
 			"extract_notes", "body_text", "status", "status_detail", "uploaded_by",
 			"created_at", "analyzed_at",
 		},

@@ -122,6 +122,8 @@ func OpenSQLite(path string) (*Conn, error) {
 		media_type TEXT NOT NULL DEFAULT '',
 		sha256 TEXT NOT NULL DEFAULT '',
 		byte_size INTEGER NOT NULL DEFAULT 0,
+		library_doc_id INTEGER NOT NULL DEFAULT 0,
+		extract_via TEXT NOT NULL DEFAULT '',
 		uploaded_by TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL DEFAULT ''
 	);
@@ -308,6 +310,7 @@ func OpenSQLite(path string) (*Conn, error) {
 		framework_name TEXT NOT NULL DEFAULT '',
 		source_ref TEXT NOT NULL DEFAULT '',
 		detected INTEGER NOT NULL DEFAULT 0,
+		library_doc_id INTEGER NOT NULL DEFAULT 0,
 		filename TEXT NOT NULL DEFAULT '',
 		media_type TEXT NOT NULL DEFAULT '',
 		sha256 TEXT NOT NULL DEFAULT '',
@@ -785,6 +788,24 @@ func OpenSQLite(path string) (*Conn, error) {
 	// column back-filled -- CREATE TABLE IF NOT EXISTS will not add it and the
 	// repository would fail on every read.
 	if err := ensureColumn(db, "policy_documents", "author", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	// Source documents are no longer uploaded here: they are uploaded to an
+	// agent's library on the Wintermute server, which extracts them, and this
+	// records which document a copy came from and how its text was read. The
+	// `origin` and `url` columns stay for rows imported before that — they are
+	// no longer written, and a row with neither reads as one of those.
+	// Regulations are no longer uploaded here either — see internal/regcoverage.
+	// reg_coverage_sources kept the original bytes and is no longer written;
+	// existing rows are left alone rather than dropped, so an installation that
+	// still holds an original does not lose it to an upgrade.
+	if err := ensureColumn(db, "reg_coverage_regulations", "library_doc_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "nfr_source_documents", "library_doc_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "nfr_source_documents", "extract_via", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return nil, err
 	}
 	if err := ensureColumn(db, "security_nfrs", "nfr_id", "TEXT NOT NULL DEFAULT ''"); err != nil {

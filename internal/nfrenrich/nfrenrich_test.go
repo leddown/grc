@@ -4,127 +4,54 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	neturl "net/url"
 	"strings"
 	"testing"
 
+	"grc/internal/aiprovider"
 	"grc/internal/securitynfr"
 )
 
-// ---- chunking ----
+// fakeLibrary stands in for the agent's document library on the Wintermute
+// server, counting reads so a test can assert that one did not happen.
+type fakeLibrary struct {
+	docs  map[int64]aiprovider.LibraryContent
+	reads int
+	err   error
+}
 
-func TestChunkTextTracksHeadingPath(t *testing.T) {
-	doc := `# Transport Security Standard
+func (f *fakeLibrary) provide() (aiprovider.Library, error) { return f, f.err }
 
-This standard covers protection of data while it moves between systems.
-It applies to every externally reachable service in the estate.
+func (f *fakeLibrary) LibraryURL() string { return "https://wintermute.example/agents/acme" }
 
-## TLS Configuration
-
-All external endpoints terminate TLS 1.2 or higher. TLS 1.0 and 1.1 are
-disabled at the load balancer. Cipher suites are restricted to the approved
-list maintained by the platform team.
-
-### Certificate Management
-
-Certificates are issued by the internal ACME service and rotate every 90 days.
-Expiry is monitored and alerts fire at fourteen days remaining.
-
-## Data at Rest
-
-Volumes are encrypted with AES-256 using keys held in the managed KMS.
-This section is about storage, not transport, and exists to be ignored.`
-
-	chunks := ChunkText(doc)
-	if len(chunks) < 4 {
-		t.Fatalf("got %d chunks, want at least 4", len(chunks))
+func (f *fakeLibrary) LibraryDocuments(context.Context) ([]aiprovider.LibraryDocument, error) {
+	out := []aiprovider.LibraryDocument{}
+	for _, content := range f.docs {
+		out = append(out, content.Document)
 	}
+	return out, nil
+}
 
-	byHeading := map[string]Chunk{}
-	for _, c := range chunks {
-		byHeading[c.Heading] = c
-	}
-
-	// The nested heading must carry its ancestors, or a citation reads as
-	// "Certificate Management" with no indication of which standard it is from.
-	want := "Transport Security Standard > TLS Configuration > Certificate Management"
-	cert, ok := byHeading[want]
+func (f *fakeLibrary) ReadLibraryDocument(_ context.Context, id int64) (aiprovider.LibraryContent, error) {
+	f.reads++
+	content, ok := f.docs[id]
 	if !ok {
-		t.Fatalf("missing heading path %q; got %v", want, headings(chunks))
+		return aiprovider.LibraryContent{}, fmt.Errorf("no document %d", id)
 	}
-	if !strings.Contains(cert.Text, "90 days") {
-		t.Fatalf("certificate chunk lost its body: %q", cert.Text)
-	}
-
-	// A sibling h2 must reset the path rather than nest under the previous one.
-	if _, ok := byHeading["Transport Security Standard > Data at Rest"]; !ok {
-		t.Fatalf("sibling heading did not reset the path; got %v", headings(chunks))
-	}
+	return content, nil
 }
 
-func TestChunkTextRecognisesNumberedAndSetextHeadings(t *testing.T) {
-	doc := `Encryption Standard
-===================
-
-Scope covers all production services handling customer information.
-
-4.2 Encryption in Transit
-
-Every service presents a certificate from the corporate CA and negotiates
-TLS 1.3 where the client supports it, falling back to TLS 1.2.
-
-1. Rotate the shared secret at least every ninety days.
-2. Record each rotation in the change log.`
-
-	chunks := ChunkText(doc)
-	paths := headings(chunks)
-
-	if !containsSubstring(paths, "Encryption Standard") {
-		t.Fatalf("setext heading not detected; got %v", paths)
-	}
-	if !containsSubstring(paths, "4.2 Encryption in Transit") {
-		t.Fatalf("numbered heading not detected; got %v", paths)
-	}
-	// The ordered list items are prose, not sections: promoting them would
-	// shred the section they belong to into one-line fragments.
-	for _, p := range paths {
-		if strings.Contains(p, "Rotate the shared secret") {
-			t.Fatalf("numbered list item was promoted to a heading: %v", paths)
-		}
+// libraryDoc builds one ready library document out of a single passage.
+func libraryDoc(id int64, filename, body string) aiprovider.LibraryContent {
+	return aiprovider.LibraryContent{
+		Document: aiprovider.LibraryDocument{
+			ID: id, Title: filename, Filename: filename, MediaType: "text/markdown",
+			ByteSize: int64(len(body)), TextChars: len(body), ChunkCount: 1,
+			ExtractVia: "text layer",
+		},
+		Chunks: []aiprovider.LibraryChunk{{Ordinal: 0, Body: body}},
+		Text:   body,
 	}
 }
-
-func TestExtractTextRejectsBinaryAndKeepsHTMLHeadings(t *testing.T) {
-	if _, err := ExtractText("application/pdf", []byte("%PDF-1.7\n\x00\x00binary")); !errors.Is(err, ErrUnsupportedMedia) {
-		t.Fatalf("binary body was accepted; want ErrUnsupportedMedia")
-	}
-
-	html := `<html><head><title>Crypto Standard</title></head><body>
-	<script>var x = "<h1>not a heading</h1>";</script>
-	<h1>Crypto Standard</h1><p>Applies to all services.</p>
-	<h2>In Transit</h2><p>TLS 1.2 minimum, enforced at the edge &amp; logged.</p>
-	</body></html>`
-
-	text, err := ExtractText("text/html", []byte(html))
-	if err != nil {
-		t.Fatalf("ExtractText: %v", err)
-	}
-	if !strings.Contains(text, "# Crypto Standard") || !strings.Contains(text, "## In Transit") {
-		t.Fatalf("HTML headings were not converted to Markdown: %q", text)
-	}
-	if strings.Contains(text, "var x") {
-		t.Fatalf("script contents survived extraction: %q", text)
-	}
-	if !strings.Contains(text, "edge & logged") {
-		t.Fatalf("entities not decoded: %q", text)
-	}
-	if title := HTMLTitle([]byte(html)); title != "Crypto Standard" {
-		t.Fatalf("HTMLTitle = %q", title)
-	}
-}
-
-// ---- retrieval ----
 
 func TestBM25RanksTheRelevantSectionFirst(t *testing.T) {
 	chunks := []Chunk{
@@ -336,54 +263,6 @@ func TestBuildPromptCarriesCurrentFieldAndNumbersExcerpts(t *testing.T) {
 
 // ---- SSRF guard ----
 
-func TestValidateFetchURLRefusesNonPublicTargets(t *testing.T) {
-	blocked := []string{
-		"http://127.0.0.1/standard",
-		"http://localhost/standard",
-		"http://169.254.169.254/latest/meta-data/",
-		"http://10.1.2.3/internal",
-		"http://192.168.0.9/wiki",
-		"http://[::1]/standard",
-		"http://100.64.0.1/internal",
-		"file:///etc/passwd",
-		"http://user:pass@example.com/doc",
-		"https://",
-	}
-	for _, raw := range blocked {
-		t.Run(raw, func(t *testing.T) {
-			u, err := parseForTest(raw)
-			if err != nil {
-				return // an unparseable URL is refused earlier
-			}
-			if err := validateFetchURL(u); err == nil {
-				t.Fatalf("validateFetchURL(%q) allowed a non-public target", raw)
-			}
-		})
-	}
-
-	u, err := parseForTest("https://example.com/security-standard")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := validateFetchURL(u); err != nil {
-		t.Fatalf("a public https URL was refused: %v", err)
-	}
-}
-
-func TestIsPublicIP(t *testing.T) {
-	cases := map[string]bool{
-		"8.8.8.8": true, "1.1.1.1": true, "2606:4700::1111": true,
-		"127.0.0.1": false, "10.0.0.1": false, "172.16.0.1": false,
-		"192.168.1.1": false, "169.254.169.254": false, "100.64.0.1": false,
-		"::1": false, "::ffff:127.0.0.1": false, "0.0.0.0": false, "224.0.0.1": false,
-	}
-	for raw, want := range cases {
-		if got := isPublicIP(parseIPForTest(raw)); got != want {
-			t.Errorf("isPublicIP(%s) = %v, want %v", raw, got, want)
-		}
-	}
-}
-
 // ---- the review workflow ----
 
 func TestAcceptProposalWritesTheFieldAndSupersedesSiblings(t *testing.T) {
@@ -391,7 +270,7 @@ func TestAcceptProposalWritesTheFieldAndSupersedesSiblings(t *testing.T) {
 	nfrs := newFakeNFRs(securitynfr.NFR{
 		Key: "NFR-1", Summary: "Encryption in transit", Implementation: "TBD",
 	})
-	svc := NewService(repo, nfrs, &stubAnalyzer{})
+	svc := NewService(repo, nfrs, &stubAnalyzer{}, nil)
 
 	accepted, _ := repo.CreateProposal(Proposal{
 		NFRKey: "NFR-1", DocumentID: 1, Field: FieldImplementation,
@@ -429,7 +308,7 @@ func TestAcceptProposalWritesTheFieldAndSupersedesSiblings(t *testing.T) {
 func TestAcceptProposalUsesTheReviewersEdit(t *testing.T) {
 	repo := newFakeRepo()
 	nfrs := newFakeNFRs(securitynfr.NFR{Key: "NFR-1"})
-	svc := NewService(repo, nfrs, &stubAnalyzer{})
+	svc := NewService(repo, nfrs, &stubAnalyzer{}, nil)
 
 	p, _ := repo.CreateProposal(Proposal{
 		NFRKey: "NFR-1", Field: FieldImplementation,
@@ -455,7 +334,7 @@ func TestAcceptProposalUsesTheReviewersEdit(t *testing.T) {
 func TestRejectProposalLeavesTheCatalogAlone(t *testing.T) {
 	repo := newFakeRepo()
 	nfrs := newFakeNFRs(securitynfr.NFR{Key: "NFR-1", Implementation: "original"})
-	svc := NewService(repo, nfrs, &stubAnalyzer{})
+	svc := NewService(repo, nfrs, &stubAnalyzer{}, nil)
 
 	p, _ := repo.CreateProposal(Proposal{
 		NFRKey: "NFR-1", Field: FieldImplementation,
@@ -477,7 +356,7 @@ func TestRejectProposalLeavesTheCatalogAlone(t *testing.T) {
 func TestDecidingTwiceIsRefused(t *testing.T) {
 	repo := newFakeRepo()
 	nfrs := newFakeNFRs(securitynfr.NFR{Key: "NFR-1"})
-	svc := NewService(repo, nfrs, &stubAnalyzer{})
+	svc := NewService(repo, nfrs, &stubAnalyzer{}, nil)
 
 	p, _ := repo.CreateProposal(Proposal{
 		NFRKey: "NFR-1", Field: FieldImplementation,
@@ -513,7 +392,7 @@ func TestAnalyzeNeverWritesToTheCatalog(t *testing.T) {
 		Model:         "test-model",
 		PromptHash:    "abc123",
 		Citations:     []replyCitation{{Excerpt: 1, Quote: "negotiate TLS 1.2 or higher"}},
-	}})
+	}}, nil)
 
 	result, err := svc.Analyze(context.Background(), AnalyzeOptions{DocumentID: doc.ID})
 	if err != nil {
@@ -545,7 +424,7 @@ func TestAnalyzeDiscardsUnverifiableProposals(t *testing.T) {
 		Propose:       true,
 		SuggestedText: "Keys rotate every 90 days in the corporate HSM.",
 		Citations:     []replyCitation{{Excerpt: 1, Quote: "keys rotate every 90 days"}},
-	}})
+	}}, nil)
 
 	result, err := svc.Analyze(context.Background(), AnalyzeOptions{DocumentID: doc.ID})
 	if err != nil {
@@ -575,7 +454,7 @@ func TestAnalyzeSkipsUnrelatedNFRsWithoutCallingTheModel(t *testing.T) {
 	})
 
 	analyzer := &stubAnalyzer{}
-	svc := NewService(repo, nfrs, analyzer)
+	svc := NewService(repo, nfrs, analyzer, nil)
 
 	result, err := svc.Analyze(context.Background(), AnalyzeOptions{DocumentID: doc.ID})
 	if err != nil {
@@ -608,7 +487,7 @@ func TestAnalyzeContinuesAfterOneNFRFails(t *testing.T) {
 			Citations:     []replyCitation{{Excerpt: 1, Quote: "negotiate TLS 1.2 or higher"}},
 		},
 	}
-	svc := NewService(repo, nfrs, analyzer)
+	svc := NewService(repo, nfrs, analyzer, nil)
 
 	result, err := svc.Analyze(context.Background(), AnalyzeOptions{DocumentID: doc.ID})
 	if err != nil {
@@ -622,17 +501,21 @@ func TestAnalyzeContinuesAfterOneNFRFails(t *testing.T) {
 	}
 }
 
-func TestPrepareDocumentRejectsDuplicatesByExtractedText(t *testing.T) {
+// Two library documents can be the same instrument exported twice. Importing
+// both would produce two identical proposals for every NFR they match, which
+// doubles the review queue without adding a fact.
+func TestImportRejectsDuplicatesByExtractedText(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, newFakeNFRs(), &stubAnalyzer{})
+	lib := &fakeLibrary{docs: map[int64]aiprovider.LibraryContent{
+		1: libraryDoc(1, "a.md", "All external endpoints negotiate TLS 1.2 or higher."),
+		2: libraryDoc(2, "b.md", "All external endpoints negotiate TLS 1.2 or higher."),
+	}}
+	svc := NewService(repo, newFakeNFRs(), &stubAnalyzer{}, lib.provide)
 
-	body := []byte("# Standard\n\nAll external endpoints negotiate TLS 1.2 or higher at the edge of the estate.")
-	if _, err := svc.AddUpload(UploadInput{Filename: "a.md", MediaType: "text/markdown", Body: body}); err != nil {
-		t.Fatalf("first upload: %v", err)
+	if _, err := svc.Import(context.Background(), ImportInput{LibraryDocID: 1}); err != nil {
+		t.Fatalf("first import: %v", err)
 	}
-	// Same text, different filename: the corpus gains nothing and the review
-	// queue would double.
-	_, err := svc.AddUpload(UploadInput{Filename: "b.md", MediaType: "text/markdown", Body: body})
+	_, err := svc.Import(context.Background(), ImportInput{LibraryDocID: 2})
 	if err == nil {
 		t.Fatal("a duplicate document was accepted")
 	}
@@ -641,9 +524,61 @@ func TestPrepareDocumentRejectsDuplicatesByExtractedText(t *testing.T) {
 	}
 }
 
+// Importing the same library document twice is caught before it is read, so the
+// message names the copy that already exists rather than the text.
+func TestImportRejectsTheSameLibraryDocumentTwice(t *testing.T) {
+	repo := newFakeRepo()
+	lib := &fakeLibrary{docs: map[int64]aiprovider.LibraryContent{
+		7: libraryDoc(7, "dora.pdf", "Article 17\n\nAn entity shall report a major incident."),
+	}}
+	svc := NewService(repo, newFakeNFRs(), &stubAnalyzer{}, lib.provide)
+
+	if _, err := svc.Import(context.Background(), ImportInput{LibraryDocID: 7}); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	reads := lib.reads
+	if _, err := svc.Import(context.Background(), ImportInput{LibraryDocID: 7}); err == nil {
+		t.Fatal("the same library document was imported twice")
+	}
+	if lib.reads != reads {
+		t.Errorf("the duplicate was read from wintermute before being refused (%d reads)", lib.reads)
+	}
+}
+
+// A document the server is still reading has only some of its passages. An
+// import there would silently analyse a fraction of the document.
+func TestImportRefusesADocumentStillBeingRead(t *testing.T) {
+	content := libraryDoc(3, "scan.pdf", "Article 1\n\nSomething.")
+	content.Document.Processing = &aiprovider.LibraryProcessing{Attempts: 1}
+	lib := &fakeLibrary{docs: map[int64]aiprovider.LibraryContent{3: content}}
+	svc := NewService(newFakeRepo(), newFakeNFRs(), &stubAnalyzer{}, lib.provide)
+
+	_, err := svc.Import(context.Background(), ImportInput{LibraryDocID: 3})
+	if err == nil {
+		t.Fatal("a document still being read was imported")
+	}
+	if !strings.Contains(err.Error(), "still being read") {
+		t.Fatalf("unhelpful error: %v", err)
+	}
+}
+
+// With no Wintermute server or agent there is nothing to import from, and the
+// message has to say that rather than pointing at an API key.
+func TestImportWithoutALibrarySaysSo(t *testing.T) {
+	svc := NewService(newFakeRepo(), newFakeNFRs(), &stubAnalyzer{}, nil)
+
+	_, err := svc.Import(context.Background(), ImportInput{LibraryDocID: 1})
+	if !errors.Is(err, ErrNoLibrary) {
+		t.Fatalf("Import without a library = %v, want ErrNoLibrary", err)
+	}
+	if svc.LibraryAvailable() {
+		t.Error("LibraryAvailable() is true with no library configured")
+	}
+}
+
 func TestDeleteDocumentSupersedesPendingProposals(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, newFakeNFRs(), &stubAnalyzer{})
+	svc := NewService(repo, newFakeNFRs(), &stubAnalyzer{}, nil)
 
 	doc, _ := repo.CreateDocument(Document{Title: "Standard"}, []Chunk{{ID: 1, Text: "x"}})
 	pending, _ := repo.CreateProposal(Proposal{
@@ -683,10 +618,6 @@ func (s *stubAnalyzer) Analyze(context.Context, AnalysisRequest) (AnalysisReply,
 	}
 	return s.reply, nil
 }
-
-func parseForTest(raw string) (*neturl.URL, error) { return neturl.Parse(raw) }
-
-func parseIPForTest(raw string) net.IP { return net.ParseIP(raw) }
 
 type fakeNFRs struct {
 	items   map[string]securitynfr.NFR
@@ -770,6 +701,15 @@ func (r *fakeRepo) GetDocument(id int64) (Document, error) {
 		return Document{}, ErrNotFound
 	}
 	return doc, nil
+}
+
+func (r *fakeRepo) DocumentByLibraryID(libraryDocID int64) (Document, error) {
+	for _, doc := range r.docs {
+		if doc.LibraryDocID != 0 && doc.LibraryDocID == libraryDocID {
+			return doc, nil
+		}
+	}
+	return Document{}, ErrNotFound
 }
 
 func (r *fakeRepo) DocumentBySHA(sha string) (Document, error) {

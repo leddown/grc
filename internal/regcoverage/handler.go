@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,14 +35,14 @@ func NewHandler(service *Service, actor ActorFunc) *Handler {
 	return &Handler{service: service, actor: actor}
 }
 
-// RegisterRoutes attaches the read surface: the pages, the report in its
-// various forms, and the original document.
+// RegisterRoutes attaches the read surface: the pages and the report in its
+// various forms. The original document is not among them — it lives in the
+// agent's library on the Wintermute server, and the report page links there.
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/regulation-coverage", h.IndexPage)
 	r.GET("/regulation-coverage/:id", h.ReportPage)
 	r.GET("/regulation-coverage/:id/report.json", h.ReportJSON)
 	r.GET("/regulation-coverage/:id/report.pdf", h.ReportPDF)
-	r.GET("/regulation-coverage/:id/source", h.Source)
 	r.GET("/regulation-coverage/:id/versions", h.ListVersions)
 	r.GET("/regulation-coverage/:id/chat", h.ListChat)
 	r.GET("/regulation-coverage/regulations", h.ListRegulations)
@@ -52,8 +51,13 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 // RegisterAdminRoutes attaches everything that writes or spends. Analysis and
 // chat both cost model calls, which is reason enough to keep them behind the
 // same gate as the mutations.
+//
+// Listing the library sits here too: it reaches out to the Wintermute server
+// with this installation's client token, which is an admin's credential rather
+// than a page anyone may spend.
 func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
-	r.POST("/regulation-coverage/regulations", h.Upload)
+	r.GET("/regulation-coverage/library", h.ListLibrary)
+	r.POST("/regulation-coverage/regulations", h.Import)
 	r.DELETE("/regulation-coverage/:id", h.Delete)
 	r.POST("/regulation-coverage/:id/analyze", h.Analyze)
 	r.POST("/regulation-coverage/:id/chat", h.Ask)
@@ -77,7 +81,7 @@ func (h *Handler) IndexPage(c *gin.Context) {
 		return
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8",
-		[]byte(indexPageHTML(frameworks, h.service.Configured(), h.service.Model())))
+		[]byte(indexPageHTML(frameworks, h.service.Configured(), h.service.Model(), h.service.LibraryURL())))
 }
 
 func (h *Handler) ReportPage(c *gin.Context) {
@@ -107,6 +111,7 @@ func (h *Handler) ReportPage(c *gin.Context) {
 		AIConfigured: h.service.Configured(),
 		Model:        h.service.Model(),
 		PDFAvailable: h.service.PDFAvailable(),
+		LibraryURL:   h.service.LibraryURL(),
 	})))
 }
 
@@ -168,33 +173,15 @@ func (h *Handler) ReportPDF(c *gin.Context) {
 	c.Data(http.StatusOK, "application/pdf", pdf)
 }
 
-// Source serves the uploaded document back, unmodified, so the report can be
-// read against the regulation as published.
-//
-// It is served inline for the types a browser renders natively and as a
-// download for the rest, with sniffing disabled and scripting refused: this is
-// a file an operator uploaded, and it is served from the application's own
-// origin.
-func (h *Handler) Source(c *gin.Context) {
-	id, ok := idParam(c)
-	if !ok {
-		return
-	}
-	src, err := h.service.Source(id)
+// ListLibrary shows what the agent's library holds, so a regulation is chosen
+// from what exists rather than named.
+func (h *Handler) ListLibrary(c *gin.Context) {
+	entries, err := h.service.ListLibrary(c.Request.Context())
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-
-	disposition := "attachment"
-	if src.MediaType == "application/pdf" || strings.HasPrefix(src.MediaType, "text/plain") {
-		disposition = "inline"
-	}
-	c.Header("Content-Disposition", contentDisposition(disposition, src.Filename))
-	c.Header("X-Content-Type-Options", "nosniff")
-	c.Header("Content-Security-Policy", "sandbox; default-src 'none'; object-src 'none'")
-	c.Header("Cache-Control", "private, max-age=300")
-	c.Data(http.StatusOK, src.MediaType, src.Content)
+	c.JSON(http.StatusOK, gin.H{"documents": entries, "library_url": h.service.LibraryURL()})
 }
 
 func (h *Handler) ListChat(c *gin.Context) {
@@ -212,40 +199,33 @@ func (h *Handler) ListChat(c *gin.Context) {
 
 // ---- mutations ----
 
-func (h *Handler) Upload(c *gin.Context) {
-	// Bounded before FormFile reads through it, so an oversized upload is
-	// refused rather than buffered first.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxUploadBytes+(1<<20))
+type importRequest struct {
+	LibraryDocID int64  `json:"library_doc_id"`
+	Title        string `json:"title"`
+	Framework    string `json:"framework"`
+}
 
-	fileHeader, err := c.FormFile("file")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "a file is required"})
+// Import brings in one regulation from the agent's library.
+//
+// There is no upload path. Regulations are uploaded to the Wintermute server,
+// which extracts them — including the scans and office formats this application
+// could never read — and this segments the text it produced.
+func (h *Handler) Import(c *gin.Context) {
+	var req importRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
 		return
 	}
-	file, err := fileHeader.Open()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the uploaded file"})
-		return
-	}
-	defer func() { _ = file.Close() }()
-
-	body, err := io.ReadAll(io.LimitReader(file, MaxUploadBytes+1))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the uploaded file"})
-		return
-	}
-	if len(body) > MaxUploadBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-			"error": fmt.Sprintf("the document exceeds the %s limit", humanBytes(MaxUploadBytes))})
+	if req.LibraryDocID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "library_doc_id is required"})
 		return
 	}
 
-	reg, err := h.service.Upload(UploadInput{
-		Title:      c.PostForm("title"),
-		Filename:   fileHeader.Filename,
-		Framework:  c.PostForm("framework"),
-		Body:       body,
-		UploadedBy: h.actorOf(c),
+	reg, err := h.service.Import(c.Request.Context(), ImportRequest{
+		LibraryDocID: req.LibraryDocID,
+		Title:        req.Title,
+		Framework:    req.Framework,
+		ImportedBy:   h.actorOf(c),
 	})
 	if err != nil {
 		writeServiceError(c, err)
@@ -396,6 +376,8 @@ func writeServiceError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.As(err, &invalidErr):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, ErrNoLibrary):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 	case errors.Is(err, context.DeadlineExceeded):
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "the analysis timed out"})
 	default:

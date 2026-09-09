@@ -7,16 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"grc/internal/aiprovider"
 	"grc/internal/regmap/ingest"
 	"grc/internal/regmap/profile"
 	"grc/internal/regmap/requirement"
 	"grc/regmap/profiles"
 )
-
-// MaxUploadBytes bounds one regulation. Consolidated EU acts run to a few
-// megabytes as PDFs; this leaves generous headroom while keeping a mistaken
-// upload from being read into memory and stored before anyone notices.
-const MaxUploadBytes = 25 << 20 // 25 MiB
 
 // GenericProfileID is the fallback profile: article and annex segmentation with
 // no curated knowledge of the instrument.
@@ -39,50 +35,45 @@ func LoadProfiles() (*profile.Registry, error) {
 	return reg, nil
 }
 
-// UploadInput is a regulation as it arrives from the browser.
-type UploadInput struct {
-	// Title is optional; the filename is used when it is empty.
-	Title    string
-	Filename string
+// ImportInput names a regulation in the AI agent's library.
+type ImportInput struct {
+	// Title is optional; the library's own title is used when it is empty.
+	Title string
 	// Framework pins the profile. Empty means detect, falling back to generic.
-	Framework  string
-	Body       []byte
-	UploadedBy string
+	Framework string
+	// Content is the document as the Wintermute server extracted it.
+	Content    aiprovider.LibraryContent
+	ImportedBy string
 }
 
-// Ingested is the result of reading an upload, before it is stored.
-type Ingested struct {
+// Imported is the result of segmenting a regulation, before it is stored.
+type Imported struct {
 	Regulation Regulation
 	Sections   []Section
 	Text       string
-	Source     Source
 }
 
-// Ingest extracts, identifies and segments an upload. It performs no I/O
-// beyond the extraction itself, so it is testable without a database.
-func Ingest(in UploadInput) (*Ingested, error) {
-	if len(in.Body) == 0 {
-		return nil, invalid("the uploaded file is empty")
-	}
-	if len(in.Body) > MaxUploadBytes {
-		return nil, invalidf("the uploaded file is %s; the limit is %s",
-			humanBytes(int64(len(in.Body))), humanBytes(MaxUploadBytes))
+// Import identifies and segments a regulation the agent's library has already
+// extracted.
+//
+// The extraction itself is not done here and no longer can be: PDFs, scans and
+// office documents are read on the Wintermute server, which has the OCR and the
+// converters, and this application reads the text back. What remains is the
+// part that is this module's own — deciding which instrument it is, and cutting
+// it into the articles a coverage report is written against.
+//
+// It performs no I/O, so it is testable without a server or a database.
+func Import(in ImportInput) (*Imported, error) {
+	doc := in.Content.Document
+	text := strings.TrimSpace(in.Content.Text)
+	if text == "" {
+		return nil, invalid("the agent's library holds no readable text for this document — " +
+			"if it is a scan, check that it has finished being read on the Wintermute server")
 	}
 
-	filename := strings.TrimSpace(in.Filename)
+	filename := strings.TrimSpace(firstNonEmpty(doc.Filename, doc.Title))
 	if filename == "" {
-		return nil, invalid("a filename is required, so the document type can be read")
-	}
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".pdf", ".docx", ".txt", ".text", ".md":
-	default:
-		return nil, invalidf("unsupported document type %q (supported: .pdf, .docx, .txt, .md)", ext)
-	}
-
-	extraction, err := ingest.ExtractBytes(filename, in.Body)
-	if err != nil {
-		return nil, invalid(err.Error())
+		return nil, invalid("the library document has neither a filename nor a title")
 	}
 
 	registry, err := LoadProfiles()
@@ -90,12 +81,12 @@ func Ingest(in UploadInput) (*Ingested, error) {
 		return nil, err
 	}
 
-	prof, detected, err := resolveProfile(registry, in.Framework, filename, extraction.Text)
+	prof, detected, err := resolveProfile(registry, in.Framework, filename, text)
 	if err != nil {
 		return nil, err
 	}
 
-	built, err := ingest.BuildRequirements(extraction.Text, prof)
+	built, err := ingest.BuildRequirements(text, prof)
 	if err != nil {
 		return nil, invalidf("segmenting the document failed: %v", err)
 	}
@@ -105,8 +96,8 @@ func Ingest(in UploadInput) (*Ingested, error) {
 	// something this module can analyse article by article.
 	if len(built.Requirements) == 0 || allPreamble(built.Requirements) {
 		return nil, invalid("no articles or sections could be found in this document — " +
-			"check that the right framework profile is selected, and that the PDF is not a " +
-			"scan needing OCR")
+			"check that the right framework profile is selected, and that the document " +
+			"was read properly on the Wintermute server rather than scanned without OCR")
 	}
 
 	sections := make([]Section, 0, len(built.Requirements))
@@ -122,40 +113,34 @@ func Ingest(in UploadInput) (*Ingested, error) {
 		})
 	}
 
-	sum := sha256.Sum256(in.Body)
+	// Hashed over the extracted text rather than the file, which this
+	// application no longer holds. It is also the better key: the same
+	// instrument exported twice is two files and one document.
+	sum := sha256.Sum256([]byte(text))
 	reg := Regulation{
-		Title:         firstNonEmpty(in.Title, strings.TrimSuffix(filepath.Base(filename), ext)),
+		Title:         firstNonEmpty(strings.TrimSpace(in.Title), doc.Title, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))),
 		Framework:     prof.ID,
 		FrameworkName: prof.DisplayName,
 		SourceRef:     prof.SourceRef,
 		Detected:      detected,
+		LibraryDocID:  doc.ID,
 		Filename:      filepath.Base(filename),
-		MediaType:     mediaTypeFor(ext),
+		MediaType:     doc.MediaType,
 		SHA256:        hex.EncodeToString(sum[:]),
-		ByteSize:      int64(len(in.Body)),
-		ExtractMethod: extraction.Method,
-		ExtractNotes:  extraction.Notes,
-		TextChars:     len(extraction.Text),
+		ByteSize:      doc.ByteSize,
+		ExtractMethod: firstNonEmpty(doc.ExtractVia, "the Wintermute library"),
+		TextChars:     len(text),
 		Status:        StatusIngested,
 		SectionCount:  len(sections),
-		UploadedBy:    in.UploadedBy,
+		ImportedBy:    strings.TrimSpace(in.ImportedBy),
 	}
 
-	return &Ingested{
-		Regulation: reg,
-		Sections:   sections,
-		Text:       extraction.Text,
-		Source: Source{
-			MediaType: reg.MediaType,
-			Filename:  reg.Filename,
-			Content:   in.Body,
-		},
-	}, nil
+	return &Imported{Regulation: reg, Sections: sections, Text: text}, nil
 }
 
 // resolveProfile picks the framework profile. An explicit choice always wins;
 // otherwise detection runs, and anything it cannot recognise falls back to the
-// generic EU profile rather than refusing the upload — an instrument with no
+// generic EU profile rather than refusing the document — an instrument with no
 // profile is exactly the case this module exists to handle.
 func resolveProfile(registry *profile.Registry, pinned, filename, text string) (*profile.Profile, bool, error) {
 	if pinned = strings.TrimSpace(pinned); pinned != "" {
@@ -216,19 +201,6 @@ func categoryOf(req requirement.Requirement) string {
 		return ""
 	}
 	return req.Category
-}
-
-func mediaTypeFor(ext string) string {
-	switch ext {
-	case ".pdf":
-		return "application/pdf"
-	case ".docx":
-		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	case ".md":
-		return "text/markdown; charset=utf-8"
-	default:
-		return "text/plain; charset=utf-8"
-	}
 }
 
 func humanBytes(n int64) string {

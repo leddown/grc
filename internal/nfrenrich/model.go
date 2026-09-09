@@ -1,5 +1,5 @@
-// Package nfrenrich reviews uploaded or fetched security documents and
-// proposes enrichments to the security NFR catalog.
+// Package nfrenrich reviews the security documents in the AI agent's library
+// and proposes enrichments to the security NFR catalog.
 //
 // The job: a document describes how encryption in transit is actually applied
 // in some system; the NFR catalog has an encryption-in-transit entry whose
@@ -28,6 +28,13 @@
 // a module that silently stops working on a binary built without the tag is
 // worse than one that scores its own rows. Retriever is an interface so an
 // FTS5-backed implementation can replace it without touching the analysis.
+//
+// The documents themselves are not held here. They are uploaded to an agent on
+// the Wintermute server, which extracts and chunks them — with OCR behind it
+// for scans, and LibreOffice for the office formats, neither of which this
+// application had. Importing one copies its passages in so that retrieval,
+// review and an accepted proposal's provenance keep working without that server
+// being reachable; the original stays in the library that owns it.
 package nfrenrich
 
 import (
@@ -39,15 +46,18 @@ import (
 // Errors surfaced to the handler.
 var (
 	ErrNotFound = errors.New("not found")
-	// ErrNotConfigured means no Anthropic API key is present. Ingestion still
-	// works without one; only analysis needs the model.
-	ErrNotConfigured = errors.New("no Anthropic API key is configured")
-	// ErrUnsupportedMedia covers binary formats this module will not guess at.
-	// PDF and DOCX text extraction needs a parsing dependency, and a silently
-	// mangled extraction feeds the model garbage that reads like prose.
-	ErrUnsupportedMedia = errors.New("unsupported document format: upload plain text, Markdown or HTML")
-	// ErrEmptyDocument means extraction produced nothing to analyse.
+	// ErrNotConfigured means no model is available. Importing still works
+	// without one; only analysis needs the model.
+	ErrNotConfigured = errors.New("no AI provider is configured")
+	// ErrEmptyDocument means the library holds no readable text for the
+	// document — a scan whose OCR has not run, or has failed.
 	ErrEmptyDocument = errors.New("the document contains no readable text")
+	// ErrNoLibrary means there is no agent library to import from: no
+	// Wintermute server configured, or no agent chosen. It is distinct from
+	// ErrNotConfigured because the remedy is different — a model answers
+	// questions, a library holds the documents — and a page that conflated them
+	// would send someone to set an API key that changes nothing here.
+	ErrNoLibrary = errors.New("no Wintermute document library is available")
 	// ErrInvalid marks a failure the caller can fix by changing the request.
 	// It exists so the handler can tell those apart from internal faults: an
 	// unrecognised error is a 500 with a generic message, because a raw SQL or
@@ -60,12 +70,6 @@ var (
 func invalidf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
-
-// Document origins.
-const (
-	OriginUpload = "upload"
-	OriginURL    = "url"
-)
 
 // Proposal lifecycle.
 //
@@ -97,21 +101,29 @@ const (
 // EnrichableFields is the ordered set offered in the UI and accepted by the API.
 var EnrichableFields = []string{FieldImplementation, FieldAdditionalDetails, FieldDescription}
 
-// Document is one uploaded or fetched source.
+// Document is one source imported from the agent's library.
 type Document struct {
-	ID        int64  `json:"id"`
-	Title     string `json:"title"`
-	Origin    string `json:"origin"`
-	URL       string `json:"url,omitempty"`
-	Filename  string `json:"filename,omitempty"`
-	MediaType string `json:"media_type"`
-	// SHA256 of the extracted text, not the raw bytes: re-uploading the same
-	// PDF exported twice should be recognised as the same document, and two
-	// files whose text is identical have nothing different to say.
-	SHA256     string `json:"sha256"`
-	ByteSize   int64  `json:"byte_size"`
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+	// LibraryDocID is this document's id in the agent's library on the
+	// Wintermute server, which is where the original lives. It is what a link
+	// back to the source is built from, and what a re-import recognises.
+	LibraryDocID int64  `json:"library_doc_id"`
+	URL          string `json:"url,omitempty"`
+	Filename     string `json:"filename,omitempty"`
+	MediaType    string `json:"media_type"`
+	// SHA256 of the extracted text, not the raw bytes: the same PDF exported
+	// twice should be recognised as the same document, and two files whose text
+	// is identical have nothing different to say.
+	SHA256   string `json:"sha256"`
+	ByteSize int64  `json:"byte_size"`
+	// ExtractVia names what read the text on that server — a PDF text layer,
+	// OCR, LibreOffice. A proposal built on an OCR'd scan deserves to be read
+	// differently from one built on a text layer, so it travels with the
+	// document rather than being left behind in the library.
+	ExtractVia string `json:"extract_via,omitempty"`
 	ChunkCount int    `json:"chunk_count"`
-	UploadedBy string `json:"uploaded_by"`
+	ImportedBy string `json:"imported_by"`
 	CreatedAt  string `json:"created_at"`
 }
 
