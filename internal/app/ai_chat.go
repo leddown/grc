@@ -134,12 +134,12 @@ func aiChatPage(c *gin.Context) {
       padding: 5px 11px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: #fffaf0;
+      background: var(--surface-strong);
       color: #5e6672;
       white-space: nowrap;
     }
-    .chip.on { border-color: #7fae94; color: #0b5d3b; background: #f0f7f2; }
-    .chip.off { border-color: #d7b271; color: #9a6700; background: #fff8e8; }
+    .chip.on { border-color: #7fae94; color: #0b5d3b; background: var(--surface-strong); }
+    .chip.off { border-color: #d7b271; color: #9a6700; background: var(--surface-strong); }
     /* Transparent so the theme's own link colour stays legible on whichever
        background the page is painted with. */
     a.chip { text-decoration: none; background: transparent; }
@@ -155,7 +155,7 @@ func aiChatPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.86);
+      background: var(--panel);
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -211,7 +211,7 @@ func aiChatPage(c *gin.Context) {
       padding: 11px 12px;
       border-radius: 12px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       color: var(--ink);
       font: inherit;
     }
@@ -228,7 +228,7 @@ func aiChatPage(c *gin.Context) {
       cursor: pointer;
     }
     button.secondary {
-      background: white;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
     }
     button:disabled, select:disabled { cursor: not-allowed; }
@@ -244,7 +244,7 @@ func aiChatPage(c *gin.Context) {
     .msg {
       border: 1px solid var(--line);
       border-radius: 12px;
-      background: white;
+      background: var(--surface-strong);
       padding: 10px 14px;
       white-space: pre-wrap;
       word-break: break-word;
@@ -285,7 +285,7 @@ func aiChatPage(c *gin.Context) {
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: 12px;
-      background: rgba(255,255,255,0.7);
+      background: var(--surface-strong);
       padding: 10px 14px;
       font-family: Arial, sans-serif;
       font-size: 13px;

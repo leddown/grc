@@ -70,7 +70,7 @@ const policyCSS = `
 * { box-sizing: border-box; }
 body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink);
        background:linear-gradient(135deg,#f7f3eb,#ece4d6 55%,#e4d8c4); }
-main { max-width:1440px; margin:24px auto; padding:24px; background:rgba(255,252,246,0.92);
+main { max-width:1440px; margin:24px auto; padding:24px; background:var(--bg);
        border:1px solid rgba(215,206,191,0.8); border-radius:24px; }
 .tabs { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
 .tab { padding:10px 14px; border-radius:999px; background:#efe6d6; border:1px solid var(--line);
@@ -81,16 +81,16 @@ h1 { margin:0 0 6px; }
 .subtitle { color:var(--muted); font-family:Arial,sans-serif; font-size:14px; margin:0 0 14px; }
 input, select, button, textarea { font:inherit; }
 .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-.toolbar input[type=search], .toolbar select { padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+.toolbar input[type=search], .toolbar select { padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg); }
 .check { font-family:Arial,sans-serif; font-size:13px; display:flex; align-items:center; gap:6px; }
 button { padding:8px 12px; border-radius:999px; border:1px solid #b89d78; background:#e1d0b7; cursor:pointer; }
 button.primary { background:var(--green); color:#fff; border-color:var(--green); }
-button.danger { background:#f0e2dd; color:var(--accent); border-color:var(--accent); }
+button.danger { background:var(--surface-strong); color:var(--accent); border-color:var(--accent); }
 button:disabled { opacity:0.5; cursor:not-allowed; }
 .summary { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
            color:var(--muted); font-family:Arial,sans-serif; font-size:13px; margin-bottom:12px; }
 .layout { display:grid; grid-template-columns:minmax(0,0.8fr) minmax(0,1.2fr); gap:16px; align-items:start; }
-.panel { border:1px solid var(--line); border-radius:16px; background:#fff; overflow:hidden; }
+.panel { border:1px solid var(--line); border-radius:16px; background:var(--panel); overflow:hidden; }
 .panel-header { padding:10px 14px; border-bottom:1px solid var(--line); background:#efe6d6;
                 font-family:Arial,sans-serif; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; }
 .rows { max-height:70vh; overflow:auto; }
@@ -102,22 +102,20 @@ button:disabled { opacity:0.5; cursor:not-allowed; }
 .row-title { font-size:14px; }
 .row-meta { font-family:Arial,sans-serif; font-size:11px; color:var(--muted); margin-top:3px; }
 .detail-body { padding:14px; max-height:70vh; overflow:auto; }
-/* The status pills carry their own light backgrounds, so they also have to
-   carry their own text colour: the injected dark theme sets a light colour on
-   the containing .panel, and an inherited value would leave the pill's text
-   invisible against its own background. */
+/* Each status pill sets its own text colour rather than inheriting one: the
+   colour, not the background, is what tells the states apart. */
 .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-family:Arial,sans-serif;
         font-size:11px; text-transform:uppercase; letter-spacing:0.05em; border:1px solid var(--line);
-        background:#ece3d2; color:#1c2431; }
-.pill.draft { background:#ece3d2; color:#1c2431; }
-.pill.in_review { background:#f6e6c2; border-color:var(--amber); color:#6b4700; }
-.pill.approved { background:#d8ecdf; border-color:var(--green); color:var(--green); }
-.pill.retired { background:#e6e6e6; color:var(--muted); }
+        background:var(--surface-strong); color:var(--ink); }
+.pill.draft { background:var(--surface-strong); color:var(--ink); }
+.pill.in_review { background:var(--surface-strong); border-color:var(--amber); color:var(--amber); }
+.pill.approved { background:var(--surface-strong); border-color:var(--green); color:var(--green); }
+.pill.retired { background:var(--surface-strong); color:var(--muted); }
 .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin:10px 0 14px; }
 .field { display:flex; flex-direction:column; gap:4px; }
 .field label { font-family:Arial,sans-serif; font-size:11px; text-transform:uppercase;
                letter-spacing:0.05em; color:var(--muted); }
-.field input, .field select, .field textarea { padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.field input, .field select, .field textarea { padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--bg); }
 .field textarea { min-height:60px; resize:vertical; }
 .frameworks { display:flex; flex-wrap:wrap; gap:8px; }
 .frameworks label { font-family:Arial,sans-serif; font-size:12px; display:flex; align-items:center; gap:5px; }

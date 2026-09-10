@@ -34,8 +34,8 @@ func coveragePageHTML() string {
     /* Coverage-specific statuses. draft-only and supporting-only are amber
        rather than green on purpose: both read as covered in a spreadsheet and
        neither survives an assessor asking which approved document says so. */
-    .pill.draft_only, .pill.supporting_only { background:#f6e6c2; border-color:var(--amber); color:#6b4700; }
-    .pill.uncovered { background:#f0e2dd; border-color:var(--accent); color:var(--accent); }
+    .pill.draft_only, .pill.supporting_only { background:var(--surface-strong); border-color:var(--amber); color:var(--amber); }
+    .pill.uncovered { background:var(--surface-strong); border-color:var(--accent); color:var(--accent); }
     .cid { font-family:"Courier New",monospace; font-weight:bold; white-space:nowrap; }
     .claim { display:block; font-size:12px; margin-bottom:2px; }
     .claim:last-child { margin-bottom:0; }

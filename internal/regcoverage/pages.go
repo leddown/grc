@@ -50,7 +50,7 @@ const pageStyles = `
   .card {
     border: 1px solid var(--line);
     border-radius: 16px;
-    background: rgba(255,255,255,0.86);
+    background: var(--panel);
     padding: 16px;
     margin-bottom: 16px;
   }
@@ -58,14 +58,14 @@ const pageStyles = `
           text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
   input, select, textarea {
     width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
-    background: white; color: var(--ink); font: inherit;
+    background: var(--bg); color: var(--ink); font: inherit;
   }
   textarea { min-height: 80px; resize: vertical; }
   button {
     padding: 10px 14px; border-radius: 999px; border: 0; background: #dfc4b4;
     color: var(--ink); font: inherit; cursor: pointer;
   }
-  button.secondary { background: white; border: 1px solid var(--line); }
+  button.secondary { background: var(--surface-strong); border: 1px solid var(--line); }
   button[disabled] { opacity: 0.55; cursor: not-allowed; }
   .grid { display: grid; gap: 14px; }
   .fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -87,13 +87,13 @@ const pageStyles = `
   .chatlog { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow: auto; padding-right: 4px; }
   .msg { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; white-space: pre-wrap;
          word-break: break-word; font-size: 14px; }
-  .msg.user { align-self: flex-end; border-left: 4px solid var(--accent); background: #fdf8f2; }
+  .msg.user { align-self: flex-end; border-left: 4px solid var(--accent); background: var(--surface-strong); }
   .msg.ai { align-self: flex-start; border-left: 4px solid var(--good); }
   .msg .who { display: block; font-family: Arial, sans-serif; font-size: 10px; text-transform: uppercase;
               letter-spacing: 0.07em; color: var(--muted); margin-bottom: 4px; }
-  .viewer { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 12px; background: white; }
+  .viewer { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
   .revise-btn { margin-top: 8px; padding: 5px 12px; font-family: Arial, sans-serif; font-size: 11px;
-                text-transform: uppercase; letter-spacing: 0.06em; background: white; border: 1px solid var(--line); }
+                text-transform: uppercase; letter-spacing: 0.06em; background: var(--surface-strong); border: 1px solid var(--line); }
   .hidden { display: none; }
   @media (max-width: 1100px) {
     .layout { grid-template-columns: 1fr; }

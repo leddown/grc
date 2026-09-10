@@ -410,7 +410,7 @@ func (h *Handler) DetailPage(c *gin.Context) {
     .card {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 14px;
-      background: rgba(255,255,255,0.86);
+      background: var(--panel);
       padding: 14px;
     }
     .card h2 {
@@ -647,7 +647,7 @@ func (h *Handler) Page(c *gin.Context) {
       padding: 14px 16px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: rgba(255,255,255,0.95);
+      background: var(--bg);
       font: inherit;
     }
     .chips, .subchips {
@@ -680,7 +680,7 @@ func (h *Handler) Page(c *gin.Context) {
     }
     .subchip {
       border-color: var(--line);
-      background: rgba(255,255,255,0.92);
+      background: var(--surface-strong);
       color: var(--ink);
     }
 	    .subchip.active {
@@ -731,7 +731,7 @@ func (h *Handler) Page(c *gin.Context) {
     .list, .detail {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 22px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .list-header, .detail-header {
@@ -777,7 +777,7 @@ func (h *Handler) Page(c *gin.Context) {
       border: 1px solid var(--line);
       border-radius: 999px;
       padding: 4px 8px;
-      background: rgba(255,255,255,0.9);
+      background: var(--surface-strong);
       font-family: Arial, sans-serif;
       font-size: 11px;
       text-transform: uppercase;
@@ -891,7 +891,7 @@ func (h *Handler) Page(c *gin.Context) {
     .mono {
       padding: 3px 7px;
       border-radius: 8px;
-      background: white;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
       font-family: "Courier New", monospace;
       font-size: 11.5px;
@@ -1863,7 +1863,7 @@ func (h *Handler) FamilyVisibilityPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -1896,8 +1896,8 @@ func (h *Handler) FamilyVisibilityPage(c *gin.Context) {
       width: 52px;
       height: 30px;
       border-radius: 999px;
-      border: 1px solid #c7b7a0;
-      background: #e8ddd0;
+      border: 1px solid var(--line);
+      background: var(--surface-strong);
       position: relative;
       cursor: pointer;
       transition: background 140ms ease, border-color 140ms ease;
@@ -1910,15 +1910,15 @@ func (h *Handler) FamilyVisibilityPage(c *gin.Context) {
       width: 22px;
       height: 22px;
       border-radius: 50%;
-      background: #fff;
+      background: var(--muted);
       box-shadow: 0 1px 4px rgba(28,36,49,0.28);
       transition: transform 140ms ease;
     }
     .toggle:checked {
-      background: #9dce9f;
-      border-color: #4f8d52;
+      background: var(--good);
+      border-color: var(--good);
     }
-    .toggle:checked::after { transform: translateX(22px); }
+    .toggle:checked::after { transform: translateX(22px); background: var(--bg); }
     .empty { padding: 26px 18px; color: var(--muted); text-align: center; }
   </style>
 </head>
@@ -2082,7 +2082,7 @@ func (h *Handler) HierarchyPage(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       color: var(--ink);
       font: inherit;
     }
@@ -2101,7 +2101,7 @@ func (h *Handler) HierarchyPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 20px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -2133,7 +2133,7 @@ func (h *Handler) HierarchyPage(c *gin.Context) {
     .detail-card {
       padding: 14px;
       border-radius: 16px;
-      background: #fbf8f2;
+      background: var(--surface-strong);
       border: 1px solid rgba(215,206,191,0.85);
     }
     .detail-card h3 {
@@ -2149,7 +2149,7 @@ func (h *Handler) HierarchyPage(c *gin.Context) {
       padding: 6px 8px;
       border-radius: 10px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--surface-strong);
       font-size: 13px;
     }
     .mono { font-family: "Courier New", monospace; }
@@ -2592,7 +2592,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 14px;
       border: 1px solid var(--line);
-      background: rgba(255,255,255,0.96);
+      background: var(--bg);
       font: inherit;
     }
     textarea { min-height: 96px; resize: vertical; }
@@ -2605,10 +2605,10 @@ func (h *Handler) ManagePage(c *gin.Context) {
 	      cursor: pointer;
 	      font: inherit;
 	    }
-	    button.secondary { background: white; color: var(--ink); border: 1px solid var(--line); }
+	    button.secondary { background: var(--surface-strong); color: var(--ink); border: 1px solid var(--line); }
 	    button.danger { background: #e9c6d4; color: #3f1022; }
 	    button:hover { background: #d1b09d; }
-	    button.secondary:hover { background: #f7f3eb; }
+	    button.secondary:hover { background: var(--hover); }
 	    button.danger:hover { background: #ddb0c2; }
     .layout {
       display: grid;
@@ -2619,7 +2619,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 22px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -2675,7 +2675,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
 	      padding: 10px 12px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: white;
+      background: var(--surface-strong);
 	      font-family: Arial, sans-serif;
 	      font-size: 13px;
 	    }

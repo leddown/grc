@@ -286,7 +286,7 @@ func jiraJSONPage(c *gin.Context) {
       padding: 10px 12px;
       border-radius: 10px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
     }
     textarea { min-height: 92px; resize: vertical; }
     .row {
@@ -307,7 +307,7 @@ func jiraJSONPage(c *gin.Context) {
       background: #dfc4b4;
       cursor: pointer;
     }
-    button.secondary { background: white; }
+    button.secondary { background: var(--surface-strong); }
     .panel button.secondary {
       background: #111827;
       border-color: #334155;
@@ -774,7 +774,7 @@ func jiraReportsPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 16px;
-      background: rgba(255,255,255,0.88);
+      background: var(--panel);
       padding: 14px;
     }
     .field { display: grid; gap: 6px; margin-bottom: 10px; }
@@ -794,7 +794,7 @@ func jiraReportsPage(c *gin.Context) {
       padding: 10px 12px;
       border-radius: 10px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
     }
     textarea { min-height: 110px; resize: vertical; }
     .row {
@@ -832,7 +832,7 @@ func jiraReportsPage(c *gin.Context) {
     .kpi {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 12px;
-      background: #fbf8f2;
+      background: var(--surface-strong);
       padding: 10px;
     }
     .kpi .label {
@@ -852,7 +852,7 @@ func jiraReportsPage(c *gin.Context) {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 12px;
       overflow: auto;
-      background: #fbf8f2;
+      background: var(--surface-strong);
     }
     table {
       width: 100%;
@@ -870,7 +870,7 @@ func jiraReportsPage(c *gin.Context) {
     th {
       position: sticky;
       top: 0;
-      background: #f3ece0;
+      background: var(--surface-strong);
       color: #5a4630;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -881,7 +881,7 @@ func jiraReportsPage(c *gin.Context) {
       padding: 12px;
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 12px;
-      background: #fbf8f2;
+      background: var(--surface-strong);
       min-height: 220px;
       max-height: 42vh;
       overflow: auto;

@@ -97,7 +97,7 @@ func RenderHTML(doc Document, sections []Section, refs []ControlRef) string {
     * { box-sizing: border-box; }
     body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink);
            background:linear-gradient(135deg,#f7f3eb,#ece4d6 55%,#e4d8c4); }
-    main { max-width:900px; margin:24px auto; padding:32px; background:rgba(255,252,246,0.96);
+    main { max-width:900px; margin:24px auto; padding:32px; background:var(--panel);
            border:1px solid rgba(215,206,191,0.8); border-radius:20px; }
     h1 { margin:0 0 6px; font-size:2rem; line-height:1.15; }
     h2 { font-family:Arial,sans-serif; font-size:13px; text-transform:uppercase;

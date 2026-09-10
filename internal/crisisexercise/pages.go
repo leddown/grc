@@ -53,20 +53,20 @@ const pageStyles = `
   a { color: var(--accent); }
   .lede { color: var(--muted); max-width: 82ch; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
-  .card { border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,0.86);
+  .card { border: 1px solid var(--line); border-radius: 16px; background: var(--panel);
           padding: 16px; margin-bottom: 16px; }
   label { display: block; font-family: Arial, sans-serif; font-size: 11px; letter-spacing: 0.07em;
           text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 5px; }
   input, select, textarea {
     width: 100%; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line);
-    background: white; color: var(--ink); font: inherit; font-size: 14px;
+    background: var(--bg); color: var(--ink); font: inherit; font-size: 14px;
   }
   textarea { min-height: 76px; resize: vertical; font-family: inherit; }
   button { padding: 9px 14px; border-radius: 999px; border: 0; background: #dfc4b4;
            color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
-  button.secondary { background: white; border: 1px solid var(--line); }
+  button.secondary { background: var(--surface-strong); border: 1px solid var(--line); }
   button.small { padding: 4px 11px; font-family: Arial, sans-serif; font-size: 11px;
-                 text-transform: uppercase; letter-spacing: 0.06em; background: white;
+                 text-transform: uppercase; letter-spacing: 0.06em; background: var(--surface-strong);
                  border: 1px solid var(--line); }
   button[disabled] { opacity: 0.55; cursor: not-allowed; }
   .grid { display: grid; gap: 14px; }
@@ -95,7 +95,7 @@ const pageStyles = `
   .warnv { color: var(--warn); font-weight: 700; }
   .stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
   .stat { border: 1px solid var(--line); border-radius: 12px; padding: 9px 14px; min-width: 116px;
-          background: rgba(255,255,255,0.7); }
+          background: var(--surface-strong); }
   .stat .n { font-size: 1.4rem; font-weight: 700; display: block; line-height: 1.1; }
   .stat .l { font-family: Arial, sans-serif; font-size: 10px; text-transform: uppercase;
              letter-spacing: 0.06em; color: var(--muted); }
@@ -104,10 +104,10 @@ const pageStyles = `
   .subtab { padding: 6px 14px; border-radius: 999px; border: 1px solid transparent;
             font-family: Arial, sans-serif; font-size: 12px; letter-spacing: 0.04em;
             cursor: pointer; background: transparent; color: var(--muted); }
-  .subtab.active { background: white; border-color: var(--line); color: var(--ink); font-weight: 700; }
+  .subtab.active { background: var(--surface-strong); border-color: var(--line); color: var(--ink); font-weight: 700; }
   .panel { display: none; }
   .panel.active { display: block; }
-  .phase { border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,0.75);
+  .phase { border: 1px solid var(--line); border-radius: 14px; background: var(--surface-strong);
            padding: 14px 16px; margin-bottom: 14px; }
   .phase > header { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline;
                     justify-content: space-between; }
@@ -117,7 +117,7 @@ const pageStyles = `
   .inject.decision { border-left-color: var(--accent); }
   .inject .head { font-family: Arial, sans-serif; font-size: 11px; text-transform: uppercase;
                   letter-spacing: 0.05em; color: var(--muted); }
-  .inject .body { white-space: pre-wrap; margin: 5px 0; padding: 8px 10px; background: #fdfaf5;
+  .inject .body { white-space: pre-wrap; margin: 5px 0; padding: 8px 10px; background: var(--panel);
                   border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
   .refs { font-family: Arial, sans-serif; font-size: 11px; color: var(--muted); margin-top: 5px; }
   .refs a { text-decoration: none; }
@@ -127,8 +127,8 @@ const pageStyles = `
              padding-right: 4px; margin-bottom: 12px; }
   .msg { border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; white-space: pre-wrap;
          word-break: break-word; font-size: 14px; }
-  .msg.user { align-self: flex-end; border-left: 4px solid var(--accent); background: #fdf8f2; max-width: 78%; }
-  .msg.ai { align-self: flex-start; border-left: 4px solid var(--good); background: white; max-width: 88%; }
+  .msg.user { align-self: flex-end; border-left: 4px solid var(--accent); background: var(--surface-strong); max-width: 78%; }
+  .msg.ai { align-self: flex-start; border-left: 4px solid var(--good); background: var(--surface-strong); max-width: 88%; }
   .msg .who { display: block; font-family: Arial, sans-serif; font-size: 10px; text-transform: uppercase;
               letter-spacing: 0.07em; color: var(--muted); margin-bottom: 4px; }
   details { margin: 6px 0; }

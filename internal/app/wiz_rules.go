@@ -66,7 +66,7 @@ func wizRulesPage(c *gin.Context) {
     .panel {
       border: 1px solid var(--line);
       border-radius: 14px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -95,7 +95,7 @@ func wizRulesPage(c *gin.Context) {
       padding: 10px 11px;
       border-radius: 10px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       color: var(--ink);
       font: inherit;
     }
@@ -115,7 +115,7 @@ func wizRulesPage(c *gin.Context) {
     }
     .mono {
       white-space: pre-wrap;
-      background: #fffdf9;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
       border-radius: 10px;
       font: 12px/1.45 "Courier New", monospace;

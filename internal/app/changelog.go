@@ -80,7 +80,7 @@ func renderChangeLogHTML(path string, content []byte, readErr error) []byte {
     .card {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       padding: 18px;
       margin-top: 18px;
     }

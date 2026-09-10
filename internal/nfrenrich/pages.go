@@ -50,7 +50,7 @@ func pageHTML() string {
     h2 { font-size: 1.1rem; margin: 0; }
     p { color: var(--muted); }
     .layout { margin-top: 18px; display: grid; grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr); gap: 16px; align-items: start; }
-    .panel { border: 1px solid rgba(215,206,191,0.9); border-radius: 18px; background: rgba(255,255,255,0.86); overflow: hidden; }
+    .panel { border: 1px solid rgba(215,206,191,0.9); border-radius: 18px; background: var(--panel); overflow: hidden; }
     .panel-header {
       padding: 14px 16px; border-bottom: 1px solid rgba(215,206,191,0.9);
       background: rgba(236,227,210,0.55);
@@ -66,7 +66,7 @@ func pageHTML() string {
     }
     input, select, textarea {
       width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line);
-      background: white; color: var(--ink); font: inherit;
+      background: var(--bg); color: var(--ink); font: inherit;
     }
     textarea { min-height: 110px; resize: vertical; }
     .mono { font-family: "Courier New", Courier, monospace; font-size: 13px; }
@@ -75,13 +75,13 @@ func pageHTML() string {
       padding: 10px 14px; border-radius: 999px; border: 0; background: #dfc4b4;
       color: var(--ink); font: inherit; cursor: pointer;
     }
-    button.secondary { background: white; border: 1px solid var(--line); }
-    button.danger { background: #f0d3cc; }
+    button.secondary { background: var(--surface-strong); border: 1px solid var(--line); }
+    button.danger { background: var(--surface-strong); }
     button[disabled] { opacity: 0.5; cursor: not-allowed; }
     .status { color: var(--muted); min-height: 22px; font-family: Arial, sans-serif; font-size: 13px; }
     .status.warn { color: var(--warn); }
     .doc, .proposal {
-      border: 1px solid var(--line); border-radius: 14px; background: white;
+      border: 1px solid var(--line); border-radius: 14px; background: var(--surface-strong);
       padding: 12px 14px; margin-bottom: 12px;
     }
     .doc-title { font-weight: 700; }
@@ -90,11 +90,11 @@ func pageHTML() string {
       letter-spacing: 0.04em; margin-top: 4px;
     }
     .suggestion {
-      border-left: 4px solid var(--good); background: #f7fbf8;
+      border-left: 4px solid var(--good); background: var(--panel);
       padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; margin: 10px 0;
     }
     .citation {
-      border-left: 4px solid var(--accent); background: #fdf6f3;
+      border-left: 4px solid var(--accent); background: var(--panel);
       padding: 8px 12px; border-radius: 8px; margin: 8px 0; font-size: 14px;
     }
     .citation .where {
@@ -106,14 +106,14 @@ func pageHTML() string {
     .pill {
       display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px;
       font-family: Arial, sans-serif; text-transform: uppercase; letter-spacing: 0.06em;
-      border: 1px solid var(--line); background: #f3ece0; color: var(--muted);
+      border: 1px solid var(--line); background: var(--surface-strong); color: var(--muted);
     }
-    .pill.pending { background: #fff6e0; color: var(--warn); }
-    .pill.accepted { background: #e6f3ec; color: var(--good); }
-    .pill.rejected { background: #f6e7e3; color: var(--accent); }
+    .pill.pending { background: var(--surface-strong); color: var(--warn); }
+    .pill.accepted { background: var(--surface-strong); color: var(--good); }
+    .pill.rejected { background: var(--surface-strong); color: var(--accent); }
     .notice {
       padding: 10px 12px; border: 1px dashed var(--line); border-radius: 12px;
-      background: #fffaf0; color: var(--muted); font-size: 14px; margin-bottom: 14px;
+      background: var(--surface-strong); color: var(--muted); font-size: 14px; margin-bottom: 14px;
     }
     .empty { color: var(--muted); font-style: italic; }
     @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }

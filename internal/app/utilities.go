@@ -308,7 +308,7 @@ func utilitiesPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -344,7 +344,7 @@ func utilitiesPage(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 14px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       font: inherit;
       color: var(--ink);
     }
@@ -352,9 +352,9 @@ func utilitiesPage(c *gin.Context) {
       margin-top: 14px;
       padding: 12px 14px;
       border-radius: 12px;
-      border: 1px solid #d8a99c;
-      background: #fbeee8;
-      color: var(--warn);
+      border: 1px solid var(--danger);
+      background: var(--surface-strong);
+      color: var(--danger);
       font-size: 14px;
       line-height: 1.5;
     }
@@ -365,7 +365,7 @@ func utilitiesPage(c *gin.Context) {
       margin-top: 14px;
       font-family: "SFMono-Regular", Menlo, Consolas, monospace;
       font-size: 13px;
-      background: #fbf8f2;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 12px 14px;

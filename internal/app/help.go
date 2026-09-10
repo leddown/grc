@@ -85,7 +85,7 @@ func helpPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 16px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {

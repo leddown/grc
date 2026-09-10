@@ -187,15 +187,15 @@ func riskRegisterHTML(manage bool) string {
   <style>
     :root { color-scheme: light; --ink:#1c2431; --muted:#5e6672; --line:#d7cebf; }
     body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink); background:linear-gradient(135deg,#f7f3eb,#ece4d6 55%,#e4d8c4);}
-    main { max-width:1320px; margin:24px auto; padding:24px; background:rgba(255,252,246,0.92); border:1px solid rgba(215,206,191,0.8); border-radius:24px;}
+    main { max-width:1320px; margin:24px auto; padding:24px; background:var(--bg); border:1px solid rgba(215,206,191,0.8); border-radius:24px;}
     .tabs { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
     .tab { padding:10px 14px; border-radius:999px; background:#efe6d6; border:1px solid var(--line); color:var(--ink); text-decoration:none; font-family:Arial,sans-serif; font-size:13px; letter-spacing:0.04em; text-transform:uppercase; }
     .tab.active { background:#e1d0b7; border-color:#b89d78; }
     .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
     input, select, button, textarea { font:inherit; }
-    input, select { padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+    input, select { padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg); }
     button { padding:8px 12px; border-radius:999px; border:1px solid #b89d78; background:#e1d0b7; cursor:pointer; }
-    table { width:100%; border-collapse:collapse; font-family:Arial,sans-serif; font-size:13px; background:#fff; border:1px solid var(--line); }
+    table { width:100%; border-collapse:collapse; font-family:Arial,sans-serif; font-size:13px; background:var(--panel); border:1px solid var(--line); }
     th, td { border:1px solid var(--line); padding:6px; vertical-align:top; }
     th { background:#efe6d6; text-align:left; position:sticky; top:0; }
     td input, td select, td textarea { width:100%; border:1px solid #ddd; border-radius:6px; padding:4px 6px; font-size:12px; }

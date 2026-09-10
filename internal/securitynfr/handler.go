@@ -251,7 +251,7 @@ func (h *Handler) DetailPage(c *gin.Context) {
     .card {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 14px;
-      background: rgba(255,255,255,0.86);
+      background: var(--panel);
       padding: 14px;
     }
     .card h2 {
@@ -413,7 +413,7 @@ func (h *Handler) Page(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       font: inherit;
     }
     .chips {
@@ -448,7 +448,7 @@ func (h *Handler) Page(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 22px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -868,7 +868,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 14px;
       border: 1px solid var(--line);
-      background: rgba(255,255,255,0.96);
+      background: var(--bg);
       font: inherit;
     }
     textarea { min-height: 96px; resize: vertical; }
@@ -881,7 +881,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
       cursor: pointer;
       font: inherit;
     }
-    button.secondary { background: white; border: 1px solid var(--line); }
+    button.secondary { background: var(--surface-strong); border: 1px solid var(--line); }
     button.danger { background: #e9c6d4; color: #3f1022; }
     .layout {
       display: grid;
@@ -892,7 +892,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 22px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {

@@ -63,7 +63,7 @@ func jsonViewPage(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 12px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       color: var(--ink);
       font: inherit;
     }
@@ -75,7 +75,7 @@ func jsonViewPage(c *gin.Context) {
       padding: 20px;
       border-radius: 18px;
       border: 1px solid rgba(215,206,191,0.85);
-      background: #fbf8f2;
+      background: var(--surface-strong);
       overflow: auto;
       font: 13px/1.6 "Courier New", monospace;
       color: #18202c;

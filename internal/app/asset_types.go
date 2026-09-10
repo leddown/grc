@@ -76,7 +76,7 @@ func assetTypesPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -112,7 +112,7 @@ func assetTypesPage(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 14px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       font: inherit;
       color: var(--ink);
     }
@@ -149,10 +149,10 @@ func assetTypesPage(c *gin.Context) {
     }
     button:hover { background: #d1b09d; }
     .secondary {
-      background: white;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
     }
-    .secondary:hover { background: #f7fbff; }
+    .secondary:hover { background: var(--hover); }
     .summary {
       display: grid;
       gap: 14px;
@@ -185,7 +185,7 @@ func assetTypesPage(c *gin.Context) {
     .summary-card {
       padding: 14px;
       border-radius: 14px;
-      background: #fbf8f2;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
     }
     .summary-card h3 {
@@ -208,7 +208,7 @@ func assetTypesPage(c *gin.Context) {
     .status-card {
       padding: 14px;
       border-radius: 14px;
-      background: white;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
     }
     .control-list {
@@ -220,7 +220,7 @@ func assetTypesPage(c *gin.Context) {
     .control-item {
       padding: 12px;
       border-radius: 12px;
-      background: white;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
     }
     .control-item code {
@@ -235,7 +235,7 @@ func assetTypesPage(c *gin.Context) {
     .nfr-item {
       padding: 12px;
       border-radius: 12px;
-      background: white;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
       display: grid;
       gap: 6px;

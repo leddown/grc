@@ -67,7 +67,7 @@ func exceptionsPage(c *gin.Context) {
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.84);
+      background: var(--panel);
       overflow: hidden;
     }
     .panel-header {
@@ -94,7 +94,7 @@ func exceptionsPage(c *gin.Context) {
       border-radius: 999px;
       padding: 12px 14px;
       font: inherit;
-      background: #fff;
+      background: var(--bg);
     }
     button {
       border: 0;
@@ -106,7 +106,7 @@ func exceptionsPage(c *gin.Context) {
       cursor: pointer;
     }
     .secondary {
-      background: #fff;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
     }
     .list {
@@ -147,7 +147,7 @@ func exceptionsPage(c *gin.Context) {
     .cia-summary {
       border: 1px solid var(--line);
       border-radius: 12px;
-      background: rgba(255,255,255,0.85);
+      background: var(--surface-strong);
       padding: 10px 12px;
       margin-bottom: 10px;
       font-family: Arial, sans-serif;
@@ -192,14 +192,14 @@ func exceptionsPage(c *gin.Context) {
       display: block;
       border: 1px solid #444;
       border-radius: 10px;
-      background: #f2f2f2;
+      background: var(--surface-strong);
       color: var(--ink);
       padding: 10px 12px;
       text-decoration: none;
     }
     .linked-control-card:hover {
       border-color: #b89d78;
-      background: #ececec;
+      background: var(--hover);
     }
     .linked-control-meta {
       color: var(--muted);
@@ -749,7 +749,7 @@ func exceptionsDetailPage(c *gin.Context) {
       justify-content: center;
     }
     .button-link.secondary, button.secondary {
-      background: #fff;
+      background: var(--surface-strong);
       border: 1px solid var(--line);
     }
     .summary-grid {
@@ -761,7 +761,7 @@ func exceptionsDetailPage(c *gin.Context) {
     .card {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.9);
+      background: var(--panel);
       padding: 16px;
     }
     .card h2 {
@@ -784,7 +784,7 @@ func exceptionsDetailPage(c *gin.Context) {
     .detail-card {
       border: 1px solid rgba(215,206,191,0.9);
       border-radius: 18px;
-      background: rgba(255,255,255,0.9);
+      background: var(--panel);
       padding: 18px;
     }
     .detail-card h3 {
@@ -818,14 +818,14 @@ func exceptionsDetailPage(c *gin.Context) {
       display: block;
       border: 1px solid var(--line);
       border-radius: 12px;
-      background: #f9f7f2;
+      background: var(--surface-strong);
       color: var(--ink);
       text-decoration: none;
       padding: 12px 14px;
     }
     .linked-control-card:hover {
       border-color: #b89d78;
-      background: #f2ece2;
+      background: var(--hover);
     }
     .linked-control-meta {
       color: var(--muted);
@@ -838,7 +838,7 @@ func exceptionsDetailPage(c *gin.Context) {
       border-radius: 14px;
       padding: 18px;
       color: var(--muted);
-      background: rgba(255,255,255,0.82);
+      background: var(--surface-strong);
     }
     @media (max-width: 980px) {
       .summary-grid { grid-template-columns: 1fr; }

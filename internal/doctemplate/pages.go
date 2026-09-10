@@ -153,7 +153,7 @@ const templateCSS = `
 * { box-sizing: border-box; }
 body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink);
        background:linear-gradient(135deg,#f7f3eb,#ece4d6 55%,#e4d8c4); }
-main { max-width:1440px; margin:24px auto; padding:24px; background:rgba(255,252,246,0.92);
+main { max-width:1440px; margin:24px auto; padding:24px; background:var(--bg);
        border:1px solid rgba(215,206,191,0.8); border-radius:24px; }
 .tabs { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
 .tab { padding:10px 14px; border-radius:999px; background:#efe6d6; border:1px solid var(--line);
@@ -166,7 +166,7 @@ h2 { margin:26px 0 12px; font-size:20px; }
 input, select, button, textarea { font:inherit; }
 button { padding:8px 12px; border-radius:999px; border:1px solid #b89d78; background:#e1d0b7; cursor:pointer; }
 button.primary { background:var(--green); color:#fff; border-color:var(--green); }
-button.danger { background:#f0e2dd; color:var(--accent); border-color:var(--accent); }
+button.danger { background:var(--surface-strong); color:var(--accent); border-color:var(--accent); }
 button:disabled { opacity:0.5; cursor:not-allowed; }
 /* Backgrounds come from the theme variables rather than literals wherever the
    text colour does. internal/app/theme_middleware.go overrides --ink and
@@ -174,7 +174,7 @@ button:disabled { opacity:0.5; cursor:not-allowed; }
    those rules renders light text on a light background. */
 .panel { border:1px solid var(--line); border-radius:16px; background:var(--panel,#fffdf8); margin-bottom:18px; overflow:hidden; }
 .panel-header { display:flex; justify-content:space-between; align-items:center; gap:12px;
-                padding:12px 16px; background:#f4ece0; border-bottom:1px solid var(--line);
+                padding:12px 16px; background:var(--surface-strong); border-bottom:1px solid var(--line);
                 font-family:Arial,sans-serif; font-size:13px; text-transform:uppercase; letter-spacing:0.05em; }
 /* text-transform and letter-spacing are reset because a hint often sits inside
    a <label>, which sets both for its own uppercase caption. */
@@ -182,20 +182,20 @@ button:disabled { opacity:0.5; cursor:not-allowed; }
         max-width:82ch; line-height:1.55; text-transform:none; letter-spacing:normal; }
 .muted { color:var(--muted); font-family:Arial,sans-serif; font-size:12.5px; text-transform:none; letter-spacing:0; }
 .notice { padding:12px 16px; border-radius:12px; margin-bottom:16px; font-family:Arial,sans-serif; font-size:13px; }
-.notice.bad { background:#f7e6e2; border:1px solid var(--red); color:#6f1d12; }
+.notice.bad { background:var(--surface-strong); border:1px solid var(--red); color:var(--red); }
 
 .engine-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; padding:16px; }
 .engine { border:1px solid var(--line); border-radius:12px; padding:12px 14px;
           background:var(--surface-strong,#fff); color:var(--ink); }
 .engine h3 { margin:0 0 4px; font-size:15px; font-family:Arial,sans-serif; color:var(--ink); }
 .engine p { margin:6px 0 0; font-family:Arial,sans-serif; font-size:12.5px; color:var(--muted); line-height:1.5; }
-.engine code { font-size:12px; background:#f4ece0; padding:1px 5px; border-radius:4px; }
+.engine code { font-size:12px; background:var(--panel); padding:1px 5px; border-radius:4px; }
 
 .render-form { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; padding:16px; }
 .render-form label, form label { display:flex; flex-direction:column; gap:4px; font-family:Arial,sans-serif;
         font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); }
 .render-form select { min-width:220px; }
-input, select { padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink);
+input, select { padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink);
                 font-family:Arial,sans-serif; font-size:13px; text-transform:none; letter-spacing:0; }
 .actions { display:flex; gap:8px; }
 .log { margin:0 16px 16px; padding:12px; background:#282420; color:#e8e2d8; border-radius:10px;
@@ -212,9 +212,9 @@ input, select { padding:8px 10px; border:1px solid var(--line); border-radius:10
    white card and a black one. Following .pill in internal/policydocs: anything
    that takes only one of the two from the theme inverts when the theme flips. */
 .badge { font-family:Arial,sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:0.06em;
-         padding:3px 8px; border-radius:999px; border:1px solid #c9bfae; background:#efe6d6; color:#3a3a3a; }
-.badge.ok { background:#e4f1ea; color:#0b5d3b; border-color:#0b5d3b; }
-.badge.off { background:#f7e2dd; color:#8f2417; border-color:#8f2417; }
+         padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:var(--surface-strong); color:var(--muted); }
+.badge.ok { background:var(--surface-strong); color:var(--green); border-color:var(--green); }
+.badge.off { background:var(--surface-strong); color:var(--red); border-color:var(--red); }
 .card p.desc { margin:0; font-family:Arial,sans-serif; font-size:13px; color:var(--muted); line-height:1.6; }
 .card .actions { margin-top:auto; }
 

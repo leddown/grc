@@ -169,7 +169,7 @@ func (h *Handler) Page(c *gin.Context) {
       padding: 12px 14px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--bg);
       font: inherit;
     }
     .check {
@@ -179,7 +179,7 @@ func (h *Handler) Page(c *gin.Context) {
       padding: 10px 12px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: white;
+      background: var(--surface-strong);
       font-family: Arial, sans-serif;
       font-size: 13px;
     }

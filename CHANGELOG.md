@@ -3,6 +3,48 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-10 (No bright white backgrounds anywhere in the UI)
+
+Every theme is dark, but the theme layer only repaints the classes it knows
+(`.card`, `.panel`, inputs, buttons, pills). Any page-specific class with a
+hard-coded white or off-white background showed up as a bright box on a dark
+page. The most visible cases were the Crisis Exercise **Run sheet**'s phase
+panels (the ones headed by their T+ time) and its inject message boxes.
+
+- Replaced every white and near-white background in page CSS (`white`, `#fff`,
+  `rgba(255,255,255,…)`, the cream `rgba(255,252,246,…)` on `main`, and
+  off-white tints such as `#fdfaf5`, `#fbf8f2` and `#fffaf0`) with the theme's
+  tokens:
+  - a page panel or card uses `var(--panel)`;
+  - anything nested inside one (phase panels, list items, chips, pills,
+    notices, secondary buttons, code and message boxes) uses
+    `var(--surface-strong)`;
+  - form fields, the page `main` and the Regulation Coverage PDF viewer's
+    backdrop use `var(--bg)`;
+  - hover states use `var(--hover)`.
+- Files: `internal/crisisexercise/pages.go`, `internal/app/{ai_chat,api_docs,
+  asset_types,changelog,exceptions,help,jira_pages,json_view,utilities,
+  wiz_rules}.go`, `internal/controlcatalog/handler.go`,
+  `internal/doctemplate/pages.go`, `internal/nfrenrich/pages.go`,
+  `internal/nfrlink/handler.go`, `internal/policydocs/{pages,coverage_page,
+  render}.go`, `internal/regcoverage/pages.go`,
+  `internal/riskregister/handler.go`, `internal/securitynfr/handler.go`.
+- Where a rule paired a pale background with hard-coded dark text, the text
+  now uses a theme colour too, so it stays readable. This covers the Document
+  Templates error notice and engine badges (`var(--red)`, `var(--green)`,
+  `var(--muted)`), the Utilities warning box (`var(--danger)`), and the policy
+  status pills (`var(--ink)`, `var(--amber)`). The Family Filters on/off
+  toggle now uses a `--surface-strong` track, a `--muted` knob and a `--good`
+  track when on.
+- **Deliberately still white:** paper output. That means the Regulation
+  Coverage PDF (`internal/regcoverage/render.go`), the `@media print` blocks in
+  Exceptions and the policy document view, and the Document Templates paper
+  preview (`.preview`).
+- New guard `ui_background_test.go` (`TestPageStylesHaveNoWhiteBackgrounds`)
+  scans every non-test Go file under `internal/` and fails on a white or
+  near-white `background` outside those paper exceptions, reporting the file
+  and line.
+
 ## 2026-09-10 (Crisis Exercises becomes a top-level section)
 
 **Crisis Exercises** is no longer an entry in the **Compliance & Risk** section.
