@@ -17,6 +17,7 @@ type Repository interface {
 	CreateDocument(doc Document, chunks []Chunk) (Document, error)
 	GetDocument(id int64) (Document, error)
 	DocumentBySHA(sha string) (Document, error)
+	DocumentByLibraryID(libraryDocID int64) (Document, error)
 	ListDocuments() ([]Document, error)
 	DeleteDocument(id int64) error
 	ListChunks(documentID int64) ([]Chunk, error)
@@ -44,7 +45,7 @@ func NewSQLiteRepository(conn *db.Conn) *SQLiteRepository {
 }
 
 // CreateDocument writes the document and its chunks in one transaction. A
-// half-ingested document — rows in nfr_source_documents with no chunks — would
+// half-imported document — rows in nfr_source_documents with no chunks — would
 // present in the UI as an analysable source that silently retrieves nothing.
 func (r *SQLiteRepository) CreateDocument(doc Document, chunks []Chunk) (Document, error) {
 	tx, err := r.conn.Begin()
@@ -54,12 +55,13 @@ func (r *SQLiteRepository) CreateDocument(doc Document, chunks []Chunk) (Documen
 	defer func() { _ = tx.Rollback() }()
 
 	const insertDoc = `INSERT INTO nfr_source_documents
-		(title, origin, url, filename, media_type, sha256, byte_size, uploaded_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		(title, library_doc_id, url, filename, media_type, sha256, byte_size,
+		 extract_via, uploaded_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	id, err := tx.Insert(insertDoc,
-		doc.Title, doc.Origin, doc.URL, doc.Filename, doc.MediaType,
-		doc.SHA256, doc.ByteSize, doc.UploadedBy, doc.CreatedAt)
+		doc.Title, doc.LibraryDocID, doc.URL, doc.Filename, doc.MediaType,
+		doc.SHA256, doc.ByteSize, doc.ExtractVia, doc.ImportedBy, doc.CreatedAt)
 	if err != nil {
 		return Document{}, fmt.Errorf("insert source document: %w", err)
 	}
@@ -85,15 +87,15 @@ func (r *SQLiteRepository) CreateDocument(doc Document, chunks []Chunk) (Documen
 	return doc, nil
 }
 
-const documentColumns = `d.id, d.title, d.origin, d.url, d.filename, d.media_type,
-	d.sha256, d.byte_size, d.uploaded_by, d.created_at,
+const documentColumns = `d.id, d.title, d.library_doc_id, d.url, d.filename, d.media_type,
+	d.sha256, d.byte_size, d.extract_via, d.uploaded_by, d.created_at,
 	(SELECT COUNT(*) FROM nfr_source_chunks c WHERE c.document_id = d.id)`
 
 func scanDocument(scan func(...any) error) (Document, error) {
 	var doc Document
-	err := scan(&doc.ID, &doc.Title, &doc.Origin, &doc.URL, &doc.Filename,
-		&doc.MediaType, &doc.SHA256, &doc.ByteSize, &doc.UploadedBy, &doc.CreatedAt,
-		&doc.ChunkCount)
+	err := scan(&doc.ID, &doc.Title, &doc.LibraryDocID, &doc.URL, &doc.Filename,
+		&doc.MediaType, &doc.SHA256, &doc.ByteSize, &doc.ExtractVia, &doc.ImportedBy,
+		&doc.CreatedAt, &doc.ChunkCount)
 	return doc, err
 }
 
@@ -106,9 +108,21 @@ func (r *SQLiteRepository) GetDocument(id int64) (Document, error) {
 	return doc, err
 }
 
-// DocumentBySHA backs duplicate detection at ingest.
+// DocumentBySHA backs duplicate detection on the extracted text.
 func (r *SQLiteRepository) DocumentBySHA(sha string) (Document, error) {
 	row := r.conn.QueryRow(`SELECT `+documentColumns+` FROM nfr_source_documents d WHERE d.sha256 = ?`, sha)
+	doc, err := scanDocument(row.Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Document{}, ErrNotFound
+	}
+	return doc, err
+}
+
+// DocumentByLibraryID recognises a library document that is already imported,
+// before it is read again.
+func (r *SQLiteRepository) DocumentByLibraryID(libraryDocID int64) (Document, error) {
+	row := r.conn.QueryRow(`SELECT `+documentColumns+
+		` FROM nfr_source_documents d WHERE d.library_doc_id = ? AND d.library_doc_id != 0`, libraryDocID)
 	doc, err := scanDocument(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Document{}, ErrNotFound

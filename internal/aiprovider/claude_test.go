@@ -22,6 +22,21 @@ func flatten(t *testing.T, history []Message, prompt string) []string {
 	return out
 }
 
+// The model is resolved per question, so a model saved in the Settings page
+// takes effect without a restart, and clearing it restores the default.
+func TestClaudeModelFuncIsResolvedPerQuestion(t *testing.T) {
+	configured := "claude-sonnet-5"
+	c := NewClaude(func() string { return "sk-ant-key" }, "").
+		WithModelFunc(func() string { return configured })
+	if got := c.Describe(); got != "Claude: claude-sonnet-5" {
+		t.Errorf("Describe() = %q, want the configured model", got)
+	}
+	configured = "  "
+	if got := c.Describe(); got != "Claude: "+DefaultClaudeModel {
+		t.Errorf("Describe() with the setting cleared = %q, want the default", got)
+	}
+}
+
 func TestClaudeMessages(t *testing.T) {
 	tests := []struct {
 		name    string

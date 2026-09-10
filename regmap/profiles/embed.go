@@ -1,10 +1,7 @@
-// Package profiles embeds the framework profiles so the server can read them
-// without a directory next to the binary. The regmap CLI still loads them from
-// disk (--profiles-dir), which is what makes a profile editable without a
-// rebuild; the web module cannot rely on that and reads this copy instead.
-//
-// The files are the same ones either way — this package is an embed directive
-// over them, not a second copy.
+// Package profiles embeds the framework profiles — the rules that cut a
+// regulation into its articles — so the server reads them from the binary
+// rather than from a directory next to it. Adding a regulation means writing a
+// YAML file here and rebuilding, not editing the segmenter.
 package profiles
 
 import "embed"

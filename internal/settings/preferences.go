@@ -14,6 +14,9 @@ import (
 const (
 	// PrefAIProvider selects which provider answers AI questions.
 	PrefAIProvider = "ai.provider"
+	// PrefClaudeModel names the model every Claude question from this app is
+	// asked on. Empty means aiprovider.DefaultClaudeModel.
+	PrefClaudeModel = "ai.claude.model"
 	// PrefWintermuteURL is the base URL of the Wintermute server that fronts
 	// the local models on the network.
 	PrefWintermuteURL = "ai.wintermute.url"
@@ -48,6 +51,7 @@ const (
 // existing install's behaviour until someone opts in.
 var prefDefaults = map[string]string{
 	PrefAIProvider:        ProviderClaude,
+	PrefClaudeModel:       "",
 	PrefWintermuteURL:     "",
 	PrefWintermuteBackend: "",
 	PrefWintermuteModel:   "",

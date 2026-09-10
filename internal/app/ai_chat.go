@@ -26,11 +26,11 @@ var aiProviderHTTPClient = &http.Client{Timeout: 90 * time.Second}
 // aiChatRequest is one question from the page. It deliberately carries no
 // credential: keys and tokens are set once in the Settings page and resolved
 // server-side, so a secret never rides in a browser request to this endpoint.
+// Nor does it carry a model: that is set in Settings too (see aiChatProvider).
 type aiChatRequest struct {
 	Provider string `json:"provider"`
 	Question string `json:"question"`
 	System   string `json:"system_prompt"`
-	Model    string `json:"model"`
 	Endpoint string `json:"endpoint"`
 	// Backend names a wintermuted backend (a local model server, or Claude)
 	// for the wintermute provider. Empty means that server's default.
@@ -355,22 +355,13 @@ func aiChatPage(c *gin.Context) {
               <option value="claude">Anthropic Claude API</option>
               <option value="wintermute">Wintermute (self-hosted or Claude)</option>
             </select>
+            <p class="hint">Model: <span id="modelName">checking&hellip;</span> &middot; <a href="/settings">set in Settings</a></p>
           </div>
 
           <div id="claudeFields">
             <div class="field">
-              <label for="claudeModel">Model</label>
-              <select id="claudeModel">
-                <option value="claude-opus-5">claude-opus-5</option>
-              </select>
-            </div>
-            <div class="field">
               <label for="claudeEndpoint">Endpoint (optional)</label>
               <input id="claudeEndpoint" class="mono" type="text" placeholder="https://api.anthropic.com/v1/messages">
-            </div>
-            <div class="field">
-              <button id="loadClaudeModels" class="secondary" type="button">Refresh models</button>
-              <p id="claudeModelDetail" class="hint"></p>
             </div>
           </div>
 
@@ -386,12 +377,6 @@ func aiChatPage(c *gin.Context) {
               </select>
             </div>
             <div class="field">
-              <label for="wintermuteModel">Model (optional)</label>
-              <select id="wintermuteModel">
-                <option value="">Backend default</option>
-              </select>
-            </div>
-            <div class="field">
               <label for="wintermuteAgent">Agent</label>
               <select id="wintermuteAgent">
                 <option value="">No agent &mdash; general assistant</option>
@@ -399,7 +384,7 @@ func aiChatPage(c *gin.Context) {
               <p id="agentDetail" class="hint"></p>
             </div>
             <div class="field">
-              <button id="loadCatalog" class="secondary" type="button">Refresh backends, models &amp; agents</button>
+              <button id="loadCatalog" class="secondary" type="button">Refresh backends &amp; agents</button>
               <p id="catalogDetail" class="hint"></p>
             </div>
             <div id="wintermuteNotice" class="notice">
@@ -447,15 +432,12 @@ func aiChatPage(c *gin.Context) {
 
   <script>
     const provider = document.getElementById('provider');
+    const modelName = document.getElementById('modelName');
     const claudeFields = document.getElementById('claudeFields');
-    const claudeModel = document.getElementById('claudeModel');
     const claudeEndpoint = document.getElementById('claudeEndpoint');
-    const loadClaudeModelsBtn = document.getElementById('loadClaudeModels');
-    const claudeModelDetail = document.getElementById('claudeModelDetail');
     const wintermuteFields = document.getElementById('wintermuteFields');
     const wintermuteEndpoint = document.getElementById('wintermuteEndpoint');
     const wintermuteBackend = document.getElementById('wintermuteBackend');
-    const wintermuteModel = document.getElementById('wintermuteModel');
     const wintermuteAgent = document.getElementById('wintermuteAgent');
     const agentDetail = document.getElementById('agentDetail');
     const loadCatalogBtn = document.getElementById('loadCatalog');
@@ -510,10 +492,30 @@ func aiChatPage(c *gin.Context) {
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    // The backend and model come from the server rather than being typed in.
-    // A name that is one character out is not an error anyone sees here: the
-    // question fails at ask time, or quietly goes to the server's default and
-    // reads as though the pin worked.
+    // The model is not chosen here: it is the one Settings configures, so this
+    // page answers on the same model as every other AI field. It is shown so the
+    // reader still knows which that is. Settings pins its Wintermute model within
+    // its own backend, so a different backend picked here gets that backend's
+    // default — the same rule the server applies.
+    const settingsModel = { claude: '', wintermute: '', backend: '' };
+
+    function renderModelName() {
+      if (provider.value === 'claude') {
+        modelName.textContent = settingsModel.claude || 'unknown';
+        return;
+      }
+      const backend = wintermuteBackend.value;
+      if (backend === settingsModel.backend && settingsModel.wintermute) {
+        modelName.textContent = settingsModel.wintermute;
+      } else {
+        modelName.textContent = backend ? 'default for ' + backend : 'backend default';
+      }
+    }
+
+    // The backend comes from the server rather than being typed in. A name that
+    // is one character out is not an error anyone sees here: the question fails
+    // at ask time, or quietly goes to the server's default and reads as though
+    // the pin worked.
     let catalog = { backends: [], models: [], default_backend: '', fallback: '' };
     let catalogLoaded = false;
 
@@ -554,36 +556,12 @@ func aiChatPage(c *gin.Context) {
       // how a question ends up somewhere nobody chose.
       ensureOption(wintermuteBackend, want, want + ' \u2014 not on this server');
       wintermuteBackend.value = want || '';
+      renderModelName();
     }
 
-    function renderModels(selected) {
-      const want = selected !== undefined ? selected : wintermuteModel.value;
-      const backend = wintermuteBackend.value;
-      clearOptions(wintermuteModel);
-      wintermuteModel.options[0].textContent = backend
-        ? 'Default model for ' + backend
-        : 'Backend default';
-      catalog.models
-        .filter((model) => !backend || model.backend === backend)
-        .forEach((model) => {
-          const opt = document.createElement('option');
-          opt.value = model.id;
-          const notes = [];
-          // With no backend chosen the same model id can come from more than
-          // one of them, so say which reported it.
-          if (!backend && model.backend) notes.push(model.backend);
-          if (model.params_b) notes.push(model.params_b + 'B');
-          if (model.loaded) notes.push('loaded');
-          opt.textContent = model.id + (notes.length ? ' (' + notes.join(', ') + ')' : '');
-          wintermuteModel.appendChild(opt);
-        });
-      ensureOption(wintermuteModel, want, want + ' \u2014 not listed on this server');
-      wintermuteModel.value = want || '';
-    }
-
-    async function loadCatalog(selectedBackend, selectedModel) {
+    async function loadCatalog(selectedBackend) {
       const url = wintermuteEndpoint.value.trim();
-      catalogDetail.textContent = 'Loading backends and models\u2026';
+      catalogDetail.textContent = 'Loading backends\u2026';
       try {
         const resp = await fetch('/ai-chat/wintermute/catalog' + (url ? '?url=' + encodeURIComponent(url) : ''));
         const data = await resp.json().catch(() => ({}));
@@ -597,15 +575,11 @@ func aiChatPage(c *gin.Context) {
         };
         catalogLoaded = true;
         renderBackends(selectedBackend);
-        renderModels(selectedModel);
 
         let detail = catalog.backends.length
-          ? catalog.backends.length + ' backend(s), ' + catalog.models.length + ' model(s) on this server.'
+          ? catalog.backends.length + ' backend(s) on this server.'
           : 'This server has no backends yet.';
         if (catalog.fallback) detail += ' Fallback: ' + catalog.fallback + '.';
-        // The model list is fetched separately and may fail on its own; an
-        // empty list must not read as a complete one.
-        if (data.models_error) detail += ' Models could not be listed: ' + data.models_error;
         catalogDetail.textContent = detail;
       } catch (err) {
         catalogDetail.textContent = 'Could not list backends: ' + err.message;
@@ -709,64 +683,11 @@ func aiChatPage(c *gin.Context) {
       }
     }
 
-    // The Claude model list comes from the Anthropic API for the same reason the
-    // Wintermute one does. A model id typed by hand ages badly: the id that was
-    // right last quarter answers with a 404 today, and the failure surfaces on
-    // the question rather than on the field that caused it.
-    let claudeModelsLoaded = false;
-
-    async function loadClaudeModels(selected) {
-      const want = selected !== undefined ? selected : claudeModel.value;
-      const endpoint = claudeEndpoint.value.trim();
-      claudeModelDetail.textContent = 'Loading models\u2026';
-      try {
-        const resp = await fetch('/ai-chat/claude/models' + (endpoint ? '?endpoint=' + encodeURIComponent(endpoint) : ''));
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-
-        const models = data.models || [];
-        clearOptions(claudeModel);
-        claudeModel.options[0].value = data.default || 'claude-opus-5';
-        claudeModel.options[0].textContent = (data.default || 'claude-opus-5') + ' (default)';
-        models
-          .filter((model) => model.id !== claudeModel.options[0].value)
-          .forEach((model) => {
-            const opt = document.createElement('option');
-            opt.value = model.id;
-            opt.textContent = model.display_name && model.display_name !== model.id
-              ? model.id + ' \u2014 ' + model.display_name
-              : model.id;
-            claudeModel.appendChild(opt);
-          });
-        // A model this key cannot address is shown as such rather than dropped:
-        // it is what the next question would be asked with.
-        ensureOption(claudeModel, want, want + ' \u2014 not offered to this key');
-        claudeModel.value = want || claudeModel.options[0].value;
-        claudeModelsLoaded = true;
-        claudeModelDetail.textContent = models.length
-          ? models.length + ' model(s) available to this key.'
-          : 'This key was offered no models.';
-      } catch (err) {
-        claudeModelDetail.textContent = 'Could not list models: ' + err.message;
-      }
-    }
-
-    loadClaudeModelsBtn.addEventListener('click', () => {
-      loadClaudeModels().catch((err) => { claudeModelDetail.textContent = err.message; });
-    });
-
-    // A different endpoint is a different account's catalog.
-    claudeEndpoint.addEventListener('change', () => {
-      claudeModelsLoaded = false;
-      if (provider.value === 'claude' && claude.configured) {
-        loadClaudeModels().catch(() => { /* reported inline */ });
-      }
-    });
-
     function syncProviderView() {
       const p = provider.value;
       claudeFields.style.display = p === 'claude' ? '' : 'none';
       wintermuteFields.style.display = p === 'wintermute' ? '' : 'none';
+      renderModelName();
       // Fetched when the fields are first shown rather than on page load: this
       // page opens on Claude, and a question there needs nothing from that
       // server.
@@ -776,11 +697,6 @@ func aiChatPage(c *gin.Context) {
       if (p === 'wintermute' && !agentsLoaded) {
         loadAgents().catch(() => { /* reported inline */ });
       }
-      // The Claude list waits on the status call, which is what says whether
-      // there is a key to list anything with.
-      if (p === 'claude' && !claudeModelsLoaded && claude.configured) {
-        loadClaudeModels().catch(() => { /* reported inline */ });
-      }
     }
 
     function renderContextNote() {
@@ -788,8 +704,8 @@ func aiChatPage(c *gin.Context) {
       contextNote.textContent = turns ? turns + (turns === 1 ? ' turn of context' : ' turns of context') : '';
     }
 
-    // A Wintermute session is pinned to the server, backend and model it was
-    // opened with, so changing any of those has to start a new one. The
+    // A Wintermute session is pinned to the server and backend it was opened
+    // with, so changing either of those has to start a new one. The
     // transcript survives that: it is the client's, and it is sent with the
     // first question of the new session.
     function dropSession() {
@@ -805,20 +721,20 @@ func aiChatPage(c *gin.Context) {
         wintermute.token_configured = Boolean(data.token_configured);
         claude.configured = Boolean(data.claude_configured);
         applyCredentialChips();
+        settingsModel.claude = String(data.claude_model || '');
+        settingsModel.wintermute = String(data.default_model || '');
+        settingsModel.backend = String(data.default_backend || '');
         if (!wintermuteEndpoint.value && data.default_endpoint) wintermuteEndpoint.value = data.default_endpoint;
         docsBase = String(data.default_endpoint || '');
         syncDocsLink();
-        // Settings' own backend, model and agent are this page's starting
-        // point, and are shown before the server has been asked for its lists
-        // so a slow or failed lookup does not leave the fields looking unset.
+        // Settings' own backend and agent are this page's starting point, and
+        // are shown before the server has been asked for its lists so a slow or
+        // failed lookup does not leave the fields looking unset.
         if (!wintermuteBackend.value && data.default_backend) {
           ensureOption(wintermuteBackend, data.default_backend, data.default_backend);
           wintermuteBackend.value = data.default_backend;
         }
-        if (!wintermuteModel.value && data.default_model) {
-          ensureOption(wintermuteModel, data.default_model, data.default_model);
-          wintermuteModel.value = data.default_model;
-        }
+        renderModelName();
         // The agent Settings configured is the one the AI dock and every other
         // AI field on this installation use, so it is what this page opens on
         // — a reader who changes nothing gets the answer they would have got
@@ -843,17 +759,15 @@ func aiChatPage(c *gin.Context) {
           syncProviderView();
         }
         if (provider.value === 'wintermute') {
-          loadCatalog(wintermuteBackend.value, wintermuteModel.value).catch(() => { /* reported inline */ });
+          loadCatalog(wintermuteBackend.value).catch(() => { /* reported inline */ });
           loadAgents(wintermuteAgent.value).catch(() => { /* reported inline */ });
-        }
-        if (provider.value === 'claude' && claude.configured && !claudeModelsLoaded) {
-          loadClaudeModels(claudeModel.value).catch(() => { /* reported inline */ });
         }
       } catch (_) {
         wintermute.configured = false;
         wintermute.token_configured = false;
         claude.configured = false;
         applyCredentialChips();
+        modelName.textContent = 'unknown';
       }
     }
 
@@ -884,7 +798,7 @@ func aiChatPage(c *gin.Context) {
     // A Wintermute session is created with its agent, so changing the agent
     // starts a new one rather than carrying the question into the library the
     // previous answers came from.
-    for (const field of [wintermuteEndpoint, wintermuteBackend, wintermuteModel, wintermuteAgent]) {
+    for (const field of [wintermuteEndpoint, wintermuteBackend, wintermuteAgent]) {
       field.addEventListener('change', dropSession);
     }
 
@@ -905,14 +819,7 @@ func aiChatPage(c *gin.Context) {
       }
     });
 
-    wintermuteBackend.addEventListener('change', () => {
-      // The chosen model belongs to the backend chosen before, so it is kept
-      // only where the new backend serves it too.
-      const current = wintermuteModel.value;
-      const served = catalog.models.some(
-        (model) => model.id === current && (!wintermuteBackend.value || model.backend === wintermuteBackend.value));
-      renderModels(served ? current : '');
-    });
+    wintermuteBackend.addEventListener('change', renderModelName);
 
     loadCatalogBtn.addEventListener('click', () => {
       loadCatalog().catch((err) => { catalogDetail.textContent = err.message; });
@@ -972,7 +879,6 @@ func aiChatPage(c *gin.Context) {
         provider: provider.value,
         question: text,
         system_prompt: systemPrompt.value.trim(),
-        model: isClaude ? claudeModel.value.trim() : wintermuteModel.value.trim(),
         endpoint: isClaude ? claudeEndpoint.value.trim() : wintermuteEndpoint.value.trim(),
         backend: wintermuteBackend.value.trim(),
         // Sent for Wintermute only, and sent even when empty: an empty agent
@@ -1097,17 +1003,20 @@ func aiChatWintermuteStatus(c *gin.Context) {
 		"configured":        endpoint != "",
 		"token_configured":  storedAICredential("wintermute") != "",
 		"claude_configured": storedAICredential("claude") != "",
-		"default_endpoint":  endpoint,
-		"default_backend":   aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
-		"default_agent":     aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
-		"default_model":     aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
+		// The model Settings configures for Claude. The page shows it; it cannot
+		// change it.
+		"claude_model":     aiChatClaudeModel(),
+		"default_endpoint": endpoint,
+		"default_backend":  aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
+		"default_agent":    aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
+		"default_model":    aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
 	})
 }
 
 // aiChatWintermuteCatalog lists the backends and models on the Wintermute
-// server this page would ask, so its backend and model fields are a choice
-// rather than a typed name — the same list the Settings page offers, against
-// whichever server this page is pointed at.
+// server this page would ask, so its backend field is a choice rather than a
+// typed name — the same list the Settings page offers, against whichever server
+// this page is pointed at.
 //
 // The url parameter is this page's own server-URL override, and reaches no
 // further than the ask path already does: the same ValidateEndpoint rules
@@ -1190,35 +1099,17 @@ func aiChatWintermuteAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"agents": agents})
 }
 
-// aiChatClaudeModels lists the models the configured Anthropic key can address,
-// so this page's Claude model field is a choice rather than a typed id.
-//
-// It is a metadata call — nothing here is billed as tokens — and it takes the
-// same endpoint override the ask path does, which stays restricted to
-// Anthropic's own host.
-func aiChatClaudeModels(c *gin.Context) {
-	key := storedAICredential("claude")
-	if key == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no Anthropic API key: set one in Settings"})
-		return
+// aiChatClaudeModel is the model Settings configures for Claude, or the harness
+// default when none is set.
+func aiChatClaudeModel() string {
+	if model := aiChatPreference(settings.PrefClaudeModel, ""); model != "" {
+		return model
 	}
-	endpoint, err := validatedClaudeBaseURL(c.Query("endpoint"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	models, err := aiprovider.NewClaude(func() string { return key }, "").
-		WithBaseURL(endpoint).
-		Models(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"models": models, "default": aiprovider.DefaultClaudeModel})
+	return aiprovider.DefaultClaudeModel
 }
 
-// aiChatClaudeProvider builds the Claude provider for one request.
+// aiChatClaudeProvider builds the Claude provider for one request, on the model
+// Settings configures.
 func aiChatClaudeProvider(req aiChatRequest) (aiprovider.Provider, error) {
 	key := storedAICredential("claude")
 	if key == "" {
@@ -1229,7 +1120,18 @@ func aiChatClaudeProvider(req aiChatRequest) (aiprovider.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	return aiprovider.NewClaude(func() string { return key }, req.Model).WithBaseURL(endpoint), nil
+	return aiprovider.NewClaude(func() string { return key }, aiChatClaudeModel()).WithBaseURL(endpoint), nil
+}
+
+// aiChatWintermuteModel resolves the model a Wintermute question is asked on:
+// the one Settings configures. Settings pins that model within its own backend,
+// so a question this page sends to a different backend gets that backend's
+// default rather than a model it may not serve.
+func aiChatWintermuteModel(backend string) string {
+	if strings.TrimSpace(backend) != aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND") {
+		return ""
+	}
+	return aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL")
 }
 
 // activeAIRouter is the shared provider harness, wired at startup. It follows
@@ -1301,7 +1203,6 @@ func aiChatAsk(c *gin.Context) {
 	req.Provider = strings.TrimSpace(strings.ToLower(req.Provider))
 	req.Question = strings.TrimSpace(req.Question)
 	req.System = strings.TrimSpace(req.System)
-	req.Model = strings.TrimSpace(req.Model)
 	req.Endpoint = strings.TrimSpace(req.Endpoint)
 	req.Backend = strings.TrimSpace(req.Backend)
 	req.SessionID = strings.TrimSpace(req.SessionID)
@@ -1322,7 +1223,6 @@ func aiChatAsk(c *gin.Context) {
 		History:   boundedHistory(req.History),
 		Prompt:    req.Question,
 		SessionID: req.SessionID,
-		Model:     req.Model,
 		MaxTokens: aiChatMaxTokens,
 	})
 	if err != nil {
@@ -1403,16 +1303,16 @@ func boundedHistory(turns []aiChatTurn) []aiprovider.Message {
 // aiChatProvider builds the provider for one request.
 //
 // This page is the one place a provider is chosen per question rather than per
-// install: a reviewer may want to put a single question to a different model or
-// Wintermute backend. So it does not use the Settings router — it builds a
+// install: a reviewer may want to put a single question to a different provider
+// or Wintermute backend. So it does not use the Settings router — it builds a
 // provider from the request, falling back field by field to the stored
 // configuration. The transport itself is the shared harness, so there is one
 // implementation of each protocol rather than two.
 //
-// Credentials are the exception to "per question": they are never taken from
-// the request. Both keys come from Settings (or the environment behind it), so
-// there is one place to set them and no path that carries a secret through the
-// browser.
+// Credentials and the model are the exceptions to "per question": they are
+// never taken from the request. Both keys and the model come from Settings (or
+// the environment behind it), so there is one place to set them and every AI
+// field in the app answers on the same model.
 func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 	switch req.Provider {
 	case "":
@@ -1436,7 +1336,7 @@ func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 			URL:     req.Endpoint,
 			Token:   storedAICredential("wintermute"),
 			Backend: req.Backend,
-			Model:   req.Model,
+			Model:   aiChatWintermuteModel(req.Backend),
 			// A question asked without an agent is answered from the model's
 			// training data rather than from this installation's catalogs, and
 			// reads exactly like a grounded answer — so a caller that says

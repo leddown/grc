@@ -1,8 +1,12 @@
-// Package regcoverage analyses an uploaded regulation against this
-// installation's compliance vocabulary: the Security NFR catalog and NIST SP
-// 800-53. It is the web counterpart to the regmap CLI, and reuses that tool's
-// extraction, segmentation and framework profiles rather than growing a second
-// implementation of them.
+// Package regcoverage analyses a regulation against this installation's
+// compliance vocabulary: the Security NFR catalog and NIST SP 800-53.
+//
+// The regulation is uploaded to the AI agent's library on the Wintermute
+// server, which extracts its text — with OCR behind it for scans and
+// LibreOffice for the office formats. This module reads that text back and
+// segments it into articles using the framework profiles under regmap/profiles.
+// It holds a reading of a document, and records which reading it was; the file
+// itself stays in the library that owns it.
 //
 // What it adds over regmap is the part a crosswalk alone does not answer. For
 // each article it records whether the article is security-relevant at all, what
@@ -27,11 +31,12 @@
 package regcoverage
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
 
-// Regulation is one uploaded instrument.
+// Regulation is one imported instrument.
 type Regulation struct {
 	ID    int64  `json:"id"`
 	Title string `json:"title"`
@@ -43,21 +48,28 @@ type Regulation struct {
 	// Detected records whether the framework was recognised from the document
 	// or fell back to the generic profile, because that materially changes how
 	// much curated knowledge went into the analysis.
-	Detected  bool   `json:"detected"`
-	Filename  string `json:"filename"`
-	MediaType string `json:"media_type"`
-	SHA256    string `json:"sha256"`
-	ByteSize  int64  `json:"byte_size"`
-	// ExtractMethod names what read the text (pdftotext, the pure-Go reader, a
-	// direct read), which is the first thing to check when segmentation looks
-	// wrong.
+	Detected bool `json:"detected"`
+	// LibraryDocID is this document's id in the agent's library on the
+	// Wintermute server, where the original lives. It is what a link back to
+	// the source is built from, and what a re-import recognises.
+	LibraryDocID int64  `json:"library_doc_id"`
+	Filename     string `json:"filename"`
+	MediaType    string `json:"media_type"`
+	// SHA256 is over the extracted text, not the file — the file is not held
+	// here, and the same instrument exported twice is two files and one
+	// document.
+	SHA256   string `json:"sha256"`
+	ByteSize int64  `json:"byte_size"`
+	// ExtractMethod names what read the text on that server — a PDF text layer,
+	// OCR, LibreOffice — which is the first thing to check when segmentation
+	// looks wrong.
 	ExtractMethod string   `json:"extract_method"`
 	ExtractNotes  []string `json:"extract_notes,omitempty"`
 	TextChars     int      `json:"text_chars"`
 	Status        string   `json:"status"`
 	StatusDetail  string   `json:"status_detail,omitempty"`
 	SectionCount  int      `json:"section_count"`
-	UploadedBy    string   `json:"uploaded_by"`
+	ImportedBy    string   `json:"imported_by"`
 	CreatedAt     string   `json:"created_at"`
 	AnalyzedAt    string   `json:"analyzed_at,omitempty"`
 	// LatestVersion is 0 until the first analysis completes.
@@ -249,7 +261,14 @@ type ErrNotFound struct{ What string }
 
 func (e ErrNotFound) Error() string { return e.What + " not found" }
 
-// ErrInvalid reports a caller mistake — a bad upload, an empty question.
+// ErrNoLibrary means there is no agent library to import from: no Wintermute
+// server configured, or no agent chosen. It is distinct from an unconfigured
+// model because the remedy is different — a model answers questions, a library
+// holds the regulations — and a page that conflated them would send someone to
+// set an API key that changes nothing here.
+var ErrNoLibrary = errors.New("no Wintermute document library is available")
+
+// ErrInvalid reports a caller mistake — an empty question, an unknown framework.
 type ErrInvalid struct{ Message string }
 
 func (e ErrInvalid) Error() string { return e.Message }

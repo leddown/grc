@@ -23,7 +23,10 @@ type Claude struct {
 	// takes effect without a restart.
 	keyFunc func() string
 	model   string
-	baseURL string
+	// modelFunc, when set, is consulted per request for the same reason as
+	// keyFunc; an empty result falls back to model.
+	modelFunc func() string
+	baseURL   string
 
 	// The SDK client is rebuilt only when the resolved key changes, so the
 	// common path does not construct one per request.
@@ -39,6 +42,23 @@ func NewClaude(keyFunc func() string, model string) *Claude {
 		model = DefaultClaudeModel
 	}
 	return &Claude{keyFunc: keyFunc, model: model}
+}
+
+// WithModelFunc resolves the model per request, so a model chosen in the
+// Settings page takes effect without a restart and clearing it restores the
+// model given to NewClaude.
+func (c *Claude) WithModelFunc(fn func() string) *Claude {
+	c.modelFunc = fn
+	return c
+}
+
+func (c *Claude) resolvedModel() string {
+	if c.modelFunc != nil {
+		if model := strings.TrimSpace(c.modelFunc()); model != "" {
+			return model
+		}
+	}
+	return c.model
 }
 
 // WithBaseURL overrides the API origin, for a caller that routes through a
@@ -57,7 +77,7 @@ func (c *Claude) Describe() string {
 	if !c.Available() {
 		return "Claude: no API key"
 	}
-	return "Claude: " + c.model
+	return "Claude: " + c.resolvedModel()
 }
 
 func (c *Claude) key() string {
@@ -192,7 +212,7 @@ func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
 
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
-		model = c.model
+		model = c.resolvedModel()
 	}
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {

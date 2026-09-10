@@ -2,11 +2,14 @@ package nfrenrich
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"grc/internal/aiprovider"
 	"grc/internal/securitynfr"
 )
 
@@ -27,28 +30,61 @@ type NFRStore interface {
 	Update(key string, nfr securitynfr.NFR) (securitynfr.NFR, error)
 }
 
-// Service orchestrates ingestion, analysis and review.
+// LibraryFunc resolves the agent's document library, or says why there is
+// none. Resolved per call rather than captured, so a Settings change applies
+// without a restart — the same rule the AI provider harness follows.
+type LibraryFunc func() (aiprovider.Library, error)
+
+// Service orchestrates import, analysis and review.
 type Service struct {
 	repo      Repository
 	nfrs      NFRStore
 	analyzer  Analyzer
 	retriever Retriever
-	fetcher   *Fetcher
+	library   LibraryFunc
 }
 
-func NewService(repo Repository, nfrs NFRStore, analyzer Analyzer) *Service {
+func NewService(repo Repository, nfrs NFRStore, analyzer Analyzer, library LibraryFunc) *Service {
 	return &Service{
 		repo:      repo,
 		nfrs:      nfrs,
 		analyzer:  analyzer,
 		retriever: NewBM25Retriever(),
-		fetcher:   NewFetcher(),
+		library:   library,
 	}
 }
 
-// Configured reports whether analysis is available. Ingestion and review work
-// without a key; only the analysis step needs one.
+// Configured reports whether analysis is available. Importing and review work
+// without a model; only the analysis step needs one.
 func (s *Service) Configured() bool { return s.analyzer != nil && s.analyzer.Configured() }
+
+// LibraryAvailable reports whether there is a library to import from, so the
+// page can say what is missing rather than offering a button that fails.
+func (s *Service) LibraryAvailable() bool {
+	_, err := s.resolveLibrary()
+	return err == nil
+}
+
+// LibraryURL is where the agent's library is managed, for a link out. Uploading
+// and deleting happen there; this module only reads.
+func (s *Service) LibraryURL() string {
+	lib, err := s.resolveLibrary()
+	if err != nil {
+		return ""
+	}
+	return lib.LibraryURL()
+}
+
+func (s *Service) resolveLibrary() (aiprovider.Library, error) {
+	if s.library == nil {
+		return nil, ErrNoLibrary
+	}
+	lib, err := s.library()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrNoLibrary, err.Error())
+	}
+	return lib, nil
+}
 
 // Model reports the model analysis will run on, for the UI.
 func (s *Service) Model() string {
@@ -60,59 +96,154 @@ func (s *Service) Model() string {
 
 // ---- documents ----
 
-// UploadInput is a document supplied as bytes.
-type UploadInput struct {
+// ImportInput names a document in the agent's library to bring in.
+type ImportInput struct {
+	// LibraryDocID is the document's id on the Wintermute server. It is the
+	// only way to name a document: there is no upload path here, because the
+	// extraction that would follow one lives on that server.
+	LibraryDocID int64
+	// Title overrides the library's own title. Empty keeps it.
 	Title      string
-	Filename   string
-	MediaType  string
-	Body       []byte
-	UploadedBy string
+	ImportedBy string
 }
 
-// AddUpload ingests an uploaded document.
-func (s *Service) AddUpload(in UploadInput) (Document, error) {
-	doc, chunks, err := PrepareDocument(Document{
-		Title:      strings.TrimSpace(in.Title),
-		Origin:     OriginUpload,
-		Filename:   strings.TrimSpace(in.Filename),
-		MediaType:  strings.TrimSpace(in.MediaType),
-		UploadedBy: strings.TrimSpace(in.UploadedBy),
-		CreatedAt:  nowStamp(),
-	}, in.Body)
+// Import copies one library document's passages in, so they can be retrieved
+// against the NFR catalog.
+//
+// What is copied is the text that server already extracted, not the file. The
+// original stays in the library, which is what can re-read it when a better
+// tool is installed — this module holds a reading of a document, and says which
+// reading it was.
+func (s *Service) Import(ctx context.Context, in ImportInput) (Document, error) {
+	lib, err := s.resolveLibrary()
 	if err != nil {
 		return Document{}, err
+	}
+	if in.LibraryDocID <= 0 {
+		return Document{}, invalidf("a library document is required")
+	}
+
+	// Checked before the read, which is the expensive part: importing the same
+	// document twice produces two identical proposals for every NFR it matches,
+	// doubling the review queue without adding a fact.
+	if existing, err := s.repo.DocumentByLibraryID(in.LibraryDocID); err == nil {
+		return Document{}, invalidf(
+			"that document is already imported as %q (id %d)", existing.Title, existing.ID)
+	}
+
+	content, err := lib.ReadLibraryDocument(ctx, in.LibraryDocID)
+	if err != nil {
+		return Document{}, fmt.Errorf("read the document from wintermute: %w", err)
+	}
+	if !content.Document.Ready() {
+		return Document{}, invalidf(
+			"%q is still being read on the Wintermute server — import it once that has finished",
+			content.Document.Title)
+	}
+
+	chunks := make([]Chunk, 0, len(content.Chunks))
+	for _, c := range content.Chunks {
+		if strings.TrimSpace(c.Body) == "" {
+			continue
+		}
+		chunks = append(chunks, Chunk{
+			Ordinal: len(chunks),
+			Heading: strings.TrimSpace(c.Heading),
+			Text:    c.Body,
+		})
+	}
+	if len(chunks) == 0 {
+		return Document{}, ErrEmptyDocument
+	}
+
+	sum := sha256.Sum256([]byte(content.Text))
+	doc := Document{
+		Title:        firstNonEmpty(strings.TrimSpace(in.Title), content.Document.Title, content.Document.Filename),
+		LibraryDocID: content.Document.ID,
+		URL:          content.Document.SourceURL,
+		Filename:     content.Document.Filename,
+		MediaType:    content.Document.MediaType,
+		SHA256:       hex.EncodeToString(sum[:]),
+		ByteSize:     content.Document.ByteSize,
+		ExtractVia:   content.Document.ExtractVia,
+		ImportedBy:   strings.TrimSpace(in.ImportedBy),
+		CreatedAt:    nowStamp(),
 	}
 	return s.store(doc, chunks)
 }
 
-// AddURL fetches and ingests a web document.
-func (s *Service) AddURL(ctx context.Context, url, title, uploadedBy string) (Document, error) {
-	body, mediaType, err := s.fetcher.Fetch(ctx, url)
+// ListLibrary lists what the agent's library holds, marking what is already
+// imported so the picker does not offer the same document twice.
+func (s *Service) ListLibrary(ctx context.Context) ([]LibraryEntry, error) {
+	lib, err := s.resolveLibrary()
 	if err != nil {
-		return Document{}, err
+		return nil, err
 	}
-	doc, chunks, err := PrepareDocument(Document{
-		Title:      strings.TrimSpace(title),
-		Origin:     OriginURL,
-		URL:        strings.TrimSpace(url),
-		MediaType:  mediaType,
-		UploadedBy: strings.TrimSpace(uploadedBy),
-		CreatedAt:  nowStamp(),
-	}, body)
+	docs, err := lib.LibraryDocuments(ctx)
 	if err != nil {
-		return Document{}, err
+		return nil, fmt.Errorf("list the wintermute library: %w", err)
 	}
-	return s.store(doc, chunks)
+
+	imported, err := s.repo.ListDocuments()
+	if err != nil {
+		return nil, err
+	}
+	byLibraryID := make(map[int64]int64, len(imported))
+	for _, doc := range imported {
+		if doc.LibraryDocID > 0 {
+			byLibraryID[doc.LibraryDocID] = doc.ID
+		}
+	}
+
+	out := make([]LibraryEntry, 0, len(docs))
+	for _, doc := range docs {
+		entry := LibraryEntry{
+			ID:         doc.ID,
+			Title:      doc.Title,
+			Filename:   doc.Filename,
+			MediaType:  doc.MediaType,
+			ByteSize:   doc.ByteSize,
+			ChunkCount: doc.ChunkCount,
+			ExtractVia: doc.ExtractVia,
+			Ready:      doc.Ready(),
+			ImportedAs: byLibraryID[doc.ID],
+		}
+		if doc.Processing != nil {
+			entry.Processing = "being read"
+			if doc.Processing.Failed {
+				entry.Processing = "could not be read: " + doc.Processing.LastError
+			}
+		}
+		out = append(out, entry)
+	}
+	return out, nil
 }
 
-// store rejects a re-ingest of identical text. Two copies of one document
-// produce two identical proposals for every NFR it matches, which doubles the
-// review queue without adding a single new fact.
+// LibraryEntry is one library document as the import picker needs it.
+type LibraryEntry struct {
+	ID         int64  `json:"id"`
+	Title      string `json:"title"`
+	Filename   string `json:"filename,omitempty"`
+	MediaType  string `json:"media_type,omitempty"`
+	ByteSize   int64  `json:"byte_size"`
+	ChunkCount int    `json:"chunk_count"`
+	ExtractVia string `json:"extract_via,omitempty"`
+	Ready      bool   `json:"ready"`
+	Processing string `json:"processing,omitempty"`
+	// ImportedAs is the local document id when this one is already imported,
+	// and zero when it is not.
+	ImportedAs int64 `json:"imported_as,omitempty"`
+}
+
+// store rejects a re-import of identical text. Two library documents can be the
+// same instrument exported twice, and two copies produce two identical
+// proposals for every NFR they match — twice the review queue, no new facts.
 func (s *Service) store(doc Document, chunks []Chunk) (Document, error) {
 	if existing, err := s.repo.DocumentBySHA(doc.SHA256); err == nil {
 		return Document{}, invalidf(
 			"this document is already in the corpus as %q (id %d)", existing.Title, existing.ID)
 	}
+	doc.ChunkCount = len(chunks)
 	return s.repo.CreateDocument(doc, chunks)
 }
 
@@ -120,10 +251,12 @@ func (s *Service) ListDocuments() ([]Document, error) { return s.repo.ListDocume
 
 func (s *Service) GetDocument(id int64) (Document, error) { return s.repo.GetDocument(id) }
 
-// DeleteDocument removes a source and supersedes anything still pending
-// against it: a proposal whose evidence has been deleted cannot be reviewed,
-// and leaving it pending asks someone to accept a claim they can no longer
-// check. Accepted proposals are kept as provenance — see the repository.
+// DeleteDocument removes an imported source and supersedes anything still
+// pending against it: a proposal whose evidence has been deleted cannot be
+// reviewed, and leaving it pending asks someone to accept a claim they can no
+// longer check. Accepted proposals are kept as provenance — see the repository.
+//
+// The library document itself is untouched. This removes a copy, not a source.
 func (s *Service) DeleteDocument(id int64) error {
 	pending, err := s.repo.ListProposals(ProposalFilter{Status: StatusPending, DocumentID: id})
 	if err != nil {
@@ -415,6 +548,15 @@ func (s *Service) RejectProposal(id int64, note, decidedBy string) (Proposal, er
 // ---- helpers ----
 
 func nowStamp() string { return time.Now().UTC().Format(time.RFC3339) }
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
 
 func containsString(set []string, value string) bool {
 	for _, item := range set {

@@ -127,6 +127,57 @@ func TestListCatalogSurvivesAModelListFailure(t *testing.T) {
 	}
 }
 
+func TestListClaudeModelsWithoutAKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	svc, _ := testService(t)
+	h := NewHandler(svc.WithPreferences(newMemPrefs()), nil)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.RegisterAdminRoutes(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/settings/ai-providers/claude-models", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 — body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Anthropic API key") {
+		t.Errorf("body = %s, want it to name the missing credential", rec.Body.String())
+	}
+}
+
+// The Claude model is saved through the same endpoint as the rest of the
+// provider settings, and an empty value clears it back to the default.
+func TestSetPreferencesStoresTheClaudeModel(t *testing.T) {
+	svc, _ := testService(t)
+	h := NewHandler(svc.WithPreferences(newMemPrefs()), nil)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.RegisterAdminRoutes(r)
+
+	put := func(body string) providerResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/settings/ai-providers", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		var resp providerResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return resp
+	}
+
+	if got := put(`{"claude_model":" claude-sonnet-5 "}`).Preferences[PrefClaudeModel]; got != "claude-sonnet-5" {
+		t.Errorf("stored claude model = %q, want it trimmed", got)
+	}
+	if got := put(`{"claude_model":""}`).Preferences[PrefClaudeModel]; got != "" {
+		t.Errorf("cleared claude model = %q, want empty", got)
+	}
+}
+
 func TestListCatalogWithoutAServerURL(t *testing.T) {
 	// The URL preference falls back to the environment, so a developer machine
 	// with one set must not turn this into a live request.

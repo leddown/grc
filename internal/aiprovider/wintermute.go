@@ -169,6 +169,12 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		// declares no client tools, so that means the model asked for
 		// something only an agent harness can run.
 		if status := stringField(turn, "status"); status != "" && status != "complete" {
+			// Walking away now would leave the call unanswered on the server
+			// for good, and every later turn on this session replays it — so
+			// the calls are refused explicitly before the error is returned.
+			// Sessions here are resumable, so this is not somebody else's
+			// problem to clean up.
+			w.refusePendingCalls(ctx, base, cfg.Token, sessionID, turn)
 			return Response{}, fmt.Errorf("wintermute turn ended with status %q and no reply", status)
 		}
 		return Response{}, errNoAnswer
@@ -182,6 +188,38 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		SessionID: sessionID,
 		Usage:     extractUsage(turn),
 	}, nil
+}
+
+// refusePendingCalls tells the server that the calls it is waiting on will not
+// run here.
+//
+// This app declares no client tools, so it should never be asked for one — but
+// "should never" is not "cannot", and the cost of being wrong is a session that
+// answers nothing ever again. Best effort by design: it is already returning an
+// error, and a failure to post the refusal changes nothing it could report.
+func (w *Wintermute) refusePendingCalls(ctx context.Context, base, token, sessionID string, turn map[string]any) {
+	pending, _ := turn["pending_calls"].([]any)
+	results := make([]map[string]any, 0, len(pending))
+	for _, entry := range pending {
+		call, _ := entry.(map[string]any)
+		id := stringField(call, "id")
+		if id == "" {
+			continue
+		}
+		results = append(results, map[string]any{
+			"call_id":   id,
+			"tool_name": stringField(call, "name"),
+			"content":   "This client runs no tools; the call did not happen.",
+			"is_error":  true,
+			"decision":  "blocked",
+		})
+	}
+	if len(results) == 0 {
+		return
+	}
+	_, _ = w.postJSON(ctx,
+		base+"/api/v1/sessions/"+neturl.PathEscape(sessionID)+"/tool_results",
+		token, map[string]any{"results": results, "client_tools": []any{}})
 }
 
 // transcriptPrefix renders earlier turns as labelled text, for the one case

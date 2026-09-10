@@ -390,6 +390,9 @@ func registerRegulationCoverageRoutes(
 		regcoverage.NewSQLiteRepository(sqliteDB),
 		nfrService,
 		aiRouter,
+		// Regulations live in the agent's library on the Wintermute server,
+		// which extracted them; this reads that text back and segments it.
+		aiRouter.Library,
 	).WithRenderer(pdfRenderer)
 
 	handler := regcoverage.NewHandler(service, sessionUsername)
@@ -492,7 +495,7 @@ func newAIRouter(settingsService *settings.Service) *aiprovider.Router {
 	claude := aiprovider.NewClaude(
 		func() string { return settingsService.Get(settings.AnthropicAPIKey) },
 		"",
-	)
+	).WithModelFunc(func() string { return settingsService.Preference(settings.PrefClaudeModel) })
 	wintermute := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
 		return aiprovider.WintermuteConfig{
 			URL:     settingsService.Preference(settings.PrefWintermuteURL),
@@ -582,6 +585,10 @@ func registerNFREnrichmentRoutes(
 		// in Settings applies without a restart. The harness logs usage, so
 		// this module no longer does.
 		nfrenrich.NewRoutedAnalyzer(aiRouter),
+		// The document library lives on the Wintermute server, so it is
+		// resolved through the same router: a Settings change picks a different
+		// agent, and the next import reads that agent's library.
+		aiRouter.Library,
 	)
 	handler := nfrenrich.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)
@@ -679,7 +686,6 @@ func registerAIAuxRoutes(r gin.IRouter) {
 	r.GET("/ai-chat/wintermute/status", aiChatWintermuteStatus)
 	r.GET("/ai-chat/wintermute/catalog", aiChatWintermuteCatalog)
 	r.GET("/ai-chat/wintermute/agents", aiChatWintermuteAgents)
-	r.GET("/ai-chat/claude/models", aiChatClaudeModels)
 }
 
 func registerAuthRoutes(r gin.IRouter, authHandler *authn.Handler) {

@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // Retrieval is BM25 over the document's own chunks, per POLICY_MODULE_FRAMEWORK
@@ -236,5 +237,41 @@ func queryTerms(query string) map[string]float64 {
 			}
 		}
 	}
+	return out
+}
+
+// tokenize lowercases and splits on non-alphanumerics, keeping the dots and
+// hyphens inside control identifiers: "AC-2" and "1.2.3" must survive as single
+// terms or the retrieval loses precisely the keywords compliance search runs on.
+func tokenize(s string) []string {
+	var (
+		out  []string
+		curr strings.Builder
+	)
+	flush := func() {
+		if curr.Len() == 0 {
+			return
+		}
+		term := strings.Trim(curr.String(), ".-")
+		curr.Reset()
+		if term != "" {
+			out = append(out, term)
+		}
+	}
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			curr.WriteRune(r)
+		case r == '-' || r == '.' || r == '_':
+			// Kept only between alphanumerics, which flush handles by trimming
+			// the edges.
+			if curr.Len() > 0 {
+				curr.WriteRune(r)
+			}
+		default:
+			flush()
+		}
+	}
+	flush()
 	return out
 }

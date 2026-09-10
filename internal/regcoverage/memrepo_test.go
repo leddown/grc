@@ -13,7 +13,6 @@ type memRepo struct {
 	nextID      int64
 	regulations map[int64]*Regulation
 	texts       map[int64]string
-	sources     map[int64]Source
 	sections    map[int64][]Section
 	findings    map[int64][]Finding
 	versions    map[int64][]Version
@@ -24,7 +23,6 @@ func newMemRepo() *memRepo {
 	return &memRepo{
 		regulations: map[int64]*Regulation{},
 		texts:       map[int64]string{},
-		sources:     map[int64]Source{},
 		sections:    map[int64][]Section{},
 		findings:    map[int64][]Finding{},
 		versions:    map[int64][]Version{},
@@ -37,7 +35,7 @@ func (m *memRepo) id() int64 {
 	return m.nextID
 }
 
-func (m *memRepo) CreateRegulation(reg Regulation, text string, sections []Section, source Source) (Regulation, error) {
+func (m *memRepo) CreateRegulation(reg Regulation, text string, sections []Section) (Regulation, error) {
 	reg.ID = m.id()
 	reg.SectionCount = len(sections)
 	reg.TextChars = len(text)
@@ -52,7 +50,6 @@ func (m *memRepo) CreateRegulation(reg Regulation, text string, sections []Secti
 	copied := reg
 	m.regulations[reg.ID] = &copied
 	m.texts[reg.ID] = text
-	m.sources[reg.ID] = source
 	m.sections[reg.ID] = stored
 	return copied, nil
 }
@@ -82,6 +79,15 @@ func (m *memRepo) RegulationBySHA(sha string) (Regulation, error) {
 	return Regulation{}, notFound("regulation")
 }
 
+func (m *memRepo) RegulationByLibraryID(libraryDocID int64) (Regulation, error) {
+	for id, reg := range m.regulations {
+		if reg.LibraryDocID != 0 && reg.LibraryDocID == libraryDocID {
+			return m.GetRegulation(id)
+		}
+	}
+	return Regulation{}, notFound("regulation")
+}
+
 func (m *memRepo) ListRegulations() ([]Regulation, error) {
 	ids := make([]int64, 0, len(m.regulations))
 	for id := range m.regulations {
@@ -103,7 +109,6 @@ func (m *memRepo) DeleteRegulation(id int64) error {
 	}
 	delete(m.regulations, id)
 	delete(m.texts, id)
-	delete(m.sources, id)
 	delete(m.sections, id)
 	delete(m.findings, id)
 	delete(m.versions, id)
@@ -129,14 +134,6 @@ func (m *memRepo) RegulationText(id int64) (string, error) {
 		return "", notFound("regulation")
 	}
 	return m.texts[id], nil
-}
-
-func (m *memRepo) GetSource(id int64) (Source, error) {
-	src, ok := m.sources[id]
-	if !ok {
-		return Source{}, notFound("original document")
-	}
-	return src, nil
 }
 
 func (m *memRepo) ListSections(regulationID int64) ([]Section, error) {

@@ -56,6 +56,37 @@ The Settings page and the AI Chat page then link to that agent's page on
 Wintermute, which is where documents are uploaded — that server owns the
 library, the extraction and the search over it.
 
+## Documents go one way: to the library
+
+This application accepts no document uploads and reads no PDFs. It used to do
+both, badly: its own PDF reader, its own DOCX reader, no OCR, its own size
+limit, and its own copy of every file. All of that is on the Wintermute server
+already, and better — a text layer where there is one, `ocrmypdf` and Tesseract
+for a scan, LibreOffice for the office formats, and a fleet node to run them on
+if the server is small.
+
+So a regulation or a security document is uploaded **there**, to one agent's
+library, and the two modules that work on documents read the extracted text
+back:
+
+```
+GET /api/v1/agents/{id}/documents            what the library holds
+GET /api/v1/agents/{id}/documents/{n}/text   one document's passages, paged
+```
+
+`internal/aiprovider/library.go` is the client, using the same server URL,
+client token and agent already configured in Settings. **Regulation Coverage**
+imports a regulation and segments it into articles; **NFR Enrichment** imports a
+security document and proposes catalog entries from its passages. Both copy the
+passages in, so a report and its citations survive that server being
+unreachable — but the document itself has one home, and re-reading it with a
+better tool happens there and is re-imported here.
+
+The practical consequence: a document that has not finished being read on that
+server cannot be imported, and both pickers say so rather than importing a
+fraction of it. A document that server could not read at all cannot be imported
+either, which is the honest outcome — it was never readable here.
+
 ## The API
 
 Five endpoints under `/api/knowledge`, all GET, all read-only. There is no

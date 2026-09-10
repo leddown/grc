@@ -63,14 +63,14 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
   controls and frameworks (see [CRISIS_EXERCISE.md](CRISIS_EXERCISE.md))
 - `internal/pageui` — shared side-nav tab rendering
 - `internal/data` — embedded seed JSON for the control and NFR catalogs
-- `internal/regmap` — regulation → NIST 800-53 crosswalk tool with human review
-  gates, driven by `cmd/regmap` (see [REGMAP.md](REGMAP.md))
+- `internal/regmap` — the framework profiles that cut a regulation into its
+  articles, and the segmenter that applies them; used by Regulation Coverage
 - `internal/knowledge` — read-only, machine-facing query surface over this
   installation's catalogs, for an AI agent to consult (see
   [AI_AGENT.md](AI_AGENT.md))
-- `internal/regcoverage` — Regulation Coverage: upload an EU regulation, map
-  every article to Security NFRs and 800-53, and get a versioned report you can
-  question and revise (see
+- `internal/regcoverage` — Regulation Coverage: import an EU regulation from
+  the AI agent's library, map every article to Security NFRs and 800-53, and
+  get a versioned report you can question and revise (see
   [REGULATION_COVERAGE.md](REGULATION_COVERAGE.md))
 - `scripts/` — goreleaser cross-build, smoke-test, and artifact-upload helpers
 
@@ -86,8 +86,6 @@ storage, `golang.org/x/crypto/bcrypt` for password hashing.
 - [RISK_REGISTER_FRAMEWORK.md](RISK_REGISTER_FRAMEWORK.md) — risk register
   methodology
 - [JIRA_CONNECTOR.md](JIRA_CONNECTOR.md) — Jira integration methodology
-- [REGMAP.md](REGMAP.md) — `regmap` regulation → NIST 800-53 crosswalk CLI,
-  its review gates, and how to add a framework profile
 - [AI_AGENT.md](AI_AGENT.md) — how questions asked here get answered from this
   installation's own data, via an agent on your Wintermute server
 - [REGULATION_COVERAGE.md](REGULATION_COVERAGE.md) — the Regulation Coverage

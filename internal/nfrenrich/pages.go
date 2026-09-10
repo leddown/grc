@@ -123,7 +123,7 @@ func pageHTML() string {
   <main>
     ` + pageui.Nav("/nfr-enrichment") + `
     <h1>NFR Enrichment</h1>
-    <p>Upload or link a security document, analyse it against the Security NFR catalog, and review what the model proposes. Nothing reaches the catalog until you accept it.</p>
+    <p>Import a security document from the AI agent's library, analyse it against the Security NFR catalog, and review what the model proposes. Nothing reaches the catalog until you accept it.</p>
 
     <div id="configNotice" class="notice" style="display:none;"></div>
 
@@ -132,24 +132,18 @@ func pageHTML() string {
         <div class="panel-header"><h2>Source documents</h2></div>
         <div class="panel-body">
           <div class="field">
-            <label for="docURL">Add by URL</label>
-            <input id="docURL" class="mono" type="text" placeholder="https://example.com/security-standard">
+            <label for="libraryPick">Import from the agent's library</label>
+            <select id="libraryPick"><option value="">Loading…</option></select>
           </div>
           <div class="field">
             <label for="docTitle">Title (optional)</label>
-            <input id="docTitle" type="text" placeholder="derived from the document">
+            <input id="docTitle" type="text" placeholder="the library's own title">
           </div>
           <div class="actions">
-            <button id="addURLBtn" type="button">Fetch URL</button>
+            <button id="importBtn" type="button">Import</button>
+            <button id="refreshLibraryBtn" class="secondary" type="button">Refresh</button>
           </div>
-
-          <div class="field" style="margin-top:16px;">
-            <label for="docFile">Or upload a file (text, Markdown or HTML)</label>
-            <input id="docFile" type="file" accept=".txt,.md,.markdown,.html,.htm,text/plain,text/markdown,text/html">
-          </div>
-          <div class="actions">
-            <button id="uploadBtn" class="secondary" type="button">Upload</button>
-          </div>
+          <p class="meta" id="libraryHint" style="margin-top:8px;"></p>
 
           <div id="docStatus" class="status"></div>
           <div id="docList" style="margin-top:14px;"></div>
@@ -176,11 +170,11 @@ func pageHTML() string {
   </main>
 
   <script>
-    const docURL = document.getElementById('docURL');
+    const libraryPick = document.getElementById('libraryPick');
     const docTitle = document.getElementById('docTitle');
-    const docFile = document.getElementById('docFile');
-    const addURLBtn = document.getElementById('addURLBtn');
-    const uploadBtn = document.getElementById('uploadBtn');
+    const importBtn = document.getElementById('importBtn');
+    const refreshLibraryBtn = document.getElementById('refreshLibraryBtn');
+    const libraryHint = document.getElementById('libraryHint');
     const docStatus = document.getElementById('docStatus');
     const docList = document.getElementById('docList');
     const proposalStatus = document.getElementById('proposalStatus');
@@ -190,6 +184,7 @@ func pageHTML() string {
 
     let fields = ['implementation'];
     let configured = false;
+    let libraryURL = '';
 
     function esc(v) {
       return String(v == null ? '' : v)
@@ -215,10 +210,15 @@ func pageHTML() string {
         configured = Boolean(data.configured);
         fields = data.fields && data.fields.length ? data.fields : fields;
 
-        if (!configured) {
+        libraryURL = data.library_url || '';
+        if (!data.library) {
           configNotice.style.display = '';
           configNotice.textContent =
-            'Documents can be added and proposals reviewed, but analysis needs an Anthropic API key: set one in Settings. It takes effect immediately.';
+            'Documents live in the AI agent\'s library on the Wintermute server. Set that server, its token and an agent in Settings, then upload documents there and import them here.';
+        } else if (!configured) {
+          configNotice.style.display = '';
+          configNotice.textContent =
+            'Documents can be imported and proposals reviewed, but analysis needs an AI provider: set one in Settings. It takes effect immediately.';
         } else {
           configNotice.style.display = '';
           configNotice.textContent = 'Analysis runs on ' + (data.model || 'the configured model') +
@@ -226,9 +226,55 @@ func pageHTML() string {
         }
 
         renderDocuments(data.documents || []);
+        if (data.library) await loadLibrary();
+        else renderLibrary(null);
       } catch (err) {
         setStatus(docStatus, 'Could not load documents: ' + err.message, true);
       }
+    }
+
+    async function loadLibrary() {
+      try {
+        const data = await api('/nfr-enrichment/library');
+        renderLibrary(data.documents || []);
+      } catch (err) {
+        renderLibrary(null);
+        setStatus(docStatus, 'Could not read the agent library: ' + err.message, true);
+      }
+    }
+
+    // A document still being read on that server, or one already imported, is
+    // shown and disabled rather than hidden: somebody who just uploaded it
+    // needs to see that it arrived and why it cannot be picked yet.
+    function renderLibrary(entries) {
+      importBtn.disabled = true;
+      if (!entries) {
+        libraryPick.innerHTML = '<option value="">No library available</option>';
+        libraryHint.textContent = '';
+        return;
+      }
+      if (!entries.length) {
+        libraryPick.innerHTML = '<option value="">The library is empty</option>';
+        libraryHint.innerHTML = libraryURL
+          ? 'Upload documents to <a href="' + esc(libraryURL) + '" rel="noreferrer noopener" target="_blank">the agent\'s library</a> first.'
+          : '';
+        return;
+      }
+      const options = entries.map(function (e) {
+        const size = Math.max(1, Math.round(e.byte_size / 1024)) + ' KiB';
+        let label = e.title + ' · ' + size;
+        let disabled = '';
+        if (e.imported_as) { label += ' · already imported'; disabled = ' disabled'; }
+        else if (e.processing) { label += ' · ' + e.processing; disabled = ' disabled'; }
+        else if (!e.ready) { label += ' · not readable'; disabled = ' disabled'; }
+        else { label += ' · ' + e.chunk_count + ' sections'; }
+        return '<option value="' + e.id + '"' + disabled + '>' + esc(label) + '</option>';
+      }).join('');
+      libraryPick.innerHTML = '<option value="">Choose a document…</option>' + options;
+      libraryHint.innerHTML = libraryURL
+        ? 'Uploading, re-reading and deleting happen in <a href="' + esc(libraryURL) + '" rel="noreferrer noopener" target="_blank">the agent\'s library</a>.'
+        : '';
+      importBtn.disabled = false;
     }
 
     function renderDocuments(docs) {
@@ -237,16 +283,17 @@ func pageHTML() string {
         return;
       }
       docList.innerHTML = docs.map(function (d) {
-        const where = d.origin === 'url'
+        const where = d.url
           ? '<a href="' + esc(d.url) + '" rel="noreferrer noopener" target="_blank">' + esc(d.url) + '</a>'
-          : esc(d.filename || 'uploaded file');
+          : esc(d.filename || 'library document');
+        const read = d.extract_via ? ' · read by ' + esc(d.extract_via) : '';
         const fieldOptions = fields.map(function (f) {
           return '<option value="' + esc(f) + '">' + esc(f.replaceAll('_', ' ')) + '</option>';
         }).join('');
         return '' +
           '<div class="doc" data-id="' + d.id + '">' +
             '<div class="doc-title">' + esc(d.title) + '</div>' +
-            '<div class="meta">' + where + ' · ' + d.chunk_count + ' sections · ' + esc(d.created_at) + '</div>' +
+            '<div class="meta">' + where + ' · ' + d.chunk_count + ' sections' + read + ' · ' + esc(d.created_at) + '</div>' +
             '<div class="actions">' +
               '<select class="field-select" style="width:auto;padding:6px 10px;font-size:12px;">' + fieldOptions + '</select>' +
               '<button type="button" class="analyze-btn"' + (configured ? '' : ' disabled') + '>Analyse</button>' +
@@ -301,45 +348,35 @@ func pageHTML() string {
       }
     });
 
-    addURLBtn.addEventListener('click', async function () {
-      const url = docURL.value.trim();
-      if (!url) { setStatus(docStatus, 'A URL is required.', true); return; }
-      addURLBtn.disabled = true;
-      setStatus(docStatus, 'Fetching…');
+    importBtn.addEventListener('click', async function () {
+      const id = Number(libraryPick.value);
+      if (!id) { setStatus(docStatus, 'Choose a document first.', true); return; }
+      importBtn.disabled = true;
+      setStatus(docStatus, 'Importing…');
       try {
         await api('/nfr-enrichment/documents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: url, title: docTitle.value.trim() })
+          body: JSON.stringify({ library_doc_id: id, title: docTitle.value.trim() })
         });
-        docURL.value = ''; docTitle.value = '';
-        setStatus(docStatus, 'Document added.');
+        docTitle.value = '';
+        setStatus(docStatus, 'Document imported.');
         await loadDocuments();
       } catch (err) {
-        setStatus(docStatus, 'Could not add the document: ' + err.message, true);
+        setStatus(docStatus, 'Could not import the document: ' + err.message, true);
       } finally {
-        addURLBtn.disabled = false;
+        importBtn.disabled = false;
       }
     });
 
-    uploadBtn.addEventListener('click', async function () {
-      const file = docFile.files && docFile.files[0];
-      if (!file) { setStatus(docStatus, 'Choose a file first.', true); return; }
-      const form = new FormData();
-      form.append('file', file);
-      if (docTitle.value.trim()) form.append('title', docTitle.value.trim());
-
-      uploadBtn.disabled = true;
-      setStatus(docStatus, 'Uploading…');
+    refreshLibraryBtn.addEventListener('click', async function () {
+      refreshLibraryBtn.disabled = true;
+      setStatus(docStatus, 'Reading the agent library…');
       try {
-        await api('/nfr-enrichment/documents', { method: 'POST', body: form });
-        docFile.value = ''; docTitle.value = '';
-        setStatus(docStatus, 'Document added.');
-        await loadDocuments();
-      } catch (err) {
-        setStatus(docStatus, 'Upload failed: ' + err.message, true);
+        await loadLibrary();
+        setStatus(docStatus, '');
       } finally {
-        uploadBtn.disabled = false;
+        refreshLibraryBtn.disabled = false;
       }
     });
 

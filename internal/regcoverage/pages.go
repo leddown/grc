@@ -148,7 +148,7 @@ const reportBodyStyles = `
 `
 
 // indexPageHTML is the upload-and-list page.
-func indexPageHTML(frameworks []Framework, configured bool, model string) string {
+func indexPageHTML(frameworks []Framework, configured bool, model, libraryURL string) string {
 	var options strings.Builder
 	options.WriteString(`<option value="">Detect from the document</option>`)
 	for _, f := range frameworks {
@@ -187,16 +187,16 @@ func indexPageHTML(frameworks []Framework, configured bool, model string) string
     </div>
 
     <section class="card">
-      <h2>Upload a regulation</h2>
-      <form id="uploadForm" class="grid">
+      <h2>Import a regulation</h2>
+      <form id="importForm" class="grid">
         <div class="fields">
           <div>
-            <label for="file">Document (PDF, DOCX, TXT, MD — max ` + humanBytes(MaxUploadBytes) + `)</label>
-            <input id="file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
+            <label for="libraryPick">Document in the AI agent's library</label>
+            <select id="libraryPick" required><option value="">Loading…</option></select>
           </div>
           <div>
             <label for="title">Title (optional)</label>
-            <input id="title" name="title" type="text" placeholder="Taken from the filename">
+            <input id="title" name="title" type="text" placeholder="The library's own title">
           </div>
           <div>
             <label for="framework">Framework profile</label>
@@ -204,12 +204,15 @@ func indexPageHTML(frameworks []Framework, configured bool, model string) string
           </div>
         </div>
         <div class="toolbar">
-          <button type="submit">Upload &amp; segment</button>
-          <span id="uploadStatus" class="status"></span>
+          <button type="submit">Import &amp; segment</button>
+          <button type="button" id="refreshLibraryBtn" class="ghost">Refresh</button>
+          <span id="importStatus" class="status"></span>
         </div>
       </form>
-      <p class="status">Uploading only extracts and segments the document — nothing is sent to a
-      model until you run the analysis, so a document that segmented badly can be deleted first.</p>
+      <p class="status" id="libraryHint">` + libraryHintHTML(libraryURL) + `</p>
+      <p class="status">Importing only segments the text the agent's library already extracted —
+      nothing is sent to a model until you run the analysis, so a document that segmented badly
+      can be deleted first.</p>
     </section>
 
     <section class="card">
@@ -223,8 +226,10 @@ func indexPageHTML(frameworks []Framework, configured bool, model string) string
 
   <script>
     const rows = document.getElementById('rows');
-    const uploadForm = document.getElementById('uploadForm');
-    const uploadStatus = document.getElementById('uploadStatus');
+    const importForm = document.getElementById('importForm');
+    const importStatus = document.getElementById('importStatus');
+    const libraryPick = document.getElementById('libraryPick');
+    const refreshLibraryBtn = document.getElementById('refreshLibraryBtn');
 
     function esc(value) {
       return String(value == null ? '' : value)
@@ -276,25 +281,67 @@ func indexPageHTML(frameworks []Framework, configured bool, model string) string
       }
     }
 
-    uploadForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const file = document.getElementById('file').files[0];
-      if (!file) { setStatus(uploadStatus, 'Choose a file first.', true); return; }
-      const body = new FormData();
-      body.append('file', file);
-      body.append('title', document.getElementById('title').value);
-      body.append('framework', document.getElementById('framework').value);
-
-      setStatus(uploadStatus, 'Extracting and segmenting…');
+    // A document still being read on that server, or one already imported, is
+    // shown and disabled rather than hidden: somebody who just uploaded it
+    // needs to see that it arrived and why it cannot be picked yet.
+    async function loadLibrary() {
       try {
-        const resp = await fetch('/regulation-coverage/regulations', { method: 'POST', body });
+        const resp = await fetch('/regulation-coverage/library');
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-        setStatus(uploadStatus, 'Segmented into ' + data.section_count + ' section(s).');
-        uploadForm.reset();
+        const entries = data.documents || [];
+        if (!entries.length) {
+          libraryPick.innerHTML = '<option value="">The library is empty</option>';
+          return;
+        }
+        libraryPick.innerHTML = '<option value="">Choose a document…</option>' +
+          entries.map((e) => {
+            const size = Math.max(1, Math.round(e.byte_size / 1024)) + ' KiB';
+            let label = e.title + ' · ' + size;
+            let disabled = '';
+            if (e.imported_as) { label += ' · already imported'; disabled = ' disabled'; }
+            else if (e.processing) { label += ' · ' + e.processing; disabled = ' disabled'; }
+            else if (!e.ready) { label += ' · not readable'; disabled = ' disabled'; }
+            else { label += ' · ' + e.chunk_count + ' passages'; }
+            return '<option value="' + e.id + '"' + disabled + '>' + esc(label) + '</option>';
+          }).join('');
+      } catch (err) {
+        libraryPick.innerHTML = '<option value="">No library available</option>';
+        setStatus(importStatus, err.message, true);
+      }
+    }
+
+    refreshLibraryBtn.addEventListener('click', async () => {
+      refreshLibraryBtn.disabled = true;
+      setStatus(importStatus, 'Reading the agent library…');
+      try { await loadLibrary(); setStatus(importStatus, ''); }
+      finally { refreshLibraryBtn.disabled = false; }
+    });
+
+    importForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const id = Number(libraryPick.value);
+      if (!id) { setStatus(importStatus, 'Choose a document first.', true); return; }
+
+      setStatus(importStatus, 'Reading and segmenting…');
+      try {
+        const resp = await fetch('/regulation-coverage/regulations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            library_doc_id: id,
+            title: document.getElementById('title').value,
+            framework: document.getElementById('framework').value
+          })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        setStatus(importStatus, 'Segmented into ' + data.section_count + ' section(s).');
+        importForm.reset();
+        await loadLibrary();
         load();
       } catch (err) {
-        setStatus(uploadStatus, err.message, true);
+        setStatus(importStatus, err.message, true);
       }
     });
 
@@ -328,6 +375,7 @@ func indexPageHTML(frameworks []Framework, configured bool, model string) string
     });
 
     load();
+    loadLibrary();
   </script>
 </body>
 </html>`
@@ -341,6 +389,30 @@ type reportPageData struct {
 	AIConfigured bool
 	Model        string
 	PDFAvailable bool
+	// LibraryURL is the agent's library on the Wintermute server, for the link
+	// to the original. Empty when there is no library configured, in which case
+	// the panel says what was read without offering a link that would 404.
+	LibraryURL string
+}
+
+// libraryHintHTML tells the reader where regulations come from now, and links
+// to the place they are uploaded when there is one.
+func libraryHintHTML(libraryURL string) string {
+	if strings.TrimSpace(libraryURL) == "" {
+		return `Regulations are uploaded to the AI agent's library on the Wintermute server. ` +
+			`Set that server, its token and an agent in <a href="/settings">Settings</a> first.`
+	}
+	return `Uploading, re-reading and deleting happen in ` +
+		`<a href="` + esc(libraryURL) + `" rel="noreferrer noopener" target="_blank">` +
+		`the agent's library</a>; this imports what is already there.`
+}
+
+// libraryDocumentURL builds a link to one document in the agent's library.
+func libraryDocumentURL(libraryURL string, documentID int64) string {
+	if strings.TrimSpace(libraryURL) == "" || documentID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s?document=%d", libraryURL, documentID)
 }
 
 // reportPageHTML puts the report, the original document and the conversation on
@@ -388,20 +460,19 @@ func reportPageHTML(data reportPageData) string {
 			`</span>` + esc(turn.Content) + `</div>`)
 	}
 
-	// The original is shown in an iframe rather than an object/embed so the
-	// sandbox and CSP the source route sets actually apply to it.
-	// The link below the frame is not redundant: a browser configured to
-	// download PDFs rather than display them renders the frame blank, and
-	// without it the original would look unavailable.
-	viewer := fmt.Sprintf(
-		`<iframe class="viewer" src="/regulation-coverage/%d/source" title="Original document" loading="lazy"></iframe>`+
-			`<p class="status">Not displaying? <a href="/regulation-coverage/%d/source">Open the original in a new tab</a>.</p>`,
-		id, id)
-	if report.Regulation.MediaType != "application/pdf" &&
-		!strings.HasPrefix(report.Regulation.MediaType, "text/") {
-		viewer = fmt.Sprintf(
-			`<p class="status">This document type cannot be displayed in the browser. `+
-				`<a href="/regulation-coverage/%d/source">Download the original</a>.</p>`, id)
+	// The original is not held here — it is in the agent's library on the
+	// Wintermute server, which is what re-reads it when a better extractor
+	// arrives. So the panel says what was read and how, and links to the
+	// document itself where it lives.
+	viewer := `<p class="status">The original is in the AI agent's library on the Wintermute ` +
+		`server, which extracted the text this report was written against`
+	if method := strings.TrimSpace(report.Regulation.ExtractMethod); method != "" {
+		viewer += ` (read by ` + esc(method) + `)`
+	}
+	viewer += `.</p>`
+	if link := libraryDocumentURL(data.LibraryURL, report.Regulation.LibraryDocID); link != "" {
+		viewer += `<p class="status"><a href="` + esc(link) +
+			`" rel="noreferrer noopener" target="_blank">Open it in the agent's library</a>.</p>`
 	}
 
 	return `<!doctype html>
@@ -420,7 +491,6 @@ func reportPageHTML(data reportPageData) string {
       ` + aiChip + pdfButton + `
       <a class="chip" href="/regulation-coverage/` + fmt.Sprint(id) + `/report.json?version=` +
 		fmt.Sprint(report.Version.Number) + `">JSON</a>
-      <a class="chip" href="/regulation-coverage/` + fmt.Sprint(id) + `/source">Original document</a>
       <select id="versionPicker" style="width:auto">` + versionOptions.String() + `</select>
     </div>
 

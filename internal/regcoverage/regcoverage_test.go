@@ -2,6 +2,7 @@ package regcoverage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -93,14 +94,65 @@ Technical measures
 Entities shall encrypt personal data in transit using state of the art cryptography.
 `
 
-func TestIngestSegmentsAndIdentifies(t *testing.T) {
-	got, err := Ingest(UploadInput{Filename: "eu-2099-1234.txt", Body: []byte(sampleRegulation)})
+// libraryContent builds one ready library document out of extracted text, the
+// way the Wintermute server hands it over.
+func libraryContent(id int64, filename, text string) aiprovider.LibraryContent {
+	return aiprovider.LibraryContent{
+		Document: aiprovider.LibraryDocument{
+			ID: id, Title: filename, Filename: filename, MediaType: "text/plain; charset=utf-8",
+			ByteSize: int64(len(text)), TextChars: len(text), ChunkCount: 1,
+			ExtractVia: "text layer",
+		},
+		Chunks: []aiprovider.LibraryChunk{{Ordinal: 0, Body: text}},
+		Text:   text,
+	}
+}
+
+// fakeLibrary stands in for the agent's document library, counting reads so a
+// test can assert that one did not happen.
+type fakeLibrary struct {
+	docs  map[int64]aiprovider.LibraryContent
+	reads int
+}
+
+func newFakeLibrary(contents ...aiprovider.LibraryContent) *fakeLibrary {
+	lib := &fakeLibrary{docs: map[int64]aiprovider.LibraryContent{}}
+	for _, c := range contents {
+		lib.docs[c.Document.ID] = c
+	}
+	return lib
+}
+
+func (f *fakeLibrary) provide() (aiprovider.Library, error) { return f, nil }
+
+func (f *fakeLibrary) LibraryURL() string { return "https://wintermute.example/agents/acme" }
+
+func (f *fakeLibrary) LibraryDocuments(context.Context) ([]aiprovider.LibraryDocument, error) {
+	out := []aiprovider.LibraryDocument{}
+	for _, content := range f.docs {
+		out = append(out, content.Document)
+	}
+	return out, nil
+}
+
+func (f *fakeLibrary) ReadLibraryDocument(_ context.Context, id int64) (aiprovider.LibraryContent, error) {
+	f.reads++
+	content, ok := f.docs[id]
+	if !ok {
+		return aiprovider.LibraryContent{}, notFound("document")
+	}
+	return content, nil
+}
+
+func TestImportSegmentsAndIdentifies(t *testing.T) {
+	got, err := Import(ImportInput{
+		Content: libraryContent(1, "eu-2099-1234.txt", sampleRegulation)})
 	if err != nil {
-		t.Fatalf("Ingest: %v", err)
+		t.Fatalf("Import: %v", err)
 	}
 
 	// Nothing in the text names a known framework, so it must fall back to the
-	// generic profile rather than refusing the upload.
+	// generic profile rather than refusing the document.
 	if got.Regulation.Framework != GenericProfileID {
 		t.Errorf("framework = %q, want the generic fallback", got.Regulation.Framework)
 	}
@@ -129,32 +181,35 @@ func TestIngestSegmentsAndIdentifies(t *testing.T) {
 	if !strings.Contains(art17.Body, "within 24 hours") {
 		t.Errorf("Article 17 body does not carry its obligation: %q", art17.Body)
 	}
-	if got.Source.MediaType != "text/plain; charset=utf-8" {
-		t.Errorf("source media type = %q", got.Source.MediaType)
+	// The reading travels with the document: a report built on an OCR'd scan
+	// should be readable as one.
+	if got.Regulation.ExtractMethod != "text layer" {
+		t.Errorf("ExtractMethod = %q, want what the library said read it", got.Regulation.ExtractMethod)
 	}
-	if string(got.Source.Content) != sampleRegulation {
-		t.Error("the original upload was not preserved byte for byte")
+	if got.Regulation.LibraryDocID != 1 {
+		t.Errorf("LibraryDocID = %d, want the library document it came from", got.Regulation.LibraryDocID)
 	}
 }
 
-func TestIngestRejectsBadUploads(t *testing.T) {
+func TestImportRejectsWhatItCannotSegment(t *testing.T) {
 	tests := []struct {
 		name    string
-		in      UploadInput
+		in      ImportInput
 		wantErr string
 	}{
-		{"empty", UploadInput{Filename: "a.txt"}, "empty"},
-		{"no filename", UploadInput{Body: []byte("x")}, "filename is required"},
-		{"unsupported type", UploadInput{Filename: "reg.xlsx", Body: []byte("x")}, "unsupported document type"},
-		{"oversized", UploadInput{Filename: "reg.txt", Body: make([]byte, MaxUploadBytes+1)}, "the limit is"},
-		{"no articles", UploadInput{Filename: "reg.txt", Body: []byte("just some prose with no structure at all")},
+		{"no text", ImportInput{Content: libraryContent(1, "a.txt", "")}, "no readable text"},
+		{"no filename or title", ImportInput{
+			Content: aiprovider.LibraryContent{Text: "Article 1\n\nSomething."}}, "neither a filename nor a title"},
+		{"no articles", ImportInput{
+			Content: libraryContent(1, "reg.txt", "just some prose with no structure at all")},
 			"no articles or sections"},
-		{"unknown framework", UploadInput{Filename: "reg.txt", Body: []byte(sampleRegulation), Framework: "nope"},
+		{"unknown framework", ImportInput{
+			Content: libraryContent(1, "reg.txt", sampleRegulation), Framework: "nope"},
 			"unknown framework"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := Ingest(tc.in)
+			_, err := Import(tc.in)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("error = %v, want it to contain %q", err, tc.wantErr)
 			}
@@ -164,14 +219,14 @@ func TestIngestRejectsBadUploads(t *testing.T) {
 
 // A known framework must be recognised from the document, because that is what
 // brings its curated crosswalk into the analysis.
-func TestIngestDetectsAKnownFramework(t *testing.T) {
+func TestImportDetectsAKnownFramework(t *testing.T) {
 	text := "Regulation (EU) 2022/2554 on digital operational resilience\n\n" +
 		"Article 5\nICT risk management framework\n\n" +
 		"Financial entities shall have an internal governance and control framework that ensures " +
 		"an effective and prudent management of ICT risk.\n"
-	got, err := Ingest(UploadInput{Filename: "dora.txt", Body: []byte(text)})
+	got, err := Import(ImportInput{Content: libraryContent(2, "dora.txt", text)})
 	if err != nil {
-		t.Fatalf("Ingest: %v", err)
+		t.Fatalf("Import: %v", err)
 	}
 	if got.Regulation.Framework != "dora" {
 		t.Fatalf("framework = %q, want dora", got.Regulation.Framework)
@@ -181,6 +236,40 @@ func TestIngestDetectsAKnownFramework(t *testing.T) {
 	}
 	if got.Regulation.SourceRef != "EU 2022/2554" {
 		t.Errorf("SourceRef = %q, want the profile's", got.Regulation.SourceRef)
+	}
+}
+
+// Importing the same library document twice would be two reports on one
+// instrument, and the second is the one somebody circulates. It is refused
+// before the read, so the message names the report that already exists.
+func TestImportRejectsTheSameLibraryDocumentTwice(t *testing.T) {
+	repo := newMemRepo()
+	lib := newFakeLibrary(libraryContent(4, "eu.txt", sampleRegulation))
+	svc := NewService(repo, testNFRs(), nil, lib.provide)
+
+	if _, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 4}); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	reads := lib.reads
+	if _, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 4}); err == nil {
+		t.Fatal("the same library document was imported twice")
+	}
+	if lib.reads != reads {
+		t.Errorf("the duplicate was read from wintermute before being refused (%d reads)", lib.reads)
+	}
+}
+
+// With no Wintermute server or agent there is nothing to import from, and the
+// message has to say that rather than pointing at a model.
+func TestImportWithoutALibrarySaysSo(t *testing.T) {
+	svc := NewService(newMemRepo(), testNFRs(), nil, nil)
+
+	_, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1})
+	if !errors.Is(err, ErrNoLibrary) {
+		t.Fatalf("Import without a library = %v, want ErrNoLibrary", err)
+	}
+	if svc.LibraryAvailable() {
+		t.Error("LibraryAvailable() is true with no library configured")
 	}
 }
 
@@ -430,10 +519,17 @@ func analysisScript() map[string]string {
 	}
 }
 
+// newTestService wires the service over an in-memory repository and a library
+// holding the sample regulation as document 1, which is what importRegulation
+// below brings in.
 func newTestService(t *testing.T, asker Asker) (*Service, *memRepo) {
 	t.Helper()
 	repo := newMemRepo()
-	svc := NewService(repo, testNFRs(), asker)
+	lib := newFakeLibrary(
+		libraryContent(1, "eu.txt", sampleRegulation),
+		libraryContent(2, "copy.txt", sampleRegulation),
+	)
+	svc := NewService(repo, testNFRs(), asker, lib.provide)
 	stamp := 0
 	svc.now = func() time.Time {
 		stamp++
@@ -449,9 +545,9 @@ func TestAnalyzeProducesAReportAndAVersion(t *testing.T) {
 	}
 	svc, _ := newTestService(t, asker)
 
-	reg, err := svc.Upload(UploadInput{Filename: "eu.txt", Body: []byte(sampleRegulation), UploadedBy: "alice"})
+	reg, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1, ImportedBy: "alice"})
 	if err != nil {
-		t.Fatalf("Upload: %v", err)
+		t.Fatalf("Import: %v", err)
 	}
 	if reg.Status != StatusIngested {
 		t.Errorf("status after upload = %q, want %q", reg.Status, StatusIngested)
@@ -507,9 +603,9 @@ func TestAnalyzeSurvivesAFailedSection(t *testing.T) {
 	script["EU-ART-2"] = "I refuse to answer."
 	asker := &stubAsker{bySection: script, replies: []string{"Summary."}}
 	svc, _ := newTestService(t, asker)
-	reg, err := svc.Upload(UploadInput{Filename: "eu.txt", Body: []byte(sampleRegulation)})
+	reg, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1})
 	if err != nil {
-		t.Fatalf("Upload: %v", err)
+		t.Fatalf("Import: %v", err)
 	}
 
 	result, err := svc.Analyze(context.Background(), reg.ID, "")
@@ -544,9 +640,9 @@ func TestReviseWritesANewVersionAndKeepsTheOld(t *testing.T) {
 	script["EU-ART-17"] = analysisReply(true, "within 24 hours of becoming aware of it", "IR-6", "AC-2")
 	asker := &stubAsker{bySection: script, replies: []string{"Summary v1."}}
 	svc, _ := newTestService(t, asker)
-	reg, err := svc.Upload(UploadInput{Filename: "eu.txt", Body: []byte(sampleRegulation)})
+	reg, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1})
 	if err != nil {
-		t.Fatalf("Upload: %v", err)
+		t.Fatalf("Import: %v", err)
 	}
 	if _, err := svc.Analyze(context.Background(), reg.ID, "alice"); err != nil {
 		t.Fatalf("Analyze: %v", err)
@@ -610,9 +706,9 @@ func TestReviseWritesANewVersionAndKeepsTheOld(t *testing.T) {
 func TestChatIsGroundedInTheReport(t *testing.T) {
 	asker := &stubAsker{bySection: analysisScript(), replies: []string{"Summary."}}
 	svc, _ := newTestService(t, asker)
-	reg, err := svc.Upload(UploadInput{Filename: "eu.txt", Body: []byte(sampleRegulation)})
+	reg, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1})
 	if err != nil {
-		t.Fatalf("Upload: %v", err)
+		t.Fatalf("Import: %v", err)
 	}
 
 	// Chat before analysis has no report to stand on.
@@ -671,9 +767,9 @@ func TestChatResumesAProviderSession(t *testing.T) {
 		replies:   []string{"Summary."},
 	}}
 	svc, _ := newTestService(t, asker)
-	reg, err := svc.Upload(UploadInput{Filename: "eu.txt", Body: []byte(sampleRegulation)})
+	reg, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1})
 	if err != nil {
-		t.Fatalf("Upload: %v", err)
+		t.Fatalf("Import: %v", err)
 	}
 	if _, err := svc.Analyze(context.Background(), reg.ID, ""); err != nil {
 		t.Fatalf("Analyze: %v", err)
@@ -710,13 +806,16 @@ func (s *sessionAsker) Ask(ctx context.Context, req aiprovider.Request) (aiprovi
 	return resp, err
 }
 
-func TestUploadRefusesADuplicate(t *testing.T) {
+// Two library documents can be the same instrument exported twice. The second
+// import is refused on the extracted text, not on the document id, because
+// nothing about the ids says they are the same regulation.
+func TestImportRefusesADuplicate(t *testing.T) {
 	svc, _ := newTestService(t, &stubAsker{})
-	if _, err := svc.Upload(UploadInput{Filename: "eu.txt", Body: []byte(sampleRegulation)}); err != nil {
-		t.Fatalf("first Upload: %v", err)
+	if _, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1}); err != nil {
+		t.Fatalf("first Import: %v", err)
 	}
-	_, err := svc.Upload(UploadInput{Filename: "copy.txt", Body: []byte(sampleRegulation)})
-	if err == nil || !strings.Contains(err.Error(), "already uploaded") {
+	_, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 2})
+	if err == nil || !strings.Contains(err.Error(), "already imported") {
 		t.Fatalf("error = %v, want a duplicate complaint", err)
 	}
 }

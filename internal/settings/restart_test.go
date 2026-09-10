@@ -53,6 +53,7 @@ func TestAIProviderSettingsSurviveARestart(t *testing.T) {
 	dir := t.TempDir()
 	want := map[string]string{
 		PrefAIProvider:        ProviderWintermute,
+		PrefClaudeModel:       "claude-sonnet-5",
 		PrefWintermuteURL:     "https://wintermute.example.com",
 		PrefWintermuteBackend: "workshop",
 		PrefWintermuteModel:   "gemma3:12b",
