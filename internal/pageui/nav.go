@@ -51,8 +51,16 @@ var navGroups = []NavGroup{
 			{Path: "/policies/manage", Label: "Policy Editor"},
 			{Path: "/policies/coverage", Label: "Policy Coverage"},
 			{Path: "/regulation-coverage", Label: "Regulation Coverage"},
-			{Path: "/crisis-exercises", Label: "Crisis Exercises"},
 			{Path: "/wiz-rules", Label: "Wiz Rules"},
+		},
+	},
+	{
+		// Its own section, like AI Chat, so the topbar renders it as a direct
+		// link: an exercise runs across its own design, delivery and reporting
+		// tabs, and it was one entry buried among eight compliance pages.
+		Label: "Crisis Exercises",
+		Items: []NavItem{
+			{Path: "/crisis-exercises", Label: "Crisis Exercises"},
 		},
 	},
 	{

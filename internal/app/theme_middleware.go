@@ -615,7 +615,8 @@ pre, code {
 // handling instead of home.go duplicating and diverging from it.
 //
 // The sidebar carries one section at a time. Its top level — Catalog,
-// Compliance & Risk, Reporting & Data, Documents, Admin — is a switcher in a
+// Compliance & Risk, Crisis Exercises, Reporting & Data, AI Chat, Documents,
+// Admin — is a switcher in a
 // fixed topbar, which is wintermute's shape: .topbar holds the view buttons,
 // the sidebar holds the tabs of the view you are in. Stacking all five groups
 // and their thirty-odd items in one column meant the section you were working

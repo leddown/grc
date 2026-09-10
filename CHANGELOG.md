@@ -3,6 +3,22 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-10 (Crisis Exercises becomes a top-level section)
+
+**Crisis Exercises** is no longer an entry in the **Compliance & Risk** section.
+It is now a section of its own in the topbar, between Compliance & Risk and
+Reporting & Data. Because it has only one page, the topbar renders it as a direct
+link, the same way it renders AI Chat.
+
+- `internal/pageui/nav.go`: removed `/crisis-exercises` from the Compliance &
+  Risk group and added a single-item `Crisis Exercises` group after it. The
+  route, the page and its access control (`allowed_pages` entry
+  `/crisis-exercises`) are unchanged.
+- `internal/app/help.go`: the "Finding your way around" section list and the
+  page table now name Crisis Exercises as its own section.
+- `internal/app/theme_middleware.go`: the comment listing the topbar sections
+  now matches the real list, including AI Chat, which it had also omitted.
+
 ## 2026-09-10 (AI Chat: Session panel removed; backend and agent kept)
 
 The AI Chat Gateway's left-hand **Session** panel is gone. Questions now go to

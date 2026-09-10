@@ -136,8 +136,8 @@ func helpPage(c *gin.Context) {
     <section class="panel">
       <div class="panel-body">
         <ul>
-          <li>The bar across the top holds the sections — Catalog, Compliance &amp; Risk, Reporting
-            &amp; Data, AI Chat, Documents, Admin. Picking one changes the sidebar to that
+          <li>The bar across the top holds the sections — Catalog, Compliance &amp; Risk, Crisis
+            Exercises, Reporting &amp; Data, AI Chat, Documents, Admin. Picking one changes the sidebar to that
             section's pages; a section with a single page links straight to it.</li>
           <li><strong>Search pages</strong> in the sidebar (or <code>Ctrl K</code>) jumps to any page
             by name.</li>
@@ -479,7 +479,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/manage">/policies/manage</a></td><td>Write policy sections and cite controls.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/coverage">/policies/coverage</a></td><td>Which controls have policy text behind them.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/regulation-coverage">/regulation-coverage</a></td><td>Map a regulation article by article; report, question, revise.</td></tr>
-          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/crisis-exercises">/crisis-exercises</a></td><td>Plan, deliver and report crisis and continuity exercises.</td></tr>
+          <tr><td class="section">Crisis Exercises</td><td class="page"><a href="/crisis-exercises">/crisis-exercises</a></td><td>Plan, deliver and report crisis and continuity exercises.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/wiz-rules">/wiz-rules</a></td><td>Draft a Wiz-style detection rule payload.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports">/reports</a></td><td>Operational reporting over the catalogs.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/JSON_view">/JSON_view</a></td><td>One panel for requirement, family and stored JSON.</td></tr>
