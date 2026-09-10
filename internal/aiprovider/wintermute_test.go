@@ -3,6 +3,7 @@ package aiprovider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,6 +28,10 @@ type stubWintermute struct {
 	seenText       string
 	// failWith, when non-zero, makes every authenticated call fail.
 	failWith int
+	// pending is what a turn reports as awaiting this client, and seenResults
+	// records what was posted back to close them out.
+	pending     []any
+	seenResults []any
 }
 
 func (s *stubWintermute) server(t *testing.T) *httptest.Server {
@@ -74,12 +79,20 @@ func (s *stubWintermute) server(t *testing.T) *httptest.Server {
 			status = "complete"
 		}
 		writeJSON(w, map[string]any{
-			"reply":   s.reply,
-			"status":  status,
-			"backend": s.backend,
-			"model":   s.model,
-			"usage":   map[string]any{"input_tokens": float64(11), "output_tokens": float64(22)},
+			"reply":         s.reply,
+			"status":        status,
+			"backend":       s.backend,
+			"model":         s.model,
+			"pending_calls": s.pending,
+			"usage":         map[string]any{"input_tokens": float64(11), "output_tokens": float64(22)},
 		})
+	}))
+
+	mux.HandleFunc("/api/v1/sessions/sess-123/tool_results", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		s.seenResults, _ = body["results"].([]any)
+		writeJSON(w, map[string]any{"status": "complete", "reply": "closed"})
 	}))
 
 	srv := httptest.NewServer(mux)
@@ -374,5 +387,52 @@ func TestValidateEndpoint(t *testing.T) {
 				t.Errorf("= %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// This app declares no client tools, so a turn should never come back waiting
+// on one. If it ever does, the calls must be refused rather than left hanging:
+// sessions here are resumable, and an unanswered call on the server is replayed
+// on every later turn until something answers it.
+func TestWintermuteRefusesPendingCallsBeforeGivingUp(t *testing.T) {
+	stub := &stubWintermute{
+		token:  "tok",
+		status: "awaiting_client",
+		pending: []any{
+			map[string]any{"id": "call_1", "name": "rename_file"},
+		},
+	}
+	srv := stub.server(t)
+	w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "tok"})
+
+	if _, err := w.Ask(context.Background(), Request{Prompt: "q"}); err == nil {
+		t.Fatal("Ask() succeeded on a turn awaiting client tools")
+	}
+
+	if len(stub.seenResults) != 1 {
+		t.Fatalf("posted %d refusals for 1 pending call: %+v", len(stub.seenResults), stub.seenResults)
+	}
+	result, _ := stub.seenResults[0].(map[string]any)
+	if result["call_id"] != "call_1" {
+		t.Errorf("refusal named call %v, want call_1", result["call_id"])
+	}
+	if result["is_error"] != true {
+		t.Errorf("refusal was not marked as an error: %+v", result)
+	}
+}
+
+// A turn that completes with nothing to say is a failed turn, not an answer.
+// The same rule applies in morpheus and in wintermute's own harness.
+func TestWintermuteEmptyReplyPostsNothing(t *testing.T) {
+	stub := &stubWintermute{token: "tok", status: "complete", reply: ""}
+	srv := stub.server(t)
+	w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "tok"})
+
+	_, err := w.Ask(context.Background(), Request{Prompt: "q"})
+	if !errors.Is(err, errNoAnswer) {
+		t.Fatalf("Ask() error = %v, want errNoAnswer", err)
+	}
+	if stub.seenResults != nil {
+		t.Errorf("posted results for a turn with no pending calls: %+v", stub.seenResults)
 	}
 }
