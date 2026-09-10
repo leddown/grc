@@ -75,7 +75,7 @@ type Repository interface {
 
 	AppendChat(t ChatTurn) (ChatTurn, error)
 	ListChat(exerciseID int64) ([]ChatTurn, error)
-	ClearChat(exerciseID int64) error
+	ClearChat(exerciseID int64, agent bool) error
 }
 
 type SQLiteRepository struct {
@@ -1124,8 +1124,12 @@ func (r *SQLiteRepository) ListChat(exerciseID int64) ([]ChatTurn, error) {
 	return out, rows.Err()
 }
 
-func (r *SQLiteRepository) ClearChat(exerciseID int64) error {
-	_, err := r.conn.Exec(`DELETE FROM crisis_ex_chat WHERE exercise_id = ?`, exerciseID)
+func (r *SQLiteRepository) ClearChat(exerciseID int64, agent bool) error {
+	query := `DELETE FROM crisis_ex_chat WHERE exercise_id = ? AND persona <> ?`
+	if agent {
+		query = `DELETE FROM crisis_ex_chat WHERE exercise_id = ? AND persona = ?`
+	}
+	_, err := r.conn.Exec(query, exerciseID, PersonaAgent)
 	return err
 }
 

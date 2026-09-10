@@ -344,6 +344,7 @@ type exercisePageData struct {
 	Chat         []ChatTurn
 	AIConfigured bool
 	Model        string
+	Agent        AgentInfo
 	PDFAvailable bool
 }
 
@@ -361,6 +362,7 @@ type payload struct {
 	Coverage     []CoverageRow `json:"coverage"`
 	AIConfigured bool          `json:"ai_configured"`
 	Model        string        `json:"model"`
+	Agent        AgentInfo     `json:"agent"`
 	PDFAvailable bool          `json:"pdf_available"`
 	Scenario     *Scenario     `json:"scenario,omitempty"`
 }
@@ -376,6 +378,7 @@ func exercisePageHTML(data exercisePageData) string {
 		Coverage:     Coverage(data.Dossier.References),
 		AIConfigured: data.AIConfigured,
 		Model:        data.Model,
+		Agent:        data.Agent,
 		PDFAvailable: data.PDFAvailable,
 	}
 	if s, ok := ScenarioByKey(data.Dossier.Exercise.ScenarioKey); ok {

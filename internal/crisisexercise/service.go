@@ -17,6 +17,8 @@ type Service struct {
 	resolver CatalogResolver
 	asker    Asker
 	renderer Renderer
+	agent    AgentConfig
+	contexts contextLedger
 	now      func() time.Time
 }
 
@@ -1189,7 +1191,12 @@ func (s *Service) ListChat(exerciseID int64) ([]ChatTurn, error) {
 	return s.repo.ListChat(exerciseID)
 }
 
-func (s *Service) ClearChat(exerciseID int64) error { return s.repo.ClearChat(exerciseID) }
+// ClearChat clears one of an exercise's conversations: the agent's when agent is
+// true, every adviser's otherwise. They are cleared from different tabs, and
+// clearing the advisers must not take the agent's conversation with it.
+func (s *Service) ClearChat(exerciseID int64, agent bool) error {
+	return s.repo.ClearChat(exerciseID, agent)
+}
 
 // ---- small helpers ----
 

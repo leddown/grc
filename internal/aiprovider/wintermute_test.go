@@ -160,6 +160,27 @@ func TestWintermuteAsk(t *testing.T) {
 	}
 }
 
+// A caller that names an agent opens its session on that agent; one that names
+// none gets the configured agent.
+func TestWintermuteAskOpensTheSessionOnTheRequestedAgent(t *testing.T) {
+	for _, tc := range []struct{ name, requested, want string }{
+		{"configured", "", "grc"},
+		{"requested", " crisis-exercises ", "crisis-exercises"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &stubWintermute{token: "tok", reply: "ok"}
+			srv := stub.server(t)
+			w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "tok", Agent: "grc"})
+			if _, err := w.Ask(context.Background(), Request{Prompt: "hello", Agent: tc.requested}); err != nil {
+				t.Fatalf("Ask: %v", err)
+			}
+			if got := stub.seenSession["agent"]; got != tc.want {
+				t.Errorf("session agent = %v, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // A conversation continues in the session the last answer came from: the
 // server holds the transcript, so nothing is resent and no session is opened.
 func TestWintermuteAskResumesSession(t *testing.T) {

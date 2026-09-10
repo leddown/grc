@@ -1490,7 +1490,11 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       const provider = String(data.provider || 'claude');
       const wintermute = provider === 'wintermute'
         || (provider === 'auto' && data.configured && data.token_configured);
-      const agent = wintermute ? String(data.default_agent || '') : '';
+      // Crisis Exercises pages ask that module's own agent when Settings names one.
+      const onCrisisPage = /^\/crisis-exercises(\/|$)/.test(location.pathname);
+      const agent = wintermute
+        ? String((onCrisisPage && data.crisis_agent) || data.default_agent || '')
+        : '';
       const label = wintermute
         ? 'Wintermute' + (agent ? ' · ' + agent : ' · no agent')
         : 'Claude';
@@ -1580,7 +1584,10 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
           // A resumed Wintermute session already holds the transcript; sending
           // it again would replay every earlier turn into the same session.
           history: sessionID ? [] : history,
-          session_id: sessionID
+          session_id: sessionID,
+          // On a Crisis Exercises page the server sends the question to that
+          // module's agent, about the exercise on screen.
+          page: location.pathname
         })
       });
       const data = await resp.json();

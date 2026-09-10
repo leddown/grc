@@ -564,8 +564,13 @@ type stubAsker struct {
 	reply   string
 	refused bool
 	err     error
-	prompts []string
-	systems []string
+	// session is the conversation every answer comes back on, as from a
+	// provider that holds its own transcript. Empty is one that holds none.
+	session  string
+	prompts  []string
+	systems  []string
+	agents   []string
+	sessions []string
 }
 
 func (s *stubAsker) Available() bool  { return true }
@@ -573,10 +578,12 @@ func (s *stubAsker) Describe() string { return "stub model" }
 func (s *stubAsker) Ask(_ context.Context, req aiprovider.Request) (aiprovider.Response, error) {
 	s.prompts = append(s.prompts, req.Prompt)
 	s.systems = append(s.systems, req.System)
+	s.agents = append(s.agents, req.Agent)
+	s.sessions = append(s.sessions, req.SessionID)
 	if s.err != nil {
 		return aiprovider.Response{}, s.err
 	}
-	return aiprovider.Response{Text: s.reply, Model: "stub-1", Refused: s.refused}, nil
+	return aiprovider.Response{Text: s.reply, Model: "stub-1", Refused: s.refused, SessionID: s.session}, nil
 }
 
 func TestDesignStoresProvenanceAndRefusesInventedReferences(t *testing.T) {

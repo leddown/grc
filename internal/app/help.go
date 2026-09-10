@@ -313,6 +313,9 @@ func helpPage(c *gin.Context) {
               classification and the notification clocks it starts.</li>
             <li>Record findings as they surface, and use the coverage view to see what the exercise
               actually tested.</li>
+            <li>Talk an exercise through on its <strong>Agent</strong> tab, or with Ask AI on any
+              Crisis Exercises page. Both ask the Crisis Exercise agent chosen in
+              <a href="/settings">Settings</a>, which sees the exercise as it stands.</li>
             <li>Export the MSEL as CSV, a participant handout as Markdown, and the report as PDF or
               JSON. An exercise can be cloned as the starting point for the next one.</li>
           </ol>

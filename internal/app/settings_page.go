@@ -43,6 +43,8 @@ func settingsPage(c *gin.Context) {
     .cred h3 { margin:0 0 4px; font-size:15px; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
     .row input { flex:1; min-width:280px; }
+    .row .check { display:flex; gap:8px; align-items:center; font-size:13px; color:#cbd5e1; }
+    .row .check input { flex:none; min-width:0; }
     .meta { font-size:12px; color:#94a3b8; margin:4px 0 0; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #334155; }
@@ -141,6 +143,22 @@ func settingsPage(c *gin.Context) {
           model&rsquo;s training data. <span id="wmAgentDetail"></span>
         </p>
         <p class="meta" id="wmAgentLink"></p>
+        <div class="row">
+          <select id="wmCrisisAgent" aria-label="Crisis Exercise agent">
+            <option value="">Crisis Exercises: the same agent</option>
+          </select>
+          <label class="check"><input id="crisisSendExercise" type="checkbox"> Send the open exercise with each question</label>
+        </div>
+        <p class="meta">
+          The <em>Crisis Exercise agent</em> answers every question the Crisis Exercises pages ask
+          &mdash; generating injects, the advisers, the hot seat, after-action findings, the Agent
+          conversation on each exercise, and Ask AI on those pages. Give it the <code>grc</code>
+          source and it fetches each exercise from this installation&rsquo;s knowledge as it is
+          being built. Tick the box if that agent cannot reach this server &mdash; if this
+          application moves to a host Wintermute cannot call &mdash; and each question carries the
+          exercise instead. Questions that go to Claude always carry it: Claude has no agent to
+          fetch anything with.
+        </p>
       </div>
       <div class="row">
         <button id="saveProvider">Save</button>
@@ -363,6 +381,10 @@ func settingsPage(c *gin.Context) {
     const agent = prefs['ai.wintermute.agent'] || '';
     ensureOption(wmAgent, agent, agent);
     wmAgent.value = agent;
+    const crisisAgent = prefs['ai.crisis.agent'] || '';
+    ensureOption(wmCrisisAgent, crisisAgent, crisisAgent);
+    wmCrisisAgent.value = crisisAgent;
+    crisisSendExercise.checked = prefs['ai.crisis.send_exercise'] === 'true';
     if (wmURL.value.trim()) {
       loadAgents(agent).catch(function () { /* reported inline */ });
       loadCatalog(backend, model).catch(function () { /* reported inline */ });
@@ -552,6 +574,8 @@ func settingsPage(c *gin.Context) {
   const wmAgent = document.getElementById('wmAgent');
   const wmAgentDetail = document.getElementById('wmAgentDetail');
   const wmAgentLink = document.getElementById('wmAgentLink');
+  const wmCrisisAgent = document.getElementById('wmCrisisAgent');
+  const crisisSendExercise = document.getElementById('crisisSendExercise');
 
   // The agent list comes from the Wintermute server itself rather than being
   // typed in, because a mistyped agent id is the difference between a grounded
@@ -583,6 +607,16 @@ func settingsPage(c *gin.Context) {
       // it would look configured here and answer ungrounded there.
       ensureOption(wmAgent, want, want + ' — not on this server');
       wmAgent.value = want || '';
+      const wantCrisis = wmCrisisAgent.value;
+      while (wmCrisisAgent.options.length > 1) wmCrisisAgent.remove(1);
+      agents.forEach(function (agent) {
+        const opt = document.createElement('option');
+        opt.value = agent.id;
+        opt.textContent = agent.name + (agent.description ? ' — ' + agent.description : '');
+        wmCrisisAgent.appendChild(opt);
+      });
+      ensureOption(wmCrisisAgent, wantCrisis, wantCrisis + ' — not on this server');
+      wmCrisisAgent.value = wantCrisis || '';
       wmAgentDetail.textContent = agents.length
         ? agents.length + ' agent(s) on this server.'
         : 'This server has no agents yet — create one there first.';
@@ -636,6 +670,8 @@ func settingsPage(c *gin.Context) {
           wintermute_backend: wmBackend.value.trim(),
           wintermute_model: wmModel.value.trim(),
           wintermute_agent: wmAgent.value.trim(),
+          crisis_agent: wmCrisisAgent.value.trim(),
+          crisis_send_exercise: crisisSendExercise.checked ? 'true' : '',
         }),
       });
       const data = await res.json().catch(function () { return {}; });

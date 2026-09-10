@@ -428,6 +428,11 @@ func (s *Store) Risks() ([]Item, error) {
 // its board is answering from evidence here or from imagination everywhere
 // else.
 func (s *Store) Exercises() ([]Item, error) {
+	details, err := s.exerciseDetails()
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := s.conn.Query(`SELECT e.id, e.reference, e.title, e.summary, e.format, e.audience,
 		e.entity_name, e.jurisdiction, e.status, e.scheduled_for, e.threat_actor, e.threat_narrative,
 		e.critical_functions,
@@ -478,6 +483,9 @@ func (s *Store) Exercises() ([]Item, error) {
 		}
 		parts = append(parts, fmt.Sprintf("Delivery: %d of %d injects played. %d notification clocks met, %d missed. %d findings.",
 			played, injects, clocksMet, clocksMissed, findings))
+		if detail := details[id]; detail != "" {
+			parts = append(parts, detail)
+		}
 
 		out = append(out, Item{
 			Kind:    KindExercise,
@@ -504,6 +512,322 @@ func (s *Store) Exercises() ([]Item, error) {
 		})
 	}
 	return out, rows.Err()
+}
+
+// exerciseDetails renders, per exercise, what the summary leaves out: the phases
+// and injects with what happened to each, the decisions, the classification,
+// the notification clocks, the findings and who took part. Someone building an
+// exercise asks an agent about exactly this — which phase has no decision
+// point, whether an inject gives the team enough to classify on — and a count
+// of injects answers none of it.
+func (s *Store) exerciseDetails() (map[int64]string, error) {
+	lines := map[int64][]string{}
+	for _, load := range []func(map[int64][]string) error{
+		s.exerciseRunSheet, s.exerciseDecisions, s.exerciseClassification,
+		s.exerciseClocks, s.exerciseFindingLines, s.exerciseParticipants,
+	} {
+		if err := load(lines); err != nil {
+			return nil, err
+		}
+	}
+	out := make(map[int64]string, len(lines))
+	for id, l := range lines {
+		out[id] = strings.Join(l, "\n")
+	}
+	return out, nil
+}
+
+func (s *Store) exerciseRunSheet(lines map[int64][]string) error {
+	rows, err := s.conn.Query(`SELECT p.exercise_id, p.id, p.name, p.status, p.offset_minutes,
+		p.duration_minutes, p.lead_role, p.purpose,
+		CASE WHEN i.id IS NULL THEN 0 ELSE 1 END,
+		COALESCE(i.code, ''), COALESCE(i.offset_minutes, 0), COALESCE(i.inject_type, ''),
+		COALESCE(i.channel, ''), COALESCE(i.from_actor, ''), COALESCE(i.to_actor, ''),
+		COALESCE(i.title, ''), COALESCE(i.body, ''), COALESCE(i.expected_actions, ''),
+		COALESCE(i.expected_decision, ''), COALESCE(r.outcome, ''), COALESCE(r.responded_offset, -1),
+		COALESCE(r.actual_actions, ''), COALESCE(r.observations, '')
+		FROM crisis_ex_phases p
+		LEFT JOIN crisis_ex_injects i ON i.phase_id = p.id AND i.exercise_id = p.exercise_id
+		LEFT JOIN crisis_ex_responses r ON r.inject_id = i.id
+		ORDER BY p.exercise_id, p.ordinal, p.id, i.offset_minutes, i.ordinal, i.id`)
+	if err != nil {
+		return fmt.Errorf("read exercise phases and injects: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	lastPhase := int64(0)
+	for rows.Next() {
+		var exerciseID, phaseID int64
+		var offset, duration, hasInject, injectOffset, respondedOffset int
+		var name, status, lead, purpose, code, injectType, channel, from, to string
+		var title, body, expected, decision, outcome, actual, observations string
+		if err := rows.Scan(&exerciseID, &phaseID, &name, &status, &offset, &duration, &lead, &purpose,
+			&hasInject, &code, &injectOffset, &injectType, &channel, &from, &to, &title, &body,
+			&expected, &decision, &outcome, &respondedOffset, &actual, &observations); err != nil {
+			return err
+		}
+		if phaseID != lastPhase {
+			lastPhase = phaseID
+			line := fmt.Sprintf("Phase %s · %s (%s, %d min", exerciseOffset(offset), name, status, duration)
+			if lead != "" {
+				line += ", led by " + strings.ReplaceAll(lead, "_", " ")
+			}
+			line += ")"
+			if text := flatText(purpose); text != "" {
+				line += ": " + text
+			}
+			lines[exerciseID] = append(lines[exerciseID], line)
+		}
+		if hasInject == 0 {
+			continue
+		}
+
+		line := fmt.Sprintf("  Inject %s at %s, %s", code, exerciseOffset(injectOffset), injectType)
+		if channel != "" {
+			line += " by " + strings.ReplaceAll(channel, "_", " ")
+		}
+		if from != "" || to != "" {
+			line += ", " + orDash(from) + " → " + orDash(to)
+		}
+		if title != "" {
+			line += ": " + title
+		}
+		line += "."
+		for _, field := range [][2]string{{"Message", body}, {"Expected", expected}, {"Decision sought", decision}} {
+			if text := flatText(field[1]); text != "" {
+				line += " " + field[0] + ": " + text
+			}
+		}
+		if outcome == "" || outcome == "not_played" {
+			line += " Not played yet."
+		} else {
+			line += " Played: " + strings.ReplaceAll(outcome, "_", " ")
+			if respondedOffset >= 0 {
+				line += " at " + exerciseOffset(respondedOffset)
+			}
+			line += "."
+			if text := flatText(actual); text != "" {
+				line += " Observed: " + text
+			}
+			if text := flatText(observations); text != "" {
+				line += " Evaluator: " + text
+			}
+		}
+		lines[exerciseID] = append(lines[exerciseID], line)
+	}
+	return rows.Err()
+}
+
+func (s *Store) exerciseDecisions(lines map[int64][]string) error {
+	rows, err := s.conn.Query(`SELECT exercise_id, offset_minutes, title, decision, rationale,
+		made_by, role, authority, reversible, regulatory_implication
+		FROM crisis_ex_decisions ORDER BY exercise_id, offset_minutes, id`)
+	if err != nil {
+		return fmt.Errorf("read exercise decisions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var exerciseID int64
+		var offset, reversible int
+		var title, decision, rationale, madeBy, role, authority, regulatory string
+		if err := rows.Scan(&exerciseID, &offset, &title, &decision, &rationale,
+			&madeBy, &role, &authority, &reversible, &regulatory); err != nil {
+			return err
+		}
+		line := fmt.Sprintf("Decision at %s: %s", exerciseOffset(offset), title)
+		if text := flatText(decision); text != "" {
+			line += " — " + text
+		}
+		line += "."
+		if text := flatText(rationale); text != "" {
+			line += " Rationale: " + text
+		}
+		who := strings.TrimSpace(madeBy)
+		if role != "" {
+			who = strings.TrimSpace(who + " (" + strings.ReplaceAll(role, "_", " ") + ")")
+		}
+		if who != "" {
+			line += " Made by " + who + "."
+		}
+		if text := flatText(authority); text != "" {
+			line += " Authority: " + text + "."
+		}
+		if reversible == 0 {
+			line += " Irreversible."
+		}
+		if text := flatText(regulatory); text != "" {
+			line += " Regulatory implication: " + text
+		}
+		lines[exerciseID] = append(lines[exerciseID], line)
+	}
+	return rows.Err()
+}
+
+func (s *Store) exerciseClassification(lines map[int64][]string) error {
+	rows, err := s.conn.Query(`SELECT exercise_id, aware_offset, classified_offset, major,
+		critical_services_affected, personal_data_breach, nis2_significant, rationale, team_verdict
+		FROM crisis_ex_classification ORDER BY exercise_id`)
+	if err != nil {
+		return fmt.Errorf("read exercise classification: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var exerciseID int64
+		var aware, classified, major, critical, breach, nis2 int
+		var rationale, verdict string
+		if err := rows.Scan(&exerciseID, &aware, &classified, &major,
+			&critical, &breach, &nis2, &rationale, &verdict); err != nil {
+			return err
+		}
+		if classified <= 0 && critical == 0 && strings.TrimSpace(rationale) == "" {
+			continue
+		}
+		line := fmt.Sprintf("Classification: aware at %s, classified at %s, ", exerciseOffset(aware), exerciseOffset(classified))
+		if major != 0 {
+			line += "a major incident."
+		} else {
+			line += "not major."
+		}
+		if critical != 0 {
+			line += " Critical services affected."
+		}
+		if breach != 0 {
+			line += " A personal data breach."
+		}
+		if nis2 != 0 {
+			line += " Significant under NIS2."
+		}
+		if text := flatText(rationale); text != "" {
+			line += " Rationale: " + text
+		}
+		if text := flatText(verdict); text != "" {
+			line += " The team's verdict: " + text
+		}
+		lines[exerciseID] = append(lines[exerciseID], line)
+	}
+	return rows.Err()
+}
+
+func (s *Store) exerciseClocks(lines map[int64][]string) error {
+	rows, err := s.conn.Query(`SELECT exercise_id, regime, authority, label, due_offset, actual_offset, status
+		FROM crisis_ex_clocks ORDER BY exercise_id, ordinal, id`)
+	if err != nil {
+		return fmt.Errorf("read exercise clocks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var exerciseID int64
+		var due, actual int
+		var regime, authority, label, status string
+		if err := rows.Scan(&exerciseID, &regime, &authority, &label, &due, &actual, &status); err != nil {
+			return err
+		}
+		line := "Clock: " + firstNonEmpty(label, regime)
+		if label != "" && regime != "" {
+			line += " (" + regime + ")"
+		}
+		if authority != "" {
+			line += " to " + authority
+		}
+		line += fmt.Sprintf(", due %s, %s", exerciseOffset(due), status)
+		if actual >= 0 {
+			line += " at " + exerciseOffset(actual)
+		}
+		lines[exerciseID] = append(lines[exerciseID], line+".")
+	}
+	return rows.Err()
+}
+
+func (s *Store) exerciseFindingLines(lines map[int64][]string) error {
+	rows, err := s.conn.Query(`SELECT exercise_id, code, severity, title, status
+		FROM crisis_ex_findings ORDER BY exercise_id, ordinal, id`)
+	if err != nil {
+		return fmt.Errorf("read exercise findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var exerciseID int64
+		var code, severity, title, status string
+		if err := rows.Scan(&exerciseID, &code, &severity, &title, &status); err != nil {
+			return err
+		}
+		lines[exerciseID] = append(lines[exerciseID],
+			fmt.Sprintf("Finding %s [%s]: %s (%s).", code, severity, title, status))
+	}
+	return rows.Err()
+}
+
+// exerciseParticipants names who takes part, and in what role. Contact details
+// are left out: nothing an agent is asked about an exercise needs them.
+func (s *Store) exerciseParticipants(lines map[int64][]string) error {
+	rows, err := s.conn.Query(`SELECT exercise_id, name, role_key, org, player
+		FROM crisis_ex_participants ORDER BY exercise_id, id`)
+	if err != nil {
+		return fmt.Errorf("read exercise participants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	people := map[int64][]string{}
+	for rows.Next() {
+		var exerciseID int64
+		var player int
+		var name, role, org string
+		if err := rows.Scan(&exerciseID, &name, &role, &org, &player); err != nil {
+			return err
+		}
+		person := firstNonEmpty(name, "unnamed")
+		if role != "" {
+			person += ", " + strings.ReplaceAll(role, "_", " ")
+		}
+		if org != "" {
+			person += ", " + org
+		}
+		if player == 0 {
+			person += " (not playing)"
+		}
+		people[exerciseID] = append(people[exerciseID], person)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for id, list := range people {
+		lines[id] = append(lines[id], "Participants: "+strings.Join(list, "; ")+".")
+	}
+	return nil
+}
+
+// exerciseOffset renders minutes on the exercise clock the way the exercise
+// pages do.
+func exerciseOffset(minutes int) string {
+	if minutes < 0 {
+		return "—"
+	}
+	days, hours, mins := minutes/1440, (minutes%1440)/60, minutes%60
+	switch {
+	case days > 0 && hours > 0:
+		return fmt.Sprintf("T+%dd %dh", days, hours)
+	case days > 0:
+		return fmt.Sprintf("T+%dd", days)
+	case hours > 0 && mins > 0:
+		return fmt.Sprintf("T+%dh %02dm", hours, mins)
+	case hours > 0:
+		return fmt.Sprintf("T+%dh", hours)
+	default:
+		return fmt.Sprintf("T+%dm", mins)
+	}
+}
+
+func flatText(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }
 
 // ExerciseFindings returns the gaps exercises have exposed, which is the part

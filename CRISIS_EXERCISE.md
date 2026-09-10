@@ -198,6 +198,43 @@ The control catalog describes an intention. The exercise record describes an
 outcome. Without the second, an agent asked the first question answers from the
 first corpus and sounds confident.
 
+### The Crisis Exercise agent
+
+Settings → AI providers → **Crisis Exercise agent** names a Wintermute agent for
+this module alone. Exercises can then have their own document library and
+sources (scenario packs, playbooks, earlier after-action reports) without
+changing the agent the rest of the application uses. Left empty, the module uses
+the same agent as everything else. When it is set, every question the module
+asks goes to it: MSEL generation, the advisers, the hot seat and after-action
+drafting.
+
+It also has a conversation of its own. The **Agent** tab on each exercise talks
+to the agent directly rather than through a persona, and its transcript is kept
+with the exercise, separate from the advisers' (each tab clears only its own).
+The **Ask AI** panel on any Crisis Exercises page asks the same agent about the
+exercise on screen, and saves nothing.
+
+How the agent learns about the exercise depends on where it runs:
+
+- **By default it fetches the record.** Its first question tells it which
+  exercise is open and where the record is. The knowledge API serves each
+  exercise in full, drafts included: phases and injects with what happened to
+  each, decisions, classification, notification clocks, findings and
+  participants (without contact details). Exercises are read fresh on every
+  call rather than from the 45-second cache, so an inject written a moment ago
+  is in what the agent reads.
+- **Send the open exercise with each question**, the checkbox beside the agent,
+  puts the record into the conversation instead. It is for an agent that cannot
+  reach this server, for example after this application moves to a host
+  Wintermute cannot call. A continuing conversation is sent the record again
+  only when the exercise has changed.
+- **Questions that go to Claude always carry the record.** Claude has no agent
+  and nothing to fetch it with.
+
+The agent is created on Wintermute the same way as the general one (see
+[AI_AGENT.md](AI_AGENT.md)): give it the `grc` source so it can fetch records,
+and put the exercise material in its library.
+
 ---
 
 ## Running one
@@ -297,8 +334,11 @@ POST   /crisis-exercises/:id/findings
 POST   /crisis-exercises/:id/references
 POST   /crisis-exercises/:id/design                       (AI — generate the MSEL)
 POST   /crisis-exercises/:id/advise                       (AI — ask a persona)
+POST   /crisis-exercises/:id/agent                        (AI — ask the Crisis Exercise agent)
 POST   /crisis-exercises/:id/after-action                 (AI — draft findings)
 POST   /crisis-exercises/:id/versions
+DELETE /crisis-exercises/:id/chat                         advisers' transcripts;
+                                                          ?conversation=agent for the agent's
 ```
 
 The whole write surface is behind the admin gate, including recording what

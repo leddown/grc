@@ -168,7 +168,7 @@ func Run(options Options) error {
 	knowledgeService := knowledge.NewService(knowledge.NewStore(sqliteDB))
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
-		router, sqliteDB, knowledgeService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
+		router, sqliteDB, knowledgeService, settingsService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
@@ -633,10 +633,14 @@ func registerKnowledgeRoutes(r gin.IRouter, service *knowledge.Service, options 
 // so keys, provider choice and the ai_usage_log stay in one place — and so a
 // question can reach a wintermuted agent with tools over this installation's
 // catalogs. See POLICY_MODULE_FRAMEWORK.md §2.5 and AI_AGENT.md.
+//
+// Those questions go to the Crisis Exercise agent Settings names, and so do the
+// AI dock's on this module's pages (configureCrisisDock).
 func registerCrisisExerciseRoutes(
 	r gin.IRouter,
 	sqliteDB *db.Conn,
 	knowledgeService *knowledge.Service,
+	settingsService *settings.Service,
 	aiRouter *aiprovider.Router,
 	pdfRenderer reporting.Renderer,
 	adminMiddleware gin.HandlerFunc,
@@ -646,7 +650,17 @@ func registerCrisisExerciseRoutes(
 		crisisexercise.NewSQLiteRepository(sqliteDB),
 		crisisexercise.NewKnowledgeResolver(knowledgeService),
 		aiRouter,
-	).WithRenderer(pdfRenderer)
+	).WithRenderer(pdfRenderer).WithAgent(crisisexercise.AgentConfig{
+		Agent: func() string { return settingsService.Preference(settings.PrefCrisisAgent) },
+		SendExercise: func() bool {
+			return settingsService.Preference(settings.PrefCrisisSendExercise) == "true"
+		},
+		Grounded: func() bool {
+			provider, err := aiRouter.Selected()
+			return err == nil && provider.Name() == aiprovider.NameWintermute
+		},
+	})
+	configureCrisisDock(service)
 
 	handler := crisisexercise.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)

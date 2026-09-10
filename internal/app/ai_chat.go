@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"grc/internal/aiprovider"
+	"grc/internal/crisisexercise"
 	"grc/internal/pageui"
 	"grc/internal/settings"
 )
@@ -50,6 +51,10 @@ type aiChatRequest struct {
 	// previous answer's session_id. Wintermute keeps transcripts server-side;
 	// when this is set, History is not resent.
 	SessionID string `json:"session_id"`
+	// Page is the path the AI dock was asked from. On a Crisis Exercises page
+	// the question goes to that module's agent, about the exercise on screen
+	// (see crisisDockTurn).
+	Page string `json:"page"`
 }
 
 // aiChatTurn is one earlier message in the conversation.
@@ -925,7 +930,9 @@ func aiChatWintermuteStatus(c *gin.Context) {
 		"default_endpoint": endpoint,
 		"default_backend":  aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
 		"default_agent":    aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
-		"default_model":    aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
+		// The agent the dock asks on Crisis Exercises pages, when one is set.
+		"crisis_agent":  aiChatPreference(settings.PrefCrisisAgent, ""),
+		"default_model": aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
 	})
 }
 
@@ -1062,6 +1069,33 @@ var activeAIRouter *aiprovider.Router
 // means the dock falls back to Claude, which is what the unit tests exercise.
 func configureAIRouter(router *aiprovider.Router) { activeAIRouter = router }
 
+// crisisDock is the slice of the Crisis Exercise module the AI dock needs.
+type crisisDock interface {
+	DockQuestion(path, sessionID, question string) (crisisexercise.DockTurn, bool, error)
+}
+
+// activeCrisisDock is wired at startup, like activeAIRouter. Nil leaves every
+// docked question as it was asked.
+var activeCrisisDock crisisDock
+
+func configureCrisisDock(dock crisisDock) { activeCrisisDock = dock }
+
+// crisisDockTurn prepares a question the AI dock asked from a Crisis Exercises
+// page for that module's agent. Any other question — from another page, or
+// from the AI Chat page, which names its own provider and agent — goes as it
+// was asked.
+func crisisDockTurn(req aiChatRequest) (crisisexercise.DockTurn, error) {
+	asked := crisisexercise.DockTurn{Prompt: req.Question, Answered: func(string) {}}
+	if req.Provider != "" || activeCrisisDock == nil {
+		return asked, nil
+	}
+	turn, ok, err := activeCrisisDock.DockQuestion(req.Page, req.SessionID, req.Question)
+	if err != nil || !ok {
+		return asked, err
+	}
+	return turn, nil
+}
+
 // aiChatPreference reads a Settings preference, falling back to its
 // environment variable when no store is configured (the unit tests, and any
 // build that runs without the settings service wired up).
@@ -1133,11 +1167,18 @@ func aiChatAsk(c *gin.Context) {
 		return
 	}
 
+	dock, err := crisisDockTurn(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	resp, err := provider.Ask(c.Request.Context(), aiprovider.Request{
 		System:    req.System,
 		History:   boundedHistory(req.History),
-		Prompt:    req.Question,
+		Prompt:    dock.Prompt,
 		SessionID: req.SessionID,
+		Agent:     dock.Agent,
 		MaxTokens: aiChatMaxTokens,
 	})
 	if err != nil {
@@ -1148,6 +1189,8 @@ func aiChatAsk(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "the model declined to answer this question"})
 		return
 	}
+
+	dock.Answered(resp.SessionID)
 
 	// Logged against what actually served the turn: a wintermuted server
 	// retries a failed backend against its fallback, so the model that

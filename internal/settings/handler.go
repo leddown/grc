@@ -95,12 +95,14 @@ func (h *Handler) providers(c *gin.Context) {
 // preferenceRequest carries the provider settings. Every field is optional so
 // the page can save one without resending the others.
 type preferenceRequest struct {
-	Provider          *string `json:"provider"`
-	ClaudeModel       *string `json:"claude_model"`
-	WintermuteURL     *string `json:"wintermute_url"`
-	WintermuteBackend *string `json:"wintermute_backend"`
-	WintermuteModel   *string `json:"wintermute_model"`
-	WintermuteAgent   *string `json:"wintermute_agent"`
+	Provider           *string `json:"provider"`
+	ClaudeModel        *string `json:"claude_model"`
+	WintermuteURL      *string `json:"wintermute_url"`
+	WintermuteBackend  *string `json:"wintermute_backend"`
+	WintermuteModel    *string `json:"wintermute_model"`
+	WintermuteAgent    *string `json:"wintermute_agent"`
+	CrisisAgent        *string `json:"crisis_agent"`
+	CrisisSendExercise *string `json:"crisis_send_exercise"`
 }
 
 func (h *Handler) setPreferences(c *gin.Context) {
@@ -120,6 +122,8 @@ func (h *Handler) setPreferences(c *gin.Context) {
 		{PrefWintermuteBackend, req.WintermuteBackend},
 		{PrefWintermuteModel, req.WintermuteModel},
 		{PrefWintermuteAgent, req.WintermuteAgent},
+		{PrefCrisisAgent, req.CrisisAgent},
+		{PrefCrisisSendExercise, req.CrisisSendExercise},
 	}
 	for _, u := range updates {
 		if u.value == nil {

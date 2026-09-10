@@ -83,9 +83,14 @@ func (s *Service) Items(kind string) ([]Item, error) {
 		return nil, err
 	}
 
+	// Exercises are read fresh every time. They are edited while an agent is
+	// asked about them — someone building one asks about the inject they wrote
+	// a moment ago — and an installation holds only a handful.
+	live := kind == KindExercise || kind == KindExerciseFinding
+
 	s.mu.Lock()
 	entry, ok := s.cached[kind]
-	fresh := ok && s.now().Sub(entry.loaded) < cacheTTL
+	fresh := !live && ok && s.now().Sub(entry.loaded) < cacheTTL
 	s.mu.Unlock()
 	if fresh {
 		return entry.items, nil

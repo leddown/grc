@@ -471,8 +471,14 @@ func (r *memRepo) ListChat(exerciseID int64) ([]ChatTurn, error) {
 	return append([]ChatTurn{}, r.chat[exerciseID]...), nil
 }
 
-func (r *memRepo) ClearChat(exerciseID int64) error {
-	delete(r.chat, exerciseID)
+func (r *memRepo) ClearChat(exerciseID int64, agent bool) error {
+	kept := []ChatTurn{}
+	for _, t := range r.chat[exerciseID] {
+		if (t.Persona == PersonaAgent) != agent {
+			kept = append(kept, t)
+		}
+	}
+	r.chat[exerciseID] = kept
 	return nil
 }
 

@@ -178,6 +178,57 @@ func TestSetPreferencesStoresTheClaudeModel(t *testing.T) {
 	}
 }
 
+// The Crisis Exercise agent and whether its questions carry the exercise are
+// saved with the rest of the provider settings, and the switch is stored as
+// "true" or nothing whatever form it arrives in.
+func TestSetPreferencesStoresTheCrisisExerciseAgent(t *testing.T) {
+	svc, _ := testService(t)
+	h := NewHandler(svc.WithPreferences(newMemPrefs()), nil)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.RegisterAdminRoutes(r)
+
+	put := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/settings/ai-providers", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+	prefs := func(rec *httptest.ResponseRecorder) map[string]string {
+		t.Helper()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		var resp providerResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return resp.Preferences
+	}
+
+	got := prefs(put(`{"crisis_agent":" crisis-exercises ","crisis_send_exercise":"TRUE"}`))
+	if got[PrefCrisisAgent] != "crisis-exercises" {
+		t.Errorf("stored crisis agent = %q, want it trimmed", got[PrefCrisisAgent])
+	}
+	if got[PrefCrisisSendExercise] != "true" {
+		t.Errorf("stored send-exercise = %q, want true", got[PrefCrisisSendExercise])
+	}
+
+	got = prefs(put(`{"crisis_send_exercise":"false"}`))
+	if got[PrefCrisisSendExercise] != "" {
+		t.Errorf("switched-off send-exercise = %q, want empty", got[PrefCrisisSendExercise])
+	}
+	if got[PrefCrisisAgent] != "crisis-exercises" {
+		t.Errorf("saving one setting cleared the crisis agent: %q", got[PrefCrisisAgent])
+	}
+
+	if rec := put(`{"crisis_send_exercise":"sometimes"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d for a value that is neither true nor false, want 400", rec.Code)
+	}
+}
+
 func TestListCatalogWithoutAServerURL(t *testing.T) {
 	// The URL preference falls back to the environment, so a developer machine
 	// with one set must not turn this into a live request.

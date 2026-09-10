@@ -121,6 +121,10 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 	if model == "" {
 		model = cfg.Model
 	}
+	agent := strings.TrimSpace(req.Agent)
+	if agent == "" {
+		agent = cfg.Agent
+	}
 
 	// The server owns the transcript, so a conversation continues by posting to
 	// the session the last answer came from rather than by resending it.
@@ -131,7 +135,7 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 			"title":   sessionTitle,
 			"backend": cfg.Backend,
 			"model":   model,
-			"agent":   cfg.Agent,
+			"agent":   agent,
 		})
 		if err != nil {
 			return Response{}, fmt.Errorf("wintermute session: %w", err)

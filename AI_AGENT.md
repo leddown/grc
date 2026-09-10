@@ -51,6 +51,12 @@ did before.
    confident, ungrounded answer. The backend and model dropdowns beside it are
    fetched the same way; leaving both on their default hands the routing back
    to the server.
+5. **Optionally, give Crisis Exercises an agent of its own.** Create a second
+   agent the same way, with the `grc` source and the exercise material in its
+   library, and pick it as the **Crisis Exercise agent** below the first. That
+   module's questions, its Agent conversation and Ask AI on its pages then go
+   to it. If that agent cannot reach this server, tick **Send the open exercise
+   with each question**. See [CRISIS_EXERCISE.md](CRISIS_EXERCISE.md).
 
 The Settings page and the AI Chat page then link to that agent's page on
 Wintermute, which is where documents are uploaded — that server owns the

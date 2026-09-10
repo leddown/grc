@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"grc/internal/db"
@@ -31,6 +32,14 @@ const (
 	// Without one, the assistant answers from its training data, which for a
 	// question about this installation's catalogs is no answer at all.
 	PrefWintermuteAgent = "ai.wintermute.agent"
+	// PrefCrisisAgent names the Wintermute agent every Crisis Exercise question
+	// goes to, so exercises can have a library and sources of their own. Empty
+	// means the same agent as the rest of the application.
+	PrefCrisisAgent = "ai.crisis.agent"
+	// PrefCrisisSendExercise is "true" when a Crisis Exercise question carries
+	// the exercise it is about instead of the agent fetching it from the
+	// knowledge API — for an agent that cannot reach this server.
+	PrefCrisisSendExercise = "ai.crisis.send_exercise"
 )
 
 // Provider choices for PrefAIProvider.
@@ -50,12 +59,14 @@ const (
 // provider is Claude rather than auto so that adding this feature changes no
 // existing install's behaviour until someone opts in.
 var prefDefaults = map[string]string{
-	PrefAIProvider:        ProviderClaude,
-	PrefClaudeModel:       "",
-	PrefWintermuteURL:     "",
-	PrefWintermuteBackend: "",
-	PrefWintermuteModel:   "",
-	PrefWintermuteAgent:   "",
+	PrefAIProvider:         ProviderClaude,
+	PrefClaudeModel:        "",
+	PrefWintermuteURL:      "",
+	PrefWintermuteBackend:  "",
+	PrefWintermuteModel:    "",
+	PrefWintermuteAgent:    "",
+	PrefCrisisAgent:        "",
+	PrefCrisisSendExercise: "",
 }
 
 // prefEnvFallback maps a preference to the environment variable that supplies
@@ -159,6 +170,18 @@ func (s *Service) SetPreference(key, value string) error {
 	value = strings.TrimSpace(value)
 	if key == PrefAIProvider && value != "" && !ValidProvider(value) {
 		return fmt.Errorf("unknown AI provider %q (want auto, claude or wintermute)", value)
+	}
+	// Stored as "true" or nothing, so a value that merely looks like a yes
+	// cannot be read as on by one reader and off by another.
+	if key == PrefCrisisSendExercise && value != "" {
+		on, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("%s must be true or false, not %q", key, value)
+		}
+		value = ""
+		if on {
+			value = "true"
+		}
 	}
 	return s.prefs.SetPreference(key, value)
 }

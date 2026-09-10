@@ -185,6 +185,7 @@ const exercisePageScript = `
     ['decisions', 'Decision log', renderDecisions],
     ['findings', 'Findings', renderFindings],
     ['coverage', 'Coverage', renderCoverage],
+    ['agent', 'Agent', renderAgent],
     ['advisers', 'Advisers', renderAdvisers]
   ];
   let active = location.hash.replace('#', '') || 'brief';
@@ -798,6 +799,71 @@ const exercisePageScript = `
       '<tbody>' + (rows || '<tr><td colspan="6" class="status">Nothing cited yet.</td></tr>') + '</tbody></table></section>'));
   }
 
+  // ---- agent ----
+
+  // The conversation with the Crisis Exercise agent itself rather than with a
+  // persona. The header says how the agent sees this exercise, because an answer
+  // about a stale copy reads exactly like an answer about the live one.
+  function renderAgent(root) {
+    const a = state.agent || {};
+    let who = 'No AI provider is configured. Set one in Settings.';
+    if (state.ai_configured && a.grounded) {
+      who = 'Answering: ' + (a.agent
+        ? 'the ' + esc(a.agent) + ' agent on Wintermute.'
+        : 'the general Wintermute agent — no Crisis Exercise agent is set in Settings.');
+      who += a.sends_exercise
+        ? ' Each question carries this exercise as it stands, and it is sent again whenever it changes.'
+        : ' The agent looks this exercise up in this installation\'s knowledge as it answers, so it sees your latest edits.';
+    } else if (state.ai_configured) {
+      who = 'Answering: ' + esc(state.model) + '. There is no agent to look anything up, so each question carries this exercise as it stands.';
+    }
+    root.appendChild(el('<section class="card"><h2>Crisis Exercise agent</h2>' +
+      '<p class="status">' + who + '</p>' +
+      '<div><label>Question</label><textarea id="agQ" placeholder="Which phase has no decision inject? Does the classification phase give the team enough to classify on?"></textarea></div>' +
+      '<div class="toolbar"><button id="agAsk"' + (state.ai_configured ? '' : ' disabled') + '>Ask</button>' +
+      '<button class="secondary" id="agClear">Clear the conversation</button>' +
+      '<span id="agStatus" class="status"></span></div></section>'));
+    root.appendChild(el('<section class="card"><h2>Conversation</h2><div class="chatlog" id="agLog"></div></section>'));
+
+    function drawLog() {
+      const turns = (state.chat || []).filter(t => t.persona === 'agent');
+      $('agLog').innerHTML = turns.length ? turns.map(t =>
+        '<div class="msg ' + (t.role === 'user' ? 'user' : 'ai') + '"><span class="who">' +
+        esc(t.role === 'user' ? (t.actor || 'you') : 'agent' + (t.model ? ' · ' + t.model : '')) +
+        '</span>' + esc(t.content) + '</div>').join('')
+        : '<p class="status">Nothing asked yet. The agent is told which exercise this is with your first question.</p>';
+      $('agLog').scrollTop = $('agLog').scrollHeight;
+    }
+    drawLog();
+
+    async function ask() {
+      if (!$('agQ').value.trim()) return;
+      say($('agStatus'), 'Thinking…');
+      $('agAsk').disabled = true;
+      try {
+        await api('POST', '/crisis-exercises/' + ID + '/agent', { question: $('agQ').value });
+        $('agQ').value = '';
+        const fresh = await api('GET', '/crisis-exercises/' + ID + '/chat');
+        state.chat = fresh.turns || [];
+        say($('agStatus'), '');
+        drawLog();
+      } catch (e) { say($('agStatus'), e.message, 'bad'); }
+      finally { const b = $('agAsk'); if (b) b.disabled = false; }
+    }
+    $('agAsk').addEventListener('click', ask);
+    $('agQ').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ask(); }
+    });
+    $('agClear').addEventListener('click', async () => {
+      if (!confirm('Clear the conversation with the agent for this exercise?')) return;
+      try {
+        await api('DELETE', '/crisis-exercises/' + ID + '/chat?conversation=agent');
+        state.chat = (state.chat || []).filter(t => t.persona !== 'agent');
+        drawLog();
+      } catch (e) { say($('agStatus'), e.message, 'bad'); }
+    });
+  }
+
   // ---- advisers ----
 
   function renderAdvisers(root) {
@@ -863,7 +929,7 @@ const exercisePageScript = `
     $('advClear').addEventListener('click', async () => {
       if (!confirm('Clear every adviser transcript for this exercise?')) return;
       await api('DELETE', '/crisis-exercises/' + ID + '/chat');
-      state.chat = [];
+      state.chat = (state.chat || []).filter(t => t.persona === 'agent');
       drawLog();
     });
   }

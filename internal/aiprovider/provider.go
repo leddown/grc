@@ -63,6 +63,12 @@ type Request struct {
 	SessionID string
 	// Model optionally overrides the provider's configured model.
 	Model string
+	// Agent names the Wintermute agent this question is for, in place of the
+	// configured one, so a module can have its own library and sources while
+	// every other AI field keeps the installation's agent. Empty keeps the
+	// configured agent. It applies when a session is opened: a resumed session
+	// stays with the agent it was opened on. Claude has no agents and ignores it.
+	Agent string
 	// MaxTokens bounds the answer. Zero means the provider's default.
 	MaxTokens int
 }

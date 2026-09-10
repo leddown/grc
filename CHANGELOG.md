@@ -3,6 +3,56 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-10 (Crisis Exercises get their own Wintermute agent)
+
+Crisis Exercises can use a Wintermute agent of their own instead of the general
+GRC agent, and that agent can see the exercises while they are being built.
+
+- **Settings → AI providers** has a new **Crisis Exercise agent** picker. It
+  lists the server's agents like the general picker; empty means the same agent.
+  Beside it is a **Send the open exercise with each question** checkbox, off by
+  default. They are stored as `ai.crisis.agent` and `ai.crisis.send_exercise`.
+  The second holds "true" or nothing, and a value that is not a boolean is
+  rejected with 400.
+- `internal/aiprovider`: `Request.Agent` names the agent for one question.
+  Wintermute opens the session on that agent, empty keeps the configured agent,
+  and Claude ignores it.
+- `internal/crisisexercise`: every AI call carries the crisis agent (MSEL
+  generation, advisers, hot seat, after-action). It is wired through
+  `WithAgent` in `internal/app/app.go`.
+- New **Agent** tab on each exercise: a conversation with the agent itself
+  (`POST /crisis-exercises/:id/agent`). It is stored in the adviser transcript
+  table under persona `agent`. `DELETE /crisis-exercises/:id/chat` now clears
+  only the advisers' transcripts; add `?conversation=agent` to clear the
+  agent's.
+- How the agent sees the exercise (`agent.go`):
+  - By default, the first question carries the brief and tells the agent the
+    exercise's knowledge ref, so it fetches the live record itself.
+  - With the checkbox on, or whenever the answer comes from Claude (which has
+    nothing to fetch with), each question carries the full current record
+    (`ExerciseContext`).
+  - In a continuing Wintermute conversation the record is re-sent only when the
+    exercise has changed. A fingerprint per session is kept in memory.
+- **Ask AI dock**: it now sends its page path. On Crisis Exercises pages
+  `/ai-chat/ask` sends the question to the crisis agent with the same exercise
+  context; the list page gets a pointer to all exercises. The dock's label names
+  the crisis agent on those pages. The AI Chat page is unchanged.
+- `internal/knowledge`: the `exercise` record body now includes:
+  - phases and injects, with what happened to each;
+  - decisions and classification;
+  - notification clocks and findings;
+  - participants, without contact details.
+
+  `exercise` and `exercise_finding` are no longer served from the 45-second
+  cache, so an agent sees edits immediately.
+- Docs: `CRISIS_EXERCISE.md` has a new "The Crisis Exercise agent" section and
+  the new routes. `AI_AGENT.md` has setup step 5. The Help page mentions the
+  Agent tab.
+- Tests: new `internal/crisisexercise/agent_test.go`,
+  `internal/knowledge/exercise_test.go` and `internal/app/ai_chat_crisis_test.go`,
+  plus new cases in `internal/aiprovider/wintermute_test.go` and
+  `internal/settings/catalog_test.go`.
+
 ## 2026-09-10 (No bright white backgrounds anywhere in the UI)
 
 Every theme is dark, but the theme layer only repaints the classes it knows

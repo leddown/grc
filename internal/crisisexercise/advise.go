@@ -100,6 +100,7 @@ func (s *Service) Advise(ctx context.Context, exerciseID int64, personaKey, scop
 		History:   history,
 		Prompt:    prompt,
 		SessionID: sessionID,
+		Agent:     s.agentName(),
 		MaxTokens: 4000,
 	})
 	if err != nil {
@@ -189,6 +190,7 @@ func (s *Service) ProbeInject(ctx context.Context, injectID int64, personaKey, a
 	resp, err := s.asker.Ask(ctx, aiprovider.Request{
 		System:    persona.System + standingConstraints,
 		Prompt:    prompt,
+		Agent:     s.agentName(),
 		MaxTokens: 2500,
 	})
 	if err != nil {
@@ -284,6 +286,7 @@ func (s *Service) DraftAfterAction(ctx context.Context, exerciseID int64, actor 
 	resp, err := s.asker.Ask(ctx, aiprovider.Request{
 		System:    persona.System + standingConstraints,
 		Prompt:    prompt,
+		Agent:     s.agentName(),
 		MaxTokens: 8000,
 	})
 	if err != nil {
@@ -483,6 +486,10 @@ func parseFindingReply(raw string) ([]findingReply, error) {
 
 // ---- shared context ----
 
+// briefHeading opens ExerciseBrief. ExerciseContext reuses the brief under a
+// heading of its own.
+const briefHeading = "## The exercise you are advising on\n\n"
+
 // ExerciseBrief renders the compact description of an exercise that every
 // persona call starts from.
 //
@@ -496,7 +503,7 @@ func ExerciseBrief(d Dossier, scope string) string {
 	format, _ := FormatByKey(ex.Format)
 
 	var b strings.Builder
-	b.WriteString("## The exercise you are advising on\n\n")
+	b.WriteString(briefHeading)
 	b.WriteString(ex.Reference + " — " + ex.Title + "\n")
 	writePromptField(&b, "Format", format.Label)
 	writePromptField(&b, "Audience", audienceLabel(ex.Audience))

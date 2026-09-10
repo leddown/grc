@@ -87,6 +87,7 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 
 	r.POST("/crisis-exercises/:id/design", h.Design)
 	r.POST("/crisis-exercises/:id/advise", h.Advise)
+	r.POST("/crisis-exercises/:id/agent", h.AskAgent)
 	r.POST("/crisis-exercises/:id/after-action", h.DraftAfterAction)
 	r.POST("/crisis-exercises/:id/versions", h.CutVersion)
 	r.DELETE("/crisis-exercises/:id/chat", h.ClearChat)
@@ -137,6 +138,7 @@ func (h *Handler) ExercisePage(c *gin.Context) {
 		Chat:         turns,
 		AIConfigured: h.service.Configured(),
 		Model:        h.service.Model(),
+		Agent:        h.service.Agent(),
 		PDFAvailable: h.service.PDFAvailable(),
 	})))
 }
@@ -715,6 +717,30 @@ func (h *Handler) Advise(c *gin.Context) {
 	c.JSON(http.StatusOK, turn)
 }
 
+// AskAgent puts a question to the Crisis Exercise agent about this exercise.
+func (h *Handler) AskAgent(c *gin.Context) {
+	id, ok := idParam(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Question string `json:"question"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	ctx, cancel := contextWithTimeout(c, adviseTimeout)
+	defer cancel()
+
+	turn, err := h.service.AskAgent(ctx, id, req.Question, h.actorOf(c))
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, turn)
+}
+
 func (h *Handler) ProbeInject(c *gin.Context) {
 	injectID, ok := childParam(c, "inject")
 	if !ok {
@@ -775,12 +801,14 @@ func (h *Handler) CutVersion(c *gin.Context) {
 	c.JSON(http.StatusCreated, v)
 }
 
+// ClearChat clears the advisers' transcripts, or with ?conversation=agent the
+// conversation with the agent.
 func (h *Handler) ClearChat(c *gin.Context) {
 	id, ok := idParam(c)
 	if !ok {
 		return
 	}
-	if err := h.service.ClearChat(id); err != nil {
+	if err := h.service.ClearChat(id, c.Query("conversation") == PersonaAgent); err != nil {
 		writeServiceError(c, err)
 		return
 	}
