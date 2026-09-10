@@ -3,6 +3,37 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-10 (AI Chat: Session panel removed; backend and agent kept)
+
+The AI Chat Gateway's left-hand **Session** panel is gone. Questions now go to
+whatever Admin → Settings → AI provider routes to, the same way the AI dock
+asks. The two choices that change a Wintermute answer per question, **Backend**
+and **Agent**, are kept in their own area above the conversation.
+
+- `internal/app/ai_chat.go` (page): removed the Session panel's provider
+  select, the Claude endpoint override, the Wintermute server URL field, the
+  explanatory notice and the **System Prompt** box. The conversation now uses
+  the full width.
+- New **Backend & agent** area above the conversation, with the Backend and
+  Agent selects and **Refresh backends & agents**. Its header names what will
+  answer, for example "Answering with Wintermute · qwen3:8b" or "Answering with
+  Claude · claude-opus-5". Settings' backend and agent are preselected. When
+  Settings routes to Claude, the area stays visible but disabled, with a note
+  that backends and agents apply only to Wintermute. The lists are only
+  fetched when Wintermute will answer.
+- **Usage** moved from the Session panel to the Conversation header, next to
+  **Clear**. The usage table opens at the top of the conversation.
+- Requests: on Claude the page sends no `provider`, so the Settings router
+  answers exactly as it does for the AI dock. On Wintermute (explicit, or Auto
+  with a server and token configured) it sends `provider: "wintermute"` with
+  the chosen `backend` and `agent`. It no longer sends `endpoint` or
+  `system_prompt`. `POST /ai-chat/ask` still accepts both, along with
+  `provider`, for other callers.
+- The "no Wintermute server URL" error, returned by `/ai-chat/ask`,
+  `/ai-chat/wintermute/catalog` and `/ai-chat/wintermute/agents`, now says
+  "set one in Settings" instead of "enter one above", since the page has no
+  URL field. The comments on those handlers were updated to match.
+
 ## 2026-09-10 (Claude model field in Settings)
 
 Settings had no Claude model field, so every Claude question from the app used
