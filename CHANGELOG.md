@@ -3,6 +3,65 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-10 (Claude model field in Settings)
+
+Settings had no Claude model field, so every Claude question from the app used
+the built-in `aiprovider.DefaultClaudeModel`. Now that the AI Chat page has no
+model chooser of its own, the Claude model is set in Admin → Settings → AI
+provider.
+
+- `internal/settings`: new preference `ai.claude.model`
+  (`PrefClaudeModel`). Empty means `aiprovider.DefaultClaudeModel`, and it has
+  no environment fallback. `PUT /api/settings/ai-providers` accepts
+  `claude_model`. New `GET /api/settings/ai-providers/claude-models`
+  (admin-only, like the rest of this API) lists the models the stored
+  Anthropic key can use. It is a metadata call and is not billed as tokens.
+- `internal/aiprovider/claude.go`: `Claude.WithModelFunc` looks the model up
+  on every request, so a saved change applies without a restart and clearing
+  it restores the default. `Describe` and `Ask` both use it.
+- `internal/app/app.go`: the Settings router's Claude provider reads
+  `ai.claude.model`, so NFR Enrichment, Regulation Coverage, Crisis Exercises
+  and the AI dock all use the configured model.
+- `internal/app/ai_chat.go`: AI Chat's Claude provider and the `claude_model`
+  field in `GET /ai-chat/wintermute/status` use the configured model too
+  (`aiChatClaudeModel`).
+- `internal/app/settings_page.go`: the AI provider card has a Claude model
+  dropdown with a **Refresh Claude models** button. The saved value is shown
+  before the list arrives, so a failed lookup can't make Save clear it. A saved
+  model the key isn't offered is labelled as such. The list reloads when the
+  Anthropic key is saved. The section is dimmed when the provider is Wintermute
+  only. **Save** and **Test connection** moved out of the Wintermute block,
+  which is dimmed when the provider is Claude only.
+- Tests: `TestClaudeModelFuncIsResolvedPerQuestion`,
+  `TestListClaudeModelsWithoutAKey`, `TestSetPreferencesStoresTheClaudeModel`
+  and `TestClaudeQuestionsUseTheConfiguredModel`. `ai.claude.model` was added
+  to `TestAIProviderSettingsSurviveARestart`.
+
+## 2026-09-10 (AI Chat asks on the model Settings configures)
+
+The AI Chat Gateway's Session panel had its own model chooser for each
+provider, so a question there could be answered by a different model from every
+other AI field in the app. The model now comes from Admin → Settings → AI
+provider, and the page only shows which model that is.
+
+- `internal/app/ai_chat.go`: removed the Claude **Model** select and its
+  **Refresh models** button, and the Wintermute **Model** select. A read-only
+  hint under the provider selector names the model in use, with a link to
+  Settings. The Wintermute refresh button is now "Refresh backends & agents".
+  The backend, agent, endpoint and system prompt fields are unchanged.
+- `aiChatRequest` no longer has a `model` field, so the server ignores a model
+  sent in the request body instead of honouring it. Claude questions use the
+  same model as the Settings router (now set in Settings; see the entry
+  above). Wintermute questions use
+  `ai.wintermute.model`, but only when the question goes to the Settings
+  backend (`ai.wintermute.backend`). That model belongs to that backend, so a
+  question sent to another backend gets that backend's default
+  (`aiChatWintermuteModel`).
+- `GET /ai-chat/wintermute/status` also returns `claude_model` for the hint.
+- Removed `GET /ai-chat/claude/models` (`aiChatClaudeModels`) and its two
+  tests. This page was its only caller. `aiprovider.Claude.Models` is kept.
+- Added `TestWintermuteQuestionsUseTheConfiguredModel`.
+
 ## 2026-09-09 (Documents are read on the Wintermute server, not here)
 
 This application had its own document ingestion: a PDF reader, a DOCX reader, an

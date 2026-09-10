@@ -51,9 +51,10 @@ func TestValidatedClaudeBaseURL(t *testing.T) {
 }
 
 // TestAIChatProviderPrecedence covers what this page adds over the Settings
-// router: an endpoint, model or backend typed into the form wins for that one
+// router: an endpoint or backend typed into the form wins for that one
 // question, and anything left blank falls back to the install-wide setting.
-// Credentials are not part of that — they always come from Settings.
+// Credentials and the model are not part of that — they always come from
+// Settings.
 func TestAIChatProviderPrecedence(t *testing.T) {
 	original := activeSettings
 	t.Cleanup(func() { activeSettings = original })
@@ -328,6 +329,98 @@ func TestWintermuteQuestionsCarryTheConfiguredAgent(t *testing.T) {
 	// Describe renders the agent the next question would run against.
 	if got := provider.Describe(); !strings.Contains(got, "as grc") {
 		t.Errorf("Describe() = %q, want the configured agent in it", got)
+	}
+}
+
+// Claude questions are asked on the model Settings configures, from the AI Chat
+// page and through the router every other AI field uses alike; clearing the
+// setting restores the default.
+func TestClaudeQuestionsUseTheConfiguredModel(t *testing.T) {
+	original := activeSettings
+	t.Cleanup(func() { activeSettings = original })
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	svc := newTestSettings(t)
+	if err := svc.Set(settings.AnthropicAPIKey, "sk-ant-stored", "alice"); err != nil {
+		t.Fatalf("Set anthropic: %v", err)
+	}
+	if err := svc.SetPreference(settings.PrefClaudeModel, "claude-sonnet-5"); err != nil {
+		t.Fatalf("SetPreference: %v", err)
+	}
+	configureAICredentials(svc)
+	router := newAIRouter(svc)
+
+	page, err := aiChatProvider(aiChatRequest{Provider: "claude"})
+	if err != nil {
+		t.Fatalf("aiChatProvider: %v", err)
+	}
+	if got := page.Describe(); got != "Claude: claude-sonnet-5" {
+		t.Errorf("page Describe() = %q, want the configured model", got)
+	}
+	if got := router.Describe(); got != "Claude: claude-sonnet-5" {
+		t.Errorf("router Describe() = %q, want the configured model", got)
+	}
+
+	if err := svc.SetPreference(settings.PrefClaudeModel, ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if got := aiChatClaudeModel(); got != aiprovider.DefaultClaudeModel {
+		t.Errorf("cleared model = %q, want the default", got)
+	}
+	if got := router.Describe(); got != "Claude: "+aiprovider.DefaultClaudeModel {
+		t.Errorf("router Describe() after clearing = %q, want the default", got)
+	}
+}
+
+// The AI Chat page has no model field: a Wintermute question is asked on the
+// model Settings configures. That model is pinned within the Settings backend,
+// so a question sent to another backend gets that backend's default instead.
+func TestWintermuteQuestionsUseTheConfiguredModel(t *testing.T) {
+	original := activeSettings
+	t.Cleanup(func() { activeSettings = original })
+	t.Setenv("WINTERMUTE_TOKEN", "")
+	t.Setenv("WINTERMUTE_URL", "")
+	t.Setenv("WINTERMUTE_AGENT", "")
+	t.Setenv("WINTERMUTE_BACKEND", "")
+	t.Setenv("WINTERMUTE_MODEL", "")
+
+	svc := newTestSettings(t)
+	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
+		t.Fatalf("Set token: %v", err)
+	}
+	for key, value := range map[string]string{
+		settings.PrefWintermuteURL:     "https://wintermute.example.com",
+		settings.PrefWintermuteBackend: "workshop",
+		settings.PrefWintermuteModel:   "qwen3:8b",
+	} {
+		if err := svc.SetPreference(key, value); err != nil {
+			t.Fatalf("SetPreference %s: %v", key, err)
+		}
+	}
+	configureAICredentials(svc)
+
+	for _, tc := range []struct {
+		name    string
+		backend string
+		want    string
+		notWant string
+	}{
+		{name: "the settings backend gets the settings model", backend: "workshop", want: "(workshop/qwen3:8b)"},
+		{name: "another backend gets its own default", backend: "cloud", want: "(cloud)", notWant: "qwen3:8b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, err := aiChatProvider(aiChatRequest{Provider: "wintermute", Backend: tc.backend})
+			if err != nil {
+				t.Fatalf("aiChatProvider: %v", err)
+			}
+			got := provider.Describe()
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("Describe() = %q, want it to contain %q", got, tc.want)
+			}
+			if tc.notWant != "" && strings.Contains(got, tc.notWant) {
+				t.Errorf("Describe() = %q, want no %q", got, tc.notWant)
+			}
+		})
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"grc/internal/aiprovider"
 	"grc/internal/pageui"
 )
 
@@ -93,6 +94,21 @@ func settingsPage(c *gin.Context) {
       <p class="meta" id="providerDetail"></p>
       <p class="meta" id="providerUnused" hidden></p>
 
+      <div id="claudeFields">
+        <div class="row">
+          <select id="claudeModel" aria-label="Claude model">
+            <option value="">Default model &mdash; ` + aiprovider.DefaultClaudeModel + `</option>
+          </select>
+          <button id="loadClaudeModels" class="secondary" type="button">Refresh Claude models</button>
+        </div>
+        <p class="meta">
+          The <em>Claude model</em> answers every question this app sends to Claude &mdash; AI Chat
+          and every other AI field. The list comes from Anthropic for the key above, so a model
+          here is one that key can use. Not used while the provider is Wintermute only.
+          <span id="claudeModelDetail"></span>
+        </p>
+      </div>
+
       <div id="wintermuteFields">
         <div class="row">
           <input id="wmURL" type="text" class="mono" placeholder="http://wintermute.local:8080" aria-label="Wintermute server URL">
@@ -125,13 +141,13 @@ func settingsPage(c *gin.Context) {
           model&rsquo;s training data. <span id="wmAgentDetail"></span>
         </p>
         <p class="meta" id="wmAgentLink"></p>
-        <div class="row">
-          <button id="saveProvider">Save</button>
-          <button id="testProvider">Test connection</button>
-        </div>
-        <p class="meta" id="probeDetail"></p>
-        <p class="meta" id="backendList"></p>
       </div>
+      <div class="row">
+        <button id="saveProvider">Save</button>
+        <button id="testProvider">Test connection</button>
+      </div>
+      <p class="meta" id="probeDetail"></p>
+      <p class="meta" id="backendList"></p>
     </div>
 
     <p class="keyring" id="keyring"></p>
@@ -273,6 +289,10 @@ func settingsPage(c *gin.Context) {
         return;
       }
       await load();
+      // A different key can address a different set of models.
+      if (name === 'anthropic_api_key') {
+        loadClaudeModels().catch(function () { /* reported inline */ });
+      }
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -286,6 +306,10 @@ func settingsPage(c *gin.Context) {
   const wmURL = document.getElementById('wmURL');
   const wmBackend = document.getElementById('wmBackend');
   const wmModel = document.getElementById('wmModel');
+  const claudeFields = document.getElementById('claudeFields');
+  const claudeModel = document.getElementById('claudeModel');
+  const claudeModelDetail = document.getElementById('claudeModelDetail');
+  let claudeModelsLoaded = false;
   const activePill = document.getElementById('activePill');
   const providerDetail = document.getElementById('providerDetail');
   const probeDetail = document.getElementById('probeDetail');
@@ -299,6 +323,7 @@ func settingsPage(c *gin.Context) {
   function renderProviderUse() {
     const wintermuteInUse = providerEl.value !== 'claude';
     wintermuteFields.style.opacity = wintermuteInUse ? '' : '0.55';
+    claudeFields.style.opacity = providerEl.value === 'wintermute' ? '0.55' : '';
     providerUnused.hidden = wintermuteInUse;
     if (!wintermuteInUse) {
       providerUnused.textContent =
@@ -311,6 +336,15 @@ func settingsPage(c *gin.Context) {
     const prefs = data.preferences || {};
     providerEl.value = prefs['ai.provider'] || 'claude';
     renderProviderUse();
+    // Shown before Anthropic has been asked for its list, for the same reason
+    // as the Wintermute fields below: a slow or failed lookup must not leave
+    // the select on the default and let the next Save clear the stored model.
+    const claude = prefs['ai.claude.model'] || '';
+    ensureOption(claudeModel, claude, claude);
+    claudeModel.value = claude;
+    if (!claudeModelsLoaded) {
+      loadClaudeModels(claude).catch(function () { /* reported inline */ });
+    }
     wmURL.value = prefs['ai.wintermute.url'] || '';
     // A stored backend or model is shown before the server has been asked for
     // its lists, so the select carries the saved value even when the lookup is
@@ -350,6 +384,46 @@ func settingsPage(c *gin.Context) {
     }
     providerDetail.textContent = st.detail || '';
   }
+
+  // The Claude model list comes from Anthropic for the stored key rather than
+  // being typed in: a model id that was right last quarter answers with a 404
+  // today, and that failure would surface on a question rather than here.
+  async function loadClaudeModels(selected) {
+    const want = selected !== undefined ? selected : claudeModel.value;
+    claudeModelDetail.textContent = 'Loading models...';
+    try {
+      const res = await fetch('/api/settings/ai-providers/claude-models');
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+
+      const models = data.models || [];
+      clearOptions(claudeModel);
+      models.forEach(function (model) {
+        const opt = document.createElement('option');
+        opt.value = model.id;
+        opt.textContent = model.display_name && model.display_name !== model.id
+          ? model.id + ' — ' + model.display_name
+          : model.id;
+        claudeModel.appendChild(opt);
+      });
+      // A stored model this key is not offered is shown as such rather than
+      // dropped: it is what questions are being asked with right now.
+      ensureOption(claudeModel, want, want + ' — not offered to this key');
+      claudeModel.value = want || '';
+      claudeModelsLoaded = true;
+      claudeModelDetail.textContent = models.length
+        ? models.length + ' model(s) available to this key.'
+        : 'This key was offered no models.';
+    } catch (err) {
+      const kept = claudeModel.value;
+      claudeModelDetail.textContent = 'Could not list models: ' + err.message
+        + (kept ? ' Keeping the saved model, ' + kept + '.' : '');
+    }
+  }
+
+  document.getElementById('loadClaudeModels').addEventListener('click', function () {
+    loadClaudeModels().catch(function (err) { claudeModelDetail.textContent = err.message; });
+  });
 
   const wmCatalogDetail = document.getElementById('wmCatalogDetail');
 
@@ -557,6 +631,7 @@ func settingsPage(c *gin.Context) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: providerEl.value,
+          claude_model: claudeModel.value.trim(),
           wintermute_url: wmURL.value.trim(),
           wintermute_backend: wmBackend.value.trim(),
           wintermute_model: wmModel.value.trim(),

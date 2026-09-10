@@ -495,7 +495,7 @@ func newAIRouter(settingsService *settings.Service) *aiprovider.Router {
 	claude := aiprovider.NewClaude(
 		func() string { return settingsService.Get(settings.AnthropicAPIKey) },
 		"",
-	)
+	).WithModelFunc(func() string { return settingsService.Preference(settings.PrefClaudeModel) })
 	wintermute := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
 		return aiprovider.WintermuteConfig{
 			URL:     settingsService.Preference(settings.PrefWintermuteURL),
@@ -686,7 +686,6 @@ func registerAIAuxRoutes(r gin.IRouter) {
 	r.GET("/ai-chat/wintermute/status", aiChatWintermuteStatus)
 	r.GET("/ai-chat/wintermute/catalog", aiChatWintermuteCatalog)
 	r.GET("/ai-chat/wintermute/agents", aiChatWintermuteAgents)
-	r.GET("/ai-chat/claude/models", aiChatClaudeModels)
 }
 
 func registerAuthRoutes(r gin.IRouter, authHandler *authn.Handler) {
