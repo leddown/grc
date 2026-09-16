@@ -3,6 +3,29 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-16 (Ask AI handle no longer lies across the sign-in form)
+
+The "Ask AI" handle rendered as a full-width banner over the sign-in form.
+
+- Cause: `internal/app/login.go` styles bare `button { width: 100%;
+  margin-top: 20px }`, and an element selector in the page wins every property
+  the injected rule does not declare. `#global-ai-dock-toggle` declared its
+  fixed position but no width, so the handle stretched to the viewport width at
+  `top: 50%` — straight across the centred form. The theme toggle and the text
+  brightness button were exposed the same way.
+- `internal/app/theme_middleware.go`: `#global-ai-dock-toggle`,
+  `#global-theme-toggle` and `#global-text-lift` now pin their own box
+  (`width: auto`, `margin: 0`, `box-sizing: border-box`), so no page's own
+  button styling can resize them.
+- The sign-in page is now rendered without the global chrome at all: no
+  sidebar, command palette, theme toggle or AI dock, none of which a visitor
+  who is not signed in can use. `renderWithoutGlobalChrome` marks the response
+  and `injectPageStylesOnly` injects only the palette and the responsive layer;
+  `injectGlobalUI` and it share `spliceGlobalUI`, so insertion behaviour is
+  unchanged for every other page.
+- Tests: `TestLoginPageGetsStylesButNotChrome` (login keeps the palette and the
+  form, loses the chrome) and `TestInjectedFixedControlsPinTheirOwnBox`.
+
 ## 2026-09-10 (Crisis Exercises get their own Wintermute agent)
 
 Crisis Exercises can use a Wintermute agent of their own instead of the general

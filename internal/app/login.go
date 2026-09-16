@@ -7,6 +7,7 @@ import (
 )
 
 func loginPage(c *gin.Context) {
+	renderWithoutGlobalChrome(c)
 	html := `<!doctype html>
 <html lang="en">
 <head>

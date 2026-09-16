@@ -399,3 +399,89 @@ func TestAIDockNamesWhatWillAnswer(t *testing.T) {
 		t.Error("the panel must drop a session opened against a different agent")
 	}
 }
+
+// The sign-in page is outside the application shell. A visitor who is not
+// signed in can use none of the chrome, and the page's own bare
+// "button { width: 100% }" rule stretched the fixed AI-dock handle into a
+// banner lying across the sign-in form.
+func TestLoginPageGetsStylesButNotChrome(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(themeMiddleware())
+	router.GET("/login", loginPage)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/login", nil))
+
+	body := rec.Body.String()
+	for _, absent := range []string{
+		"global-ai-dock",
+		"global-side-nav-style",
+		"global-theme-toggle",
+		"global-command-palette",
+	} {
+		if strings.Contains(body, absent) {
+			t.Errorf("the sign-in page must not carry %q", absent)
+		}
+	}
+	// The palette and the iOS layer are not chrome and stay.
+	if !strings.Contains(body, "global-mobile-style") {
+		t.Error("the sign-in page still needs the responsive layer")
+	}
+	if !strings.Contains(body, "--surface-strong") {
+		t.Error("the sign-in page still needs the palette")
+	}
+	// The page itself must be intact either way.
+	if !strings.Contains(body, `id="loginForm"`) {
+		t.Error("the sign-in form went missing")
+	}
+}
+
+func stripCSSComments(s string) string {
+	var out strings.Builder
+	for {
+		open := strings.Index(s, "/*")
+		if open < 0 {
+			out.WriteString(s)
+			return out.String()
+		}
+		out.WriteString(s[:open])
+		shut := strings.Index(s[open:], "*/")
+		if shut < 0 {
+			return out.String()
+		}
+		s = s[open+shut+2:]
+	}
+}
+
+// Anything injected over a page it does not control has to pin its own box: an
+// element selector in the page wins every property the injected rule leaves
+// unset, and most pages here style bare `button`.
+func TestInjectedFixedControlsPinTheirOwnBox(t *testing.T) {
+	cases := map[string]string{
+		"#global-ai-dock-toggle": aiQuickPromptDockTag,
+		"#global-theme-toggle":   themeToggleTag(themeDark),
+		"#global-text-lift":      themeToggleTag(themeDark),
+	}
+	for selector, source := range cases {
+		// Comments in these rules quote CSS of their own, braces included, so
+		// the block has to be located in the declarations alone.
+		source = stripCSSComments(source)
+		start := strings.Index(source, selector+" {")
+		if start < 0 {
+			t.Errorf("%s: rule not found", selector)
+			continue
+		}
+		end := strings.Index(source[start:], "}")
+		if end < 0 {
+			t.Errorf("%s: unterminated rule", selector)
+			continue
+		}
+		rule := source[start : start+end]
+		for _, want := range []string{"width: auto", "margin: 0"} {
+			if !strings.Contains(rule, want) {
+				t.Errorf("%s must declare %q so a page's own button rule cannot resize it", selector, want)
+			}
+		}
+	}
+}

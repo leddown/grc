@@ -1303,6 +1303,13 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
   position: fixed; right: 0; top: 50%; transform: translateY(-50%);
   z-index: 9600;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
+  /* Pages style their own buttons with bare element selectors, and an
+     element selector still wins every property this rule does not declare.
+     The login page's "button { width: 100%; margin-top: 20px }" stretched
+     this fixed handle into a banner across the middle of the viewport, over
+     the form. Anything injected over a page it does not control has to pin
+     its own box. */
+  width: auto; min-width: 0; max-width: none; margin: 0; box-sizing: border-box;
   padding: 12px 10px;
   border: 1px solid var(--line); border-right: none;
   border-radius: 10px 0 0 10px;
@@ -1655,6 +1662,9 @@ func themeToggleTag(theme string) string {
   right: calc(60px + env(safe-area-inset-right));
   z-index: 10000;
   min-height: 36px;
+  /* Same reason as the AI dock handle: a page's bare "button {}" rule owns
+     every property this one leaves unset. */
+  width: auto; max-width: none; margin: 0; box-sizing: border-box;
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -1672,6 +1682,7 @@ func themeToggleTag(theme string) string {
   z-index: 10000;
   min-height: 36px;
   min-width: 36px;
+  width: auto; max-width: none; margin: 0; box-sizing: border-box;
   padding: 8px 10px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -1773,7 +1784,12 @@ func themeMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		modified := injectGlobalUI(payload, theme)
+		var modified []byte
+		if _, chromeless := c.Get(chromelessContextKey); chromeless {
+			modified = injectPageStylesOnly(payload, theme)
+		} else {
+			modified = injectGlobalUI(payload, theme)
+		}
 		capture.Header().Set("Content-Length", strconv.Itoa(len(modified)))
 		_, _ = capture.ResponseWriter.Write(modified)
 	}
@@ -1817,11 +1833,33 @@ func currentTheme(c *gin.Context) string {
 // responsive layer, because the responsive layer overrides the palette's
 // !important declarations and can only do that from later in the cascade.
 func injectGlobalUI(payload []byte, theme string) []byte {
-	headTag := headInsertTag(theme)
-	bodyTag := bodyInsertTag(theme)
+	return spliceGlobalUI(payload, headInsertTag(theme), bodyInsertTag(theme))
+}
 
+// chromelessContextKey marks a response that gets the palette and the
+// responsive layer but none of the chrome. A handler sets it with
+// renderWithoutGlobalChrome before it writes its page.
+const chromelessContextKey = "grc_chromeless_page"
+
+// renderWithoutGlobalChrome opts a page out of the sidebar, command palette,
+// theme toggle and AI dock.
+func renderWithoutGlobalChrome(c *gin.Context) {
+	c.Set(chromelessContextKey, true)
+}
+
+// injectPageStylesOnly is injectGlobalUI without the body chrome, for a page
+// that is outside the application shell — the sign-in page, where none of
+// those controls does anything for a visitor who is not signed in yet.
+func injectPageStylesOnly(payload []byte, theme string) []byte {
+	return spliceGlobalUI(payload, headInsertTag(theme), "")
+}
+
+func spliceGlobalUI(payload []byte, headTag, bodyTag string) []byte {
 	headAt := indexFoldASCII(payload, []byte("</head>"))
-	bodyAt := lastIndexFoldASCII(payload, []byte("</body>"))
+	bodyAt := -1
+	if bodyTag != "" {
+		bodyAt = lastIndexFoldASCII(payload, []byte("</body>"))
+	}
 
 	// A fragment with neither tag is passed through untouched, which is what
 	// kept partial responses working before.
