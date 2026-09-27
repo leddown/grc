@@ -745,6 +745,91 @@ CREATE TABLE IF NOT EXISTS crisis_ex_chat (
 CREATE INDEX IF NOT EXISTS idx_crisis_ex_chat_exercise
 	ON crisis_ex_chat (exercise_id, id);
 
+-- Audit Findings & Remediation: see AUDIT_FINDINGS.md.
+CREATE TABLE IF NOT EXISTS audit_findings (
+	id BIGSERIAL PRIMARY KEY,
+	reference TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT '',
+	engagement TEXT NOT NULL DEFAULT '',
+	auditor TEXT NOT NULL DEFAULT '',
+	finding_type TEXT NOT NULL DEFAULT '',
+	severity TEXT NOT NULL DEFAULT '',
+	deficiency_type TEXT NOT NULL DEFAULT '',
+	criteria TEXT NOT NULL DEFAULT '',
+	condition_text TEXT NOT NULL DEFAULT '',
+	cause TEXT NOT NULL DEFAULT '',
+	effect TEXT NOT NULL DEFAULT '',
+	recommendation TEXT NOT NULL DEFAULT '',
+	root_cause_category TEXT NOT NULL DEFAULT '',
+	business_unit TEXT NOT NULL DEFAULT '',
+	process_area TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	management_response TEXT NOT NULL DEFAULT '',
+	management_response_text TEXT NOT NULL DEFAULT '',
+	identified_date TEXT NOT NULL DEFAULT '',
+	report_date TEXT NOT NULL DEFAULT '',
+	original_due_date TEXT NOT NULL DEFAULT '',
+	due_date TEXT NOT NULL DEFAULT '',
+	extension_count INTEGER NOT NULL DEFAULT 0,
+	extension_reason TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'Open',
+	repeat_finding INTEGER NOT NULL DEFAULT 0,
+	prior_reference TEXT NOT NULL DEFAULT '',
+	linked_risks TEXT NOT NULL DEFAULT '',
+	linked_controls TEXT NOT NULL DEFAULT '',
+	framework_refs TEXT NOT NULL DEFAULT '',
+	validated_by TEXT NOT NULL DEFAULT '',
+	validation_date TEXT NOT NULL DEFAULT '',
+	validation_notes TEXT NOT NULL DEFAULT '',
+	closure_evidence TEXT NOT NULL DEFAULT '',
+	closed_date TEXT NOT NULL DEFAULT '',
+	risk_accepted_by TEXT NOT NULL DEFAULT '',
+	risk_acceptance_rationale TEXT NOT NULL DEFAULT '',
+	risk_acceptance_expiry TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_findings_status ON audit_findings (status);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_due_date ON audit_findings (due_date);
+
+CREATE TABLE IF NOT EXISTS audit_finding_actions (
+	id BIGSERIAL PRIMARY KEY,
+	finding_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	reference TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	action_type TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	due_date TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT '',
+	completed_date TEXT NOT NULL DEFAULT '',
+	evidence TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(finding_id) REFERENCES audit_findings(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_finding_actions_finding
+	ON audit_finding_actions (finding_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS audit_finding_history (
+	id BIGSERIAL PRIMARY KEY,
+	finding_id BIGINT NOT NULL,
+	at TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	event TEXT NOT NULL DEFAULT '',
+	from_value TEXT NOT NULL DEFAULT '',
+	to_value TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(finding_id) REFERENCES audit_findings(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
+	ON audit_finding_history (finding_id, id);
+
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_control_id ON rcsa_controls(control_id);
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_family_type ON rcsa_controls(family, control_type);
 CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain);

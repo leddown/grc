@@ -57,6 +57,13 @@ func seedModules(t *testing.T, conn *db.Conn) {
 		VALUES (17, 4, 1, 'report', 'Final report', '{}')`)
 	mustExec(t, conn, `INSERT INTO crisis_ex_chat (id, exercise_id, role, content)
 		VALUES (18, 4, 'user', 'Summarise the findings')`)
+
+	mustExec(t, conn, `INSERT INTO audit_findings (id, reference, title, severity, status)
+		VALUES (19, 'AF-2026-001', 'Privileged access not reviewed', 'High', 'In Remediation')`)
+	mustExec(t, conn, `INSERT INTO audit_finding_actions (id, finding_id, ordinal, description, owner)
+		VALUES (20, 19, 0, 'Quarterly privileged access recertification', 'IAM lead')`)
+	mustExec(t, conn, `INSERT INTO audit_finding_history (id, finding_id, event, to_value)
+		VALUES (21, 19, 'created', 'Open')`)
 }
 
 // checkModules asserts the seeded rows arrived intact, ids and all.
@@ -72,6 +79,7 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"crisis_ex_classification": 1, "crisis_ex_clocks": 1, "crisis_ex_findings": 1,
 		"crisis_ex_participants": 1, "crisis_ex_references": 1, "crisis_ex_versions": 1,
 		"crisis_ex_chat": 1,
+		"audit_findings": 1, "audit_finding_actions": 1, "audit_finding_history": 1,
 	} {
 		if got := count(t, dst, table); got != want {
 			t.Errorf("%s count=%d want %d", table, got, want)
@@ -171,10 +179,10 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 20 {
-		t.Errorf("report marks %d tables skipped, want 20", len(skipped))
+	if len(skipped) != 23 {
+		t.Errorf("report marks %d tables skipped, want 23", len(skipped))
 	}
-	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat"} {
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings"} {
 		if !skipped[want] {
 			t.Errorf("%s is not reported as skipped", want)
 		}

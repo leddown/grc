@@ -9,8 +9,8 @@
 // key and is regenerated from its sources; ephemeral login sessions
 // (auth_sessions) are skipped.
 //
-// Two modules are outside Sync entirely -- Regulation Coverage and the crisis
-// exercises. Each of their records is a tree of rows joined by autoincrement
+// Three modules are outside Sync entirely -- Regulation Coverage, the crisis
+// exercises and the audit findings. Each of their records is a tree of rows joined by autoincrement
 // ids, which is an identity two deployments do not share, so there is no honest
 // merge to perform (see skipInSync). Export and Import still carry them, and
 // that is the supported way to move them between deployments.
@@ -428,6 +428,43 @@ var syncOrder = []tableSpec{
 	{
 		table:        "crisis_ex_chat",
 		cols:         []string{"id", "exercise_id", "persona", "role", "content", "model", "actor", "scope", "session_id", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// Audit findings carry their action plans and status history as child rows
+	// joined by id, the same shape as the crisis exercises, so they are moved
+	// with the snapshot rather than merged by Sync.
+	{
+		table: "audit_findings",
+		cols: []string{
+			"id", "reference", "title", "source", "engagement", "auditor", "finding_type",
+			"severity", "deficiency_type", "criteria", "condition_text", "cause", "effect",
+			"recommendation", "root_cause_category", "business_unit", "process_area", "owner",
+			"management_response", "management_response_text", "identified_date", "report_date",
+			"original_due_date", "due_date", "extension_count", "extension_reason", "status",
+			"repeat_finding", "prior_reference", "linked_risks", "linked_controls", "framework_refs",
+			"validated_by", "validation_date", "validation_notes", "closure_evidence", "closed_date",
+			"risk_accepted_by", "risk_acceptance_rationale", "risk_acceptance_expiry", "notes",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "audit_finding_actions",
+		cols: []string{
+			"id", "finding_id", "ordinal", "reference", "description", "action_type", "owner",
+			"due_date", "status", "completed_date", "evidence",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "audit_finding_history",
+		cols:         []string{"id", "finding_id", "at", "actor", "event", "from_value", "to_value", "note"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
 		strat:        skipInSync,

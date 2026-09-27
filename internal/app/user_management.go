@@ -26,6 +26,7 @@ var userManagementAllowedPages = []string{
 	"/reports",
 	"/risk-register",
 	"/risk-register/manage",
+	"/audit-findings",
 	"/asset-types",
 	"/exceptions",
 	"/changelog",

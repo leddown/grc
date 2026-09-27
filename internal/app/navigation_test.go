@@ -35,6 +35,7 @@ var fullNavLinks = []string{
 	`href="/asset-types"`,
 	`href="/risk-register"`,
 	`href="/risk-register/manage"`,
+	`href="/audit-findings"`,
 	`href="/exceptions"`,
 	`href="/policies"`,
 	`href="/policies/manage"`,

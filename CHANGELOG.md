@@ -3,6 +3,81 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-27 (Audit Findings & Remediation module)
+
+A new page, Audit Findings, under Compliance & Risk (`/audit-findings`).
+
+- Research: the design follows the IIA Global Internal Audit Standards
+  (Standard 15.2, follow-up), the elements of a finding in the GAO Yellow Book,
+  ISO 19011 finding grades, and practitioner guidance on issue validation. The
+  practices, the fields and the sources are in `AUDIT_FINDINGS.md`, which is
+  also served at `/knowledge/audit-findings`.
+- `internal/auditfinding` (new): model, repository, service, handler and page.
+  - A finding records criteria, condition, cause, effect and recommendation. It
+    also has a finding type (the deficiency grades and ISO nonconformity
+    grades), a severity, a deficiency type (design / operating), a management
+    response, and an action plan whose items each have an owner, a due date,
+    a status and evidence.
+  - Lifecycle rules:
+    - In Remediation needs an action plan and is blocked if management
+      disagrees.
+    - Pending Validation needs every action Implemented.
+    - Closed needs an independent validator (not the owner), a validation date
+      and closure evidence.
+    - Risk Accepted needs an approver, a rationale and a future expiry.
+    - A closed finding that returns is stored as Reopened.
+  - The due date defaults from severity (30/90/180/365 days). The original due
+    date is fixed at the first commitment. A later due date needs a new
+    extension reason and increments the extension count; the client cannot set
+    either field.
+  - Every change to status, due date, owner, severity, response or the action
+    plan is written to `audit_finding_history` with the actor.
+  - The dashboard shows open, overdue, pending validation, open critical/high,
+    repeat findings open, extended findings, risk acceptances (with expired
+    ones flagged), findings closed in the last 90 days, average days to close,
+    and open findings by age.
+- Routes (`internal/app/app.go`, `registerAuditFindingRoutes`): reads are open
+  and writes are admin, the same split as the risk register. Added to
+  `protectedPrefixes`, the user-management page list, the sidebar
+  (`internal/pageui/nav.go`), the Help page, and `Agents.md`.
+- Schema (`internal/db/sqlite.go`, `internal/db/postgres.go`): new tables
+  `audit_findings`, `audit_finding_actions` and `audit_finding_history`.
+- Backup (`internal/dbsync`): the three tables are in the snapshot, with
+  `SnapshotVersion` bumped to 9; v8 and older backups restore with them empty.
+  They are excluded from `-sync-to/-sync-from`, like the other modules whose
+  records are trees of rows. The module fixture, the skip count and the nav
+  link list were updated.
+- Tests: `internal/auditfinding/service_test.go` covers the defaults, the
+  validation, extensions, every lifecycle gate, reopening, advisory findings,
+  the summary and overdue calculation, and the page and handler status codes.
+
+## 2026-09-25 (Form controls stay inside the column they sit in)
+
+In the Risk Register Editor every cell input and textarea drew past the right
+edge of its column.
+
+- Cause: the injected design layer (`internal/app/theme_design.go`) gives every
+  `input`, `select` and `textarea` a padding and a 1px border, while each page
+  sizes its own controls with `width:100%`. Under the default `content-box`
+  sizing that padding and border are added outside the declared width, so a
+  control was always wider than the cell, flex row or form column holding it.
+- `internal/app/theme_design.go`: the control rule now declares
+  `box-sizing: border-box` and `max-width: 100%`, both `!important` like the
+  rest of that layer. The middleware injects it into every HTML response
+  (chromeless pages included), so this fixes the overflow on every page at
+  once, not only the pages that already set `* { box-sizing: border-box }`.
+- `internal/riskregister/handler.go`: the cell controls also declare their own
+  `box-sizing`, `max-width:100%` and `min-width:0`, so the page is correct on
+  its own; checkboxes keep `width:auto`; and the 1-5 score inputs get
+  `min-width:46px` with the spinner removed, because the L/I/rL/rI columns are
+  only as wide as their one-letter headers and the score had nowhere to draw
+  once the control was clamped to the column.
+- Test: `TestInjectedControlsAreSizedWithinTheirColumn` asserts the injected
+  control rule carries both declarations, for all four themes.
+- Verified by rendering `/risk-register/manage` and `/settings` against a
+  throwaway local-mode instance: controls sit inside their columns and the
+  scores are legible.
+
 ## 2026-09-16 (Ask AI handle no longer lies across the sign-in form)
 
 The "Ask AI" handle rendered as a full-width banner over the sign-in form.

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"grc/internal/aiprovider"
+	"grc/internal/auditfinding"
 	"grc/internal/authn"
 	"grc/internal/controlcatalog"
 	"grc/internal/crisisexercise"
@@ -169,6 +170,7 @@ func Run(options Options) error {
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
 		router, sqliteDB, knowledgeService, settingsService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
+	registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	if err := router.Run(options.ListenAddr); err != nil {
@@ -663,6 +665,20 @@ func registerCrisisExerciseRoutes(
 	configureCrisisDock(service)
 
 	handler := crisisexercise.NewHandler(service, sessionUsername)
+	handler.RegisterRoutes(r)
+
+	admin := r.Group("/")
+	if !localMode {
+		admin.Use(adminMiddleware)
+	}
+	handler.RegisterAdminRoutes(admin)
+}
+
+// registerAuditFindingRoutes wires Audit Findings & Remediation with the same
+// read-open / write-admin split as the risk register it sits beside.
+func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware gin.HandlerFunc, localMode bool) {
+	handler := auditfinding.NewHandler(
+		auditfinding.NewService(auditfinding.NewSQLiteRepository(sqliteDB)), sessionUsername)
 	handler.RegisterRoutes(r)
 
 	admin := r.Group("/")

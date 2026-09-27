@@ -246,6 +246,24 @@ func helpPage(c *gin.Context) {
       </article>
 
       <article class="panel">
+        <div class="panel-header">Audit findings &amp; remediation</div>
+        <div class="panel-body">
+          <p class="purpose">Track audit, regulatory and certification findings from the report to
+          validated closure.</p>
+          <ol>
+            <li>Record the finding at <a href="/audit-findings">Audit Findings</a> as criteria,
+              condition, cause and effect, with an owner and a severity.</li>
+            <li>Capture management's response and a dated action plan with named owners;
+              extending a due date asks for the reason and approver.</li>
+            <li>Close it on independent validation with evidence, or record a time-bound risk
+              acceptance.</li>
+          </ol>
+          <p class="note">Practice and lifecycle rules are in
+          <a href="/knowledge/audit-findings">AUDIT_FINDINGS.md</a>.</p>
+        </div>
+      </article>
+
+      <article class="panel">
         <div class="panel-header">Exceptions</div>
         <div class="panel-body">
           <p class="purpose">Record what a system does not meet, as a set rather than as scattered
@@ -477,6 +495,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Catalog</td><td class="page"><a href="/asset-types">/asset-types</a></td><td>Resolve the baseline and controls for an asset tier.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register/manage">/risk-register/manage</a></td><td>Create and edit risk entries.</td></tr>
+          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/audit-findings">/audit-findings</a></td><td>Audit findings, action plans, validation and closure.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/exceptions">/exceptions</a></td><td>Build an exception set from the requirements catalog.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies">/policies</a></td><td>The policy library and its review states.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/manage">/policies/manage</a></td><td>Write policy sections and cite controls.</td></tr>

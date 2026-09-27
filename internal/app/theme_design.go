@@ -206,7 +206,13 @@ tbody tr:hover { background: var(--surface-2) !important; }
 td.num, th.num { text-align: right !important; font-variant-numeric: tabular-nums !important; }
 
 /* ---- controls ---- */
+/* Every page sizes its own controls with width:100% inside a table cell, a
+   flex row or a form column. Under the default content-box sizing the padding
+   and border this layer gives them are added outside that width, so the
+   control drew past the column it was in. */
 input, select, textarea {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
   background: var(--bg) !important;
   color: var(--text) !important;
   border: 1px solid var(--border) !important;

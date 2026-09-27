@@ -49,6 +49,11 @@ all backed by SQLite and served via Gin.
 - `internal/nfrenrich` — NFR Enrichment: imports a security document from the
   same library and proposes enrichments to the NFR catalog, which a human
   accepts or rejects
+- `internal/auditfinding` — Audit Findings & Remediation: findings from audit,
+  regulators and certification written as criteria/condition/cause/effect, a
+  management response and dated action plan, extensions that are counted, and
+  closure only on independent validation or an expiring risk acceptance — see
+  `AUDIT_FINDINGS.md`
 - `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
   the exercise arc from red team through incident response, DORA incident
   classification and its notification clocks, crisis and continuity activation,

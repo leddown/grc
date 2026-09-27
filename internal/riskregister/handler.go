@@ -192,13 +192,19 @@ func riskRegisterHTML(manage bool) string {
     .tab { padding:10px 14px; border-radius:999px; background:#efe6d6; border:1px solid var(--line); color:var(--ink); text-decoration:none; font-family:Arial,sans-serif; font-size:13px; letter-spacing:0.04em; text-transform:uppercase; }
     .tab.active { background:#e1d0b7; border-color:#b89d78; }
     .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
-    input, select, button, textarea { font:inherit; }
+    input, select, button, textarea { font:inherit; box-sizing:border-box; }
     input, select { padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg); }
     button { padding:8px 12px; border-radius:999px; border:1px solid #b89d78; background:#e1d0b7; cursor:pointer; }
     table { width:100%; border-collapse:collapse; font-family:Arial,sans-serif; font-size:13px; background:var(--panel); border:1px solid var(--line); }
     th, td { border:1px solid var(--line); padding:6px; vertical-align:top; }
     th { background:#efe6d6; text-align:left; position:sticky; top:0; }
-    td input, td select, td textarea { width:100%; border:1px solid #ddd; border-radius:6px; padding:4px 6px; font-size:12px; }
+    td input, td select, td textarea { display:block; width:100%; max-width:100%; min-width:0; border:1px solid #ddd; border-radius:6px; padding:4px 6px; font-size:12px; }
+    td input[type="checkbox"] { width:auto; }
+    /* L/I/rL/rI head one-letter columns, so the column is only as wide as its
+       label and the 1-5 score inside it had nowhere to draw. */
+    td input[type="number"] { min-width:46px; -moz-appearance:textfield; appearance:textfield; }
+    td input[type="number"]::-webkit-outer-spin-button,
+    td input[type="number"]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
     td textarea { min-height:44px; resize:vertical; }
     .status { margin:8px 0; color:var(--muted); font-family:Arial,sans-serif; }
     .table-wrap { overflow:auto; max-height:72vh; }

@@ -454,6 +454,30 @@ func stripCSSComments(s string) string {
 	}
 }
 
+// The injected layer gives every input, select and textarea a padding and a
+// border the page did not ask for. Pages size their controls with width:100%
+// inside a table cell or a flex row, so without border-box sizing that padding
+// is added outside the column and the control draws past it.
+func TestInjectedControlsAreSizedWithinTheirColumn(t *testing.T) {
+	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
+		css := stripCSSComments(themeStyleTag(theme))
+		start := strings.Index(css, "input, select, textarea {")
+		if start < 0 {
+			t.Fatalf("%s: control rule not found", theme)
+		}
+		end := strings.Index(css[start:], "}")
+		if end < 0 {
+			t.Fatalf("%s: unterminated control rule", theme)
+		}
+		rule := css[start : start+end]
+		for _, want := range []string{"box-sizing: border-box", "max-width: 100%"} {
+			if !strings.Contains(rule, want) {
+				t.Errorf("%s: control rule must declare %q so a width:100%% control stays inside its column", theme, want)
+			}
+		}
+	}
+}
+
 // Anything injected over a page it does not control has to pin its own box: an
 // element selector in the page wins every property the injected rule leaves
 // unset, and most pages here style bare `button`.
