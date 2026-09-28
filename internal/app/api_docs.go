@@ -139,6 +139,28 @@ func openAPIJSON(c *gin.Context) {
 					"security":    []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
+			"/policies/templates": gin.H{
+				"get": gin.H{"summary": "List the Policy Studio document templates, the default first, with the facts each declares"},
+			},
+			"/policies/from-template": gin.H{
+				"post": gin.H{
+					"summary":     "Create a Policy Studio document from a template",
+					"description": "Body: {template_id, client_profile_id, title, reference, owner_role}. Known client facts render by value; missing ones stay unresolved and block approval. Proposed mappings the catalog lacks are skipped and listed in skipped_mappings.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/policies/clients": gin.H{
+				"get":  gin.H{"summary": "List client profiles"},
+				"post": gin.H{"summary": "Create a client profile", "security": []gin.H{{"AdminBearer": []string{}}}},
+			},
+			"/policies/clients/{clientID}/facts/{key}": gin.H{
+				"put": gin.H{
+					"summary":     "Record a client fact",
+					"description": "Body: {value, value_type}. Every Studio draft written for the client is re-projected, so its fact tokens resolve without editing the text. GET /policies/clients/{clientID}/facts lists them.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+				"delete": gin.H{"summary": "Delete a client fact", "security": []gin.H{{"AdminBearer": []string{}}}},
+			},
 			"/collab/policies/{id}": gin.H{
 				"get": gin.H{
 					"summary":     "Policy Studio collaboration socket (WebSocket, y-websocket protocol)",

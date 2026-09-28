@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"grc/internal/authn"
+	"grc/internal/clientprofile"
 	"grc/internal/db"
 	"grc/internal/knowledge"
 	"grc/internal/policydocs"
@@ -84,7 +85,9 @@ func registerPolicyStudioRoutes(
 	if err != nil {
 		return nil, err
 	}
+	clients := clientprofile.NewService(conn)
 	service := policystudio.NewService(conn, policyService, policystudio.Options{
+		Clients:        clients,
 		AllowedOrigins: origins,
 		SnapshotRetain: options.StudioSnapshotRetention,
 		Identity:       studioIdentity(authService, options.LocalMode),
@@ -97,10 +100,13 @@ func registerPolicyStudioRoutes(
 	handler := policystudio.NewHandler(service, sessionUsername)
 	handler.RegisterReadRoutes(r)
 	handler.RegisterPublicRoutes(r)
+	clientHandler := clientprofile.NewHandler(clients, sessionUsername)
+	clientHandler.RegisterReadRoutes(r)
 	admin := r.Group("/")
 	if !options.LocalMode {
 		admin.Use(adminMiddleware)
 	}
 	handler.RegisterAdminRoutes(admin)
+	clientHandler.RegisterAdminRoutes(admin)
 	return service, nil
 }

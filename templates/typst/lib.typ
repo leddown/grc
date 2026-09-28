@@ -207,6 +207,76 @@
   #body
 ]
 
+// ---------------------------------------------------------------------------
+// Rich section content (Policy Studio documents)
+// ---------------------------------------------------------------------------
+
+// render-runs sets a paragraph's inline runs. Every string is placed as data --
+// a text value inserted into content -- and never evaluated, so a "#" or a "["
+// in a policy is printed, not run: the same boundary the brand validation keeps
+// for the values interpolated into brand.typ.
+#let render-runs(runs) = {
+  for r in runs {
+    if r.at("break", default: false) {
+      linebreak()
+      continue
+    }
+    let t = r.at("text", default: "")
+    let marks = r.at("marks", default: ())
+    let body = if "code" in marks { raw(t) } else { [#t] }
+    if "italic" in marks { body = emph(body) }
+    if "bold" in marks { body = strong(body) }
+    let fact = r.at("fact", default: none)
+    if fact != none and fact.at("unresolved", default: false) {
+      body = highlight(fill: brand.table-head, body)
+    }
+    if r.at("control", default: none) != none {
+      body = text(font: brand.sans, size: 0.9em)[#body]
+    }
+    let href = r.at("href", default: none)
+    if href != none and href != "" { body = link(href, body) }
+    body
+  }
+}
+
+// render-blocks sets a section's blocks: paragraphs, headings, lists, tables,
+// quotes and callouts. Headings inside a section are unnumbered and stay out
+// of the contents, so section numbers remain the citable unit.
+#let render-blocks(blocks) = {
+  for b in blocks {
+    let kind = b.at("type", default: "")
+    if kind == "paragraph" {
+      par(render-runs(b.at("runs", default: ())))
+    } else if kind == "heading" {
+      heading(level: b.at("level", default: 2), numbering: none, outlined: false, render-runs(b.at("runs", default: ())))
+    } else if kind == "bullet_list" {
+      list(..b.at("items", default: ()).map(item => render-blocks(item)))
+    } else if kind == "ordered_list" {
+      enum(start: b.at("start", default: 1), ..b.at("items", default: ()).map(item => render-blocks(item)))
+    } else if kind == "table" {
+      let rows = b.at("rows", default: ())
+      if rows.len() > 0 {
+        let width = calc.max(..rows.map(r => r.at("cells", default: ()).len()), 1)
+        let first = rows.at(0)
+        let header = if first.at("header", default: false) { first.at("cells", default: ()).map(c => render-blocks(c)) } else { () }
+        let body-rows = if header.len() > 0 { rows.slice(1) } else { rows }
+        data-table(
+          columns: (1fr,) * width,
+          header: header,
+          rows: body-rows.map(r => {
+            let cells = r.at("cells", default: ()).map(c => render-blocks(c))
+            cells + ([],) * (width - cells.len())
+          }),
+        )
+      }
+    } else if kind == "blockquote" {
+      quote(block: true, render-blocks(b.at("blocks", default: ())))
+    } else if kind == "callout" {
+      callout(title: if b.at("kind", default: "note") == "important" { "Important" } else { "Note" }, render-blocks(b.at("blocks", default: ())))
+    }
+  }
+}
+
 // approval-block renders the signature area. Real signature lines matter: a
 // policy that cannot be wet-signed is one a client cannot put in an audit file.
 #let approval-block(approver: "", owner: "", effective: "") = block(breakable: false)[

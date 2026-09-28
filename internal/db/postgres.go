@@ -873,6 +873,35 @@ CREATE TABLE IF NOT EXISTS policy_doc_snapshots (
 CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
 	ON policy_doc_snapshots (document_id, id);
 
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS blocks_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS client_profile_id BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS snapshot_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
+
+-- Client profiles: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS client_profiles (
+	id BIGSERIAL PRIMARY KEY,
+	name TEXT NOT NULL,
+	crm_ref TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS client_profile_facts (
+	client_id BIGINT NOT NULL,
+	key TEXT NOT NULL,
+	value TEXT NOT NULL DEFAULT '',
+	value_type TEXT NOT NULL DEFAULT 'text',
+	source TEXT NOT NULL DEFAULT 'manual',
+	updated_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (client_id, key),
+	FOREIGN KEY(client_id) REFERENCES client_profiles(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_control_id ON rcsa_controls(control_id);
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_family_type ON rcsa_controls(family, control_type);
 CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain);

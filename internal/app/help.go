@@ -291,6 +291,11 @@ func helpPage(c *gin.Context) {
               live document that several people edit at once, with lists, tables and formatting, the
               sections and their control mappings kept as they are, and readiness checked as you
               type. Moving a document into the Studio is one way.</li>
+            <li>Start one from a template with <em>New document</em>: the ICT and Information
+              Security Policy (DORA, ISO 27001, NIST) or a standard, procedure or work instruction
+              skeleton, written for a client. What the policy says about the client — names, roles,
+              review triggers — comes from that client's facts; anything not yet recorded shows as
+              a missing fact and blocks approval until someone fills it in.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at

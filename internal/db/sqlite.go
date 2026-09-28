@@ -862,7 +862,33 @@ func OpenSQLite(path string) (*Conn, error) {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
-		ON policy_doc_snapshots (document_id, id);`
+		ON policy_doc_snapshots (document_id, id);
+
+	-- Client profiles (internal/clientprofile): the clients policies are
+	-- written for, and the facts about each that a policy may state but a
+	-- model must never invent. Kept here rather than in the CRM on wintermute
+	-- so a document's facts never depend on another server being reachable;
+	-- crm_ref records the CRM client a profile corresponds to, when there is one.
+	CREATE TABLE IF NOT EXISTS client_profiles (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		crm_ref TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS client_profile_facts (
+		client_id INTEGER NOT NULL,
+		key TEXT NOT NULL,
+		value TEXT NOT NULL DEFAULT '',
+		value_type TEXT NOT NULL DEFAULT 'text',
+		source TEXT NOT NULL DEFAULT 'manual',
+		updated_by TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (client_id, key),
+		FOREIGN KEY(client_id) REFERENCES client_profiles(id) ON DELETE CASCADE
+	);`
 
 	const stateSchema = `
 	CREATE TABLE IF NOT EXISTS app_state (
@@ -1011,6 +1037,12 @@ func OpenSQLite(path string) (*Conn, error) {
 		{"policy_sections", "uid", "TEXT NOT NULL DEFAULT ''"},
 		{"policy_sections", "content_json", "TEXT NOT NULL DEFAULT ''"},
 		{"policy_sections", "detached_at", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "blocks_json", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_documents", "client_profile_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"policy_documents", "template_id", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_documents", "template_version", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_versions", "snapshot_sha256", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_versions", "content_json", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := ensureColumn(db, col.table, col.name, col.def); err != nil {
 			return nil, err

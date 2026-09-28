@@ -116,8 +116,8 @@ row count and exits non-zero on the first error.
 - **Id-keyed tables preserve ids.** The policy library (`policy_documents` /
   `policy_sections` / `policy_versions` / `policy_section_controls`), the NFR
   enrichment corpus (`nfr_source_documents` / `nfr_source_chunks` /
-  `nfr_enrichment_proposals`), `stored_json_documents`, `doc_template_brand` and
-  `ai_usage_log` carry their primary keys across so foreign-key relationships
+  `nfr_enrichment_proposals`), `stored_json_documents`, `doc_template_brand`,
+  `client_profiles` and `ai_usage_log` carry their primary keys across so foreign-key relationships
   stay intact; on PostgreSQL the identity sequences are realigned afterwards so
   future inserts don't collide.
 - **Two modules are outside the sync entirely.** Regulation Coverage
@@ -130,6 +130,13 @@ row count and exits non-zero on the first error.
   deployments, use the JSON export/import on the Utilities page — that path is a
   single transaction and a full replace, which is the only coherent way to
   transfer tree-shaped records.
+- **Policy Studio documents travel as their section rows.** The live Yjs
+  documents (`policy_doc_state`, `policy_doc_updates`, `policy_doc_snapshots`)
+  are in a full backup but not in `-sync-to` / `-sync-from`: an update log
+  means something only next to the state it was written against. The section
+  rows travel with their `content_json`, and the destination rebuilds a
+  changed Studio document from them the first time it is opened (see
+  POLICY_STUDIO.md).
 - **The derived link table is rebuilt.** `security_nfr_control_links` has no
   stable key (it is regenerated from the catalogs + overrides), so it is
   replaced wholesale on the destination to stay consistent with the rows just

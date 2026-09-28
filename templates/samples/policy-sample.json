@@ -1,91 +1,555 @@
 {
-  "id": 1,
-  "reference": "POL-AC-001",
-  "title": "Access Control Policy",
-  "doc_type": "policy",
-  "status": "approved",
-  "classification": "Confidential",
-  "owner_role": "Head of Information Security",
   "approver": "Chief Information Security Officer",
+  "classification": "Confidential",
   "client_name": "Northwind Financial Services Ltd",
-  "frameworks": ["ISO 27001", "NIST 800-53", "PCI DSS"],
-  "effective_date": "2026-02-01",
-  "review_cadence_months": 12,
-  "next_review_date": "2027-02-01",
-  "summary": "This policy establishes the requirements for granting, reviewing and revoking access to Northwind information systems and the cardholder data environment. It applies to all employees, contractors and third parties, and is mandatory for any system that processes, stores or transmits regulated data.",
-  "sections": [
+  "controls": [
     {
-      "heading": "Purpose",
-      "section_kind": "purpose",
-      "body": "Unauthorised access is the most frequently exploited weakness in financial services environments, and the majority of material incidents begin with a credential that should have been revoked or was never appropriate to issue. This policy sets the mandatory requirements that limit access to information systems to identified, authorised individuals, and that ensure access is removed promptly when it is no longer justified.\n\nIt exists to protect the confidentiality, integrity and availability of Northwind information assets, and to meet the access control obligations placed on the organisation by ISO/IEC 27001:2022, NIST SP 800-53 Revision 5 and the Payment Card Industry Data Security Standard.",
-      "controls": [
-        { "control_id": "AC-1", "coverage": "full" }
-      ]
+      "control_id": "AC-1",
+      "control_name": "Policy and Procedures",
+      "coverage": "full",
+      "section_heading": "Purpose"
     },
     {
-      "heading": "Scope",
-      "section_kind": "scope",
-      "body": "This policy applies to all production and pre-production information systems operated by or on behalf of Northwind, including the cardholder data environment, and to every account type used to access them — interactive user accounts, privileged administrative accounts, service accounts and accounts held by third parties.\n\nIt applies to all employees, contractors, temporary staff and third-party personnel, in every location, whether working on Northwind premises or remotely. Systems operated entirely by a third party remain in scope where Northwind data is processed, and the requirements are imposed contractually."
+      "control_id": "AC-2",
+      "control_name": "Account Management",
+      "coverage": "full",
+      "section_heading": "Policy Statements"
     },
     {
-      "heading": "Policy Statements",
-      "section_kind": "statements",
-      "body": "Access must be granted on the principle of least privilege: an account must hold only the permissions required for the role it supports, and no more.\n\nAccess must be authorised by the system owner before it is provisioned, and the authorisation must be recorded and retained for a minimum of twelve months.\n\nAll access to systems in scope must be attributable to a single named individual. Shared or generic accounts must not be used for interactive access; where a shared account is technically unavoidable, its use must be documented, approved by the Head of Information Security, and the credential rotated whenever a holder leaves the group.\n\nPrivileged access must be issued separately from an individual's standard account, must require multi-factor authentication, and must be reviewed at least quarterly by the system owner.\n\nAccess must be revoked within one business day of a person leaving the organisation or changing to a role that no longer requires it. Revocation must be verified rather than assumed.\n\nUser access rights must be formally reviewed at least every six months, and privileged rights at least every three months. The reviewer must be the system owner or their documented delegate, and the outcome of each review must be retained as evidence.\n\nWhere a requirement of this policy cannot be met, an exception must be raised, risk-assessed and approved through the exception process before the affected system enters or remains in production.",
-      "controls": [
-        { "control_id": "AC-2", "coverage": "full" },
-        { "control_id": "AC-3", "coverage": "full" },
-        { "control_id": "AC-6", "coverage": "partial" }
-      ]
+      "control_id": "AC-3",
+      "control_name": "Access Enforcement",
+      "coverage": "full",
+      "section_heading": "Policy Statements"
     },
     {
-      "heading": "Roles and Responsibilities",
-      "section_kind": "roles",
-      "body": "The Chief Information Security Officer owns this policy, approves it, and is accountable for its effectiveness.\n\nThe Head of Information Security must maintain this policy, ensure it is reviewed at the stated cadence, and report material non-compliance to the Executive Risk Committee.\n\nSystem owners must authorise access to the systems they own, conduct the periodic access reviews required by this policy, and retain the evidence of those reviews.\n\nLine managers must notify Human Resources and the IT Service Desk of leavers and role changes in sufficient time for access to be revoked within the period required above.\n\nAll personnel must comply with this policy and must report any suspected misuse of access rights."
-    },
-    {
-      "heading": "Management Commitment",
-      "section_kind": "management_commitment",
-      "body": "The Executive Risk Committee endorses this policy and commits the resources required to implement and sustain it, including the tooling required to evidence access reviews and the staff time required to conduct them. Compliance with this policy is a condition of continued access to Northwind systems."
-    },
-    {
-      "heading": "Coordination Among Organizational Entities",
-      "section_kind": "coordination",
-      "body": "Implementation of this policy requires coordination between Information Security, IT Operations, Human Resources and Procurement. Human Resources must provide leaver and mover notifications; Procurement must ensure third-party contracts impose equivalent access control obligations; IT Operations must implement and evidence the technical controls."
-    },
-    {
-      "heading": "Compliance and Enforcement",
-      "section_kind": "compliance",
-      "body": "Compliance with this policy is monitored through the periodic access reviews, through automated reporting on privileged account usage, and through internal audit.\n\nBreaches of this policy must be reported to the Head of Information Security and are handled under the disciplinary procedure. Breaches by third-party personnel are handled under the relevant contract and may result in withdrawal of access or termination of the engagement."
-    },
-    {
-      "heading": "Exceptions",
-      "section_kind": "exceptions",
-      "body": "Any deviation from this policy must be recorded as a formal exception, risk-assessed, approved by the Head of Information Security, given an expiry date, and reviewed before that date. Exceptions must not be granted retrospectively as a substitute for compliance."
-    },
-    {
-      "heading": "Related Documents",
-      "section_kind": "related_documents",
-      "body": "STD-AC-001 Authentication Standard\nPRO-AC-001 Account Provisioning Procedure\nPRO-AC-002 Periodic Access Review Procedure\nPOL-IS-001 Information Security Policy"
+      "control_id": "AC-6",
+      "control_name": "Least Privilege",
+      "coverage": "partial",
+      "section_heading": "Policy Statements"
     }
   ],
-  "controls": [
-    { "control_id": "AC-1", "control_name": "Policy and Procedures", "coverage": "full", "section_heading": "Purpose" },
-    { "control_id": "AC-2", "control_name": "Account Management", "coverage": "full", "section_heading": "Policy Statements" },
-    { "control_id": "AC-3", "control_name": "Access Enforcement", "coverage": "full", "section_heading": "Policy Statements" },
-    { "control_id": "AC-6", "control_name": "Least Privilege", "coverage": "partial", "section_heading": "Policy Statements" }
+  "doc_type": "policy",
+  "effective_date": "2026-02-01",
+  "frameworks": [
+    "ISO 27001",
+    "NIST 800-53",
+    "PCI DSS"
   ],
-  "versions": [
+  "id": 1,
+  "next_review_date": "2027-02-01",
+  "owner_role": "Head of Information Security",
+  "reference": "POL-AC-001",
+  "review_cadence_months": 12,
+  "sections": [
     {
-      "version_label": "v2.0",
-      "approved_by": "Chief Information Security Officer",
-      "approved_at": "2026-02-01T09:00:00Z",
-      "change_summary": "Added quarterly privileged access review and one-business-day revocation requirement."
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Unauthorised access is the most frequently exploited weakness in financial services environments, and the majority of material incidents begin with a credential that should have been revoked or was never appropriate to issue. This policy sets the mandatory requirements that limit access to information systems to identified, authorised individuals, and that ensure access is removed promptly when it is no longer justified."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "It exists to protect the confidentiality, integrity and availability of Northwind information assets, and to meet the access control obligations placed on the organisation by ISO/IEC 27001:2022, NIST SP 800-53 Revision 5 and the Payment Card Industry Data Security Standard."
+            }
+          ]
+        }
+      ],
+      "body": "Unauthorised access is the most frequently exploited weakness in financial services environments, and the majority of material incidents begin with a credential that should have been revoked or was never appropriate to issue. This policy sets the mandatory requirements that limit access to information systems to identified, authorised individuals, and that ensure access is removed promptly when it is no longer justified.\n\nIt exists to protect the confidentiality, integrity and availability of Northwind information assets, and to meet the access control obligations placed on the organisation by ISO/IEC 27001:2022, NIST SP 800-53 Revision 5 and the Payment Card Industry Data Security Standard.",
+      "controls": [
+        {
+          "control_id": "AC-1",
+          "coverage": "full"
+        }
+      ],
+      "heading": "Purpose",
+      "section_kind": "purpose"
     },
     {
-      "version_label": "v1.0",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "This policy applies to all production and pre-production information systems operated by or on behalf of Northwind, including the cardholder data environment, and to every account type used to access them — interactive user accounts, privileged administrative accounts, service accounts and accounts held by third parties."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "It applies to all employees, contractors, temporary staff and third-party personnel, in every location, whether working on Northwind premises or remotely. Systems operated entirely by a third party remain in scope where Northwind data is processed, and the requirements are imposed contractually."
+            }
+          ]
+        }
+      ],
+      "body": "This policy applies to all production and pre-production information systems operated by or on behalf of Northwind, including the cardholder data environment, and to every account type used to access them — interactive user accounts, privileged administrative accounts, service accounts and accounts held by third parties.\n\nIt applies to all employees, contractors, temporary staff and third-party personnel, in every location, whether working on Northwind premises or remotely. Systems operated entirely by a third party remain in scope where Northwind data is processed, and the requirements are imposed contractually.",
+      "heading": "Scope",
+      "section_kind": "scope"
+    },
+    {
+      "blocks": [
+        {
+          "type": "heading",
+          "level": 2,
+          "runs": [
+            {
+              "text": "Access principles"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Access must be granted on the principle of least privilege: an account must hold only the permissions required for the role it supports, and no more."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Access must be authorised by the system owner before it is provisioned, and the authorisation must be recorded and retained for a minimum of twelve months."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "All access to systems in scope must be attributable to a single named individual. Shared or generic accounts must not be used for interactive access; where a shared account is technically unavoidable, its use must be documented, approved by the Head of Information Security, and the credential rotated whenever a holder leaves the group."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Privileged access must be issued separately from an individual's standard account, must require multi-factor authentication, and must be reviewed at least quarterly by the system owner."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Access must be revoked within one business day of a person leaving the organisation or changing to a role that no longer requires it. Revocation must be verified rather than assumed."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "User access rights must be formally reviewed at least every six months, and privileged rights at least every three months. The reviewer must be the system owner or their documented delegate, and the outcome of each review must be retained as evidence."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Where a requirement of this policy cannot be met, an exception must be raised, risk-assessed and approved through the exception process before the affected system enters or remains in production."
+            }
+          ]
+        },
+        {
+          "type": "ordered_list",
+          "start": 1,
+          "items": [
+            [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "Privileged access must be reviewed "
+                  },
+                  {
+                    "text": "quarterly",
+                    "marks": [
+                      "bold"
+                    ]
+                  },
+                  {
+                    "text": " by the system owner."
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "Remote administration must use:"
+                  }
+                ]
+              },
+              {
+                "type": "bullet_list",
+                "items": [
+                  [
+                    {
+                      "type": "paragraph",
+                      "runs": [
+                        {
+                          "text": "multi-factor authentication"
+                        }
+                      ]
+                    }
+                  ],
+                  [
+                    {
+                      "type": "paragraph",
+                      "runs": [
+                        {
+                          "text": "an approved bastion ("
+                        },
+                        {
+                          "text": "see the Remote Access Standard",
+                          "href": "https://example.com/standards/remote-access"
+                        },
+                        {
+                          "text": ")"
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        }
+      ],
+      "body": "Access must be granted on the principle of least privilege: an account must hold only the permissions required for the role it supports, and no more.\n\nAccess must be authorised by the system owner before it is provisioned, and the authorisation must be recorded and retained for a minimum of twelve months.\n\nAll access to systems in scope must be attributable to a single named individual. Shared or generic accounts must not be used for interactive access; where a shared account is technically unavoidable, its use must be documented, approved by the Head of Information Security, and the credential rotated whenever a holder leaves the group.\n\nPrivileged access must be issued separately from an individual's standard account, must require multi-factor authentication, and must be reviewed at least quarterly by the system owner.\n\nAccess must be revoked within one business day of a person leaving the organisation or changing to a role that no longer requires it. Revocation must be verified rather than assumed.\n\nUser access rights must be formally reviewed at least every six months, and privileged rights at least every three months. The reviewer must be the system owner or their documented delegate, and the outcome of each review must be retained as evidence.\n\nWhere a requirement of this policy cannot be met, an exception must be raised, risk-assessed and approved through the exception process before the affected system enters or remains in production.",
+      "controls": [
+        {
+          "control_id": "AC-2",
+          "coverage": "full"
+        },
+        {
+          "control_id": "AC-3",
+          "coverage": "full"
+        },
+        {
+          "control_id": "AC-6",
+          "coverage": "partial"
+        }
+      ],
+      "heading": "Policy Statements",
+      "section_kind": "statements"
+    },
+    {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "The Chief Information Security Officer owns this policy, approves it, and is accountable for its effectiveness."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "The Head of Information Security must maintain this policy, ensure it is reviewed at the stated cadence, and report material non-compliance to the Executive Risk Committee."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "System owners must authorise access to the systems they own, conduct the periodic access reviews required by this policy, and retain the evidence of those reviews."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Line managers must notify Human Resources and the IT Service Desk of leavers and role changes in sufficient time for access to be revoked within the period required above."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "All personnel must comply with this policy and must report any suspected misuse of access rights."
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "rows": [
+            {
+              "header": true,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Role"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Accountable for"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Chief Information Security Officer",
+                        "fact": {
+                          "key": "ciso_role_title",
+                          "value": "Chief Information Security Officer",
+                          "unresolved": false
+                        }
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "This policy and its standards; see "
+                      },
+                      {
+                        "text": "AC-1",
+                        "control": {
+                          "id": "AC-1"
+                        }
+                      },
+                      {
+                        "text": "."
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Access approvers"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Approving access "
+                      },
+                      {
+                        "text": "before",
+                        "marks": [
+                          "bold"
+                        ]
+                      },
+                      {
+                        "text": " it is granted."
+                      }
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "important",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "runs": [
+                {
+                  "text": "Segregation of duties: "
+                },
+                {
+                  "text": "no one approves their own access",
+                  "marks": [
+                    "italic"
+                  ]
+                },
+                {
+                  "text": ". Exceptions go to "
+                },
+                {
+                  "text": "[[UNRESOLVED: exception_approval_authority]]",
+                  "fact": {
+                    "key": "exception_approval_authority",
+                    "value": "",
+                    "unresolved": true
+                  }
+                },
+                {
+                  "text": "."
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "body": "The Chief Information Security Officer owns this policy, approves it, and is accountable for its effectiveness.\n\nThe Head of Information Security must maintain this policy, ensure it is reviewed at the stated cadence, and report material non-compliance to the Executive Risk Committee.\n\nSystem owners must authorise access to the systems they own, conduct the periodic access reviews required by this policy, and retain the evidence of those reviews.\n\nLine managers must notify Human Resources and the IT Service Desk of leavers and role changes in sufficient time for access to be revoked within the period required above.\n\nAll personnel must comply with this policy and must report any suspected misuse of access rights.",
+      "heading": "Roles and Responsibilities",
+      "section_kind": "roles"
+    },
+    {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "The Executive Risk Committee endorses this policy and commits the resources required to implement and sustain it, including the tooling required to evidence access reviews and the staff time required to conduct them. Compliance with this policy is a condition of continued access to Northwind systems."
+            }
+          ]
+        }
+      ],
+      "body": "The Executive Risk Committee endorses this policy and commits the resources required to implement and sustain it, including the tooling required to evidence access reviews and the staff time required to conduct them. Compliance with this policy is a condition of continued access to Northwind systems.",
+      "heading": "Management Commitment",
+      "section_kind": "management_commitment"
+    },
+    {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Implementation of this policy requires coordination between Information Security, IT Operations, Human Resources and Procurement. Human Resources must provide leaver and mover notifications; Procurement must ensure third-party contracts impose equivalent access control obligations; IT Operations must implement and evidence the technical controls."
+            }
+          ]
+        }
+      ],
+      "body": "Implementation of this policy requires coordination between Information Security, IT Operations, Human Resources and Procurement. Human Resources must provide leaver and mover notifications; Procurement must ensure third-party contracts impose equivalent access control obligations; IT Operations must implement and evidence the technical controls.",
+      "heading": "Coordination Among Organizational Entities",
+      "section_kind": "coordination"
+    },
+    {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Compliance with this policy is monitored through the periodic access reviews, through automated reporting on privileged account usage, and through internal audit."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Breaches of this policy must be reported to the Head of Information Security and are handled under the disciplinary procedure. Breaches by third-party personnel are handled under the relevant contract and may result in withdrawal of access or termination of the engagement."
+            }
+          ]
+        }
+      ],
+      "body": "Compliance with this policy is monitored through the periodic access reviews, through automated reporting on privileged account usage, and through internal audit.\n\nBreaches of this policy must be reported to the Head of Information Security and are handled under the disciplinary procedure. Breaches by third-party personnel are handled under the relevant contract and may result in withdrawal of access or termination of the engagement.",
+      "heading": "Compliance and Enforcement",
+      "section_kind": "compliance"
+    },
+    {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Any deviation from this policy must be recorded as a formal exception, risk-assessed, approved by the Head of Information Security, given an expiry date, and reviewed before that date. Exceptions must not be granted retrospectively as a substitute for compliance."
+            }
+          ]
+        }
+      ],
+      "body": "Any deviation from this policy must be recorded as a formal exception, risk-assessed, approved by the Head of Information Security, given an expiry date, and reviewed before that date. Exceptions must not be granted retrospectively as a substitute for compliance.",
+      "heading": "Exceptions",
+      "section_kind": "exceptions"
+    },
+    {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "STD-AC-001 Authentication Standard"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "PRO-AC-001 Account Provisioning Procedure"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "PRO-AC-002 Periodic Access Review Procedure"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "POL-IS-001 Information Security Policy"
+            }
+          ]
+        }
+      ],
+      "body": "STD-AC-001 Authentication Standard\nPRO-AC-001 Account Provisioning Procedure\nPRO-AC-002 Periodic Access Review Procedure\nPOL-IS-001 Information Security Policy",
+      "heading": "Related Documents",
+      "section_kind": "related_documents"
+    }
+  ],
+  "status": "approved",
+  "summary": "This policy establishes the requirements for granting, reviewing and revoking access to Northwind information systems and the cardholder data environment. It applies to all employees, contractors and third parties, and is mandatory for any system that processes, stores or transmits regulated data.",
+  "title": "Access Control Policy",
+  "versions": [
+    {
+      "approved_at": "2026-02-01T09:00:00Z",
       "approved_by": "Chief Information Security Officer",
+      "change_summary": "Added quarterly privileged access review and one-business-day revocation requirement.",
+      "version_label": "v2.0"
+    },
+    {
       "approved_at": "2025-01-15T09:00:00Z",
-      "change_summary": "Initial issue."
+      "approved_by": "Chief Information Security Officer",
+      "change_summary": "Initial issue.",
+      "version_label": "v1.0"
     }
   ]
 }

@@ -380,12 +380,21 @@ func equalScalar(a, b any) bool {
 	return a == b
 }
 
+// asInt reads a whole number of any numeric type: JSON decodes numbers as
+// float64, ygo returns integers as int64, and lib0 hands back a float that
+// fits as float32.
 func asInt(v any) (int, bool) {
 	switch x := v.(type) {
 	case int:
 		return x, true
+	case int32:
+		return int(x), true
 	case int64:
 		return int(x), true
+	case float32:
+		if x == float32(int(x)) {
+			return int(x), true
+		}
 	case float64:
 		if x == float64(int(x)) {
 			return int(x), true

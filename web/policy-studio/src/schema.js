@@ -198,7 +198,9 @@ export function studioExtensions(opts) {
     cell(TableHeader),
     cell(TableCell),
     Callout,
-    FactToken,
+    // The browser editor renders a fact by its value (a node view); the node
+    // itself, and so the schema, is the same everywhere.
+    o.factNodeView ? FactToken.extend({ addNodeView: () => o.factNodeView }) : FactToken,
     ControlRef,
     Insertion,
     Deletion,

@@ -33,7 +33,8 @@
 
 #let doc-type-label = {
   let t = get("doc_type", fallback: "policy")
-  if t == "work_instruction" { "Work Instruction" }
+  if t == "" { "Policy" }
+  else if t == "work_instruction" { "Work Instruction" }
   else if t == "tra" { "Targeted Risk Analysis" }
   else { upper(t.at(0)) + t.slice(1) }
 }
@@ -140,7 +141,11 @@
     }).join("; ")
   } else { none }
 
-  section-block(s.at("heading", default: ""), s.at("body", default: ""), note: note)
+  // Blocks are the rich form a Policy Studio document carries; a document
+  // written in the section editor has only its body.
+  let blocks = s.at("blocks", default: ())
+  let body = if blocks.len() > 0 { render-blocks(blocks) } else { s.at("body", default: "") }
+  section-block(s.at("heading", default: ""), body, note: note)
 }
 
 // ---------------------------------------------------------------------------

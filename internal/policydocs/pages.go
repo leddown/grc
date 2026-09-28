@@ -66,6 +66,12 @@ func listPageHTML(manage bool) string {
 }
 
 const policyCSS = `
+dialog.new-doc { width:min(560px, calc(100vw - 32px)); background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:20px; }
+dialog.new-doc::backdrop { background:rgba(0,0,0,0.55); }
+dialog.new-doc h2 { margin:0 0 12px; font-size:1.2rem; }
+dialog.new-doc label { display:block; margin:12px 0 4px; font-size:13px; color:var(--muted); }
+dialog.new-doc select, dialog.new-doc input { width:100%; }
+dialog.new-doc .err { color:var(--bad); min-height:1em; }
 :root { color-scheme: light; --ink:#1c2431; --muted:#5e6672; --line:#d7cebf; --accent:#8b3d2e; --green:#0b5d3b; --amber:#9a6700; }
 * { box-sizing: border-box; }
 body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink);
@@ -555,14 +561,76 @@ async function act(method, url, body){
   }
 }
 
+// New document: a template (instantiated on the server into a Policy Studio
+// document, known client facts filled in) or a blank section-editor document.
+// The dialog is built with createElement and textContent throughout.
+function node(tag, props, kids){
+  const n = document.createElement(tag);
+  Object.entries(props || {}).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === false) return;
+    if (k === "text") n.textContent = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? "" : String(v));
+  });
+  (kids || []).forEach(c => n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
+  return n;
+}
+
 async function createDoc(){
-  const title = prompt("Document title:");
-  if (!title) return;
-  try {
-    const created = await api("POST", "/policies", { title: title, doc_type: "policy" });
-    await loadDocs();
-    await selectDoc(created.id);
-  } catch(e){ el("status").textContent = "Create failed: " + e.message; }
+  let templates = [], clients = [];
+  try { [templates, clients] = await Promise.all([api("GET", "/policies/templates"), api("GET", "/policies/clients")]); }
+  catch(e){ el("status").textContent = "Could not load templates: " + e.message; return; }
+  const tpl = node("select", { id: "nd-template" });
+  templates.forEach(t => tpl.appendChild(node("option", { value: t.id, selected: t.default, text: t.title + " — " + t.section_count + " sections" })));
+  tpl.appendChild(node("option", { value: "", text: "Blank document (section editor)" }));
+  const client = node("select", { id: "nd-client" }, [node("option", { value: "0", text: "No client yet" })]);
+  clients.forEach(c => client.appendChild(node("option", { value: String(c.id), text: c.name })));
+  client.appendChild(node("option", { value: "new", text: "New client…" }));
+  const title = node("input", { id: "nd-title", placeholder: "Leave empty to use the template's title" });
+  const desc = node("p", { class: "muted" });
+  const error = node("p", { class: "err", role: "alert" });
+  const describe = () => {
+    const t = templates.find(x => x.id === tpl.value);
+    desc.textContent = t ? t.description + (t.facts.length ? " It uses " + t.facts.length + " client facts; the ones the client already has are filled in." : "") : "An empty document written section by section in the Policy Editor.";
+  };
+  tpl.addEventListener("change", describe);
+  describe();
+  const dlg = node("dialog", { class: "new-doc", "aria-labelledby": "nd-heading" }, [
+    node("h2", { id: "nd-heading", text: "New document" }),
+    node("label", { for: "nd-template", text: "Start from" }), tpl, desc,
+    node("label", { for: "nd-client", text: "Client" }), client,
+    node("label", { for: "nd-title", text: "Title" }), title, error,
+  ]);
+  const create = node("button", { type: "button", class: "primary", text: "Create" });
+  const cancel = node("button", { type: "button", text: "Cancel", onclick: () => { dlg.close(); dlg.remove(); } });
+  dlg.appendChild(node("div", { class: "actions" }, [create, cancel]));
+  create.addEventListener("click", async () => {
+    error.textContent = "";
+    create.disabled = true;
+    try {
+      let clientID = Number(client.value) || 0;
+      if (client.value === "new") {
+        const name = prompt("Client name:");
+        if (!name || !name.trim()) { create.disabled = false; return; }
+        clientID = (await api("POST", "/policies/clients", { name: name.trim() })).id;
+      }
+      if (!tpl.value) {
+        const t = title.value.trim();
+        if (!t) { error.textContent = "A blank document needs a title."; create.disabled = false; return; }
+        const created = await api("POST", "/policies", { title: t, doc_type: "policy", client_profile_id: clientID });
+        dlg.close(); dlg.remove();
+        await loadDocs();
+        await selectDoc(created.id);
+        return;
+      }
+      const res = await api("POST", "/policies/from-template", { template_id: tpl.value, client_profile_id: clientID, title: title.value.trim() });
+      location.href = "/policies/" + res.document.id + "/studio";
+    } catch(e){
+      create.disabled = false;
+      error.textContent = "The document wasn't created: " + e.message;
+    }
+  });
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  tpl.focus();
 }
 
 (async function init(){
@@ -571,8 +639,7 @@ async function createDoc(){
     const n = el(id);
     n.addEventListener(id === "searchInput" ? "input" : "change", () => loadDocs());
   });
-  const newBtn = el("newBtn");
-  if (MANAGE) newBtn.addEventListener("click", createDoc); else newBtn.style.display = "none";
+  el("newBtn").addEventListener("click", createDoc);
   await loadDocs();
 })();
 `

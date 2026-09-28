@@ -226,6 +226,11 @@ func buildElement(n *Node) (*crdt.YXmlElement, error) {
 	}
 	for _, k := range schema.nodes[n.Type].attrOrder {
 		if v := n.Attrs[k]; v != nil {
+			// A whole number is stored as an integer, as the editor stores it;
+			// lib0 would otherwise write JSON's float64 as a float.
+			if f, ok := v.(float64); ok && f == float64(int64(f)) {
+				v = int64(f)
+			}
 			el.SetAttributeValue(nil, k, v)
 		}
 	}

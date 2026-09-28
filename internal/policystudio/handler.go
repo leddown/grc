@@ -29,11 +29,13 @@ func NewHandler(service *Service, actor func(c *gin.Context) string) *Handler {
 func (h *Handler) RegisterReadRoutes(r gin.IRouter) {
 	r.GET("/policies/:id/studio", h.Page)
 	r.GET("/policies/:id/studio/state", h.State)
+	r.GET("/policies/templates", h.ListTemplates)
 }
 
 // RegisterAdminRoutes attaches the structure commands and migration, behind
 // the admin gate.
 func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
+	r.POST("/policies/from-template", h.FromTemplate)
 	r.POST("/policies/:id/studio/migrate", h.Migrate)
 	r.POST("/policies/:id/studio/sections", h.AddSection)
 	r.POST("/policies/:id/studio/reorder", h.Reorder)
@@ -109,6 +111,42 @@ func (h *Handler) State(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, st)
+}
+
+// ListTemplates describes the templates a document can start from.
+func (h *Handler) ListTemplates(c *gin.Context) {
+	type summary struct {
+		ID           string         `json:"id"`
+		Version      string         `json:"version"`
+		Title        string         `json:"title"`
+		DocType      string         `json:"doc_type"`
+		Description  string         `json:"description"`
+		Frameworks   []string       `json:"frameworks"`
+		Default      bool           `json:"default"`
+		SectionCount int            `json:"section_count"`
+		Facts        []TemplateFact `json:"facts"`
+	}
+	out := []summary{}
+	for _, t := range h.service.Templates() {
+		out = append(out, summary{ID: t.ID, Version: t.Version, Title: t.Title, DocType: t.DocType, Description: t.Description,
+			Frameworks: t.Frameworks, Default: t.Default, SectionCount: len(t.Sections), Facts: t.Facts})
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// FromTemplate creates a Studio document from a template, server-side.
+func (h *Handler) FromTemplate(c *gin.Context) {
+	var in CreateRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+	res, err := h.service.CreateFromTemplate(in, h.actor(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, res)
 }
 
 func (h *Handler) Migrate(c *gin.Context) {

@@ -64,8 +64,12 @@ all backed by SQLite and served via Gin.
   policy documents. An in-process ygo (pure-Go Yjs) server holds each Studio
   document; the server validates and projects it into `policy_sections`, which
   stay the system of record for sections and mappings. The editor lives in
-  `web/policy-studio` and ships as an embedded, hashed bundle — see
+  `web/policy-studio` and ships as an embedded, hashed bundle. Its document
+  templates are JSON in `internal/policystudio/templates/` — see
   `POLICY_STUDIO.md`
+- `internal/clientprofile` — client profiles and their facts (the
+  anti-hallucination store): what a policy states about a client comes from
+  here or stays an unresolved token that blocks approval
 - `internal/knowledge` — the read-only `/api/knowledge` surface an external AI
   agent queries: NFRs, controls, regulation coverage, policies, risks and crisis
   exercises, behind its own read-only token. The agent itself lives in wintermuted, not here —

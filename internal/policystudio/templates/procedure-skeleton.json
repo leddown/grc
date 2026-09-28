@@ -1,0 +1,61 @@
+{
+  "id": "procedure-skeleton",
+  "version": "1.0.0",
+  "title": "Procedure (skeleton)",
+  "doc_type": "procedure",
+  "frameworks": [],
+  "description": "A blank procedure with the sections a procedure cannot be approved without: purpose, scope, steps and roles.",
+  "review_cadence_months": 12,
+  "classification": "Internal",
+  "default": false,
+  "facts": [
+    {
+      "key": "parent_policy_reference",
+      "label": "Parent policy",
+      "description": "The policy this document implements, by title and reference.",
+      "example": "ICT and Information Security Policy (POL-IS-001)",
+      "value_type": "text"
+    },
+    {
+      "key": "document_owner_role",
+      "label": "Document owner role",
+      "description": "The role accountable for this document.",
+      "example": "Head of IT Operations",
+      "value_type": "text"
+    }
+  ],
+  "sections": [
+    {
+      "uid_seed": "purpose",
+      "heading": "Purpose",
+      "kind": "purpose",
+      "content": "This procedure describes how the requirements of {{fact:parent_policy_reference}} are carried out.",
+      "guidance": "Say which requirement this procedure carries out.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "scope",
+      "heading": "Scope",
+      "kind": "scope",
+      "content": "This procedure applies whenever the activity it describes is performed within the scope of {{fact:parent_policy_reference}}.",
+      "guidance": "When the procedure applies, and when it does not.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "steps",
+      "heading": "Procedure",
+      "kind": "procedure_steps",
+      "content": "1. Describe the first step. Each step must name who performs it and what record it leaves.\n2. Describe the next step.",
+      "guidance": "Numbered, role-assigned, repeatable steps. Each step says who does it and what evidence it leaves.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "roles",
+      "heading": "Roles and responsibilities",
+      "kind": "roles",
+      "content": "The {{fact:document_owner_role}} owns this procedure and must keep it current.",
+      "guidance": "Roles, not people.",
+      "proposed_mappings": []
+    }
+  ]
+}

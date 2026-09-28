@@ -114,6 +114,37 @@ function sectionIntegrity(onRefused) {
   })
 }
 
+// ---- fact tokens: shown by value ----
+
+// A fact renders as the client's value, or as a warning chip naming the
+// missing key. The value arrives as a node decoration (see controlChips), so a
+// changed fact re-renders every token without touching the document.
+function factNodeView(props) {
+  const dom = document.createElement('span')
+  dom.className = 'ps-fact'
+  dom.contentEditable = 'false'
+  const render = (node, decorations) => {
+    const deco = (decorations || []).find((d) => d.spec && d.spec.fact)
+    const key = node.attrs.key
+    const resolved = !!(deco && deco.spec.resolved)
+    dom.textContent = resolved ? deco.spec.value : key
+    dom.dataset.fact = key
+    dom.dataset.resolved = resolved ? 'true' : 'false'
+    dom.title = resolved ? 'Client fact: ' + key : 'Missing client fact: ' + key + ' (fill it in under Facts)'
+    dom.setAttribute('aria-label', resolved ? deco.spec.value : 'missing fact ' + key)
+  }
+  render(props.node, props.decorations)
+  return {
+    dom,
+    update(node, decorations) {
+      if (node.type.name !== 'factToken') return false
+      render(node, decorations)
+      return true
+    },
+    ignoreMutation: () => true,
+  }
+}
+
 // ---- control chips under each section heading ----
 
 const chipsKey = new PluginKey('controlChips')
@@ -125,13 +156,18 @@ function controlChips(render) {
       return [new Plugin({
         key: chipsKey,
         state: {
-          init: () => ({ bySection: {}, version: 0 }),
+          init: () => ({ bySection: {}, facts: {}, version: 0 }),
           apply: (tr, value) => tr.getMeta(chipsKey) || value,
         },
         props: {
           decorations(state) {
-            const { bySection, version } = chipsKey.getState(state)
+            const { bySection, facts, version } = chipsKey.getState(state)
             const decos = []
+            state.doc.descendants((node, pos) => {
+              if (node.type.name !== 'factToken') return
+              const f = facts[node.attrs.key]
+              decos.push(Decoration.node(pos, pos + node.nodeSize, {}, { fact: true, resolved: !!(f && f.resolved), value: f ? f.value : '', version }))
+            })
             state.doc.forEach((section, offset) => {
               const info = bySection[section.attrs.uid]
               if (!info) return
@@ -274,6 +310,7 @@ class Studio {
       element: host,
       editable: this.canEdit,
       extensions: studioExtensions({
+        factNodeView,
         extra: [
           Collaboration.configure({ document: ydoc, field: FRAGMENT }),
           CollaborationCaret.configure({ provider: this.provider, user: { name: this.user, color: colorFor(this.user) } }),
@@ -288,6 +325,9 @@ class Studio {
     })
     this.pushChips()
     window.GRCPolicyStudio.editor = this.editor
+    let paper = false
+    try { paper = localStorage.getItem('grc.policyStudio.paper') === '1' } catch (_) { /* storage may be unavailable */ }
+    if (paper) this.togglePaper()
   }
 
   // ---- state polling ----
@@ -319,6 +359,7 @@ class Studio {
 
   renderPanels() {
     this.renderHeader()
+    if (this.paperHeader) this.renderPaperHeader()
     const editable = !!this.state.can_edit
     if (this.editor && editable !== this.canEdit) {
       this.canEdit = editable
@@ -345,8 +386,10 @@ class Studio {
     for (const s of this.state.sections) {
       bySection[s.uid] = { section: s, errors: errorsBySection[s.id] || 0 }
     }
+    const facts = {}
+    for (const f of this.state.facts || []) facts[f.key] = f
     this.chipsVersion++
-    this.editor.view.dispatch(this.editor.state.tr.setMeta(chipsKey, { bySection, version: this.chipsVersion }).setMeta('addToHistory', false))
+    this.editor.view.dispatch(this.editor.state.tr.setMeta(chipsKey, { bySection, facts, version: this.chipsVersion }).setMeta('addToHistory', false))
   }
 
   // ---- header actions ----
@@ -355,7 +398,10 @@ class Studio {
     const d = this.state.document
     const link = (href, text) => h('a', { class: 'ps-button', href, text })
     const btn = (text, fn, cls) => h('button', { type: 'button', class: cls || '', text, onclick: fn })
-    const items = [link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF')]
+    const paper = this.canvas.classList.contains('ps-paper-on')
+    const items = [
+      h('button', { type: 'button', 'aria-pressed': paper ? 'true' : 'false', text: paper ? 'Screen view' : 'Paper view', onclick: () => this.togglePaper() }),
+      link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF')]
     if (this.canManage) {
       if (d.status === 'draft') items.push(btn('Submit for review', () => this.transition('submit', 'Submitted for review.')))
       if (d.status === 'in_review') {
@@ -369,6 +415,31 @@ class Studio {
       if (d.status === 'retired') items.push(btn('Reinstate as draft', () => this.transition('reopen', 'Reinstated as a draft.')))
     }
     this.actions.replaceChildren(...items)
+  }
+
+  // Paper view: the canvas as the deliverable will look -- light page, the
+  // template's typefaces, the classification band and document control
+  // header. A per-viewer preference, remembered in this browser.
+  togglePaper() {
+    const on = !this.canvas.classList.contains('ps-paper-on')
+    this.canvas.classList.toggle('ps-paper-on', on)
+    try { localStorage.setItem('grc.policyStudio.paper', on ? '1' : '0') } catch (_) { /* storage may be unavailable */ }
+    this.renderPaperHeader()
+    this.renderActions()
+  }
+
+  renderPaperHeader() {
+    const d = this.state.document
+    if (!this.paperHeader) {
+      this.paperHeader = h('header', { class: 'ps-paper-header', 'aria-hidden': 'true' })
+      this.canvas.prepend(this.paperHeader)
+    }
+    const rows = [['Reference', d.reference || '—'], ['Status', statusLabels[d.status] || d.status], ['Owner', d.owner_role || '—'],
+      ['Approver', d.approver || '—'], ['Effective', d.effective_date || '—'], ['Client', d.client_name || '—']]
+    this.paperHeader.replaceChildren(
+      h('div', { class: 'ps-paper-band', text: (d.classification || 'Internal').toUpperCase() }),
+      h('div', { class: 'ps-paper-title', text: d.title }),
+      h('dl', { class: 'ps-paper-control' }, rows.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])))
   }
 
   async transition(action, done) {
@@ -504,7 +575,11 @@ class Studio {
       row.appendChild(chip)
     }
     if (editable) row.appendChild(h('button', { type: 'button', class: 'ps-chip-add', text: '+ Control', onclick: (e) => this.openPicker(sec, e.currentTarget) }))
-    return row
+    if (!sec.guidance) return row
+    // Template guidance: what the section is for and what it answers to. It is
+    // shown here only, never in the document.
+    return h('div', { class: 'ps-section-extras', contenteditable: 'false' }, row,
+      h('details', { class: 'ps-guidance' }, h('summary', { text: 'About this section' }), h('p', { text: sec.guidance })))
   }
 
   openPicker(sec, anchor) {
@@ -553,7 +628,101 @@ class Studio {
       h('p', { class: 'ps-muted', text: errors.length ? errors.length + ' issue(s) block approval.' : 'Nothing blocks approval.' }),
       h('ul', { class: 'ps-findings' }, errors.map(finding), warnings.map(finding)),
       h('p', { class: 'ps-muted ps-small', text: 'Checked against the saved text, which trails what you type by a few seconds.' }))
-    this.side.replaceChildren(readiness, this.documentControl())
+    this.side.replaceChildren(readiness, this.factsPanel(), this.documentControl())
+  }
+
+  // ---- facts ----
+
+  factsPanel() {
+    const s = this.state
+    const d = s.document
+    const editable = this.canManage && d.status === 'draft'
+    const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-facts' }, h('h2', { class: 'ps-panel-title', id: 'ps-facts', text: 'Facts' }))
+    if (!s.client) {
+      panel.appendChild(h('p', { class: 'ps-muted', text: 'Choose the client this document is written for. Its facts fill the document\'s fact tokens; until then every token is unresolved.' }))
+      if (editable) panel.appendChild(this.clientPicker())
+    } else {
+      panel.appendChild(h('p', { class: 'ps-muted ps-small' },
+        'Facts about ', h('strong', { text: s.client.name }), '. They belong to the client, so every document written for it uses the same values.'))
+      if (editable) panel.appendChild(h('button', { type: 'button', class: 'ps-link-button', text: 'Change client', onclick: (e) => { e.currentTarget.replaceWith(this.clientPicker()) } }))
+    }
+    const facts = s.facts || []
+    const missing = facts.filter((f) => f.used && !f.resolved).length
+    if (facts.length) panel.appendChild(h('p', { class: 'ps-small ' + (missing ? 'ps-warn' : 'ps-muted'), text: missing ? missing + ' fact(s) used in the text are missing.' : 'Every fact the text uses is filled in.' }))
+    const list = h('ul', { class: 'ps-facts' })
+    for (const f of facts) {
+      const item = h('li', { class: 'ps-fact-row' + (f.used && !f.resolved ? ' ps-fact-missing' : '') },
+        h('div', { class: 'ps-fact-head' }, h('strong', { text: f.label }), ' ', h('code', { text: f.key }),
+          h('span', { class: 'ps-fact-state', text: f.resolved ? 'filled' : (f.used ? 'missing' : 'not used') })))
+      if (f.description) item.appendChild(h('p', { class: 'ps-muted ps-small', text: f.description }))
+      if (editable && s.client) {
+        const input = h(f.value_type === 'list' ? 'textarea' : 'input', { 'aria-label': f.label, placeholder: f.example ? 'e.g. ' + f.example : '' })
+        input.value = f.value || ''
+        item.appendChild(input)
+        item.appendChild(h('div', { class: 'ps-fact-actions' },
+          h('button', { type: 'button', text: 'Save', onclick: () => this.saveFact(f, input.value) }),
+          this.editor && this.canEdit ? h('button', { type: 'button', text: 'Insert at cursor', onclick: () => this.insertFact(f.key) }) : null))
+      } else if (f.value) {
+        item.appendChild(h('p', { class: 'ps-fact-value', text: f.value }))
+      }
+      list.appendChild(item)
+    }
+    panel.appendChild(list)
+    if (editable && this.editor && this.canEdit) {
+      const key = h('input', { 'aria-label': 'New fact key', placeholder: 'another_fact_key' })
+      panel.appendChild(h('div', { class: 'ps-fact-new' }, key, h('button', {
+        type: 'button', text: 'Insert new fact',
+        onclick: () => {
+          const k = key.value.trim()
+          if (!/^[a-z][a-z0-9_]{0,63}$/.test(k)) { this.say('A fact key is lower-case letters, digits and underscores, starting with a letter.', 'error'); return }
+          this.insertFact(k)
+          key.value = ''
+        },
+      })))
+    }
+    return panel
+  }
+
+  insertFact(key) {
+    if (!this.editor) return
+    this.editor.chain().focus().insertContent({ type: 'factToken', attrs: { key } }).run()
+    this.say('Fact ' + key + ' inserted.', 'info')
+  }
+
+  async saveFact(f, value) {
+    try {
+      await api('PUT', '/policies/clients/' + this.state.client.id + '/facts/' + encodeURIComponent(f.key), { value, value_type: f.value_type || 'text' })
+      await this.refresh()
+      this.say(value.trim() ? f.label + ' saved.' : f.label + ' cleared.', 'info')
+    } catch (err) { this.say(f.label + " wasn't saved: " + err.message, 'error') }
+  }
+
+  clientPicker() {
+    const select = h('select', { 'aria-label': 'Client' }, h('option', { value: '', text: 'Loading clients…' }))
+    const box = h('div', { class: 'ps-client-picker' }, select,
+      h('button', { type: 'button', text: 'Use this client', onclick: () => this.setClient(Number(select.value), select.options[select.selectedIndex] ? select.options[select.selectedIndex].text : '') }),
+      h('button', { type: 'button', text: 'New client', onclick: async () => {
+        const name = window.prompt('Client name', '')
+        if (!name || !name.trim()) return
+        try {
+          const { data } = await api('POST', '/policies/clients', { name: name.trim() })
+          await this.setClient(data.id, data.name)
+        } catch (err) { this.say("The client wasn't created: " + err.message, 'error') }
+      } }))
+    api('GET', '/policies/clients').then(({ data }) => {
+      select.replaceChildren(h('option', { value: '', text: data.length ? 'Choose a client' : 'No clients yet' }),
+        ...data.map((c) => h('option', { value: String(c.id), selected: this.state.client && this.state.client.id === c.id, text: c.name })))
+    }).catch((err) => { select.replaceChildren(h('option', { value: '', text: err.message })) })
+    return box
+  }
+
+  async setClient(id, name) {
+    if (!id) { this.say('Choose a client first.', 'warn'); return }
+    try {
+      await api('PUT', '/policies/' + this.docId, Object.assign({}, this.state.document, { client_profile_id: id, client_name: name }))
+      await this.refresh()
+      this.say('This document is now written for ' + name + '.', 'info')
+    } catch (err) { this.say("The client wasn't changed: " + err.message, 'error') }
   }
 
   documentControl() {

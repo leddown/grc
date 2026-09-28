@@ -169,6 +169,19 @@ var syncOrder = []tableSpec{
 	// Policy documents are id-keyed: sections and versions carry a foreign key
 	// to the document, and a document's parent_document_id points at another
 	// row in this same table, so the ids have to survive the copy.
+	// Client profiles and their facts (internal/clientprofile). Profiles are
+	// id-keyed because policy documents point at them by id.
+	{
+		table:        "client_profiles",
+		cols:         []string{"id", "name", "crm_ref", "notes", "created_at", "updated_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "client_profile_facts",
+		cols:         []string{"client_id", "key", "value", "value_type", "source", "updated_by", "updated_at"},
+		conflictCols: []string{"client_id", "key"},
+	},
 	{
 		table: "policy_documents",
 		cols: []string{
@@ -177,6 +190,7 @@ var syncOrder = []tableSpec{
 			"effective_date", "review_cadence_months", "next_review_date",
 			"parent_document_id", "summary", "author", "created_at", "updated_at",
 			"editor_format", "projection_version", "projection_token",
+			"client_profile_id", "template_id", "template_version",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -186,6 +200,7 @@ var syncOrder = []tableSpec{
 		cols: []string{
 			"id", "uid", "document_id", "ordinal", "heading", "body", "section_kind",
 			"provenance", "provenance_detail", "updated_at", "content_json", "detached_at",
+			"blocks_json",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -194,7 +209,7 @@ var syncOrder = []tableSpec{
 		table: "policy_versions",
 		cols: []string{
 			"id", "document_id", "version_label", "approved_by", "approved_at",
-			"change_summary", "snapshot",
+			"change_summary", "snapshot", "content_json", "snapshot_sha256",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,

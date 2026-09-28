@@ -57,7 +57,7 @@ func TestSectionMarkdownOfEveryFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, sec := range root.Content {
-			md := SectionMarkdown(Resolve(sec, Baseline))
+			md := SectionMarkdown(Resolve(sec, Baseline), nil)
 			if fx.Name != "minimal" && md == "" {
 				t.Errorf("%s: empty Markdown", fx.Name)
 			}
@@ -79,7 +79,7 @@ func TestMarkdownRendering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := SectionMarkdown(root.Content[0])
+	got := SectionMarkdown(root.Content[0], nil)
 	for _, want := range []string{
 		"Applies to [[UNRESOLVED: legal_entity_name]] per AC-1 \\*not\\* emphasis **bold**",
 		"### Sub",
@@ -149,6 +149,6 @@ func FuzzSectionFromMarkdown(f *testing.F) {
 		if err := Validate(&Node{Type: "doc", Content: []*Node{sec}}); err != nil {
 			t.Fatalf("invalid section from %q: %v", body, err)
 		}
-		_ = SectionMarkdown(sec)
+		_ = SectionMarkdown(sec, nil)
 	})
 }

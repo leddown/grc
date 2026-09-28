@@ -14,6 +14,7 @@ import (
 	"github.com/reearth/ygo/crdt"
 	ygws "github.com/reearth/ygo/provider/websocket"
 
+	"grc/internal/clientprofile"
 	"grc/internal/db"
 	"grc/internal/policydocs"
 )
@@ -33,6 +34,9 @@ type Options struct {
 	// OnProjected is told after a projection is stored, so caches of the
 	// section rows (the knowledge API's) can be dropped.
 	OnProjected func(documentID int64)
+	// Clients resolves fact tokens against a document's client profile. Nil
+	// leaves every fact unresolved.
+	Clients *clientprofile.Service
 }
 
 // Service is the Policy Studio: the collaboration server, the persistence
@@ -44,6 +48,8 @@ type Service struct {
 	identity    IdentityFunc
 	origins     []string
 	onProjected func(int64)
+	clients     *clientprofile.Service
+	templates   []Template
 	log         *slog.Logger
 	now         func() time.Time
 
@@ -67,6 +73,7 @@ func NewService(conn *db.Conn, policies *policydocs.Service, opts Options) *Serv
 		identity:    opts.Identity,
 		origins:     opts.AllowedOrigins,
 		onProjected: opts.OnProjected,
+		clients:     opts.Clients,
 		log:         slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		now:         time.Now,
 		locks:       map[int64]time.Time{},
@@ -81,7 +88,18 @@ func NewService(conn *db.Conn, policies *policydocs.Service, opts Options) *Serv
 		s.store.Retain = opts.SnapshotRetain
 	}
 	s.store.onStored = s.schedule
+	templates, err := loadTemplates()
+	if err != nil {
+		// Embedded data that does not validate is a build defect, which
+		// TestTemplatesAreValid catches; a running server offers none rather
+		// than a half-valid set.
+		s.log.Error("policy studio: templates", "error", err)
+	}
+	s.templates = templates
 	s.collab = s.newCollabServer()
+	if s.clients != nil {
+		s.clients.OnFactsChanged(s.reprojectClient)
+	}
 	policies.SetHooks(policydocs.Hooks{
 		BeforeTransition:  s.beforeTransition,
 		AfterTransition:   s.afterTransition,
@@ -229,6 +247,10 @@ func (s *Service) Project(documentID int64) error {
 	if err != nil {
 		return err
 	}
+	facts, err := s.factValues(doc.ClientProfileID)
+	if err != nil {
+		return err
+	}
 	byUID := map[string]policydocs.Section{}
 	for _, r := range rows {
 		byUID[r.UID] = r
@@ -245,7 +267,8 @@ func (s *Service) Project(documentID int64) error {
 			if row, ok := byUID[r.Problem.SectionUID]; ok && !seen[row.UID] && row.DetachedAt == "" {
 				seen[row.UID] = true
 				out = append(out, policydocs.SectionProjection{
-					UID: row.UID, Heading: row.Heading, Body: row.Body, SectionKind: row.SectionKind, ContentJSON: row.ContentJSON,
+					UID: row.UID, Heading: row.Heading, Body: row.Body, SectionKind: row.SectionKind,
+					ContentJSON: row.ContentJSON, BlocksJSON: row.BlocksJSON,
 				})
 			}
 			continue
@@ -266,9 +289,13 @@ func (s *Service) Project(documentID int64) error {
 		if err != nil {
 			return err
 		}
+		blocks, err := json.Marshal(SectionBlocks(base, facts))
+		if err != nil {
+			return err
+		}
 		out = append(out, policydocs.SectionProjection{
-			UID: uid, Heading: HeadingText(base), Body: SectionMarkdown(base),
-			SectionKind: sec.Attr("kind"), ContentJSON: string(content),
+			UID: uid, Heading: HeadingText(base), Body: SectionMarkdown(base, facts),
+			SectionKind: sec.Attr("kind"), ContentJSON: string(content), BlocksJSON: string(blocks),
 		})
 	}
 	if _, err := s.policies.ApplyProjection(documentID, out); err != nil {
@@ -281,6 +308,32 @@ func (s *Service) Project(documentID int64) error {
 		s.onProjected(documentID)
 	}
 	return nil
+}
+
+// factValues is a client's recorded facts, key -> value.
+func (s *Service) factValues(clientID int64) (map[string]string, error) {
+	if s.clients == nil || clientID <= 0 {
+		return map[string]string{}, nil
+	}
+	return s.clients.Values(clientID)
+}
+
+// reprojectClient recomputes every Studio draft written for a client after its
+// facts change: the tokens render by reference, so a new value reaches the
+// rows, the lint gate and the exports without anyone editing the text.
+func (s *Service) reprojectClient(clientID int64) {
+	docs, err := s.policies.ListDocuments(policydocs.Filter{})
+	if err != nil {
+		s.log.Error("policy studio: list documents for a fact change", "error", err)
+		return
+	}
+	for _, d := range docs {
+		if d.ClientProfileID == clientID && d.EditorFormat == policydocs.EditorStudio && d.Status == policydocs.StatusDraft {
+			if err := s.Project(d.ID); err != nil {
+				s.log.Error("policy studio: reproject after a fact change", "document", d.ID, "error", err)
+			}
+		}
+	}
 }
 
 // Problems are the content refusals of the last projection.

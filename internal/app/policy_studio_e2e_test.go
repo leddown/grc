@@ -17,6 +17,7 @@ import (
 	"github.com/chromedp/chromedp/kb"
 
 	"grc/internal/authn"
+	"grc/internal/clientprofile"
 )
 
 // These drive the real Studio -- the embedded bundle, the theme middleware,
@@ -194,4 +195,61 @@ func TestStudioInTheBrowser(t *testing.T) {
 			t.Fatalf("content changed across the restart\nbefore: %s\n after: %s", before, after)
 		}
 	})
+}
+
+// Phase 1b in the browser: a document from the default template, its missing
+// facts shown as warning chips, filled in from the Facts panel (every chip for
+// that fact resolves, the text untouched), and the paper view.
+func TestStudioTemplatesAndFactsInTheBrowser(t *testing.T) {
+	browser := headlessBrowser(t)
+	a := newStudioApp(t)
+	clientID := strconv.FormatInt(createClient(t, a, "Example Bank AG"), 10)
+
+	tab, cancel := chromedp.NewContext(browser, chromedp.WithNewBrowserContext())
+	t.Cleanup(cancel)
+	u, _ := url.Parse(a.server.URL)
+	if err := chromedp.Run(tab,
+		network.SetCookie(authn.AuthSessionCookie, a.admin).WithDomain(u.Hostname()).WithPath("/"),
+		chromedp.Navigate(a.server.URL+"/policies"),
+		chromedp.WaitVisible(`#newBtn`, chromedp.ByQuery),
+		chromedp.Click(`#newBtn`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#nd-template`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := evalJS[string](t, tab, `document.getElementById('nd-template').value`); got != "ict-infosec-policy" {
+		t.Fatalf("the default template is not preselected: %q", got)
+	}
+	evalJS[bool](t, tab, `(() => { document.getElementById('nd-client').value = '`+clientID+`'; return true })()`)
+	if err := chromedp.Run(tab, chromedp.Click(`//dialog//button[normalize-space()='Create']`, chromedp.BySearch)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, tab, "the new document opens in the Studio", `location.pathname.endsWith('/studio') && !!(window.GRCPolicyStudio && window.GRCPolicyStudio.editor)`)
+	waitJS(t, tab, "missing facts show as warning chips", `document.querySelectorAll('.ps-fact[data-resolved="false"][data-fact="legal_entity_name"]').length > 0`)
+	if n := evalJS[int](t, tab, `document.querySelectorAll('.ps-guidance').length`); n != 10 {
+		t.Errorf("guidance notes: %d, want one per section", n)
+	}
+
+	// Fill legal_entity_name from the Facts panel.
+	evalJS[bool](t, tab, `(() => { const row = Array.from(document.querySelectorAll('.ps-fact-row')).find(r => r.querySelector('code').textContent === 'legal_entity_name');
+		row.querySelector('input, textarea').value = 'Example Bank AG'; row.querySelector('button').click(); return true })()`)
+	waitJS(t, tab, "every legal_entity_name chip resolves", `(() => { const chips = document.querySelectorAll('.ps-fact[data-fact="legal_entity_name"]');
+		return chips.length > 0 && Array.from(chips).every(c => c.dataset.resolved === 'true' && c.textContent === 'Example Bank AG') })()`)
+	if evalJS[bool](t, tab, `JSON.stringify(GRCPolicyStudio.editor.getJSON()).includes('Example Bank AG')`) {
+		t.Fatal("a fact value was written into the document; tokens must render by reference")
+	}
+
+	if err := chromedp.Run(tab, chromedp.Click(`//button[normalize-space()='Paper view']`, chromedp.BySearch)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, tab, "paper view shows the classification band", `document.querySelector('.ps-canvas-inner').classList.contains('ps-paper-on') && document.querySelector('.ps-paper-band').textContent === 'INTERNAL'`)
+}
+
+func createClient(t *testing.T, a *studioApp, name string) int64 {
+	t.Helper()
+	c, err := a.clients.Create(clientprofile.Profile{Name: name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c.ID
 }

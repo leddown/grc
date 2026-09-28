@@ -58,6 +58,7 @@ const documentColumns = `
 	d.approver, d.classification, d.frameworks_json, d.effective_date,
 	d.review_cadence_months, d.next_review_date, d.parent_document_id,
 	d.summary, d.author, d.created_at, d.updated_at, d.editor_format, d.projection_version, d.projection_token,
+	d.client_profile_id, d.template_id, d.template_version,
 	COALESCE((SELECT p.title FROM policy_documents p WHERE p.id = d.parent_document_id), '') AS parent_title,
 	(SELECT COUNT(*) FROM policy_sections s WHERE s.document_id = d.id) AS section_count,
 	(SELECT COUNT(*) FROM policy_versions v WHERE v.document_id = d.id) AS version_count,
@@ -121,14 +122,19 @@ func (r *SQLiteRepository) GetDocument(id int64) (Document, error) {
 }
 
 func (r *SQLiteRepository) CreateDocument(d Document) (Document, error) {
+	if d.EditorFormat == "" {
+		d.EditorFormat = EditorMarkdown
+	}
 	id, err := r.db.Insert(`INSERT INTO policy_documents
 		(client_id, client_name, doc_type, reference, title, status, owner_role, approver,
 		 classification, frameworks_json, effective_date, review_cadence_months,
-		 next_review_date, parent_document_id, summary, author, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 next_review_date, parent_document_id, summary, author, created_at, updated_at,
+		 editor_format, client_profile_id, template_id, template_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		d.ClientID, d.ClientName, d.DocType, d.Reference, d.Title, d.Status, d.OwnerRole, d.Approver,
 		d.Classification, encodeFrameworks(d.Frameworks), d.EffectiveDate, d.ReviewCadenceMonths,
-		d.NextReviewDate, d.ParentDocumentID, d.Summary, d.Author, d.CreatedAt, d.UpdatedAt)
+		d.NextReviewDate, d.ParentDocumentID, d.Summary, d.Author, d.CreatedAt, d.UpdatedAt,
+		d.EditorFormat, d.ClientProfileID, d.TemplateID, d.TemplateVersion)
 	if err != nil {
 		return Document{}, err
 	}
@@ -140,12 +146,12 @@ func (r *SQLiteRepository) UpdateDocument(id int64, d Document) (Document, error
 		client_id = ?, client_name = ?, doc_type = ?, reference = ?, title = ?, owner_role = ?,
 		approver = ?, classification = ?, frameworks_json = ?, effective_date = ?,
 		review_cadence_months = ?, next_review_date = ?, parent_document_id = ?,
-		summary = ?, updated_at = ?
+		summary = ?, client_profile_id = ?, updated_at = ?
 		WHERE id = ?`,
 		d.ClientID, d.ClientName, d.DocType, d.Reference, d.Title, d.OwnerRole, d.Approver,
 		d.Classification, encodeFrameworks(d.Frameworks), d.EffectiveDate,
 		d.ReviewCadenceMonths, d.NextReviewDate, d.ParentDocumentID,
-		d.Summary, d.UpdatedAt, id)
+		d.Summary, d.ClientProfileID, d.UpdatedAt, id)
 	if err != nil {
 		return Document{}, err
 	}
@@ -175,7 +181,7 @@ func (r *SQLiteRepository) SetStatus(id int64, status, nextReview, updatedAt str
 // ---- Sections ----
 
 const sectionColumns = `id, uid, document_id, ordinal, heading, body, section_kind,
-	provenance, provenance_detail, updated_at, content_json, detached_at`
+	provenance, provenance_detail, updated_at, content_json, detached_at, blocks_json`
 
 // ListSections returns a document's sections, leaving out any a Studio
 // document has detached: those are no longer part of the text, and only their
@@ -216,10 +222,10 @@ func (r *SQLiteRepository) GetSection(id int64) (Section, error) {
 func (r *SQLiteRepository) CreateSection(s Section) (Section, error) {
 	id, err := r.db.Insert(`INSERT INTO policy_sections
 		(uid, document_id, ordinal, heading, body, section_kind, provenance, provenance_detail,
-		 updated_at, content_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 updated_at, content_json, blocks_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.UID, s.DocumentID, s.Ordinal, s.Heading, s.Body, s.SectionKind, s.Provenance, s.ProvenanceDetail,
-		s.UpdatedAt, s.ContentJSON)
+		s.UpdatedAt, s.ContentJSON, s.BlocksJSON)
 	if err != nil {
 		return Section{}, err
 	}
@@ -309,8 +315,8 @@ func (r *SQLiteRepository) ApplyProjection(documentID int64, sections []SectionP
 		}
 		seen[p.UID] = true
 		if _, err := tx.Exec(`UPDATE policy_sections SET ordinal = ?, heading = ?, body = ?, section_kind = ?,
-			content_json = ?, detached_at = '', updated_at = ? WHERE id = ?`,
-			ordinal, p.Heading, p.Body, p.SectionKind, p.ContentJSON, at, e.id); err != nil {
+			content_json = ?, blocks_json = ?, detached_at = '', updated_at = ? WHERE id = ?`,
+			ordinal, p.Heading, p.Body, p.SectionKind, p.ContentJSON, p.BlocksJSON, at, e.id); err != nil {
 			return 0, err
 		}
 		ordinal++
@@ -371,7 +377,7 @@ func (r *SQLiteRepository) ReorderSections(documentID int64, orderedIDs []int64,
 
 func (r *SQLiteRepository) ListVersions(documentID int64) ([]Version, error) {
 	rows, err := r.db.Query(`SELECT id, document_id, version_label, approved_by,
-		approved_at, change_summary, snapshot
+		approved_at, change_summary, snapshot, content_json, snapshot_sha256
 		FROM policy_versions WHERE document_id = ? ORDER BY id DESC`, documentID)
 	if err != nil {
 		return nil, err
@@ -382,7 +388,7 @@ func (r *SQLiteRepository) ListVersions(documentID int64) ([]Version, error) {
 	for rows.Next() {
 		var v Version
 		if err := rows.Scan(&v.ID, &v.DocumentID, &v.VersionLabel, &v.ApprovedBy,
-			&v.ApprovedAt, &v.ChangeSummary, &v.Snapshot); err != nil {
+			&v.ApprovedAt, &v.ChangeSummary, &v.Snapshot, &v.ContentJSON, &v.SnapshotSHA256); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -392,9 +398,11 @@ func (r *SQLiteRepository) ListVersions(documentID int64) ([]Version, error) {
 
 func (r *SQLiteRepository) CreateVersion(v Version) (Version, error) {
 	id, err := r.db.Insert(`INSERT INTO policy_versions
-		(document_id, version_label, approved_by, approved_at, change_summary, snapshot)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		v.DocumentID, v.VersionLabel, v.ApprovedBy, v.ApprovedAt, v.ChangeSummary, v.Snapshot)
+		(document_id, version_label, approved_by, approved_at, change_summary, snapshot,
+		 content_json, snapshot_sha256)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		v.DocumentID, v.VersionLabel, v.ApprovedBy, v.ApprovedAt, v.ChangeSummary, v.Snapshot,
+		v.ContentJSON, v.SnapshotSHA256)
 	if err != nil {
 		return Version{}, err
 	}
@@ -424,6 +432,7 @@ func scanDocument(s scanner) (Document, error) {
 		&d.OwnerRole, &d.Approver, &d.Classification, &frameworksJSON, &d.EffectiveDate,
 		&d.ReviewCadenceMonths, &d.NextReviewDate, &d.ParentDocumentID, &d.Summary,
 		&d.Author, &d.CreatedAt, &d.UpdatedAt, &d.EditorFormat, &d.ProjectionVersion, &d.ProjectionToken,
+		&d.ClientProfileID, &d.TemplateID, &d.TemplateVersion,
 		&d.ParentTitle, &d.SectionCount,
 		&d.VersionCount, &d.LatestLabel, &d.ChildCount)
 	if err != nil {
@@ -437,7 +446,7 @@ func scanSection(s scanner) (Section, error) {
 	var sec Section
 	err := s.Scan(&sec.ID, &sec.UID, &sec.DocumentID, &sec.Ordinal, &sec.Heading, &sec.Body,
 		&sec.SectionKind, &sec.Provenance, &sec.ProvenanceDetail, &sec.UpdatedAt,
-		&sec.ContentJSON, &sec.DetachedAt)
+		&sec.ContentJSON, &sec.DetachedAt, &sec.BlocksJSON)
 	if err != nil {
 		return Section{}, err
 	}

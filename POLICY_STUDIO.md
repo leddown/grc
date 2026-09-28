@@ -5,12 +5,17 @@ policy authoring on top of `internal/policydocs`, live co-editing with the
 customer, tracked suggestions, and an Ask AI agent that proposes changes as
 suggestions a person accepts or rejects.
 
-**Status: Phase 1a built** (the collaborative editor, persistence, projection,
-section integrity, control chips, live lint, migration from the section editor).
+**Status: Phase 1 built.**
+
+- **1a:** the collaborative editor, persistence, projection, section integrity,
+  control chips, live lint, and migration from the section editor.
+- **1b:** client profiles and facts, the template registry with the ICT and
+  Information Security Policy, rich content in every renderer, the hashed
+  approval snapshot, and paper view.
+
 The owner accepted the recommendations for Q1–Q10 on 2026-09-28
-([§11](#11-open-questions-for-the-owner)). Phase 1b (client facts, templates,
-rich rendering, the approval-snapshot hash) is next. [§13](#13-operator-guide)
-is the operator guide for what exists today. The Phase 0 spike code lives on
+([§11](#11-open-questions-for-the-owner)). Phase 2 (presence, suggestions,
+comments, provenance) is next. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
 the throwaway branch `spike/policy-studio`.
 
 It follows the `*_FRAMEWORK.md` convention. [`POLICY_MODULE_FRAMEWORK.md`](POLICY_MODULE_FRAMEWORK.md)
@@ -237,12 +242,15 @@ The fragment name shared by client and server is the constant `policy`.
 Appendix C of the brief, finalised:
 
 ```
+client_profiles       id, name, crm_ref, notes, created_at, updated_at                          (1b)
+client_profile_facts  client_id, key, value, value_type, source, updated_by, updated_at (PK)    (1b)
 policy_documents      + editor_format TEXT NOT NULL DEFAULT 'markdown'   -- markdown | studio        (1a)
                       + projection_version INTEGER NOT NULL DEFAULT 0                           (1a)
                       + projection_token TEXT NOT NULL DEFAULT ''        -- pairs rows with state   (1a)
-                      + template_id, template_version                                          (1b)
+                      + client_profile_id, template_id, template_version                       (1b)
                       + ai_policy TEXT NOT NULL DEFAULT 'inherit'        -- inherit|local_only|off (3)
 policy_sections       + uid TEXT (UNIQUE; backfilled), content_json TEXT, detached_at TEXT    (1a)
+                      + blocks_json TEXT (rendered blocks, facts resolved)                     (1b)
                         (body stays the column name; for Studio documents it holds the projected Markdown)
 policy_versions       + snapshot_sha256, content_json                                          (1b)
 policy_doc_state      document_id PK, state BLOB, projection_token, updated_at                  (1a)
@@ -565,30 +573,130 @@ What Phase 1a puts in the hands of a user and an operator.
   the snapshot), a Markdown rendering (`markdown.go`), and in 1b the Typst,
   LaTeX and HTML renderings.
 
-### Verified for 1a, and not
+### Templates and client facts (1b)
 
-- **Verified:**
+- **New document** on the Policies pages opens a template picker with the
+  *ICT and Information Security Policy* preselected, and a client picker. The
+  document is created on the server with:
+  - every section of the template, marked with provenance
+    `template:<id>@<version>`
+  - the document's `template_id` and `template_version`
+  - its proposed mappings as draft claims. A mapping to a control the catalog
+    does not have is skipped and reported, never stored. Templates only ever
+    propose *partial* or *supporting* coverage.
+- **Clients** are local profiles (`client_profiles`); `crm_ref` can note the
+  wintermute CRM client a profile stands for. The optional "import from CRM"
+  button from Q2 is not built.
+- **Facts** (`client_profile_facts`, snake_case keys) belong to the client, not
+  the document: every document for the client uses the same values.
+  - The text holds fact tokens, never values. The editor shows a token as the
+    client's value, or as a warning chip naming the missing key.
+  - The projection renders the value into the section's Markdown and blocks,
+    or `[[UNRESOLVED: key]]`, which blocks approval.
+  - Changing a fact re-projects every draft written for that client, so the
+    tokens update without anyone editing the text.
+  - The Facts panel lists every fact the text uses and every fact its
+    template declares, with the template's label, description and example.
+    Examples are shown, never applied. Admins fill values in and insert tokens
+    at the cursor.
+- **Guidance**: each template section's note on what it is for and what it
+  answers to (for the default template, the RTS (EU) 2024/1532 Art. 2
+  provisions, NIST CSF 2.0 GV.PO and the 800-53 "-1" and programme controls)
+  shows under the section heading in the Studio, never in the document.
+
+### Adding a template
+
+Add one JSON file to `internal/policystudio/templates/` and rebuild; it is
+embedded. `TestTemplatesAreValid` loads every template and refuses one that:
+
+- has an unknown document type or framework
+- lacks a section kind the lint gate requires for its type
+- uses a `{{fact:key}}` it does not declare, or declares one it never uses
+- proposes full coverage, or an invalid control id
+- has content that does not convert to the schema
+
+The shape:
+
+```json
+{ "id": "kebab-case", "version": "1.0.0", "title": "…", "doc_type": "policy",
+  "frameworks": ["DORA"], "description": "…", "review_cadence_months": 12,
+  "classification": "Internal", "default": false,
+  "facts": [ { "key": "snake_case", "label": "…", "description": "…",
+               "example": "…", "value_type": "text|number|date|duration|list" } ],
+  "sections": [ { "uid_seed": "unique-in-template", "heading": "…",
+                  "kind": "purpose", "content": "restricted Markdown",
+                  "guidance": "Studio-only note",
+                  "proposed_mappings": [ { "control_id": "PM-1",
+                                           "coverage": "partial", "note": "…" } ] } ] }
+```
+
+Content is Markdown with paragraphs, `-` and `1.` lists, `###` headings, pipe
+tables, `**bold**`, `*italic*`, `` `code` ``, links, `{{fact:key}}` and
+`[[control:ID]]`. Write testable statements: must or shall, should, may. The
+test also refuses a template that says *will*, *strive*, *endeavour*, *where
+possible* or *as appropriate*. Name no tools or vendors, and paraphrase
+regulation text rather than quoting it.
+
+### Rendering (1b)
+
+- The projection stores each section's rich content as `blocks_json`, next to
+  its Markdown body, with fact values resolved. The template export
+  (`sections[].blocks`), the HTML export and `/view` render those blocks.
+  Typst renders them through `render-blocks` in `lib.typ`; LaTeX through
+  `latexgen.go`.
+- Because the projection stops when a document leaves draft, an approved
+  document's deliverable cannot change afterwards, not even when a fact
+  changes.
+- Approval records the sections in structured form (`policy_versions.content_json`)
+  next to the Markdown snapshot, and a SHA-256 of both (`snapshot_sha256`).
+  `Version.Verify()` checks it.
+- **Paper view** (*Paper view* in the Studio bar, remembered per browser) shows
+  the canvas as the deliverable looks: a light page, the template's
+  typefaces, the classification band and a document-control header. It is the
+  Studio's one deliberate light surface, registered as a paper exception in
+  `ui_background_test.go`. It redefines the theme tokens inside the canvas
+  rather than overriding each element, because the themes colour headings with
+  `!important`; the mono and 40K themes' forced typography is reset there too.
+  It uses the template defaults, not the brand stored in Templates → Brand;
+  that is a follow-up.
+
+### Verified for Phase 1, and not
+
+- **Verified (1a):**
   - Go reads what the editor writes, and the editor reads what Go seeds, on 9
     fixtures (byte-stable Go seeds, verified by JS).
   - The validator refuses scripts, images, unsafe links, merged cells, wrong
     heading levels and malformed tokens (table-driven, and fuzzed).
   - Legacy Markdown converts to valid sections (fuzzed).
-  - The persistence adapter (seed-once under concurrency,
-    append/compact/load equivalence, replace and snapshot retention) on SQLite.
-  - Structure commands, detach and restore, refusal of unknown and invalid
-    content, rows-win reconciliation, the collab decision (table), approval
-    with and without unresolved facts, and the 409s.
-  - Every `/collab/` route, enumerated from the router, refuses anonymous,
-    cross-origin and ungranted upgrades.
-  - In headless Chrome: live sync between two admins, a refused cross-section
-    paste with styling stripped, every editor turning read-only on submit
-    (the server dropping a forced write), and a restart losing nothing.
+  - The persistence adapter on SQLite; the structure commands,
+    detach/restore, refused content, rows-win reconciliation, the collab
+    decision, and approval with and without unresolved facts.
+  - Every `/collab/` route refuses anonymous, cross-origin and ungranted
+    upgrades.
+  - In headless Chrome: live sync, the refused cross-section paste, read-only
+    on submit, and a restart that loses nothing.
+- **Verified (1b):**
+  - The default template instantiates for a client with every section; only
+    the facts the client lacks block approval, and filling them clears the
+    gate without editing the text.
+  - Mappings are draft, never full, and a control missing from the catalog is
+    skipped and reported.
+  - Rich content (lists, tables, marks, links, callouts, facts, control refs)
+    reaches Markdown, HTML, LaTeX and a Typst PDF with nothing lost. The PDF
+    was checked visually, rendered with typst 0.15.1.
+  - Hostile payloads (`#panic`, `#read`, `\input`, braces, markup) render as
+    text in Typst, LaTeX and HTML; the LaTeX and HTML renderers are fuzzed.
+  - Approval snapshots verify against their hash.
+  - In headless Chrome: create from template in the dialog, missing facts as
+    chips, filling one resolves every chip for it, and paper view.
+  - Screenshots of the editor, the Facts panel and paper view at 1440×900 and
+    430×860 in all four themes: no overlap, no horizontal overflow.
 - **Not yet verified:**
-  - The adapter suite on PostgreSQL (it runs when `GRC_TEST_POSTGRES_URL`
-    names a throwaway database).
+  - PostgreSQL (the adapter tests run when `GRC_TEST_POSTGRES_URL` is set).
   - iOS Safari.
-  - A 30-page document in the browser (projection of one takes 3.6 ms; the
-    editor was not timed).
+  - A 30-page document in the browser.
+  - LaTeX compilation of the generated source: no TeX engine was available,
+    so only the generated source is tested.
 
 ---
 

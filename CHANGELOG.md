@@ -3,6 +3,114 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-28 (Policy Studio, Phase 1b: templates, client facts and rich rendering)
+
+A Studio document can now start from a template, is written for a client
+whose facts fill its text, and renders with its lists, tables and formatting
+intact in every output. Approval records a hash of what was approved. This
+completes Phase 1 of `POLICY_STUDIO.md`; suggestions, AI proposals and guest
+access are Phases 2–4.
+
+- `internal/clientprofile` (new): local client profiles (Q2), each with an
+  optional `crm_ref` naming the Wintermute CRM client it stands for, and their
+  facts (snake_case key, value, type: text, number, date, duration or list).
+  Reads sit under `/policies`; writes are admin-only. A profile in use by a
+  document cannot be deleted. An empty value counts as unresolved.
+- `internal/policystudio`:
+  - Templates, embedded from `templates/*.json`: the default *ICT and
+    Information Security Policy* (10 sections, 13 facts, anchored in RTS (EU)
+    2024/1532 Art. 2, NIST CSF 2.0 GV.PO and the 800-53 "-1" and programme
+    controls), plus standard, procedure and work-instruction skeletons.
+    `POST /policies/from-template` creates the document, its sections and
+    their proposed mappings on the server.
+  - A validator loads every template at startup and in
+    `TestTemplatesAreValid`. It refuses unknown types or frameworks, missing
+    required section kinds, facts used but not declared (or declared but not
+    used), full-coverage or malformed mappings, and content outside the
+    schema. The test also refuses untestable wording (*will*, *strive*,
+    *where possible*, …).
+  - Fact tokens (`{{fact:key}}`) stay tokens in the text. The projection
+    renders the client's value, or `[[UNRESOLVED: key]]`, which blocks
+    approval. Changing a fact re-projects every draft for that client.
+  - The projection also writes each section's rich content as `blocks_json`,
+    the typed render contract (paragraph, heading, lists, table, blockquote,
+    callout; runs with marks, links, facts and control references).
+  - The Studio gains a Facts panel (client picker, every fact the text uses
+    or the template declares, fill-in and insert-at-cursor for admins),
+    per-section template guidance, a new-document dialog on the Policies
+    pages, and **Paper view**: the canvas as the deliverable looks, remembered
+    per browser.
+- `internal/policydocs`:
+  - Documents gain `client_profile_id`, `template_id` and `template_version`;
+    sections gain `blocks_json`; versions gain `content_json` and
+    `snapshot_sha256`. Frameworks gain DORA.
+  - `/view`, the HTML export and the template export
+    (`sections[].blocks`) render blocks when a section has them, and the body
+    otherwise. The legacy PUT no longer clears a document's client when the
+    field is absent.
+- `internal/doctemplate` and `templates/typst`: LaTeX renders blocks with
+  every string escaped and link targets allowlisted and percent-encoded.
+  Typst's `render-runs`/`render-blocks` place them as data, never markup. The
+  policy template no longer crashes on an empty `doc_type`. The sample payload
+  carries blocks, and `UPDATE_POLICY_SAMPLE=1` regenerates them.
+- `internal/dbsync`: `client_profiles` (id-keyed) and `client_profile_facts`
+  (keyed by client and key) sync and back up; the new columns travel with
+  their tables. `SnapshotVersion` 11.
+- Decisions and trade-offs:
+  - **Facts are resolved by reference, not copied.** The text holds the
+    token, so a correction to a client's fact reaches every draft at once.
+    An approved document cannot change, because the projection stops when a
+    document leaves draft.
+  - **Templates propose, they do not claim.** Mappings are partial or
+    supporting only, and a control the catalog lacks is skipped and reported
+    rather than stored as a claim that never resolves.
+  - **The approval hash covers both forms**: SHA-256 of the Markdown snapshot
+    and the structured content, checked by `Version.Verify()`.
+- Fixes found on the way:
+  - A heading level or table colspan read back from Yjs failed validation, so
+    the section was refused and its facts stayed unresolved. lib0 encodes an
+    integral float64 as float32, and ygo reads integers back as int64. Integral
+    attribute values are now written as integers, and the validator accepts
+    every numeric type it can receive (the unsigned ones are left out, since
+    gosec rightly flags them). The fixtures were regenerated and re-verified
+    by JS.
+  - Paper view first showed missing-fact chips as black blobs and section
+    headings as near-invisible text. The themes colour headings with
+    `!important`, and the chips kept their dark-theme colours. Paper view now
+    redefines the theme tokens inside the canvas, and resets the mono and 40K
+    themes' forced typography there.
+  - The white-background test scans the Studio's CSS sources, not the minified
+    bundle built from them.
+- Verified:
+  - `go fmt`, `go vet` and `go test ./...` without `-short` (gosec and
+    govulncheck included) are green. `npm audit` is clean. The bundle is 574 KB,
+    38 packages, all MIT.
+  - The default template instantiates for a client. Only the facts the client
+    lacks block approval, and filling them clears the gate without anyone
+    editing the text.
+  - Rich content reaches Markdown, HTML, LaTeX source and a Typst PDF (typst
+    0.15.1, checked visually) with nothing lost.
+  - Hostile strings (`#panic`, `#read`, `\input`, unbalanced braces, HTML)
+    render as text in Typst, LaTeX and HTML. The HTML block renderer was
+    fuzzed for 377k runs and the LaTeX run renderer for 259k.
+  - Approval snapshots verify, and a tampered one does not.
+  - Client profile CRUD, the refused delete while in use, and fact validation.
+  - Headless Chrome, three consecutive passes: create from template in the
+    dialog, missing facts as chips, filling one resolves every chip for it,
+    and paper view. The 1a browser test still passes.
+  - Screenshots of the editor, Facts panel and paper view at 1440×900 and
+    430×860 in all four themes: no overlap, no horizontal overflow.
+- Not verified:
+  - PostgreSQL. The persistence adapter tests run there when
+    `GRC_TEST_POSTGRES_URL` names a throwaway database; the client-profile
+    tests are SQLite only.
+  - iOS Safari.
+  - Compiling the generated LaTeX: no TeX engine was available here, so only
+    the source is tested.
+  - Paper view uses the template's default typefaces and colours, not the
+    brand in Templates → Brand (a follow-up).
+  - The optional "import from CRM" button from Q2 is not built.
+
 ## 2026-09-28 (Policy Studio, Phase 1a: the collaborative editor)
 
 Policy documents can now be written together in the Policy Studio

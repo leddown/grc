@@ -40,10 +40,14 @@ type TemplateExport struct {
 // TemplateSection is one rendered section plus the control claims made by it,
 // which the template turns into the inline "Satisfies:" line.
 type TemplateSection struct {
-	Heading     string                 `json:"heading"`
-	Body        string                 `json:"body"`
-	SectionKind string                 `json:"section_kind"`
-	Controls    []TemplateSectionClaim `json:"controls"`
+	Heading     string `json:"heading"`
+	Body        string `json:"body"`
+	SectionKind string `json:"section_kind"`
+	// Blocks is the rich form of the section (Policy Studio documents). A
+	// template renders from it when present and from Body otherwise; Body is
+	// always filled, so a consumer that predates blocks keeps working.
+	Blocks   []Block                `json:"blocks,omitempty"`
+	Controls []TemplateSectionClaim `json:"controls"`
 }
 
 // TemplateSectionClaim is the per-section form: just enough to render the
@@ -114,6 +118,7 @@ func buildTemplateExport(doc Document, sections []Section, refs []ControlRef, ve
 			Heading:     sec.Heading,
 			Body:        sec.Body,
 			SectionKind: sec.SectionKind,
+			Blocks:      decodeBlocks(sec.BlocksJSON),
 			Controls:    claims,
 		})
 	}

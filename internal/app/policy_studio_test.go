@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"grc/internal/authn"
+	"grc/internal/clientprofile"
 	"grc/internal/db"
 	"grc/internal/knowledge"
 	"grc/internal/policydocs"
@@ -25,6 +26,7 @@ type studioApp struct {
 	server   *httptest.Server
 	studio   *policystudio.Service
 	policies *policydocs.Service
+	clients  *clientprofile.Service
 	doc      policydocs.Document
 	admin    string // session tokens
 	reader   string
@@ -73,7 +75,7 @@ func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp) *studioApp {
 	t.Cleanup(func() { _ = studio.Shutdown(context.Background()) })
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	app := &studioApp{router: router, server: srv, studio: studio, policies: policies}
+	app := &studioApp{router: router, server: srv, studio: studio, policies: policies, clients: clientprofile.NewService(conn)}
 	if prev != nil {
 		app.doc, app.admin, app.reader, app.outside = prev.doc, prev.admin, prev.reader, prev.outside
 		return app
@@ -202,11 +204,42 @@ func TestStudioPagesFollowThePolicyGrants(t *testing.T) {
 		{http.MethodPost, "/policies/" + id + "/studio/migrate", a.reader, http.StatusForbidden},
 		{http.MethodPost, "/policies/" + id + "/studio/sections", a.admin, http.StatusCreated},
 		{http.MethodGet, "/policies/999999/studio", a.admin, http.StatusNotFound},
+		{http.MethodGet, "/policies/templates", a.reader, http.StatusOK},
+		{http.MethodGet, "/policies/clients", a.reader, http.StatusOK},
+		{http.MethodGet, "/policies/clients", a.outside, http.StatusForbidden},
+		{http.MethodPost, "/policies/clients", a.reader, http.StatusForbidden},
+		{http.MethodPost, "/policies/from-template", a.reader, http.StatusForbidden},
+		{http.MethodPut, "/policies/clients/1/facts/legal_entity_name", a.reader, http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		if got := do(tc.method, tc.path, tc.token); got != tc.want {
 			t.Errorf("%s %s: %d, want %d", tc.method, tc.path, got, tc.want)
 		}
+	}
+
+	// An admin creates a client and a document from the default template; the
+	// document's own PUT route still reaches the policy module beside the
+	// /policies/clients routes.
+	send := func(method, path, token, body string) (int, string) {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: token})
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	if code, body := send(http.MethodPost, "/policies/clients", a.admin, `{"name":"Example Bank AG"}`); code != http.StatusCreated {
+		t.Fatalf("create client: %d %s", code, body)
+	}
+	if code, body := send(http.MethodPut, "/policies/clients/1/facts/legal_entity_name", a.admin, `{"value":"Example Bank AG"}`); code != http.StatusOK {
+		t.Fatalf("set fact: %d %s", code, body)
+	}
+	code, body := send(http.MethodPost, "/policies/from-template", a.admin, `{"template_id":"ict-infosec-policy","client_profile_id":1}`)
+	if code != http.StatusCreated || !strings.Contains(body, `"template_id":"ict-infosec-policy"`) {
+		t.Fatalf("from template: %d %s", code, body)
+	}
+	if code, body := send(http.MethodPut, "/policies/"+id, a.admin, `{"title":"Renamed","doc_type":"policy"}`); code != http.StatusOK {
+		t.Fatalf("document update beside the client routes: %d %s", code, body)
 	}
 }
 

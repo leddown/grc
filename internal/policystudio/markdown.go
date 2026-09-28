@@ -18,54 +18,62 @@ import (
 
 // ---- ProseMirror -> Markdown ----
 
+// md renders Markdown with a client's fact values.
+type md struct{ facts map[string]string }
+
+// UnresolvedPlaceholder is what an unfilled fact renders as everywhere text is
+// produced; policydocs' lint gate blocks approval on it.
+func UnresolvedPlaceholder(key string) string { return "[[UNRESOLVED: " + key + "]]" }
+
 // SectionMarkdown renders a resolved section's body -- everything after its
 // heading -- as the Markdown the section row's body column holds. Section
 // headings are "##" in the document export, so body headings sit one and two
 // levels below.
 //
-// A fact token renders as the [[UNRESOLVED: key]] placeholder the lint gate
-// blocks approval on; the client facts store that resolves it arrives in a
-// later phase, and until then an approved policy cannot carry an unfilled fact.
-func SectionMarkdown(section *Node) string {
+// A fact token renders as its value from the document's client profile, or as
+// the [[UNRESOLVED: key]] placeholder the lint gate blocks approval on when the
+// profile has none: an approved policy cannot carry an unfilled fact.
+func SectionMarkdown(section *Node, facts map[string]string) string {
+	m := md{facts: facts}
 	var blocks []string
 	for i, c := range section.Content {
 		if i == 0 && c.Type == "sectionHeading" {
 			continue
 		}
-		if s := blockMarkdown(c, ""); s != "" {
+		if s := m.blockMarkdown(c, ""); s != "" {
 			blocks = append(blocks, s)
 		}
 	}
 	return strings.TrimSpace(strings.Join(blocks, "\n\n"))
 }
 
-func blockMarkdown(n *Node, indent string) string {
+func (m md) blockMarkdown(n *Node, indent string) string {
 	switch n.Type {
 	case "paragraph":
-		return indent + inlineMarkdown(n.Content, indent)
+		return indent + m.inlineMarkdown(n.Content, indent)
 	case "heading":
 		level, _ := asInt(n.Attrs["level"])
-		return indent + strings.Repeat("#", level+1) + " " + inlineMarkdown(n.Content, indent)
+		return indent + strings.Repeat("#", level+1) + " " + m.inlineMarkdown(n.Content, indent)
 	case "blockquote":
-		return quote(childBlocks(n, ""), "")
+		return quote(m.childBlocks(n, ""), "")
 	case "callout":
 		label := "Note"
 		if n.Attr("kind") == "important" {
 			label = "Important"
 		}
-		return quote("**"+label+":** "+childBlocks(n, ""), "")
+		return quote("**"+label+":** "+m.childBlocks(n, ""), "")
 	case "bulletList", "orderedList":
-		return listMarkdown(n, indent)
+		return m.listMarkdown(n, indent)
 	case "table":
-		return tableMarkdown(n)
+		return m.tableMarkdown(n)
 	}
 	return ""
 }
 
-func childBlocks(n *Node, indent string) string {
+func (m md) childBlocks(n *Node, indent string) string {
 	var parts []string
 	for _, c := range n.Content {
-		parts = append(parts, blockMarkdown(c, indent))
+		parts = append(parts, m.blockMarkdown(c, indent))
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -82,7 +90,7 @@ func quote(body, _ string) string {
 	return strings.Join(lines, "\n")
 }
 
-func listMarkdown(n *Node, indent string) string {
+func (m md) listMarkdown(n *Node, indent string) string {
 	start, _ := asInt(n.Attrs["start"])
 	if start < 1 {
 		start = 1
@@ -96,7 +104,7 @@ func listMarkdown(n *Node, indent string) string {
 		inner := indent + strings.Repeat(" ", len(marker))
 		var parts []string
 		for j, c := range item.Content {
-			s := blockMarkdown(c, inner)
+			s := m.blockMarkdown(c, inner)
 			if j == 0 {
 				s = indent + marker + strings.TrimPrefix(s, inner)
 			}
@@ -107,14 +115,14 @@ func listMarkdown(n *Node, indent string) string {
 	return strings.Join(items, "\n")
 }
 
-func tableMarkdown(n *Node) string {
+func (m md) tableMarkdown(n *Node) string {
 	var rows [][]string
 	for _, row := range n.Content {
 		var cells []string
 		for _, cell := range row.Content {
 			var parts []string
 			for _, p := range cell.Content {
-				parts = append(parts, inlineMarkdown(p.Content, ""))
+				parts = append(parts, m.inlineMarkdown(p.Content, ""))
 			}
 			cells = append(cells, strings.ReplaceAll(strings.Join(parts, "<br>"), "|", `\|`))
 		}
@@ -144,7 +152,7 @@ func tableMarkdown(n *Node) string {
 
 var markdownSpecial = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "`", "\\`", "[", `\[`, "]", `\]`, "<", `\<`)
 
-func inlineMarkdown(content []*Node, indent string) string {
+func (m md) inlineMarkdown(content []*Node, indent string) string {
 	var b strings.Builder
 	for _, n := range content {
 		switch n.Type {
@@ -167,7 +175,11 @@ func inlineMarkdown(content []*Node, indent string) string {
 		case "hardBreak":
 			b.WriteString("\\\n" + indent)
 		case "factToken":
-			b.WriteString("[[UNRESOLVED: " + n.Attr("key") + "]]")
+			if v, ok := m.facts[n.Attr("key")]; ok {
+				b.WriteString(markdownSpecial.Replace(v))
+			} else {
+				b.WriteString(UnresolvedPlaceholder(n.Attr("key")))
+			}
 		case "controlRef":
 			b.WriteString(n.Attr("controlId"))
 		}
@@ -187,7 +199,12 @@ func HeadingText(section *Node) string {
 
 var markdownParser = goldmark.New(goldmark.WithExtensions(extension.Table))
 
-var unresolvedToken = regexp.MustCompile(`\[\[UNRESOLVED:\s*([a-z][a-z0-9_]{0,63})\s*\]\]`)
+// Tokens the restricted Markdown of templates and legacy bodies may carry:
+// {{fact:key}} and a legacy [[UNRESOLVED: key]] become fact tokens,
+// [[control:ID]] a control reference.
+var (
+	inlineToken = regexp.MustCompile(`\{\{fact:([a-z][a-z0-9_]{0,63})\}\}|\[\[UNRESOLVED:\s*([a-z][a-z0-9_]{0,63})\s*\]\]|\[\[control:([A-Za-z0-9][A-Za-z0-9 ._()/-]{0,39})\]\]`)
+)
 
 // SectionFromMarkdown builds a Studio section from a legacy section row.
 //
@@ -432,9 +449,16 @@ func (c converter) linkMarks(marks []Mark, href string) []Mark {
 func (c converter) textWithTokens(s string, marks []Mark) []*Node {
 	var out []*Node
 	last := 0
-	for _, loc := range unresolvedToken.FindAllStringSubmatchIndex(s, -1) {
+	for _, loc := range inlineToken.FindAllStringSubmatchIndex(s, -1) {
 		out = append(out, textNode(s[last:loc[0]], marks))
-		out = append(out, &Node{Type: "factToken", Attrs: map[string]any{"key": s[loc[2]:loc[3]]}})
+		switch {
+		case loc[2] >= 0:
+			out = append(out, &Node{Type: "factToken", Attrs: map[string]any{"key": s[loc[2]:loc[3]]}})
+		case loc[4] >= 0:
+			out = append(out, &Node{Type: "factToken", Attrs: map[string]any{"key": s[loc[4]:loc[5]]}})
+		default:
+			out = append(out, &Node{Type: "controlRef", Attrs: map[string]any{"controlId": s[loc[6]:loc[7]]}})
+		}
 		last = loc[1]
 	}
 	return append(out, textNode(s[last:], marks))

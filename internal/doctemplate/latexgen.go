@@ -158,6 +158,9 @@ func writeBody(sb *strings.Builder, payload PolicyPayload) {
 	for _, section := range payload.Sections {
 		fmt.Fprintf(sb, "\\section{%s}\n", latexEscape(section.Heading))
 		body := latexBlocks(section.Body)
+		if len(section.Blocks) > 0 {
+			body = latexRichBlocks(section.Blocks)
+		}
 		if body != "" {
 			sb.WriteString(body)
 			sb.WriteString("\n")
@@ -346,4 +349,142 @@ func orderedItem(line string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(line[digits+2:]), true
+}
+
+// ---- Rich blocks (Policy Studio documents) ----
+
+// latexRichBlocks renders a section's blocks. Every string goes through
+// latexEscape, and a link target through latexURL; nothing from the payload is
+// ever placed in LaTeX unescaped, which is what stops a "\input" in a policy
+// from being run.
+func latexRichBlocks(blocks []PolicyBlock) string {
+	parts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		if s := latexRichBlock(b); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func latexRichBlock(b PolicyBlock) string {
+	switch b.Type {
+	case "paragraph":
+		return latexRuns(b.Runs)
+	case "heading":
+		command := "subsection*"
+		if b.Level == 3 {
+			command = "subsubsection*"
+		}
+		return "\\" + command + "{" + latexRuns(b.Runs) + "}"
+	case "bullet_list", "ordered_list":
+		env := "itemize"
+		var sb strings.Builder
+		if b.Type == "ordered_list" {
+			env = "enumerate"
+		}
+		sb.WriteString("\\begin{" + env + "}\n")
+		if b.Type == "ordered_list" && b.Start > 1 {
+			fmt.Fprintf(&sb, "  \\setcounter{enumi}{%d}\n", b.Start-1)
+		}
+		for _, item := range b.Items {
+			sb.WriteString("  \\item " + latexRichBlocks(item) + "\n")
+		}
+		sb.WriteString("\\end{" + env + "}")
+		return sb.String()
+	case "table":
+		width := 0
+		for _, r := range b.Rows {
+			if len(r.Cells) > width {
+				width = len(r.Cells)
+			}
+		}
+		if width == 0 {
+			return ""
+		}
+		var sb strings.Builder
+		sb.WriteString("\\par\\vspace{0.4em}\\noindent\\rowcolors{2}{}{clTableZebra}\n")
+		sb.WriteString("\\begin{tabularx}{\\linewidth}{@{}" + strings.Repeat("X", width) + "@{}}\n  \\toprule\n")
+		for i, r := range b.Rows {
+			cells := make([]string, width)
+			for j := range cells {
+				if j < len(r.Cells) {
+					cells[j] = latexCell(r.Cells[j], r.Header)
+				}
+			}
+			sb.WriteString("  " + strings.Join(cells, " & ") + " \\\\\n")
+			if r.Header && i == 0 {
+				sb.WriteString("  \\midrule\n")
+			}
+		}
+		sb.WriteString("  \\bottomrule\n\\end{tabularx}")
+		return sb.String()
+	case "blockquote":
+		return "\\begin{quote}\n" + latexRichBlocks(b.Blocks) + "\n\\end{quote}"
+	case "callout":
+		title := "Note"
+		if b.Kind == "important" {
+			title = "Important"
+		}
+		return "\\begin{clcallout}\n\\cllabel{" + title + "}\\par\n" + latexRichBlocks(b.Blocks) + "\n\\end{clcallout}"
+	}
+	return ""
+}
+
+// latexCell renders a table cell's paragraphs on one logical line: a
+// tabularx X column is a paragraph box, so \newline separates them safely.
+func latexCell(blocks []PolicyBlock, header bool) string {
+	parts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		parts = append(parts, latexRuns(b.Runs))
+	}
+	cell := strings.Join(parts, "\\newline ")
+	if header {
+		cell = "\\sffamily\\bfseries\\small " + cell
+	}
+	return cell
+}
+
+func latexRuns(runs []PolicyRun) string {
+	var sb strings.Builder
+	for _, r := range runs {
+		if r.Break {
+			sb.WriteString("\\newline{}")
+			continue
+		}
+		s := latexEscape(r.Text)
+		if r.hasMark("code") {
+			s = "\\texttt{" + s + "}"
+		}
+		if r.hasMark("italic") {
+			s = "\\emph{" + s + "}"
+		}
+		if r.hasMark("bold") {
+			s = "\\textbf{" + s + "}"
+		}
+		if r.Fact != nil && r.Fact.Unresolved {
+			s = "\\colorbox{clTableZebra}{" + s + "}"
+		}
+		if u := latexURL(r.Href); u != "" {
+			s = "\\href{" + u + "}{" + s + "}"
+		}
+		sb.WriteString(s)
+	}
+	return sb.String()
+}
+
+// latexURL makes a link target safe inside \href: https, http or mailto only,
+// with the characters \href treats as syntax percent-encoded or escaped.
+func latexURL(href string) string {
+	lower := strings.ToLower(href)
+	if !(strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "mailto:")) {
+		return ""
+	}
+	for _, r := range href {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	encoded := strings.NewReplacer(`\`, "%5C", "{", "%7B", "}", "%7D", "^", "%5E", " ", "%20", "~", "%7E").Replace(href)
+	return strings.NewReplacer("%", `\%`, "#", `\#`).Replace(encoded)
 }

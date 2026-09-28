@@ -49,7 +49,9 @@ Render a real document by passing its JSON:
 ./build.sh policy ../../exports/POL-AC-001.json
 ```
 
-Outputs land in `templates/out/` (gitignored).
+Outputs land in `templates/out/`. The PDFs already there are committed
+reference renders of the samples, so a local rebuild shows up as a change to
+them; restore them (`git checkout templates/out`) unless the templates changed.
 
 For the LaTeX path, `build.sh latex` prefers
 [tectonic](https://tectonic-typesetting.github.io/) — also a single binary,
@@ -257,9 +259,9 @@ error-prone scripts.
 
 The LaTeX templates are supplied for clients whose house style is already LaTeX,
 and are deliberately typographically identical so both produce documents that
-look like they came from the same firm. **The LaTeX policy template does not
-read the JSON** — fill it in by hand, or generate the `.tex` from a script if
-you need it automated.
+look like they came from the same firm. The committed
+`templates/latex/policy-document.tex` is a hand-filled reference; what the app
+compiles is generated from the JSON payload by `internal/doctemplate/latexgen.go`.
 
 ### Migrating an existing LaTeX template
 
@@ -308,6 +310,7 @@ Copy `policy-document.typ`. The pieces you compose from `lib.typ`:
 | `data-table(...)` | House table style: hairlines, tinted header, zebra rows |
 | `callout(title, body)` | Boxed aside for summaries and scope notes |
 | `section-block(h, body, note)` | Numbered section with an optional trailing note |
+| `render-blocks(blocks)` | A section's rich content (see Blocks below), every string placed as data |
 | `approval-block(...)` | Signature lines |
 | `toc(depth)` | Contents with an accent rule |
 
@@ -320,7 +323,7 @@ Copy `policy-document.typ`. The pieces you compose from `lib.typ`:
 title, reference, doc_type, status, classification, owner_role, approver,
 client_name, frameworks[], effective_date, review_cadence_months,
 next_review_date, summary,
-sections[]  { heading, body, section_kind, controls[] { control_id, coverage } }
+sections[]  { heading, body, section_kind, blocks[]?, controls[] { control_id, coverage } }
 controls[]  { control_id, control_name, coverage, section_heading }
 versions[]  { version_label, approved_by, approved_at, change_summary }
 ```
@@ -340,6 +343,34 @@ It is a dedicated `TemplateExport` type rather than the internal structs
 serialised directly -- row ids and provenance have no business in a client
 deliverable's data file, and a separate type means renaming an internal JSON tag
 cannot silently produce PDFs with blank fields.
+
+### Blocks
+
+A section written in the Policy Studio also carries `blocks`, its rich content;
+a section written in the section editor has only `body`. A template renders
+from `blocks` when present and from `body` otherwise, and `body` is always
+filled, so a consumer written before blocks keeps working.
+
+```
+blocks[]  { type, level?, start?, kind?, runs[]?, items[][]?, rows[]?, blocks[]? }
+  type    paragraph | heading (level 2|3) | bullet_list | ordered_list (start)
+          | table | blockquote | callout (kind note|important)
+  runs[]  { text, marks[]? (bold|italic|code), href?, fact? { key, value, unresolved },
+            control? { id }, break? }
+  items   a list's items, each a sequence of blocks (a paragraph, nested lists)
+  rows[]  { header, cells[] }  — each cell a sequence of paragraphs; no merged cells
+```
+
+A fact's `text` is its value, or `[[UNRESOLVED: key]]` with `unresolved: true`
+when the client profile has none (the lint gate refuses to approve such a
+document). The blocks are those the Studio projected when the document was last
+a draft, so an approved document's deliverable cannot change afterwards.
+
+Every string in blocks is data. The Typst helper places each as text, never
+evaluating it; the LaTeX generator escapes each and percent-encodes and escapes
+link targets; the HTML export escapes each and re-checks link schemes (https,
+http, mailto). Tests render a payload made of `#panic(...)`, `#read(...)`,
+`\input{...}`, braces, dollars and markup through all three.
 
 ---
 

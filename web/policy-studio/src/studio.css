@@ -77,9 +77,14 @@
 .ps-prosemirror table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
 .ps-prosemirror th, .ps-prosemirror td { border: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
 .ps-prosemirror th { background: var(--surface-2); color: var(--text); text-align: left; }
-.ps-prosemirror .ps-fact, .ps-prosemirror .ps-control { font-family: "Liberation Sans", Arial, sans-serif; font-size: .8em; padding: 1px 6px;
-  border-radius: 999px; background: var(--surface-2); color: var(--accent); border: 1px dashed var(--accent); }
-.ps-prosemirror .ps-control { border-style: solid; color: var(--text); }
+/* A resolved fact reads as text with a faint underline; a missing one is a
+   warning chip that names the key. */
+.ps-prosemirror .ps-fact { border-bottom: 1px dotted var(--accent); color: var(--text); background: transparent; }
+.ps-prosemirror .ps-fact[data-resolved="false"] { font-family: "Liberation Sans", Arial, sans-serif; font-size: .8em; padding: 1px 6px; border-radius: 999px;
+  background: var(--surface-2); color: var(--error); border: 1px dashed var(--error); }
+.ps-prosemirror .ps-fact[data-resolved="false"]::before { content: "⚠ "; }
+.ps-prosemirror .ps-control { font-family: "Liberation Sans", Arial, sans-serif; font-size: .8em; padding: 1px 6px;
+  border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 .ps-prosemirror .selectedCell::after { content: ""; position: absolute; inset: 0; background: var(--surface-2); opacity: .4; pointer-events: none; }
 .ps-prosemirror td, .ps-prosemirror th { position: relative; }
 .ps-section-has-errors .ps-section-heading { text-decoration: underline wavy var(--error); text-underline-offset: 4px; }
@@ -103,6 +108,24 @@
 .ps-app .ps-picker-option { width: 100%; text-align: left; border: 0; border-radius: 6px; background: none; }
 .ps-app .ps-picker-option:hover, .ps-app .ps-picker-option:focus-visible { background: var(--surface-2); }
 
+.ps-section-extras { margin: 0 0 10px; }
+.ps-guidance { font-family: "Liberation Sans", Arial, sans-serif; font-size: 13px; color: var(--muted); margin: -4px 0 10px; }
+.ps-guidance summary { cursor: pointer; }
+.ps-guidance p { margin: 6px 0 0; padding: 8px 10px; border-left: 3px solid var(--border); background: var(--surface-2); color: var(--text); }
+.ps-facts { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; }
+.ps-fact-row { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: 13px; }
+.ps-fact-missing { border-color: var(--error); }
+.ps-fact-head code { font-size: 11px; color: var(--muted); }
+.ps-fact-state { float: right; font-size: 11px; color: var(--muted); }
+.ps-fact-missing .ps-fact-state { color: var(--error); }
+.ps-fact-row input, .ps-fact-row textarea { width: 100%; margin-top: 6px; font: inherit; font-size: 13px; }
+.ps-fact-row textarea { min-height: 3.5em; }
+.ps-fact-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.ps-fact-value { margin: 4px 0 0; }
+.ps-fact-new, .ps-client-picker { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.ps-fact-new input, .ps-client-picker select { flex: 1 1 140px; }
+.ps-warn { color: var(--error); }
+.ps-app .ps-link-button { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; }
 .ps-findings { list-style: none; margin: 0; padding: 0; }
 .ps-finding { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px; }
 .ps-finding-error { border-color: var(--error); }
@@ -132,3 +155,30 @@
   .ps-side { order: 3; }
 }
 @media (prefers-reduced-motion: reduce) { .ps-toast { transition: none; } }
+
+/* Paper view: the canvas as the deliverable looks. This is the one deliberate
+   light surface in the Studio (registered as a paper exception in
+   ui_background_test.go); everything around it keeps the theme. */
+.ps-paper-header { display: none; }
+/* Paper view redefines the theme tokens inside the canvas, so every rule that
+   reads a token -- including the app's global heading colour -- takes paper ink
+   without an override per element. */
+.ps-canvas-inner.ps-paper-on { --bg: #fbfaf6; --surface: #fbfaf6; --surface-2: #efe6d6; --text: #1c2431; --muted: #5e6672; --border: #d7cebf; --accent: #1f3a5f; --on-accent: #fbfaf6; --error: #a3261b; --gain: #2f6b3a; background: var(--surface); color: var(--text); border-color: var(--border); }
+/* The mono and 40K themes set type with !important; the page has to win back. */
+.ps-canvas-inner.ps-paper-on .ps-prosemirror h1, .ps-canvas-inner.ps-paper-on .ps-prosemirror h2, .ps-canvas-inner.ps-paper-on .ps-prosemirror h3, .ps-canvas-inner.ps-paper-on .ps-prosemirror th { text-transform: none !important; letter-spacing: normal !important; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror table { font-family: "Libertinus Serif", "Liberation Serif", "Times New Roman", serif !important; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror .ps-section-heading, .ps-canvas-inner.ps-paper-on .ps-paper-header { font-family: "Liberation Sans", Arial, sans-serif !important; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror { font-family: "Libertinus Serif", "Liberation Serif", "Times New Roman", serif; font-size: 16px; color: #1c2431; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror .ps-section-heading, .ps-canvas-inner.ps-paper-on .ps-prosemirror h2, .ps-canvas-inner.ps-paper-on .ps-prosemirror h3 { color: #1c2431; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror .ps-section-heading::before, .ps-canvas-inner.ps-paper-on .ps-chips-label, .ps-canvas-inner.ps-paper-on .ps-guidance { color: #5e6672; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror th { background: #efe6d6; color: #1c2431; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror th, .ps-canvas-inner.ps-paper-on .ps-prosemirror td, .ps-canvas-inner.ps-paper-on .ps-prosemirror .ps-section { border-color: #d7cebf; }
+.ps-canvas-inner.ps-paper-on .ps-chip, .ps-canvas-inner.ps-paper-on .ps-prosemirror .ps-control, .ps-canvas-inner.ps-paper-on .ps-guidance p { background: #efe6d6; color: #1c2431; border-color: #d7cebf; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror .ps-fact { color: #1c2431; }
+.ps-canvas-inner.ps-paper-on .ps-prosemirror .ps-callout { background: #f1ebdf; color: #1c2431; }
+.ps-canvas-inner.ps-paper-on .ps-paper-header { display: block; margin: 0 0 18px; font-family: "Liberation Sans", Arial, sans-serif; color: #1c2431; }
+.ps-canvas-inner.ps-paper-on .ps-paper-band { margin: 0 -16px 14px; padding: 4px 16px; background: #1f3a5f; color: #fbfaf6; font-size: 11px; letter-spacing: .12em; }
+.ps-canvas-inner.ps-paper-on .ps-paper-title { font-size: 24px; font-weight: 700; margin-bottom: 10px; }
+.ps-canvas-inner.ps-paper-on .ps-paper-control { display: grid; grid-template-columns: max-content 1fr max-content 1fr; gap: 3px 12px; margin: 0; font-size: 12px; }
+.ps-canvas-inner.ps-paper-on .ps-paper-control dt { color: #5e6672; }
+.ps-canvas-inner.ps-paper-on .ps-paper-control dd { margin: 0; }

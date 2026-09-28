@@ -247,12 +247,16 @@ func TestLegacyEndpointsRefuseStudioDocuments(t *testing.T) {
 			t.Errorf("%s %s on a Markdown document must not be refused", tc.method, tc.path)
 		}
 	}
-	// Metadata stays editable through the existing API.
-	d, _ := f.policies.GetDocument(studio.ID)
-	d.Title = "Renamed"
-	raw, _ := json.Marshal(d)
-	if got := do(http.MethodPut, "/policies/"+strconv.FormatInt(studio.ID, 10), string(raw)); got != http.StatusOK {
+	// Metadata stays editable through the existing API, and a payload that
+	// does not mention the client (the section editor's) keeps it.
+	if _, err := f.conn.Exec(`UPDATE policy_documents SET client_profile_id = 7 WHERE id = ?`, studio.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := do(http.MethodPut, "/policies/"+strconv.FormatInt(studio.ID, 10), `{"title":"Renamed","doc_type":"policy"}`); got != http.StatusOK {
 		t.Errorf("metadata update on a Studio document: %d", got)
+	}
+	if d, _ := f.policies.GetDocument(studio.ID); d.Title != "Renamed" || d.ClientProfileID != 7 {
+		t.Errorf("after an update without client_profile_id: title %q, client %d", d.Title, d.ClientProfileID)
 	}
 }
 
@@ -542,6 +546,15 @@ func TestApprovalOfAStudioDocument(t *testing.T) {
 	}
 	if !strings.Contains(versions[0].Snapshot, "Retention follows the records schedule.") || strings.Contains(versions[0].Snapshot, "UNRESOLVED") {
 		t.Fatal("the approval snapshot is not the fixed text")
+	}
+	// The approval is hashed: it verifies, and a changed snapshot does not.
+	if !versions[0].Verify() || versions[0].ContentJSON == "" {
+		t.Fatal("the approved version does not verify against its hash")
+	}
+	tampered := versions[0]
+	tampered.Snapshot += " (edited)"
+	if tampered.Verify() {
+		t.Fatal("a changed snapshot still verifies")
 	}
 	// A late edit to the approved document's live state is never projected.
 	f.clientEdit(doc.ID, func(frag *crdt.YXmlFragment, txn *crdt.Transaction) { typeInto(sectionEl(frag, 0), txn, " late") })

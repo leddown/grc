@@ -1,7 +1,10 @@
 package policydocs
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -311,7 +314,7 @@ func (s *Service) Approve(id int64, approvedBy, changeSummary string) (Document,
 		return Document{}, err
 	}
 	stamp := nowStamp()
-	if _, err := s.repo.CreateVersion(Version{
+	version := Version{
 		DocumentID:    id,
 		VersionLabel:  "v" + strconv.Itoa(next) + ".0",
 		ApprovedBy:    approvedBy,
@@ -321,7 +324,12 @@ func (s *Service) Approve(id int64, approvedBy, changeSummary string) (Document,
 		// coverage claim is part of what was approved, which is why mapping is
 		// a draft-only edit.
 		Snapshot: RenderMarkdown(doc, sections, refs),
-	}); err != nil {
+	}
+	if version.ContentJSON, err = approvedContent(sections, refs); err != nil {
+		return Document{}, err
+	}
+	version.SnapshotSHA256 = version.ContentHash()
+	if _, err := s.repo.CreateVersion(version); err != nil {
 		return Document{}, err
 	}
 
@@ -757,4 +765,46 @@ func mapNotFound(err error) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+// approvedSection is one section as an approval records it.
+type approvedSection struct {
+	Heading     string                 `json:"heading"`
+	SectionKind string                 `json:"section_kind"`
+	Body        string                 `json:"body"`
+	Blocks      []Block                `json:"blocks,omitempty"`
+	Controls    []TemplateSectionClaim `json:"controls"`
+}
+
+// approvedContent is the structured form of what an approval approved: the
+// same sections the Markdown snapshot renders, with their blocks and claims.
+func approvedContent(sections []Section, refs []ControlRef) (string, error) {
+	claims := map[int64][]TemplateSectionClaim{}
+	for _, r := range refs {
+		claims[r.SectionID] = append(claims[r.SectionID], TemplateSectionClaim{ControlID: r.ControlID, Coverage: r.Coverage})
+	}
+	out := make([]approvedSection, 0, len(sections))
+	for _, s := range sections {
+		c := claims[s.ID]
+		if c == nil {
+			c = []TemplateSectionClaim{}
+		}
+		out = append(out, approvedSection{Heading: s.Heading, SectionKind: s.SectionKind, Body: s.Body, Blocks: decodeBlocks(s.BlocksJSON), Controls: c})
+	}
+	raw, err := json.Marshal(out)
+	return string(raw), err
+}
+
+// ContentHash is the SHA-256 of the version's snapshot and structured content
+// together. It is stored at approval; recomputing it later and comparing shows
+// whether an approved version is still the one that was approved.
+func (v Version) ContentHash() string {
+	sum := sha256.Sum256([]byte(v.Snapshot + "\n" + v.ContentJSON))
+	return hex.EncodeToString(sum[:])
+}
+
+// Verify reports whether a stored version still matches its hash. A version
+// approved before hashes were recorded has none and verifies as false.
+func (v Version) Verify() bool {
+	return v.SnapshotSHA256 != "" && v.ContentHash() == v.SnapshotSHA256
 }

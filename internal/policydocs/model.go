@@ -112,7 +112,7 @@ var Classifications = []string{"Public", "Internal", "Confidential", "Restricted
 // one Access Control policy typically satisfies ISO Annex A, NIST AC-1,
 // FedRAMP's AC family policy and PCI DSS clauses at the same time, and
 // authoring one document per framework produces copies that diverge.
-var Frameworks = []string{"ISO 27001", "NIST 800-53", "NIST CSF", "FedRAMP", "PCI DSS", "SOC 2", "HIPAA"}
+var Frameworks = []string{"ISO 27001", "NIST 800-53", "NIST CSF", "FedRAMP", "PCI DSS", "SOC 2", "HIPAA", "DORA"}
 
 // Document is an authored policy-family document.
 type Document struct {
@@ -152,6 +152,14 @@ type Document struct {
 	// ProjectionToken pairs the rows with the Studio document state that
 	// produced them; see SQLiteRepository.ApplyProjection.
 	ProjectionToken string `json:"-"`
+	// ClientProfileID names the client profile whose facts fill the
+	// document's fact tokens; 0 when none is chosen. It is separate from
+	// ClientID, which still points into the CRM that moved to wintermute.
+	ClientProfileID int64 `json:"client_profile_id"`
+	// TemplateID and TemplateVersion record the template a document was
+	// created from; empty for a document written from scratch.
+	TemplateID      string `json:"template_id"`
+	TemplateVersion string `json:"template_version"`
 
 	// Derived (read-only) fields populated by list/get queries.
 	ParentTitle  string `json:"parent_title"`
@@ -185,6 +193,10 @@ type Section struct {
 	// document. The row, and its control mappings, are kept until an explicit
 	// delete; the editor never deletes a row.
 	DetachedAt string `json:"detached_at,omitempty"`
+	// BlocksJSON is the section's rendered blocks (see Block) as the last
+	// projection computed them, client facts resolved. Frozen with the rest
+	// of the row once the document leaves draft.
+	BlocksJSON string `json:"-"`
 }
 
 // Editor formats.
@@ -202,6 +214,7 @@ type SectionProjection struct {
 	Body        string
 	SectionKind string
 	ContentJSON string
+	BlocksJSON  string
 }
 
 // Version is an immutable snapshot taken at approval. The snapshot is the
@@ -216,6 +229,12 @@ type Version struct {
 	ApprovedAt    string `json:"approved_at"`
 	ChangeSummary string `json:"change_summary"`
 	Snapshot      string `json:"snapshot"`
+	// ContentJSON is the approved sections in structured form (headings,
+	// kinds, bodies, blocks and control claims), and SnapshotSHA256 the hash
+	// of Snapshot and ContentJSON together, so an approved version can be
+	// shown to be the one that was approved.
+	ContentJSON    string `json:"content_json,omitempty"`
+	SnapshotSHA256 string `json:"snapshot_sha256"`
 }
 
 // Coverage levels for a section-to-control mapping. The distinction matters in

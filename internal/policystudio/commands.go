@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/reearth/ygo/crdt"
 	ygws "github.com/reearth/ygo/provider/websocket"
 
+	"grc/internal/clientprofile"
 	"grc/internal/policydocs"
 )
 
@@ -298,6 +301,30 @@ type SectionState struct {
 	Pending     int                     `json:"pending_suggestions"`
 	Provenance  string                  `json:"provenance"`
 	ProvDetails string                  `json:"provenance_detail,omitempty"`
+	// Guidance is the template's note on what the section is for; shown in
+	// the Studio only.
+	Guidance string `json:"guidance,omitempty"`
+}
+
+// FactState is one client fact as the Studio's Facts panel shows it: every
+// fact the text uses, and every fact the document's template declares.
+type FactState struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Example     string `json:"example,omitempty"`
+	ValueType   string `json:"value_type"`
+	Value       string `json:"value"`
+	Resolved    bool   `json:"resolved"`
+	Used        bool   `json:"used"`
+	UpdatedBy   string `json:"updated_by,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+}
+
+// ClientState names the document's client profile.
+type ClientState struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // State is what the Studio polls: everything about the document except its
@@ -312,6 +339,16 @@ type State struct {
 	CanEdit           bool                 `json:"can_edit"`
 	Role              string               `json:"role"`
 	Transitioning     bool                 `json:"transitioning"`
+	Client            *ClientState         `json:"client"`
+	Facts             []FactState          `json:"facts"`
+	Template          *TemplateSummary     `json:"template"`
+}
+
+// TemplateSummary names the template a document came from.
+type TemplateSummary struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Title   string `json:"title"`
 }
 
 // State assembles the document's state for one viewer. The second result is
@@ -341,11 +378,12 @@ func (s *Service) State(documentID int64, id Identity) (State, string, error) {
 		bySection[r.SectionID] = append(bySection[r.SectionID], r)
 	}
 	st.Sections = make([]SectionState, 0, len(rows))
+	usedKeys := map[string]bool{}
 	for _, r := range rows {
 		sec := SectionState{
 			ID: r.ID, UID: r.UID, Heading: r.Heading, Kind: r.SectionKind, KindLabel: policydocs.SectionKindLabels[r.SectionKind],
 			Ordinal: r.Ordinal, Detached: r.DetachedAt != "", Controls: bySection[r.ID], Provenance: r.Provenance,
-			ProvDetails: r.ProvenanceDetail,
+			ProvDetails: r.ProvenanceDetail, Guidance: s.guidanceFor(r),
 		}
 		if sec.Controls == nil {
 			sec.Controls = []policydocs.ControlRef{}
@@ -355,6 +393,9 @@ func (s *Service) State(documentID int64, id Identity) (State, string, error) {
 			if json.Unmarshal([]byte(r.ContentJSON), &n) == nil {
 				sec.Pending = PendingSuggestions(&n)
 				st.PendingTotal += sec.Pending
+				if r.DetachedAt == "" {
+					collectFactKeys(&n, usedKeys)
+				}
 			}
 		}
 		st.Sections = append(st.Sections, sec)
@@ -364,6 +405,12 @@ func (s *Service) State(documentID int64, id Identity) (State, string, error) {
 		return State{}, "", err
 	}
 	st.Findings = append(findings, problemFindings(st.Problems)...)
+	if st.Facts, st.Client, err = s.factState(doc, usedKeys); err != nil {
+		return State{}, "", err
+	}
+	if t, ok := s.Template(doc.TemplateID); ok {
+		st.Template = &TemplateSummary{ID: t.ID, Version: doc.TemplateVersion, Title: t.Title}
+	}
 
 	raw, err := json.Marshal(st)
 	if err != nil {
@@ -371,4 +418,70 @@ func (s *Service) State(documentID int64, id Identity) (State, string, error) {
 	}
 	sum := sha256.Sum256(raw)
 	return st, `"` + hex.EncodeToString(sum[:16]) + `"`, nil
+}
+
+func collectFactKeys(n *Node, into map[string]bool) {
+	if n.Type == "factToken" {
+		into[n.Attr("key")] = true
+	}
+	for _, c := range n.Content {
+		collectFactKeys(c, into)
+	}
+}
+
+// factState lists the facts a document uses or its template declares, with
+// their values from the document's client profile.
+func (s *Service) factState(doc policydocs.Document, used map[string]bool) ([]FactState, *ClientState, error) {
+	var client *ClientState
+	recorded := map[string]clientprofile.Fact{}
+	if s.clients != nil && doc.ClientProfileID > 0 {
+		p, err := s.clients.Get(doc.ClientProfileID)
+		if err == nil {
+			client = &ClientState{ID: p.ID, Name: p.Name}
+			if recorded, err = s.clients.Facts(p.ID); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	byKey := map[string]*FactState{}
+	var order []string
+	add := func(key string) *FactState {
+		if f, ok := byKey[key]; ok {
+			return f
+		}
+		f := &FactState{Key: key, Label: key, ValueType: "text"}
+		byKey[key] = f
+		order = append(order, key)
+		return f
+	}
+	if t, ok := s.Template(doc.TemplateID); ok {
+		for _, d := range t.Facts {
+			f := add(d.Key)
+			f.Label, f.Description, f.Example = d.Label, d.Description, d.Example
+			if d.ValueType != "" {
+				f.ValueType = d.ValueType
+			}
+		}
+	}
+	keys := make([]string, 0, len(used))
+	for k := range used {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		add(k).Used = true
+	}
+	out := make([]FactState, 0, len(order))
+	for _, k := range order {
+		f := byKey[k]
+		if r, ok := recorded[k]; ok {
+			f.Value, f.UpdatedBy, f.UpdatedAt = r.Value, r.UpdatedBy, r.UpdatedAt
+			f.Resolved = strings.TrimSpace(r.Value) != ""
+			if r.ValueType != "" {
+				f.ValueType = r.ValueType
+			}
+		}
+		out = append(out, *f)
+	}
+	return out, client, nil
 }

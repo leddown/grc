@@ -1,8 +1,10 @@
 package policydocs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -279,10 +281,27 @@ func (h *Handler) UpdateDocument(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var payload Document
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document payload"})
 		return
+	}
+	var payload Document
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document payload"})
+		return
+	}
+	// client_profile_id is newer than the section editor's save, which does
+	// not send it; a payload that leaves it out keeps the document's client
+	// rather than silently unlinking it.
+	var present struct {
+		ClientProfileID *int64 `json:"client_profile_id"`
+	}
+	_ = json.Unmarshal(raw, &present)
+	if present.ClientProfileID == nil {
+		if existing, err := h.service.GetDocument(id); err == nil {
+			payload.ClientProfileID = existing.ClientProfileID
+		}
 	}
 	updated, err := h.service.UpdateDocument(id, payload)
 	if err != nil {

@@ -59,6 +59,10 @@ import (
 // v9 added Audit Findings & Remediation (audit_findings, audit_finding_actions,
 // audit_finding_history). A v8-or-older backup restores with those empty.
 //
+// v11 added client profiles (client_profiles, client_profile_facts) and the
+// Studio's template, client and rendered-block columns; a v10 backup restores
+// with no client profiles.
+//
 // v10 added the Policy Studio: policy_doc_state, policy_doc_updates and
 // policy_doc_snapshots, and the Studio columns on policy_documents and
 // policy_sections. A v9-or-older backup restores with no Studio documents: its
@@ -68,7 +72,7 @@ import (
 // an existing backup unrestorable — that was the effect when the handler
 // compared for equality, and it is the failure mode to watch for on the next
 // bump.
-const SnapshotVersion = 10
+const SnapshotVersion = 11
 
 // Snapshot is a portable, engine-independent dump of every managed table — the
 // same tables (and columns) dbsync.Sync copies. It is the on-the-wire format
