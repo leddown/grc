@@ -3,6 +3,64 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-28 (Policy Studio, Phase 0: design and de-risking spikes)
+
+No application code changed. This entry records the design and the spikes
+behind it, on branch `feature/policy-studio`. The spike code is on the
+throwaway branch `spike/policy-studio`.
+
+- `POLICY_STUDIO.md` (new) is the design for collaborative WYSIWYG policy
+  authoring, tracked suggestions and AI proposals on top of
+  `internal/policydocs`. It covers the decision record with re-verified pins
+  and licences, the data model, the routes and authorization matrix, the
+  invariants, the threat model, a phase plan with estimates, and ten open
+  questions for the owner. Phase 1 waits on those answers.
+- Decisions:
+  - Tiptap 3.31.3, `@tiptap/y-tiptap` 3.0.9, Yjs 13.6.33, y-websocket 3.1.0,
+    `prosemirror-suggest-changes` 0.1.8 and `reearth/ygo` v1.50.0 in-process.
+    All are MIT.
+  - The suggester guest role is not offered: ygo has no per-connection hook
+    that sees an update before it is applied.
+- Findings the spikes turned up:
+  - `@tiptap/y-tiptap` (and upstream `y-prosemirror` 1.3.7) do not carry
+    ProseMirror node marks through Yjs. Whole-block suggestions are silently
+    lost and peers diverge. A small, version-locked patch that stores node
+    marks in one reserved attribute fixes it, verified headlessly and in two
+    live browsers. Whether to carry it is open question Q3.
+  - ygo runs `OnLoadDocument` before it attaches persistence, so a seed must
+    be written in its own transaction.
+  - y-websocket's BroadcastChannel sync bypasses the server's read-only
+    enforcement unless it is disabled.
+  - suggest-changes' default numeric ids would collide between clients, so
+    UUIDs are used.
+  - The CRM the brief assumes (`crm_clients`) moved to Wintermute on
+    2026-08-11 (Q2).
+  - `aiprovider.Response` carries no stop reason, so a `max_tokens` answer
+    cannot yet be told apart from a complete one.
+- Verified (spike branch):
+  - Go projects the editor's Yjs XML to ProseMirror JSON identical to JS on 9
+    fixtures, and JS renders Go-seeded documents identically.
+  - Two headless-Chrome editors converge through ygo. A read-only peer's
+    writes are dropped. Content survives a restart. Three simultaneous first
+    opens seed once. Concurrent suggestions get unique ids and keep their
+    authors, and accept and reject propagate.
+  - Cross-origin, `null`-origin and Origin-less upgrades are refused.
+  - Projection takes 3.6 ms on a ~30-page document.
+  - The EditProposal schema fits the structured-output limits. The pinned
+    Anthropic SDK sends `output_config.format` natively. The Wintermute path
+    recovers with one repair turn. Both were checked against stubs.
+  - All 45 bundled npm packages are MIT, and `npm audit` is clean. The ygo
+    module graph is MIT/BSD only.
+- Not verified:
+  - a live Claude call (Q5)
+  - PostgreSQL for the persistence adapter
+  - paste sanitisation
+  - the section-integrity filter
+  - goldmark parsing
+  - the Typst blocks helper
+  - the regulatory anchors of the default template (read from the owner's
+    copies in Phase 1b)
+
 ## 2026-09-27 (Audit Findings & Remediation module)
 
 A new page, Audit Findings, under Compliance & Risk (`/audit-findings`).
