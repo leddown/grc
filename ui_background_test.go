@@ -26,11 +26,21 @@ var paperRules = map[string]string{
 }
 
 func TestPageStylesHaveNoWhiteBackgrounds(t *testing.T) {
-	err := filepath.WalkDir("internal", func(path string, d fs.DirEntry, err error) error {
+	// Go string literals, plus the Policy Studio's stylesheet sources, which
+	// are built into a bundle rather than written inline.
+	for _, root := range []string{"internal", "web/policy-studio/src"} {
+		checkNoWhiteBackgrounds(t, root)
+	}
+}
+
+func checkNoWhiteBackgrounds(t *testing.T, root string) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		source := strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")
+		if d.IsDir() || !(source || strings.HasSuffix(path, ".css")) {
 			return nil
 		}
 		path = filepath.ToSlash(path)

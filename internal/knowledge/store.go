@@ -312,6 +312,7 @@ func (s *Store) PolicyClauses() ([]Item, error) {
 		d.id, d.title, d.reference, d.status
 		FROM policy_sections s
 		JOIN policy_documents d ON d.id = s.document_id
+		WHERE s.detached_at = ''
 		ORDER BY d.id DESC, s.ordinal`)
 	if err != nil {
 		return nil, fmt.Errorf("read policy clauses: %w", err)

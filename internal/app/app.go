@@ -1,12 +1,18 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,6 +28,7 @@ import (
 	"grc/internal/nfrenrich"
 	"grc/internal/nfrlink"
 	"grc/internal/policydocs"
+	"grc/internal/policystudio"
 	"grc/internal/regcoverage"
 	"grc/internal/reporting"
 	"grc/internal/reports"
@@ -63,6 +70,13 @@ type Options struct {
 	// rendered by /templates. Empty means search (see doctemplate.Dir); as with
 	// DocsDir, a value set here is used as-is.
 	TemplatesDir string
+	// StudioAllowedOrigins is a comma-separated list of origins, besides the
+	// request's own host, allowed to open the Policy Studio collaboration
+	// socket.
+	StudioAllowedOrigins string
+	// StudioSnapshotRetention is how many Studio snapshots are kept per
+	// document.
+	StudioSnapshotRetention int
 }
 
 func DefaultOptions() Options {
@@ -154,10 +168,6 @@ func Run(options Options) error {
 	registerSettingsRoutes(router, settingsService, aiRouter, settingsStorage(options), adminMiddleware, options.LocalMode)
 	policyService := registerPolicyDocRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
 	registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
-	registerNFREnrichmentRoutes(
-		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
-	registerRegulationCoverageRoutes(
-		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 
 	// One knowledge service, two consumers. It is the read-only view over every
 	// catalog in this installation, and both the machine-facing API an external
@@ -167,15 +177,50 @@ func Run(options Options) error {
 	// registerKnowledgeRoutes because that function declines to serve the API
 	// without a token, and the resolver needs the service either way.
 	knowledgeService := knowledge.NewService(knowledge.NewStore(sqliteDB))
+	studioService, err := registerPolicyStudioRoutes(router, sqliteDB, policyService, authService, knowledgeService, adminMiddleware, options)
+	if err != nil {
+		return err
+	}
+	registerNFREnrichmentRoutes(
+		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
+	registerRegulationCoverageRoutes(
+		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
+
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
 		router, sqliteDB, knowledgeService, settingsService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 	registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
-	if err := router.Run(options.ListenAddr); err != nil {
+	return serve(options.ListenAddr, router, studioService)
+}
+
+// serve runs the HTTP server until SIGINT or SIGTERM, then shuts down the
+// Policy Studio first -- flushing every open document's pending edits and
+// disconnecting its editors, which http.Server.Shutdown cannot do for a
+// hijacked WebSocket -- and then the server itself.
+func serve(addr string, handler http.Handler, studio *policystudio.Service) error {
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 15 * time.Second}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := studio.Shutdown(shutdownCtx); err != nil {
+			log.Printf("policy studio shutdown: %v", err)
+		}
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("server shutdown: %v", err)
+		}
+	}()
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("server failed: %w", err)
 	}
+	stop()
+	<-done
 	return nil
 }
 

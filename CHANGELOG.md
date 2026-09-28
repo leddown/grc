@@ -3,6 +3,135 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-28 (Policy Studio, Phase 1a: the collaborative editor)
+
+Policy documents can now be written together in the Policy Studio
+(`/policies/:id/studio`, *Open in Studio* in the Policy Editor). It is one live
+document that several people edit at once, with lists, tables and formatting.
+The section rows, their control mappings and the approval workflow stay what
+they were. The owner accepted every Phase 0 recommendation (POLICY_STUDIO.md
+§11). This is Phase 1a of the plan; client facts, templates, rich rendering and
+the approval-snapshot hash are 1b.
+
+- `internal/policystudio` (new):
+  - ygo (pure-Go Yjs, MIT) runs in-process: one room per document, every cap
+    set explicitly.
+  - One authorization decision serves every `/collab/` upgrade. It requires an
+    Origin on the allowlist (none refused), a session with the `/policies`
+    grant, and a Studio document. Read-write goes to admins on drafts only.
+  - A persistence adapter over `internal/db`, identical on both dialects,
+    stores state plus appended updates, compacts them and keeps snapshots.
+  - A debounced server-side projection writes each section row's heading,
+    Markdown body, kind, order and ProseMirror JSON in one transaction.
+  - A schema validator, with a test that fails if it drifts from the editor's
+    schema snapshot.
+  - Markdown in both directions: goldmark converts the legacy bodies.
+  - Explicit structure commands (add, remove, reorder, retype, restore), a
+    one-way migration from the section editor, a state endpoint with ETags,
+    and the page.
+- Decisions and trade-offs:
+  - **The server's copy is the only source of truth.** Content that fails the
+    schema (a script element, an unsafe link, a merged cell) is never
+    projected: its section keeps its last good text and approval is blocked.
+    A section the server did not create is ignored. A section that vanishes
+    from the live text is *detached*, not deleted, so its mappings (evidence)
+    survive until someone restores or deletes it.
+  - **Seeding happens in the persistence adapter's LoadDoc**, not in ygo's
+    `OnLoadDocument`, which runs before ygo attaches persistence (a Phase 0
+    finding). The state row is the seed-once guard.
+  - **A projection token pairs the rows with the Yjs state** in one
+    transaction. If rows change outside the Studio (a `-sync-from`, an old
+    backup), they win on next open, and the replaced state is kept as a
+    snapshot.
+  - **Status changes flush first.** The room is closed and projected before
+    the transition, held read-only until the transition completes, then
+    reopened so every editor reconnects with its new access.
+    `policydocs.Hooks` (before, after, aborted, deleted) is how the policy
+    module lets the Studio take part without importing it.
+  - **Section integrity is enforced twice.** The editor refuses a transaction
+    that adds, removes, merges or splits a section. The server ignores any
+    that get through.
+- `internal/policydocs`:
+  - Documents gain `editor_format`, `projection_version` and
+    `projection_token`; sections gain `uid` (existing rows backfilled),
+    `content_json` and `detached_at`. `ListSections` now leaves out detached
+    sections.
+  - For Studio documents the per-section endpoints answer 409 with a pointer
+    to the Studio; metadata stays editable.
+  - The Policy Editor links to the Studio, and the list marks Studio
+    documents.
+- `web/policy-studio` (new): the editor (Tiptap 3.31.3, `@tiptap/y-tiptap`
+  3.0.9 with the node-marks patch, Yjs 13.6.33, y-websocket 3.1.0 with
+  BroadcastChannel off), exact pins and a committed lockfile.
+  - `scripts/build-policy-studio.sh` needs Node 24. It installs with
+    `--ignore-scripts`, applies the patch and regenerates the fixtures and
+    schema snapshot. It writes a hashed ES2020 bundle and manifest into
+    `internal/policystudio/assets`, and `THIRD_PARTY_NOTICES.md` at the root.
+    It fails on a disallowed licence or a bundle over 800 KB; the result is
+    568 KB, 38 packages, all MIT. The build is byte-identical from a clean
+    `npm ci`.
+  - The editor schema narrows two Tiptap defaults: `code` no longer excludes
+    every other mark (a suggestion typed in inline code would have been
+    dropped), and table cells lose `align`.
+- `internal/app`:
+  - Routes are wired; `/collab/` and `/assets/policy-studio/` sit outside the
+    page gate, by decision (Q1).
+  - New flags `-studio-allowed-origins` and `-studio-snapshot-retention`.
+  - The server now shuts down gracefully on SIGTERM: the Studio flushes every
+    open document, and disconnects editors that `http.Server.Shutdown` cannot
+    reach, before the server stops.
+  - The knowledge service is built before the Studio so a projection can
+    invalidate its policy corpora.
+  - Help, API docs and `/knowledge/policy-studio` updated.
+- `internal/knowledge`: the policy corpora bypass the 45 s cache while any
+  Studio document is open, are invalidated by each projection, and no longer
+  serve detached sections.
+- `internal/dbsync`: the three `policy_doc_*` tables are in the snapshot
+  (`SnapshotVersion` 10, a v9 backup restores with them empty). They are
+  excluded from `-sync-to`/`-sync-from`: an update log only means something
+  next to its own state. The new columns travel with their tables.
+- Deploy: `deploy/grc.nginx` has a `/collab/` block (upgrade headers, 3600 s
+  read timeout), and `deploy/grc.env.example` has the two settings.
+  `scripts/verify-install.sh` checks that the hashed bundle is served and that
+  `/collab/` refuses an unauthenticated upgrade (401/403, not 404). The new
+  tables are among the required ones.
+- UI: the Studio sits in the application shell. A first version drew its own
+  full-width bar, and the headless-Chrome test caught the global theme toggle
+  covering *Submit for review*. The document is a sheet in the theme's
+  surface colour, so the Matrix and Chaos backdrops do not run behind the
+  text. On a phone the text comes before the outline. The white-background
+  test now also scans the Studio's CSS sources.
+- Verified:
+  - `go fmt`, `go vet` and `go test ./...` without `-short` (gosec and
+    govulncheck included) are green; `internal/policystudio` passes under
+    `-race`.
+  - Go reads the editor's Yjs exactly as JS does on 9 fixtures. Go's seeds are
+    byte-stable and verified by JS (`fixtures/go-seeded/js-verified.json`).
+  - The validator is table-tested and fuzzed (466k runs). Legacy Markdown
+    migration is fuzzed (570k runs, after one empty-blockquote bug the fuzzer
+    found and that is fixed).
+  - Adapter suite on SQLite; service tests for migration, projection,
+    structure commands, detach/restore, refused content, rows-win
+    reconciliation, the collab decision table, approval with an unresolved
+    fact (blocked) and after fixing it (approved by a different user, room
+    read-only, snapshot equals the projection), and the 409s.
+  - Every `/collab/` route, enumerated from the router, refuses anonymous,
+    cross-origin and ungranted upgrades and admits admins and readers through
+    the theme middleware.
+  - Headless Chrome, three consecutive passes:
+    - two admins see each other's typing
+    - a paste across sections is refused, and styling is stripped from a paste
+      within one
+    - submit turns every editor read-only, and the server drops a forced write
+    - a restart mid-edit loses nothing
+  - Screenshots at 1440×900 and 430×860 in all four themes: no overlap, no
+    horizontal overflow.
+- Not verified:
+  - The adapter suite on PostgreSQL. No database role was available here; the
+    tests run when `GRC_TEST_POSTGRES_URL` names a throwaway database.
+  - iOS Safari.
+  - Editor responsiveness on a 30-page document (its projection takes 3.6 ms).
+
 ## 2026-09-28 (Policy Studio, Phase 0: design and de-risking spikes)
 
 No application code changed. This entry records the design and the spikes

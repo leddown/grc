@@ -141,6 +141,17 @@ type Document struct {
 	Author    string `json:"author"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	// EditorFormat says which editor owns the text: EditorMarkdown (the
+	// per-section editor) or EditorStudio (the collaborative Policy Studio
+	// document, projected into the section rows). The move is one way and is
+	// made by MarkStudio, never by UpdateDocument.
+	EditorFormat string `json:"editor_format"`
+	// ProjectionVersion counts the Studio projections written into the
+	// section rows, so a client can tell whether what it read is current.
+	ProjectionVersion int `json:"projection_version"`
+	// ProjectionToken pairs the rows with the Studio document state that
+	// produced them; see SQLiteRepository.ApplyProjection.
+	ProjectionToken string `json:"-"`
 
 	// Derived (read-only) fields populated by list/get queries.
 	ParentTitle  string `json:"parent_title"`
@@ -155,7 +166,10 @@ type Document struct {
 // belongs to the template module (phase 5) and a half-implemented Markdown
 // parser here would have to be thrown away when it lands.
 type Section struct {
-	ID               int64  `json:"id"`
+	ID int64 `json:"id"`
+	// UID is the section's stable identity inside a Studio document, where
+	// sections move and the autoincrement id means nothing to the editor.
+	UID              string `json:"uid"`
 	DocumentID       int64  `json:"document_id"`
 	Ordinal          int    `json:"ordinal"`
 	Heading          string `json:"heading"`
@@ -164,6 +178,30 @@ type Section struct {
 	Provenance       string `json:"provenance"`
 	ProvenanceDetail string `json:"provenance_detail"`
 	UpdatedAt        string `json:"updated_at"`
+	// ContentJSON is the section as ProseMirror JSON, suggestions included,
+	// for a Studio document; empty for a Markdown one.
+	ContentJSON string `json:"content_json,omitempty"`
+	// DetachedAt is set when the section's node disappeared from the Studio
+	// document. The row, and its control mappings, are kept until an explicit
+	// delete; the editor never deletes a row.
+	DetachedAt string `json:"detached_at,omitempty"`
+}
+
+// Editor formats.
+const (
+	EditorMarkdown = "markdown"
+	EditorStudio   = "studio"
+)
+
+// SectionProjection is one section as the Studio projection computed it from
+// the live document.
+type SectionProjection struct {
+	UID         string
+	Ordinal     int
+	Heading     string
+	Body        string
+	SectionKind string
+	ContentJSON string
 }
 
 // Version is an immutable snapshot taken at approval. The snapshot is the

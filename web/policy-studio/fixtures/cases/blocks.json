@@ -1,0 +1,190 @@
+{
+  "name": "blocks",
+  "input": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-4",
+          "kind": "compliance"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h4"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Compliance"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "bid": "b-hh",
+              "level": 2
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Sub-heading"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "bid": "b-hhh",
+              "level": 3
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Sub-sub-heading"
+              }
+            ]
+          },
+          {
+            "type": "blockquote",
+            "attrs": {
+              "bid": "b-q"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {
+                  "bid": "b-qp"
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Quoted."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "callout",
+            "attrs": {
+              "bid": "b-c",
+              "kind": "important"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {
+                  "bid": "b-cp"
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Read this."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "update": "AR4BAAcBBnBvbGljeQMNcG9saWN5U2VjdGlvbgcAAQADDnNlY3Rpb25IZWFkaW5nBwABAQYEAAECCkNvbXBsaWFuY2UoAAEBA2JpZAF3BGItaDSHAQEDB2hlYWRpbmcHAAEOBgQAAQ8LU3ViLWhlYWRpbmcoAAEOA2JpZAF3BGItaGgoAAEOBWxldmVsAX0ChwEOAwdoZWFkaW5nBwABHQYEAAEeD1N1Yi1zdWItaGVhZGluZygAAR0DYmlkAXcFYi1oaGgoAAEdBWxldmVsAX0DhwEdAwpibG9ja3F1b3RlBwABMAMJcGFyYWdyYXBoBwABMQYEAAEyB1F1b3RlZC4oAAExA2JpZAF3BGItcXAoAAEwA2JpZAF3A2ItcYcBMAMHY2FsbG91dAcAATwDCXBhcmFncmFwaAcAAT0GBAABPgpSZWFkIHRoaXMuKAABPQNiaWQBdwRiLWNwKAABPANiaWQBdwNiLWMoAAE8BGtpbmQBdwlpbXBvcnRhbnQoAAEAA3VpZAF3A3MtNCgAAQAEa2luZAF3CmNvbXBsaWFuY2UA",
+  "expected": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-4",
+          "kind": "compliance"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h4"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Compliance"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "bid": "b-hh",
+              "level": 2
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Sub-heading"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "bid": "b-hhh",
+              "level": 3
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Sub-sub-heading"
+              }
+            ]
+          },
+          {
+            "type": "blockquote",
+            "attrs": {
+              "bid": "b-q"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {
+                  "bid": "b-qp"
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Quoted."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "callout",
+            "attrs": {
+              "bid": "b-c",
+              "kind": "important"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {
+                  "bid": "b-cp"
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Read this."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

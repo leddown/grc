@@ -43,6 +43,37 @@ type Service struct {
 	// multi-user authentication is active, so the control appears exactly when
 	// there is somebody else who could do the approving.
 	requireSeparateApprover bool
+
+	hooks Hooks
+}
+
+// Hooks lets the Policy Studio take part in a document's lifecycle without
+// this package knowing it exists. Every field is optional.
+type Hooks struct {
+	// BeforeTransition runs before a status change (approval included, before
+	// its lint gate). The Studio flushes the live document and projects it
+	// here, so the gate and the snapshot read what people actually wrote.
+	// An error aborts the transition.
+	BeforeTransition func(doc Document, to string) error
+	// AfterTransition runs once the new status is stored. The Studio
+	// disconnects the room's peers so they reconnect with the access the new
+	// status allows.
+	AfterTransition func(doc Document, to string)
+	// TransitionAborted runs when BeforeTransition succeeded but the change
+	// was then refused (the approval lint gate, a storage error), so the
+	// Studio can give its peers write access back at once.
+	TransitionAborted func(doc Document, to string)
+	// AfterDelete runs once a document is deleted.
+	AfterDelete func(id int64)
+}
+
+// SetHooks installs the lifecycle hooks. Call it at wiring time.
+func (s *Service) SetHooks(h Hooks) { s.hooks = h }
+
+func (s *Service) aborted(doc Document, to string) {
+	if s.hooks.TransitionAborted != nil {
+		s.hooks.TransitionAborted(doc, to)
+	}
 }
 
 func NewService(repo Repository) *Service {
@@ -125,7 +156,13 @@ func (s *Service) DeleteDocument(id int64) error {
 	if doc.VersionCount > 0 {
 		return invalid("cannot delete %q — it has %d approved version(s); retire it instead", doc.Title, doc.VersionCount)
 	}
-	return mapNotFound(s.repo.DeleteDocument(id))
+	if err := s.repo.DeleteDocument(id); err != nil {
+		return mapNotFound(err)
+	}
+	if s.hooks.AfterDelete != nil {
+		s.hooks.AfterDelete(id)
+	}
+	return nil
 }
 
 // ---- Status transitions ----
@@ -178,8 +215,17 @@ func (s *Service) transition(id int64, to string) (Document, error) {
 	if !CanTransition(doc.Status, to) {
 		return Document{}, invalid("cannot move a %s document to %s", doc.Status, to)
 	}
+	if s.hooks.BeforeTransition != nil {
+		if err := s.hooks.BeforeTransition(doc, to); err != nil {
+			return Document{}, err
+		}
+	}
 	if err := s.repo.SetStatus(id, to, doc.NextReviewDate, nowStamp()); err != nil {
+		s.aborted(doc, to)
 		return Document{}, mapNotFound(err)
+	}
+	if s.hooks.AfterTransition != nil {
+		s.hooks.AfterTransition(doc, to)
 	}
 	return s.GetDocument(id)
 }
@@ -236,6 +282,17 @@ func (s *Service) Approve(id int64, approvedBy, changeSummary string) (Document,
 	if strings.TrimSpace(doc.OwnerRole) == "" {
 		return Document{}, invalid("owner role is required to approve a document")
 	}
+	if s.hooks.BeforeTransition != nil {
+		if err := s.hooks.BeforeTransition(doc, StatusApproved); err != nil {
+			return Document{}, err
+		}
+	}
+	approved := false
+	defer func() {
+		if !approved {
+			s.aborted(doc, StatusApproved)
+		}
+	}()
 
 	sections, err := s.repo.ListSections(id)
 	if err != nil {
@@ -274,6 +331,10 @@ func (s *Service) Approve(id int64, approvedBy, changeSummary string) (Document,
 	if err := s.repo.SetStatus(id, StatusApproved, nextReview, stamp); err != nil {
 		return Document{}, mapNotFound(err)
 	}
+	approved = true
+	if s.hooks.AfterTransition != nil {
+		s.hooks.AfterTransition(doc, StatusApproved)
+	}
 	return s.GetDocument(id)
 }
 
@@ -295,6 +356,9 @@ func (s *Service) CreateSection(sec Section) (Section, error) {
 	normalizeSection(&sec)
 	if err := validateSection(sec); err != nil {
 		return Section{}, err
+	}
+	if sec.UID == "" {
+		sec.UID = NewUID()
 	}
 
 	existing, err := s.repo.ListSections(sec.DocumentID)
@@ -404,6 +468,43 @@ func (s *Service) ReorderSections(documentID int64, orderedIDs []int64) ([]Secti
 		return nil, err
 	}
 	return s.repo.ListSections(documentID)
+}
+
+// ---- Policy Studio ----
+
+// ListAllSections returns every section row, including detached ones.
+func (s *Service) ListAllSections(documentID int64) ([]Section, error) {
+	return s.repo.ListAllSections(documentID)
+}
+
+// GetSectionByUID resolves a Studio section uid within one document.
+func (s *Service) GetSectionByUID(documentID int64, uid string) (Section, error) {
+	sec, err := s.repo.GetSectionByUID(documentID, uid)
+	return sec, mapNotFound(err)
+}
+
+// ApplyProjection stores a Studio projection in the section rows. It is only
+// ever called with what the server computed from its own copy of the live
+// document.
+func (s *Service) ApplyProjection(documentID int64, sections []SectionProjection) (int, error) {
+	return s.repo.ApplyProjection(documentID, sections, nowStamp())
+}
+
+// MarkStudio hands a document's text to the Policy Studio. It is one way: the
+// section rows become a projection of the Studio document, and the per-section
+// editor refuses to write them from then on.
+func (s *Service) MarkStudio(id int64) (Document, error) {
+	doc, err := s.repo.GetDocument(id)
+	if err != nil {
+		return Document{}, mapNotFound(err)
+	}
+	if doc.EditorFormat == EditorStudio {
+		return doc, nil
+	}
+	if err := s.repo.SetEditorFormat(id, EditorStudio, nowStamp()); err != nil {
+		return Document{}, mapNotFound(err)
+	}
+	return s.GetDocument(id)
 }
 
 // ---- Versions, lint, export ----

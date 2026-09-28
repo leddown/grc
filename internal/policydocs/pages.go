@@ -230,6 +230,7 @@ function renderList(){
       '<div class="row-meta">'+esc(titleCase(d.doc_type))+
         (d.client_name ? " · " + esc(d.client_name) : "") +
         " · " + d.section_count + " section(s)" +
+        (d.editor_format === "studio" ? " · Studio" : "") +
         (d.latest_version_label ? " · " + esc(d.latest_version_label) : "") +
         (due ? ' · <strong style="color:#8b3d2e;">review due</strong>' : "") +
       '</div></div>';
@@ -258,7 +259,8 @@ async function selectDoc(id){
 function renderDetail(){
   const d = state.selected;
   if (!d){ el("detail").innerHTML = '<p class="muted">Select a document, or create one.</p>'; return; }
-  const editable = MANAGE && d.status === "draft";
+  const studio = d.editor_format === "studio";
+  const editable = MANAGE && d.status === "draft" && !studio;
 
   let html = "";
   if (state.error) html += '<div class="err">'+esc(state.error)+'</div>';
@@ -267,6 +269,7 @@ function renderDetail(){
           '<span class="pill '+esc(d.status)+'">'+esc(titleCase(d.status))+'</span></div>';
 
   html += '<div class="actions">' +
+    '<a class="tab" href="/policies/'+d.id+'/studio">Open in Studio</a>' +
     '<a class="tab" href="/policies/'+d.id+'/view" target="_blank" rel="noopener noreferrer">Preview</a>' +
     '<a class="tab" href="/policies/'+d.id+'/export.md">Export Markdown</a>' +
     '<a class="tab" href="/policies/'+d.id+'/export.html">Export HTML</a>' +
@@ -287,6 +290,8 @@ function renderDetail(){
   if (!state.sections.length) html += '<p class="muted">No sections yet.</p>';
   else html += state.sections.map((s,i) => sectionHTML(s, i, editable)).join("");
   if (editable) html += '<button id="addSection" type="button">Add section</button>';
+  else if (studio)
+    html += '<p class="muted">This document is edited in the Policy Studio. <a href="/policies/'+d.id+'/studio">Open it there</a> to change its sections.</p>';
   else if (MANAGE && d.status !== "draft")
     html += '<p class="muted">Sections are locked while the document is '+esc(titleCase(d.status))+'. Reopen it to draft to edit.</p>';
 

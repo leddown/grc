@@ -23,6 +23,10 @@ type Repository interface {
 	UpdateSection(id int64, s Section) (Section, error)
 	DeleteSection(id int64) error
 	ReorderSections(documentID int64, orderedIDs []int64, updatedAt string) error
+	ListAllSections(documentID int64) ([]Section, error)
+	GetSectionByUID(documentID int64, uid string) (Section, error)
+	ApplyProjection(documentID int64, sections []SectionProjection, at string) (int, error)
+	SetEditorFormat(id int64, format, updatedAt string) error
 
 	ListVersions(documentID int64) ([]Version, error)
 	CreateVersion(v Version) (Version, error)
@@ -53,7 +57,7 @@ const documentColumns = `
 	d.id, d.client_id, d.client_name, d.doc_type, d.reference, d.title, d.status, d.owner_role,
 	d.approver, d.classification, d.frameworks_json, d.effective_date,
 	d.review_cadence_months, d.next_review_date, d.parent_document_id,
-	d.summary, d.author, d.created_at, d.updated_at,
+	d.summary, d.author, d.created_at, d.updated_at, d.editor_format, d.projection_version, d.projection_token,
 	COALESCE((SELECT p.title FROM policy_documents p WHERE p.id = d.parent_document_id), '') AS parent_title,
 	(SELECT COUNT(*) FROM policy_sections s WHERE s.document_id = d.id) AS section_count,
 	(SELECT COUNT(*) FROM policy_versions v WHERE v.document_id = d.id) AS version_count,
@@ -170,12 +174,25 @@ func (r *SQLiteRepository) SetStatus(id int64, status, nextReview, updatedAt str
 
 // ---- Sections ----
 
-const sectionColumns = `id, document_id, ordinal, heading, body, section_kind,
-	provenance, provenance_detail, updated_at`
+const sectionColumns = `id, uid, document_id, ordinal, heading, body, section_kind,
+	provenance, provenance_detail, updated_at, content_json, detached_at`
 
+// ListSections returns a document's sections, leaving out any a Studio
+// document has detached: those are no longer part of the text, and only their
+// row survives, for its mappings, until someone deletes or restores it.
 func (r *SQLiteRepository) ListSections(documentID int64) ([]Section, error) {
+	return r.listSections(documentID, `AND detached_at = ''`)
+}
+
+// ListAllSections includes detached sections.
+func (r *SQLiteRepository) ListAllSections(documentID int64) ([]Section, error) {
+	return r.listSections(documentID, "")
+}
+
+func (r *SQLiteRepository) listSections(documentID int64, filter string) ([]Section, error) {
+	// #nosec G202 -- filter is one of two constant clauses above.
 	rows, err := r.db.Query(`SELECT `+sectionColumns+`
-		FROM policy_sections WHERE document_id = ? ORDER BY ordinal ASC, id ASC`, documentID)
+		FROM policy_sections WHERE document_id = ? `+filter+` ORDER BY ordinal ASC, id ASC`, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +215,11 @@ func (r *SQLiteRepository) GetSection(id int64) (Section, error) {
 
 func (r *SQLiteRepository) CreateSection(s Section) (Section, error) {
 	id, err := r.db.Insert(`INSERT INTO policy_sections
-		(document_id, ordinal, heading, body, section_kind, provenance, provenance_detail, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.DocumentID, s.Ordinal, s.Heading, s.Body, s.SectionKind, s.Provenance, s.ProvenanceDetail, s.UpdatedAt)
+		(uid, document_id, ordinal, heading, body, section_kind, provenance, provenance_detail,
+		 updated_at, content_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.UID, s.DocumentID, s.Ordinal, s.Heading, s.Body, s.SectionKind, s.Provenance, s.ProvenanceDetail,
+		s.UpdatedAt, s.ContentJSON)
 	if err != nil {
 		return Section{}, err
 	}
@@ -228,6 +247,105 @@ func (r *SQLiteRepository) DeleteSection(id int64) error {
 		return err
 	}
 	return requireAffected(res)
+}
+
+func (r *SQLiteRepository) GetSectionByUID(documentID int64, uid string) (Section, error) {
+	return scanSection(r.db.QueryRow(`SELECT `+sectionColumns+` FROM policy_sections WHERE document_id = ? AND uid = ?`, documentID, uid))
+}
+
+func (r *SQLiteRepository) SetEditorFormat(id int64, format, updatedAt string) error {
+	res, err := r.db.Exec(`UPDATE policy_documents SET editor_format = ?, updated_at = ? WHERE id = ?`, format, updatedAt, id)
+	if err != nil {
+		return err
+	}
+	return requireAffected(res)
+}
+
+// ApplyProjection writes one Studio projection into the section rows in a
+// single transaction and returns the new projection version.
+//
+// Rows are matched by uid. A row whose uid is no longer in the document is
+// detached rather than deleted -- its control mappings are compliance claims,
+// and only an explicit delete may remove them -- and sorts after the attached
+// rows. A section in the document with no row is ignored: rows are created by
+// the Studio's structure commands, never inferred from content a client sent.
+func (r *SQLiteRepository) ApplyProjection(documentID int64, sections []SectionProjection, at string) (int, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.Query(`SELECT id, uid, detached_at FROM policy_sections WHERE document_id = ? ORDER BY ordinal, id`, documentID)
+	if err != nil {
+		return 0, err
+	}
+	type existing struct {
+		id       int64
+		detached string
+	}
+	byUID := map[string]existing{}
+	var order []string
+	for rows.Next() {
+		var e existing
+		var uid string
+		if err := rows.Scan(&e.id, &uid, &e.detached); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		byUID[uid] = e
+		order = append(order, uid)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+
+	seen := map[string]bool{}
+	ordinal := 0
+	for _, p := range sections {
+		e, ok := byUID[p.UID]
+		if !ok || seen[p.UID] {
+			continue
+		}
+		seen[p.UID] = true
+		if _, err := tx.Exec(`UPDATE policy_sections SET ordinal = ?, heading = ?, body = ?, section_kind = ?,
+			content_json = ?, detached_at = '', updated_at = ? WHERE id = ?`,
+			ordinal, p.Heading, p.Body, p.SectionKind, p.ContentJSON, at, e.id); err != nil {
+			return 0, err
+		}
+		ordinal++
+	}
+	for _, uid := range order {
+		if seen[uid] {
+			continue
+		}
+		e := byUID[uid]
+		detached := e.detached
+		if detached == "" {
+			detached = at
+		}
+		if _, err := tx.Exec(`UPDATE policy_sections SET ordinal = ?, detached_at = ? WHERE id = ?`, ordinal, detached, e.id); err != nil {
+			return 0, err
+		}
+		ordinal++
+	}
+
+	// The token pairs this projection with the Studio document it came from.
+	// It is written to both tables in this one transaction, so on the next
+	// load a mismatch can only mean the rows were changed by something other
+	// than a projection -- a sync or a restore -- and the rows then win.
+	token := NewUID()
+	if _, err := tx.Exec(`UPDATE policy_documents SET projection_version = projection_version + 1, projection_token = ? WHERE id = ?`, token, documentID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`UPDATE policy_doc_state SET projection_token = ? WHERE document_id = ?`, token, documentID); err != nil {
+		return 0, err
+	}
+	var version int
+	if err := tx.QueryRow(`SELECT projection_version FROM policy_documents WHERE id = ?`, documentID).Scan(&version); err != nil {
+		return 0, err
+	}
+	return version, tx.Commit()
 }
 
 // ReorderSections rewrites the ordinals of a document's sections in one
@@ -305,7 +423,8 @@ func scanDocument(s scanner) (Document, error) {
 	err := s.Scan(&d.ID, &d.ClientID, &d.ClientName, &d.DocType, &d.Reference, &d.Title, &d.Status,
 		&d.OwnerRole, &d.Approver, &d.Classification, &frameworksJSON, &d.EffectiveDate,
 		&d.ReviewCadenceMonths, &d.NextReviewDate, &d.ParentDocumentID, &d.Summary,
-		&d.Author, &d.CreatedAt, &d.UpdatedAt, &d.ParentTitle, &d.SectionCount,
+		&d.Author, &d.CreatedAt, &d.UpdatedAt, &d.EditorFormat, &d.ProjectionVersion, &d.ProjectionToken,
+		&d.ParentTitle, &d.SectionCount,
 		&d.VersionCount, &d.LatestLabel, &d.ChildCount)
 	if err != nil {
 		return Document{}, err
@@ -316,8 +435,9 @@ func scanDocument(s scanner) (Document, error) {
 
 func scanSection(s scanner) (Section, error) {
 	var sec Section
-	err := s.Scan(&sec.ID, &sec.DocumentID, &sec.Ordinal, &sec.Heading, &sec.Body,
-		&sec.SectionKind, &sec.Provenance, &sec.ProvenanceDetail, &sec.UpdatedAt)
+	err := s.Scan(&sec.ID, &sec.UID, &sec.DocumentID, &sec.Ordinal, &sec.Heading, &sec.Body,
+		&sec.SectionKind, &sec.Provenance, &sec.ProvenanceDetail, &sec.UpdatedAt,
+		&sec.ContentJSON, &sec.DetachedAt)
 	if err != nil {
 		return Section{}, err
 	}

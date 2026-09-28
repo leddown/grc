@@ -34,6 +34,26 @@ type Service struct {
 	mu     sync.Mutex
 	cached map[string]cacheEntry
 	now    func() time.Time
+	// livePolicies reports whether a Policy Studio document is open, in which
+	// case the policy corpora are read fresh like exercises: the section rows
+	// are being rewritten by the second.
+	livePolicies func() bool
+}
+
+// WithLivePolicies installs the Policy Studio's "is anything open" check.
+func (s *Service) WithLivePolicies(live func() bool) *Service {
+	s.livePolicies = live
+	return s
+}
+
+// Invalidate drops the cached corpora of the given kinds, for a writer that
+// knows it just changed them.
+func (s *Service) Invalidate(kinds ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range kinds {
+		delete(s.cached, k)
+	}
 }
 
 type cacheEntry struct {
@@ -87,6 +107,9 @@ func (s *Service) Items(kind string) ([]Item, error) {
 	// asked about them — someone building one asks about the inject they wrote
 	// a moment ago — and an installation holds only a handful.
 	live := kind == KindExercise || kind == KindExerciseFinding
+	if (kind == KindPolicy || kind == KindPolicyClause) && s.livePolicies != nil && s.livePolicies() {
+		live = true
+	}
 
 	s.mu.Lock()
 	entry, ok := s.cached[kind]

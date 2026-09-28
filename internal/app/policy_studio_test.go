@@ -1,0 +1,247 @@
+package app
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+
+	"grc/internal/authn"
+	"grc/internal/db"
+	"grc/internal/knowledge"
+	"grc/internal/policydocs"
+	"grc/internal/policystudio"
+)
+
+type studioApp struct {
+	router   *gin.Engine
+	server   *httptest.Server
+	studio   *policystudio.Service
+	policies *policydocs.Service
+	doc      policydocs.Document
+	admin    string // session tokens
+	reader   string
+	outside  string
+}
+
+// newStudioApp wires the Studio the way Run does, middleware included, with a
+// Studio document and three sessions: an admin, a reader with the /policies
+// grant, and a user whose grants do not reach the policy library.
+func newStudioApp(t *testing.T) *studioApp {
+	t.Helper()
+	return newStudioAppAt(t, filepath.Join(t.TempDir(), "studio-app.db"), nil)
+}
+
+// newStudioAppAt builds the app over dbPath. prev, when given, is an earlier
+// instance over the same database: its users, sessions and document are
+// reused, which is what a restart looks like.
+func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp) *studioApp {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	conn, err := db.OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	auth := authn.NewService(conn)
+	auth.SetSingleUserMode(false)
+	session := func(id int64) string {
+		s, err := auth.CreateSession(id, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.Token
+	}
+
+	router := gin.New()
+	router.Use(themeMiddleware())
+	router.Use(pageAccessMiddleware(auth))
+	adminGate := adminTokenMiddleware(auth, "")
+	registerPublicPageRoutes(router, false)
+	policies := registerPolicyDocRoutes(router, conn, auth, adminGate, false)
+	studio, err := registerPolicyStudioRoutes(router, conn, policies, auth, knowledge.NewService(knowledge.NewStore(conn)), adminGate, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = studio.Shutdown(context.Background()) })
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+	app := &studioApp{router: router, server: srv, studio: studio, policies: policies}
+	if prev != nil {
+		app.doc, app.admin, app.reader, app.outside = prev.doc, prev.admin, prev.reader, prev.outside
+		return app
+	}
+
+	admin, err := auth.BootstrapAdmin("admin", "very-strong-pass-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := auth.CreateUserWithAccess("rita", "very-strong-pass-2", false, []string{"/policies"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside, err := auth.CreateUserWithAccess("otto", "very-strong-pass-3", false, []string{"/controls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := policies.CreateDocument(policydocs.Document{Title: "ICT policy", DocType: policydocs.TypePolicy, OwnerRole: "CISO"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []policydocs.Section{
+		{SectionKind: policydocs.KindPurpose, Heading: "Purpose", Body: "Why this policy exists."},
+		{SectionKind: policydocs.KindScope, Heading: "Scope", Body: "- all staff\n- all systems"},
+	} {
+		s.DocumentID = doc.ID
+		if _, err := policies.CreateSection(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := studio.Migrate(doc.ID, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	app.doc, app.admin, app.reader, app.outside = doc, session(admin.ID), session(reader.ID), session(outside.ID)
+	return app
+}
+
+func (a *studioApp) dial(path, token, origin string) int {
+	header := http.Header{}
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	if token != "" {
+		header.Set("Cookie", authn.AuthSessionCookie+"="+token)
+	}
+	conn, resp, _ := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(a.server.URL, "http")+path, header)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if resp == nil {
+		return 0
+	}
+	return resp.StatusCode
+}
+
+// Every route under /collab/ runs the collab decision: enumerated from the
+// router itself, so a route added later without the gate fails here. /collab/
+// is deliberately not a protectedPrefix -- that would answer an upgrade with a
+// login redirect -- and nor is the static bundle.
+func TestEveryCollabRouteRunsItsGate(t *testing.T) {
+	a := newStudioApp(t)
+	id := strconv.FormatInt(a.doc.ID, 10)
+	found := 0
+	for _, r := range a.router.Routes() {
+		if !strings.HasPrefix(r.Path, "/collab/") {
+			continue
+		}
+		found++
+		path := strings.ReplaceAll(r.Path, ":id", id)
+		if got := a.dial(path, "", a.server.URL); got != http.StatusUnauthorized {
+			t.Errorf("%s without a session: %d, want 401", r.Path, got)
+		}
+		if got := a.dial(path, a.admin, "https://evil.example"); got != http.StatusUnauthorized {
+			t.Errorf("%s from another origin: %d, want 401", r.Path, got)
+		}
+		if got := a.dial(path, a.outside, a.server.URL); got != http.StatusUnauthorized {
+			t.Errorf("%s for a user without the policy grant: %d, want 401", r.Path, got)
+		}
+		if got := a.dial(path, a.admin, a.server.URL); got != http.StatusSwitchingProtocols {
+			t.Errorf("%s for an admin: %d, want 101 (through the theme middleware)", r.Path, got)
+		}
+		if got := a.dial(path, a.reader, a.server.URL); got != http.StatusSwitchingProtocols {
+			t.Errorf("%s for a reader (read-only): %d, want 101", r.Path, got)
+		}
+	}
+	if found == 0 {
+		t.Fatal("no /collab/ routes registered")
+	}
+	for path, want := range map[string]bool{
+		"/collab/policies/1":                  false,
+		"/assets/policy-studio/x.js":          false,
+		"/policies/1/studio":                  true,
+		"/policies/1/studio/state":            true,
+		"/policies/1/studio/sections/abc":     true,
+		"/policies/1/studio/sections/reorder": true,
+	} {
+		if isProtectedPath(path) != want {
+			t.Errorf("isProtectedPath(%s) = %v, want %v", path, !want, want)
+		}
+	}
+}
+
+func TestStudioPagesFollowThePolicyGrants(t *testing.T) {
+	a := newStudioApp(t)
+	id := strconv.FormatInt(a.doc.ID, 10)
+	do := func(method, path, token string) int {
+		req := httptest.NewRequest(method, path, strings.NewReader(`{"kind":"scope"}`))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: token})
+		}
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	cases := []struct {
+		method, path, token string
+		want                int
+	}{
+		{http.MethodGet, "/policies/" + id + "/studio", a.admin, http.StatusOK},
+		{http.MethodGet, "/policies/" + id + "/studio", a.reader, http.StatusOK},
+		{http.MethodGet, "/policies/" + id + "/studio", a.outside, http.StatusForbidden},
+		{http.MethodGet, "/policies/" + id + "/studio", "", http.StatusUnauthorized},
+		{http.MethodGet, "/policies/" + id + "/studio/state", a.reader, http.StatusOK},
+		{http.MethodPost, "/policies/" + id + "/studio/sections", a.reader, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/migrate", a.reader, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/sections", a.admin, http.StatusCreated},
+		{http.MethodGet, "/policies/999999/studio", a.admin, http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		if got := do(tc.method, tc.path, tc.token); got != tc.want {
+			t.Errorf("%s %s: %d, want %d", tc.method, tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestStudioStateAnswersNotModified(t *testing.T) {
+	a := newStudioApp(t)
+	path := "/policies/" + strconv.FormatInt(a.doc.ID, 10) + "/studio/state"
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: a.reader})
+	rec := httptest.NewRecorder()
+	a.router.ServeHTTP(rec, req)
+	etag := rec.Header().Get("ETag")
+	if rec.Code != http.StatusOK || etag == "" {
+		t.Fatalf("state: %d, etag %q", rec.Code, etag)
+	}
+	if !strings.Contains(rec.Body.String(), `"can_edit":false`) || !strings.Contains(rec.Body.String(), `"role":"reader"`) {
+		t.Fatalf("a reader must not be offered editing: %s", rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: a.reader})
+	req.Header.Set("If-None-Match", etag)
+	rec = httptest.NewRecorder()
+	a.router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("unchanged state: %d, want 304", rec.Code)
+	}
+}
+
+func TestParseStudioOrigins(t *testing.T) {
+	good, err := parseStudioOrigins(" https://Policies.Example.com/ , http://10.0.0.5:8443")
+	if err != nil || len(good) != 2 || good[0] != "https://policies.example.com" || good[1] != "http://10.0.0.5:8443" {
+		t.Fatalf("got %v, %v", good, err)
+	}
+	for _, bad := range []string{"policies.example.com", "https://*.example.com", "https://a.example/path", "javascript:alert(1)", "https://"} {
+		if _, err := parseStudioOrigins(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

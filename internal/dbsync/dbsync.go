@@ -176,6 +176,7 @@ var syncOrder = []tableSpec{
 			"owner_role", "approver", "classification", "frameworks_json",
 			"effective_date", "review_cadence_months", "next_review_date",
 			"parent_document_id", "summary", "author", "created_at", "updated_at",
+			"editor_format", "projection_version", "projection_token",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -183,8 +184,8 @@ var syncOrder = []tableSpec{
 	{
 		table: "policy_sections",
 		cols: []string{
-			"id", "document_id", "ordinal", "heading", "body", "section_kind",
-			"provenance", "provenance_detail", "updated_at",
+			"id", "uid", "document_id", "ordinal", "heading", "body", "section_kind",
+			"provenance", "provenance_detail", "updated_at", "content_json", "detached_at",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -467,6 +468,39 @@ var syncOrder = []tableSpec{
 		cols:         []string{"id", "finding_id", "at", "actor", "event", "from_value", "to_value", "note"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// ---- Policy Studio (internal/policystudio) ----
+	//
+	// The live collaborative document of each Studio policy, as Yjs binary.
+	// These travel in a full snapshot, so a restore brings every Studio
+	// document back exactly, but not in -sync-to / -sync-from: an update log is
+	// a history that only means something next to the state it was written
+	// against, and merging one deployment's log into another's would stitch two
+	// documents together. A sync carries the section rows instead (with their
+	// content_json); the destination notices the rows no longer match the
+	// state they were projected from and rebuilds the document from them.
+	{
+		table:        "policy_doc_state",
+		cols:         []string{"document_id", "state", "projection_token", "updated_at"},
+		conflictCols: []string{"document_id"},
+		blobCols:     []string{"state"},
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_doc_updates",
+		cols:         []string{"id", "document_id", "upd", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		blobCols:     []string{"upd"},
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_doc_snapshots",
+		cols:         []string{"id", "document_id", "reason", "format", "state", "created_by", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		blobCols:     []string{"state"},
 		strat:        skipInSync,
 	},
 

@@ -428,7 +428,11 @@ thing is.
    first.
 4. **AI drafting**, through the existing `ai_chat.go` provider layer, with
    citation enforcement, client-profile fact resolution, unresolved-token
-   blocking, and provenance recording.
+   blocking, and provenance recording. **Being delivered through the Policy
+   Studio** ([`POLICY_STUDIO.md`](POLICY_STUDIO.md)): its phase 1a (the
+   collaborative editor, projection into the section rows) is built; the
+   client-profile facts arrive in its phase 1b and the AI proposals in its
+   phase 3.
 5. ~~**Template module + Typst rendering**, then LaTeX conversion.~~ **Done.**
    `internal/doctemplate`: a three-entry registry, runtime engine detection,
    per-install brand settings and a sandboxed render pipeline, at `/templates`

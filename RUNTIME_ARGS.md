@@ -87,6 +87,26 @@ The API binary accepts command-line flags for runtime behavior.
   directory the Templates page says so and no document can be rendered.  
   Default: empty (search)
 
+- `-studio-allowed-origins`  
+  Comma-separated origins (`scheme://host[:port]`), besides the request's own
+  host, that may open the Policy Studio collaboration socket
+  (`/collab/policies/:id`). Every WebSocket upgrade must carry an `Origin`
+  header on this list or matching the `Host` the request arrived with; an
+  upgrade with no `Origin`, or from anywhere else, is refused — the socket
+  authenticates by session cookie, so an unchecked origin would let another
+  site open it as the signed-in user. Behind nginx the forwarded `Host` is the
+  external name, so this is only needed when the app is reached under a
+  second name. A malformed entry (a path, a wildcard, no scheme) stops
+  startup.  
+  Default: empty (the request's own host only)
+
+- `-studio-snapshot-retention`  
+  How many Policy Studio snapshots to keep per document (taken every 15
+  minutes while a document changes, at every status change, and before a
+  document is moved into the Studio). The pre-migration snapshot, the only copy
+  of the section-editor text, is never pruned.  
+  Default: `50`
+
 ### Assistant, tasks and Google Calendar — moved
 
 The assistant, the task module and its Google Calendar sync now live in
@@ -130,6 +150,8 @@ typesetter.
 - `TRUST_PROXY`
 - `DOCS_DIR`
 - `TEMPLATES_DIR`
+- `STUDIO_ALLOWED_ORIGINS`
+- `STUDIO_SNAPSHOT_RETENTION`
 
 Flags override environment variables when both are set.
 `TYPST`, `TECTONIC` and `LATEXMK` are environment-only — they name external

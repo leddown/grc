@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -40,8 +41,22 @@ func BindFlags() *Options {
 	flag.StringVar(&options.SyncFrom, "sync-from", envOrDefault("SYNC_FROM", ""), "one-shot: copy from this source (postgres:// URL or SQLite path) into the active database with upsert/merge, then exit")
 	flag.BoolVar(&options.TrustProxyHeaders, "trust-proxy", envBoolOrDefault("TRUST_PROXY", false), "trust X-Forwarded-Proto from the immediate connection when deciding whether auth cookies are Secure; only enable behind a reverse proxy that sets/overwrites this header")
 	flag.StringVar(&options.DocsDir, "docs-dir", envOrDefault("DOCS_DIR", ""), "directory holding CHANGELOG.md and the other markdown docs served by /changelog and /knowledge/*; when unset, the working directory, the binary's directory and the share directories are searched")
+	flag.StringVar(&options.StudioAllowedOrigins, "studio-allowed-origins", envOrDefault("STUDIO_ALLOWED_ORIGINS", ""), "comma-separated origins (scheme://host[:port]), besides the request's own host, that may open the Policy Studio collaboration socket; set it to the external hostname when a proxy serves the app under a different name")
+	flag.IntVar(&options.StudioSnapshotRetention, "studio-snapshot-retention", envIntOrDefault("STUDIO_SNAPSHOT_RETENTION", 50), "how many Policy Studio snapshots to keep per document (the pre-migration copy is always kept)")
 	flag.StringVar(&options.TemplatesDir, "templates-dir", envOrDefault("TEMPLATES_DIR", ""), "directory holding the Typst/LaTeX document templates rendered by /templates; when unset, ./templates, the binary's directory and the share directories are searched")
 	return &options
+}
+
+func envIntOrDefault(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func envOrDefault(name, fallback string) string {

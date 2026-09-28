@@ -2,6 +2,7 @@ package policydocs
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -350,9 +351,33 @@ func (h *Handler) Approve(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
+// refuseStudioDocument answers 409 when a Studio document's text is written
+// through the per-section endpoints. For such a document the rows are a
+// projection of the live collaborative document; a write here would be
+// overwritten by the next projection, and a structural one would leave the
+// two disagreeing about which sections exist.
+func (h *Handler) refuseStudioDocument(c *gin.Context, id int64) bool {
+	doc, err := h.service.GetDocument(id)
+	if err != nil {
+		h.fail(c, err, "failed to load document")
+		return true
+	}
+	if doc.EditorFormat != EditorStudio {
+		return false
+	}
+	c.JSON(http.StatusConflict, gin.H{
+		"error":  "this document is edited in the Policy Studio; change its sections there",
+		"studio": fmt.Sprintf("/policies/%d/studio", id),
+	})
+	return true
+}
+
 func (h *Handler) CreateSection(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
+		return
+	}
+	if h.refuseStudioDocument(c, id) {
 		return
 	}
 	var payload Section
@@ -372,6 +397,9 @@ func (h *Handler) CreateSection(c *gin.Context) {
 func (h *Handler) UpdateSection(c *gin.Context) {
 	docID, ok := parseID(c, "id")
 	if !ok {
+		return
+	}
+	if h.refuseStudioDocument(c, docID) {
 		return
 	}
 	sectionID, ok := parseID(c, "sectionID")
@@ -397,6 +425,9 @@ func (h *Handler) DeleteSection(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if h.refuseStudioDocument(c, docID) {
+		return
+	}
 	sectionID, ok := parseID(c, "sectionID")
 	if !ok {
 		return
@@ -411,6 +442,9 @@ func (h *Handler) DeleteSection(c *gin.Context) {
 func (h *Handler) ReorderSections(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
+		return
+	}
+	if h.refuseStudioDocument(c, id) {
 		return
 	}
 	var payload struct {

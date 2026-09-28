@@ -821,7 +821,48 @@ func OpenSQLite(path string) (*Conn, error) {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
-		ON audit_finding_history (finding_id, id);`
+		ON audit_finding_history (finding_id, id);
+
+	-- Policy Studio (internal/policystudio): the live collaborative document
+	-- of a Studio-format policy, as Yjs binary. policy_doc_state is the
+	-- compacted state plus projection_token, written in the same transaction
+	-- as policy_documents.projection_token by every projection -- a mismatch at
+	-- load means the rows were changed outside the Studio (a sync or restore)
+	-- and win. policy_doc_updates
+	-- is the append-only log between compactions. policy_doc_snapshots are
+	-- point-in-time copies (interval, status change, before migration).
+	CREATE TABLE IF NOT EXISTS policy_doc_state (
+		document_id INTEGER PRIMARY KEY,
+		state BLOB NOT NULL,
+		projection_token TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS policy_doc_updates (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		upd BLOB NOT NULL,
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_doc_updates_document
+		ON policy_doc_updates (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_doc_snapshots (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		reason TEXT NOT NULL DEFAULT '',
+		format TEXT NOT NULL DEFAULT 'yjs',
+		state BLOB NOT NULL,
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
+		ON policy_doc_snapshots (document_id, id);`
 
 	const stateSchema = `
 	CREATE TABLE IF NOT EXISTS app_state (
@@ -956,6 +997,29 @@ func OpenSQLite(path string) (*Conn, error) {
 	// deliverable's cover page must not change because somebody renamed a client
 	// a year later.
 	if err := ensureColumn(db, "policy_documents", "client_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	// Policy Studio. editor_format says which editor owns a document's text
+	// (markdown: the legacy per-section editor; studio: the collaborative
+	// document, projected into the section rows). uid is a section's stable
+	// identity inside that document, independent of the autoincrement id that
+	// mappings hang off.
+	for _, col := range []struct{ table, name, def string }{
+		{"policy_documents", "editor_format", "TEXT NOT NULL DEFAULT 'markdown'"},
+		{"policy_documents", "projection_version", "INTEGER NOT NULL DEFAULT 0"},
+		{"policy_documents", "projection_token", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "uid", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "content_json", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "detached_at", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := ensureColumn(db, col.table, col.name, col.def); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := db.Exec(`UPDATE policy_sections SET uid = lower(hex(randomblob(16))) WHERE uid = ''`); err != nil {
+		return nil, fmt.Errorf("backfill policy section uids: %w", err)
+	}
+	if err := ensureIndex(db, "idx_policy_sections_uid", "CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_sections_uid ON policy_sections(uid)"); err != nil {
 		return nil, err
 	}
 	if err := ensureColumn(db, "stored_json_documents", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {

@@ -287,6 +287,10 @@ func helpPage(c *gin.Context) {
             <li>Browse what exists at <a href="/policies">Policy Library</a>.</li>
             <li>Write in <a href="/policies/manage">Policy Editor</a>: sections in order, each able
               to cite the controls it satisfies.</li>
+            <li>Or write together in the Policy Studio (<em>Open in Studio</em> on any document): one
+              live document that several people edit at once, with lists, tables and formatting, the
+              sections and their control mappings kept as they are, and readiness checked as you
+              type. Moving a document into the Studio is one way.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at

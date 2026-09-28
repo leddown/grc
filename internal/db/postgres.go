@@ -830,6 +830,49 @@ CREATE TABLE IF NOT EXISTS audit_finding_history (
 CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
 	ON audit_finding_history (finding_id, id);
 
+-- Policy Studio: see internal/db/sqlite.go for what each table holds.
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS editor_format TEXT NOT NULL DEFAULT 'markdown';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS projection_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS projection_token TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS uid TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS detached_at TEXT NOT NULL DEFAULT '';
+UPDATE policy_sections SET uid = md5(random()::text || clock_timestamp()::text || id::text) WHERE uid = '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_sections_uid ON policy_sections(uid);
+
+CREATE TABLE IF NOT EXISTS policy_doc_state (
+	document_id BIGINT PRIMARY KEY,
+	state BYTEA NOT NULL,
+	projection_token TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS policy_doc_updates (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	upd BYTEA NOT NULL,
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_doc_updates_document
+	ON policy_doc_updates (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_doc_snapshots (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	reason TEXT NOT NULL DEFAULT '',
+	format TEXT NOT NULL DEFAULT 'yjs',
+	state BYTEA NOT NULL,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
+	ON policy_doc_snapshots (document_id, id);
+
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_control_id ON rcsa_controls(control_id);
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_family_type ON rcsa_controls(family, control_type);
 CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain);

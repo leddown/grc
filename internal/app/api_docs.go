@@ -119,6 +119,32 @@ func openAPIJSON(c *gin.Context) {
 					"security": []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
+			"/policies/{id}/studio/state": gin.H{
+				"get": gin.H{
+					"summary":     "Policy Studio document state",
+					"description": "Sections, control mappings, lint findings, projection version and whether the caller may edit. Answers 304 to a matching If-None-Match. The text itself travels over /collab/policies/{id}.",
+				},
+			},
+			"/policies/{id}/studio/sections": gin.H{
+				"post": gin.H{
+					"summary":     "Add a section to a Studio document",
+					"description": "Body: {after_uid, kind, heading}. Draft documents only. Removing (DELETE .../sections/{uid}), retyping (PATCH .../sections/{uid}), restoring (POST .../sections/{uid}/restore) and reordering (POST /policies/{id}/studio/reorder) follow the same rules.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/policies/{id}/studio/migrate": gin.H{
+				"post": gin.H{
+					"summary":     "Move a section-editor document into the Policy Studio (one way)",
+					"description": "Keeps the current sections as a snapshot first. Idempotent.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/collab/policies/{id}": gin.H{
+				"get": gin.H{
+					"summary":     "Policy Studio collaboration socket (WebSocket, y-websocket protocol)",
+					"description": "Authorized per upgrade: the session cookie, a /policies page grant and an Origin on the allowlist. Admins get read-write while the document is a draft; everyone else, and every non-draft, is read-only.",
+				},
+			},
 			"/reports/data/unlinked-controls": gin.H{
 				"get": gin.H{
 					"summary":     "List report rows",

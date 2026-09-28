@@ -5,11 +5,13 @@ policy authoring on top of `internal/policydocs`, live co-editing with the
 customer, tracked suggestions, and an Ask AI agent that proposes changes as
 suggestions a person accepts or rejects.
 
-**Status: Phase 0 (design and de-risking spikes) complete, awaiting approval.**
-Nothing in this document is wired into the application yet. The spike code
-lives on the throwaway branch `spike/policy-studio` (see [§9](#9-phase-0-spike-results)).
-Phase 1 does not start until the open questions in [§11](#11-open-questions-for-the-owner)
-are answered.
+**Status: Phase 1a built** (the collaborative editor, persistence, projection,
+section integrity, control chips, live lint, migration from the section editor).
+The owner accepted the recommendations for Q1–Q10 on 2026-09-28
+([§11](#11-open-questions-for-the-owner)). Phase 1b (client facts, templates,
+rich rendering, the approval-snapshot hash) is next. [§13](#13-operator-guide)
+is the operator guide for what exists today. The Phase 0 spike code lives on
+the throwaway branch `spike/policy-studio`.
 
 It follows the `*_FRAMEWORK.md` convention. [`POLICY_MODULE_FRAMEWORK.md`](POLICY_MODULE_FRAMEWORK.md)
 is the research this builds on: the Studio is how that plan's phase 4 (AI
@@ -94,8 +96,8 @@ supports the decision; the conditions are part of it.
 | Module | Version | Licence | Why |
 |---|---|---|---|
 | `github.com/reearth/ygo` | v1.50.0 | MIT | In-process Yjs server: rooms, persistence, read-only peers, caps |
-| `golang.org/x/time` | v0.10.0 (via ygo) | BSD-3-Clause | Per-peer rate limiter inside ygo; the only new compiled transitive dependency |
-| `github.com/yuin/goldmark` | v1.8.6 | MIT, no dependencies | Parses legacy section Markdown and AI `replacement_markdown` into the schema. The repo has no Markdown parser. Proposed; not spiked |
+| `golang.org/x/time` | v0.15.0 (via ygo; MVS picked the newer version already in the graph) | BSD-3-Clause | Per-peer rate limiter inside ygo; the only new compiled transitive dependency |
+| `github.com/yuin/goldmark` | v1.8.6 (was v1.4.13, indirect, in the graph already) | MIT, no dependencies | Parses legacy section Markdown (and, in Phase 3, AI `replacement_markdown`) into the schema. The repo had no Markdown parser |
 
 `github.com/gorilla/websocket` v1.5.3 (BSD-2-Clause) is already in grc's
 graph. ygo's `go.mod` also lists Redis-cluster and test modules that are
@@ -235,18 +237,18 @@ The fragment name shared by client and server is the constant `policy`.
 Appendix C of the brief, finalised:
 
 ```
-policy_documents      + editor_format TEXT NOT NULL DEFAULT 'markdown'   -- markdown | studio
-                      + template_id TEXT NOT NULL DEFAULT '', template_version TEXT NOT NULL DEFAULT ''
-                      + ai_policy TEXT NOT NULL DEFAULT 'inherit'        -- inherit | local_only | off
-                      + projection_version INTEGER NOT NULL DEFAULT 0
-                      + seeded_at TEXT NOT NULL DEFAULT ''               -- the seed-once guard
-policy_sections       + uid TEXT (UNIQUE; backfilled with UUIDs), content_json TEXT NOT NULL DEFAULT '',
-                        detached_at TEXT NOT NULL DEFAULT ''
+policy_documents      + editor_format TEXT NOT NULL DEFAULT 'markdown'   -- markdown | studio        (1a)
+                      + projection_version INTEGER NOT NULL DEFAULT 0                           (1a)
+                      + projection_token TEXT NOT NULL DEFAULT ''        -- pairs rows with state   (1a)
+                      + template_id, template_version                                          (1b)
+                      + ai_policy TEXT NOT NULL DEFAULT 'inherit'        -- inherit|local_only|off (3)
+policy_sections       + uid TEXT (UNIQUE; backfilled), content_json TEXT, detached_at TEXT    (1a)
                         (body stays the column name; for Studio documents it holds the projected Markdown)
-policy_versions       + snapshot_sha256 TEXT NOT NULL DEFAULT '', content_json TEXT NOT NULL DEFAULT ''
-policy_doc_state      document_id PK, state BLOB, updated_at
-policy_doc_updates    id, document_id, upd BLOB, created_at
-policy_doc_snapshots  id, document_id, reason, state BLOB, created_by, created_at
+policy_versions       + snapshot_sha256, content_json                                          (1b)
+policy_doc_state      document_id PK, state BLOB, projection_token, updated_at                  (1a)
+policy_doc_updates    id, document_id, upd BLOB, created_at                                     (1a)
+policy_doc_snapshots  id, document_id, reason, format (yjs|legacy_json), state BLOB,
+                      created_by, created_at                                                     (1a)
 policy_comment_threads id, document_id, section_uid, anchor_start TEXT, anchor_end TEXT,  -- base64 Yjs relative positions
                       quote, visibility (internal|shared), kind (comment|ai_rationale), suggestion_suid,
                       status, created_by, created_at, resolved_by, resolved_at
@@ -264,7 +266,15 @@ client_profile_facts  client_ref, key, value, value_type, source, updated_by, up
 
 **Changes from the sketch:**
 
-- `seeded_at` replaces a separate guard table.
+- The seed-once guard is the `policy_doc_state` row itself (`INSERT ... ON
+  CONFLICT DO NOTHING`), not a `seeded_at` column.
+- `projection_token` is new. Every projection writes one random token to both
+  `policy_documents` and `policy_doc_state` in the same transaction. When a
+  room loads, a mismatch can only mean the section rows were changed by
+  something other than a projection (a `-sync-from`, a restore of an older
+  backup). The rows then win: the document is rebuilt from them, the old
+  state kept as a `superseded` snapshot. A hash of the rows would have
+  false-positived after every structure command.
 - The approval snapshot keeps its hash (Appendix D) and its ProseMirror JSON,
   so later rendering can re-typeset the approved content, not just its
   Markdown.
@@ -275,7 +285,7 @@ client_profile_facts  client_ref, key, value, value_type, source, updated_by, up
 
 **`dbsync`:**
 
-- All new tables join the snapshot, parent-first. `SnapshotVersion` goes to
+- All new tables join the snapshot, parent-first. `SnapshotVersion` is now
   10, and v9 backups restore with the new tables empty.
 - They stay out of `-sync-to` / `-sync-from`. The id-keyed Yjs state belongs
   with its document, and the precedent for tree-shaped modules applies.
@@ -445,7 +455,9 @@ Phase 1 is by far the largest, so a split is proposed.
 
 ## 11. Open questions for the owner
 
-| # | Question | Recommendation |
+**Decided on 2026-09-28: every recommendation below was accepted.**
+
+| # | Question | Recommendation (accepted) |
 |---|---|---|
 | Q1 | Approve three routes reachable without a session: `/assets/policy-studio/*` (static bundle), `/collab/` (own decision function, 401 without a session or guest cookie), `/shared/p/:token` + `/shared/*` (guest gate; the whole feature off until `studio.guest_links` is enabled) | Approve, with the route-enumeration test |
 | Q2 | Where do client facts and the client picker come from, now that the CRM is on Wintermute? (a) live call to Wintermute's `/api/v1/crm/clients` (a new runtime network dependency on an already-configured server); (b) a small local `client_profiles` table (name + optional Wintermute CRM id), facts keyed to it, with an optional "import from CRM" button | (b): facts are client-confidential and should not depend on another server being reachable. The document still stores `client_name` as it does today |
@@ -475,6 +487,108 @@ As in the brief's §10:
 Pasting into the editor is client-side editing, sanitised to the schema. No
 file reaches the server and nothing is extracted server-side, so it is not
 ingestion.
+
+---
+
+## 13. Operator guide
+
+What Phase 1a puts in the hands of a user and an operator.
+
+### Using it
+
+- **Open in Studio** is on every document in the Policy Editor
+  (`/policies/manage`). A document still in the section editor shows an
+  *Open in the Studio* button to admins. Pressing it moves the document one
+  way: the current sections are kept as a `pre_migration` snapshot, and the
+  per-section endpoints answer `409` for that document from then on, with a
+  pointer to the Studio. Metadata (title, owner, approver, dates,
+  classification, cadence) stays editable, in the Studio's *Document control*
+  panel and through the existing API.
+- **Who can do what.** Anyone with the `/policies` grant can open a Studio
+  document and read it live. Only admins write, and only while the document is
+  a draft. Submitting for review, approving or retiring turns every open
+  editor read-only at the socket, not just in the page.
+- **Sections are commands, not keystrokes.** Add, remove, reorder and retype
+  sections from the Outline. Typing and pasting cannot add, remove, merge or
+  split a section; the editor refuses such a transaction and says so. A
+  section that nevertheless disappears from the live document (an old or
+  modified client) is *detached*: its row and its control mappings stay, and
+  it can be restored or deleted from the Outline.
+- **Controls** show as chips under each section heading, like the
+  *Satisfies:* line in the rendered document. *+ Control* searches the
+  catalog; mapping stays a draft-only edit, as before.
+- **Readiness** is the policy linter run on the saved text. The text is saved
+  and projected a second or two after typing stops, so it trails the editor
+  by that much. A section whose content the server refused (content outside
+  the schema) keeps its last good text and blocks approval until it is fixed.
+
+### How it stores a document
+
+- The live document is Yjs binary in `policy_doc_state` (compacted) plus
+  `policy_doc_updates` (appended between compactions). Edits are coalesced
+  (1 s debounce, 5 s maximum) and written by ygo's persistence worker.
+  A restart loses at most that window, and a graceful stop (SIGTERM) loses
+  nothing: the Studio is flushed before the server stops.
+- Every stored update schedules a projection (750 ms debounce). The server
+  reads its own copy of the document, validates it against the schema, and
+  rewrites the section rows (`heading`, `body` as Markdown, `section_kind`,
+  `ordinal`, `content_json`) in one transaction. Pending suggestions are
+  resolved to the *baseline* view first: insertions left out, deletions kept.
+- Snapshots: every 15 minutes while a document changes, at every status
+  change, and before migration. `-studio-snapshot-retention` (default 50)
+  bounds them; the pre-migration copy is never pruned.
+- A backup (Utilities → export) carries all of it. `-sync-to`/`-sync-from`
+  carries the section rows but not the Yjs tables; the destination rebuilds
+  each changed Studio document from its rows on first open.
+
+### Deploying it
+
+- nginx needs the `/collab/` block in `deploy/grc.nginx`: WebSocket upgrade
+  headers and a long read timeout.
+- If the app is reached under a hostname other than the `Host` nginx
+  forwards, list it in `STUDIO_ALLOWED_ORIGINS`.
+- `scripts/verify-install.sh` checks that the embedded bundle is served and
+  that `/collab/` refuses an unauthenticated upgrade (401/403, not 404).
+
+### Changing the editor
+
+- Sources are in `web/policy-studio/src`; the build is
+  `scripts/build-policy-studio.sh` (Node 24 LTS). It installs from the
+  lockfile with `--ignore-scripts`, applies the y-tiptap node-marks patch,
+  regenerates the cross-language fixtures and the schema snapshot, builds a
+  hashed, minified bundle into `internal/policystudio/assets` with its
+  manifest, writes `THIRD_PARTY_NOTICES.md`, and re-verifies the Go-seeded
+  fixtures in JS. `--check` rebuilds and fails if the result differs from
+  what is committed.
+- Adding a node or mark means: the editor schema (`src/schema.js`), the Go
+  allowlist (`internal/policystudio/schema.go`, which a test compares with
+  the snapshot), a Markdown rendering (`markdown.go`), and in 1b the Typst,
+  LaTeX and HTML renderings.
+
+### Verified for 1a, and not
+
+- **Verified:**
+  - Go reads what the editor writes, and the editor reads what Go seeds, on 9
+    fixtures (byte-stable Go seeds, verified by JS).
+  - The validator refuses scripts, images, unsafe links, merged cells, wrong
+    heading levels and malformed tokens (table-driven, and fuzzed).
+  - Legacy Markdown converts to valid sections (fuzzed).
+  - The persistence adapter (seed-once under concurrency,
+    append/compact/load equivalence, replace and snapshot retention) on SQLite.
+  - Structure commands, detach and restore, refusal of unknown and invalid
+    content, rows-win reconciliation, the collab decision (table), approval
+    with and without unresolved facts, and the 409s.
+  - Every `/collab/` route, enumerated from the router, refuses anonymous,
+    cross-origin and ungranted upgrades.
+  - In headless Chrome: live sync between two admins, a refused cross-section
+    paste with styling stripped, every editor turning read-only on submit
+    (the server dropping a forced write), and a restart losing nothing.
+- **Not yet verified:**
+  - The adapter suite on PostgreSQL (it runs when `GRC_TEST_POSTGRES_URL`
+    names a throwaway database).
+  - iOS Safari.
+  - A 30-page document in the browser (projection of one takes 3.6 ms; the
+    editor was not timed).
 
 ---
 
