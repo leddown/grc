@@ -3,6 +3,7 @@ package policystudio
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -109,21 +110,47 @@ func loadTemplates() ([]Template, error) {
 }
 
 func (t Template) validate() error {
-	if !templateIDPattern.MatchString(t.ID) || strings.TrimSpace(t.Version) == "" || strings.TrimSpace(t.Title) == "" {
-		return fmt.Errorf("id, version and title are required")
+	if problems := t.Problems(); len(problems) > 0 {
+		return errors.New(problems[0])
+	}
+	return nil
+}
+
+// weakTemplateWording is what a template may not say: an assessor cannot test
+// it, and a template repeats it into every document made from it.
+var weakTemplateWording = []string{"will ", "strive", "endeavour", "where possible", "as appropriate", "is encouraged"}
+
+// Problems lists everything that keeps a template from being offered, in the
+// order a person would fix them. Built-in templates must have none (a build
+// defect otherwise); a template drafted in the app cannot be published until
+// it has none.
+func (t Template) Problems() []string {
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	if !templateIDPattern.MatchString(t.ID) {
+		add("the id %q must be 2 to 64 lowercase letters, digits and hyphens, starting with a letter", t.ID)
+	}
+	if strings.TrimSpace(t.Version) == "" || strings.TrimSpace(t.Title) == "" {
+		add("a version and a title are required")
 	}
 	if !containsString(policydocs.DocTypes, t.DocType) {
-		return fmt.Errorf("unknown doc_type %q", t.DocType)
+		add("unknown doc_type %q", t.DocType)
 	}
 	for _, f := range t.Frameworks {
 		if !containsString(policydocs.Frameworks, f) {
-			return fmt.Errorf("unknown framework %q", f)
+			add("unknown framework %q", f)
 		}
+	}
+	if len(t.Sections) == 0 {
+		add("a template needs at least one section")
 	}
 	declared := map[string]bool{}
 	for _, f := range t.Facts {
-		if !factKeyPattern.MatchString(f.Key) || f.Label == "" {
-			return fmt.Errorf("fact %q needs a snake_case key and a label", f.Key)
+		if !factKeyPattern.MatchString(f.Key) || strings.TrimSpace(f.Label) == "" {
+			add("fact %q needs a snake_case key and a label", f.Key)
+		}
+		if declared[f.Key] {
+			add("fact %q is declared twice", f.Key)
 		}
 		declared[f.Key] = true
 	}
@@ -131,43 +158,87 @@ func (t Template) validate() error {
 	kinds := map[string]bool{}
 	seeds := map[string]bool{}
 	for _, s := range t.Sections {
+		name := firstNonEmptyString(s.Heading, s.UIDSeed, "(untitled)")
 		if s.UIDSeed == "" || seeds[s.UIDSeed] {
-			return fmt.Errorf("section %q needs a unique uid_seed", s.Heading)
+			add("section %q needs a unique uid_seed", name)
 		}
 		seeds[s.UIDSeed] = true
+		if strings.TrimSpace(s.Heading) == "" {
+			add("a section needs a heading")
+		}
+		if !containsString(policydocs.SectionKinds, s.Kind) {
+			add("section %q has an unknown kind %q", name, s.Kind)
+		}
 		kinds[s.Kind] = true
 		sec := SectionFromMarkdown("s", s.Kind, s.Heading, s.Content, newBlockID)
 		if err := Validate(&Node{Type: "doc", Content: []*Node{sec}}); err != nil {
-			return fmt.Errorf("section %q: %w", s.Heading, err)
+			add("section %q: %v", name, err)
 		}
 		for _, m := range factTokenInText.FindAllStringSubmatch(s.Content, -1) {
 			used[m[1]] = true
 		}
+		lower := strings.ToLower(s.Content)
+		for _, weak := range weakTemplateWording {
+			if strings.Contains(lower, weak) {
+				add("section %q says %q, which an assessor cannot test: use must, shall, should or may", name, strings.TrimSpace(weak))
+			}
+		}
 		for _, m := range s.ProposedMappings {
 			if m.Coverage != policydocs.CoveragePartial && m.Coverage != policydocs.CoverageSupporting {
-				return fmt.Errorf("section %q proposes %s as %q; a template proposes partial or supporting coverage only", s.Heading, m.ControlID, m.Coverage)
+				add("section %q proposes %s as %q; a template proposes partial or supporting coverage only", name, m.ControlID, m.Coverage)
 			}
 			if !controlPattern.MatchString(m.ControlID) {
-				return fmt.Errorf("section %q proposes an invalid control id %q", s.Heading, m.ControlID)
+				add("section %q proposes an invalid control id %q", name, m.ControlID)
 			}
 		}
 	}
-	for k := range used {
+	for _, k := range sortedKeys(used) {
 		if !declared[k] {
-			return fmt.Errorf("the text uses {{fact:%s}}, which the template does not declare", k)
+			add("the text uses {{fact:%s}}, which the template does not declare", k)
 		}
 	}
-	for k := range declared {
-		if !used[k] {
-			return fmt.Errorf("fact %q is declared but never used", k)
+	for _, f := range t.Facts {
+		if f.Key != "" && !used[f.Key] {
+			add("fact %q is declared but never used", f.Key)
 		}
 	}
 	for _, k := range policydocs.RequiredKinds(t.DocType) {
 		if !kinds[k] {
-			return fmt.Errorf("a %s needs a %s section", t.DocType, k)
+			add("a %s needs a %s section", t.DocType, k)
 		}
 	}
-	return nil
+	return out
+}
+
+// FactKeysIn lists the fact keys a template text uses, in order of first use.
+func FactKeysIn(content string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range factTokenInText.FindAllStringSubmatch(content, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			out = append(out, m[1])
+		}
+	}
+	return out
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func containsString(set []string, v string) bool {
@@ -179,17 +250,46 @@ func containsString(set []string, v string) bool {
 	return false
 }
 
-// Templates lists the templates, the default first.
-func (s *Service) Templates() []Template { return s.templates }
+// Templates lists the templates a document can be created from: the built-in
+// ones, the default first, then those published in the app.
+func (s *Service) Templates() []Template {
+	out := append([]Template(nil), s.templates...)
+	published, err := s.publishedTemplates(false)
+	if err != nil {
+		s.log.Error("policy studio: published templates", "error", err)
+	}
+	return append(out, published...)
+}
 
-// Template finds one template.
+// Template finds a template by id, built in or published in the app, retired
+// ones included: a document made from a retired template still shows its
+// guidance.
 func (s *Service) Template(id string) (Template, bool) {
 	for _, t := range s.templates {
 		if t.ID == id {
 			return t, true
 		}
 	}
+	published, err := s.publishedTemplates(true)
+	if err != nil {
+		s.log.Error("policy studio: published templates", "error", err)
+	}
+	for _, t := range published {
+		if t.ID == id {
+			return t, true
+		}
+	}
 	return Template{}, false
+}
+
+// builtInTemplate reports whether an id belongs to a template in the binary.
+func (s *Service) builtInTemplate(id string) bool {
+	for _, t := range s.templates {
+		if t.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // templateProvenance is a template section's provenance_detail:
@@ -244,7 +344,7 @@ type CreateResult struct {
 // start; unknown ones are unresolved tokens that block approval until filled.
 func (s *Service) CreateFromTemplate(in CreateRequest, author string) (CreateResult, error) {
 	t, ok := s.Template(in.TemplateID)
-	if !ok {
+	if !ok || s.retiredTemplate(in.TemplateID) {
 		return CreateResult{}, invalid("unknown template %q", in.TemplateID)
 	}
 	var clientName string

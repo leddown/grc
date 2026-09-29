@@ -174,6 +174,20 @@ func openAPIJSON(c *gin.Context) {
 					"description": "Query: from and to, each an approved version id or current (to defaults to current). Sections are aligned by heading, units by an LCS, and a changed unit is diffed word by word. GET /policies/{id}/compare.pdf?from=&to= typesets the same comparison as a redline PDF (the sources as a zip without Typst).",
 				},
 			},
+			"/policies/app-templates": gin.H{
+				"get": gin.H{
+					"summary":     "The templates made in the app, with their working copy, status, problems and source",
+					"description": "Administrators. GET .../meta is the editor's vocabulary; GET .../{tid} one template; GET .../{tid}/template.json downloads the working copy; PUT .../{tid} saves it (kept whatever its problems); POST .../{tid}/publish offers it as the next version (422 with the problems while any remain); POST .../{tid}/retire and .../restore; DELETE .../{tid} only while no document was made from it; POST .../import (template JSON) and .../copy {template_id}.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/policies/app-templates/draft": gin.H{
+				"post": gin.H{
+					"summary":     "Draft a template from a Wintermute library document with the AI",
+					"description": "Body: {library_document_id, doc_type (optional), title (optional), instruction (optional), local_only}. The answer is checked (passages, controls, coverage, facts) and stored as a draft to review and publish. With Accept: text/event-stream: event: progress {chars} while the model writes (and every 15 s), then event: result. GET .../draft/status?local_only=1 says whether it can run and where it would go.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
 			"/policies/library": gin.H{
 				"get": gin.H{
 					"summary":     "The Wintermute library documents a new policy can be started from",

@@ -65,6 +65,10 @@ func listPageHTML(manage bool) string {
 </html>`
 }
 
+// PageCSS is the stylesheet the policy pages share, for pages another package
+// serves under /policies.
+func PageCSS() string { return policyCSS }
+
 const policyCSS = `
 dialog.new-doc { width:min(560px, calc(100vw - 32px)); background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:20px; }
 dialog.new-doc::backdrop { background:rgba(0,0,0,0.55); }
@@ -612,7 +616,7 @@ async function createDoc(){
   ]);
   const create = node("button", { type: "button", class: "primary", text: "Create" });
   const cancel = node("button", { type: "button", text: "Cancel", onclick: () => { dlg.close(); dlg.remove(); } });
-  dlg.appendChild(node("div", { class: "actions" }, [create, cancel]));
+  dlg.appendChild(node("div", { class: "actions" }, [create, cancel, node("a", { class: "tab", href: "/policies/templates/manage", text: "Manage templates" })]));
   create.addEventListener("click", async () => {
     error.textContent = "";
     create.disabled = true;

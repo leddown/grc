@@ -177,6 +177,16 @@ var syncOrder = []tableSpec{
 		conflictCols: []string{"id"},
 		idKeyed:      true,
 	},
+	// Templates made in the app are keyed by template_id, which documents
+	// refer to and which never changes once published, so they merge across
+	// installations on it.
+	{
+		table: "policy_templates",
+		cols: []string{"template_id", "status", "draft_json", "published_json", "published_version", "origin", "source_library_id",
+			"source_title", "sources_json", "notes_json", "ai_provider", "ai_model", "input_tokens", "output_tokens",
+			"created_by", "created_at", "updated_by", "updated_at", "published_by", "published_at"},
+		conflictCols: []string{"template_id"},
+	},
 	{
 		table:        "client_profile_facts",
 		cols:         []string{"client_id", "key", "value", "value_type", "source", "updated_by", "updated_at"},

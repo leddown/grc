@@ -1014,6 +1014,36 @@ func OpenSQLite(path string) (*Conn, error) {
 	CREATE INDEX IF NOT EXISTS idx_policy_guest_sessions_link
 		ON policy_guest_sessions (link_id, id);
 
+	-- Policy Studio templates made in the app (drafted by the AI from a
+	-- library document, imported, or copied from a built-in one), next to the
+	-- built-in templates the binary carries. draft_json is the working copy;
+	-- published_json is what New document offers, and stays until the next
+	-- publish, so editing a published template changes nothing until then.
+	-- Documents refer to a template by template_id, which never changes.
+	CREATE TABLE IF NOT EXISTS policy_templates (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		template_id TEXT NOT NULL UNIQUE,
+		status TEXT NOT NULL DEFAULT 'draft',
+		draft_json TEXT NOT NULL DEFAULT '',
+		published_json TEXT NOT NULL DEFAULT '',
+		published_version TEXT NOT NULL DEFAULT '',
+		origin TEXT NOT NULL DEFAULT '',
+		source_library_id INTEGER NOT NULL DEFAULT 0,
+		source_title TEXT NOT NULL DEFAULT '',
+		sources_json TEXT NOT NULL DEFAULT '',
+		notes_json TEXT NOT NULL DEFAULT '',
+		ai_provider TEXT NOT NULL DEFAULT '',
+		ai_model TEXT NOT NULL DEFAULT '',
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_by TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		published_by TEXT NOT NULL DEFAULT '',
+		published_at TEXT NOT NULL DEFAULT ''
+	);
+
 	-- Client profiles (internal/clientprofile): the clients policies are
 	-- written for, and the facts about each that a policy may state but a
 	-- model must never invent. Kept here rather than in the CRM on wintermute

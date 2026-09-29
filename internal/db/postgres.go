@@ -1017,6 +1017,31 @@ ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS ai_policy TEXT NOT NULL DE
 ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS snapshot_sha256 TEXT NOT NULL DEFAULT '';
 ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
 
+-- Policy Studio templates made in the app: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_templates (
+	id BIGSERIAL PRIMARY KEY,
+	template_id TEXT NOT NULL UNIQUE,
+	status TEXT NOT NULL DEFAULT 'draft',
+	draft_json TEXT NOT NULL DEFAULT '',
+	published_json TEXT NOT NULL DEFAULT '',
+	published_version TEXT NOT NULL DEFAULT '',
+	origin TEXT NOT NULL DEFAULT '',
+	source_library_id BIGINT NOT NULL DEFAULT 0,
+	source_title TEXT NOT NULL DEFAULT '',
+	sources_json TEXT NOT NULL DEFAULT '',
+	notes_json TEXT NOT NULL DEFAULT '',
+	ai_provider TEXT NOT NULL DEFAULT '',
+	ai_model TEXT NOT NULL DEFAULT '',
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	published_by TEXT NOT NULL DEFAULT '',
+	published_at TEXT NOT NULL DEFAULT ''
+);
+
 -- Client profiles: see internal/db/sqlite.go.
 CREATE TABLE IF NOT EXISTS client_profiles (
 	id BIGSERIAL PRIMARY KEY,

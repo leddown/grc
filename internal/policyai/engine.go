@@ -403,19 +403,45 @@ func (e *Engine) ask(ctx context.Context, p prepared, req aiprovider.Request, st
 	req.OutputSchema = Schema()
 	req.MaxTokens = maxAnswerTokens
 	req.Agent = p.agent
-	resp, err := e.cfg.Router.AskStream(ctx, req, previewTo(stream))
+	var answer Answer
+	parse := func(text string) (err error) {
+		answer, err = parseAnswer(text)
+		return err
+	}
+	var restart func()
+	if stream != nil {
+		restart = stream.Restart
+	}
+	resp, err := e.askContract(ctx, req, parse, func() func(string) { return previewTo(stream) }, restart,
+		"Try again, or ask about a smaller part of the document.")
+	return answer, resp, err
+}
+
+// askContract asks for an answer in a JSON contract, and repairs once when the
+// reply does not parse: on the same session where the provider keeps one,
+// otherwise with the transcript. onText makes a fresh text callback for each
+// turn (nil for none); restart is told before the repair turn. Usage is summed
+// over both turns.
+func (e *Engine) askContract(ctx context.Context, req aiprovider.Request, parse func(string) error, onText func() func(string), restart func(), advice string) (aiprovider.Response, error) {
+	callback := func() func(string) {
+		if onText == nil {
+			return nil
+		}
+		return onText()
+	}
+	resp, err := e.cfg.Router.AskStream(ctx, req, callback())
 	if err != nil {
-		return Answer{}, resp, refuse(http.StatusBadGateway, "The AI provider could not answer: %v", err)
+		return resp, refuse(http.StatusBadGateway, "The AI provider could not answer: %v", err)
 	}
 	if err := stopped(resp); err != nil {
-		return Answer{}, resp, err
+		return resp, err
 	}
-	answer, perr := parseAnswer(resp.Text)
+	perr := parse(resp.Text)
 	if perr == nil {
-		return answer, resp, nil
+		return resp, nil
 	}
 	repair := aiprovider.Request{
-		System: standingRules, OutputSchema: req.OutputSchema, MaxTokens: maxAnswerTokens, Agent: p.agent,
+		System: req.System, OutputSchema: req.OutputSchema, MaxTokens: req.MaxTokens, Agent: req.Agent,
 		Prompt: "Your reply did not match the contract: " + perr.Error() + ". Reply again with only the JSON object, nothing before or after it.",
 	}
 	if resp.SessionID != "" {
@@ -425,23 +451,22 @@ func (e *Engine) ask(ctx context.Context, p prepared, req aiprovider.Request, st
 			aiprovider.Message{Role: aiprovider.RoleUser, Text: req.Prompt}, aiprovider.Message{Role: aiprovider.RoleAssistant, Text: resp.Text})
 	}
 	first := resp
-	if stream != nil {
-		stream.Restart()
+	if restart != nil {
+		restart()
 	}
-	resp, err = e.cfg.Router.AskStream(ctx, repair, previewTo(stream))
+	resp, err = e.cfg.Router.AskStream(ctx, repair, callback())
 	if err != nil {
-		return Answer{}, first, refuse(http.StatusBadGateway, "The AI provider could not answer: %v", err)
+		return first, refuse(http.StatusBadGateway, "The AI provider could not answer: %v", err)
 	}
 	resp.Usage.InputTokens += first.Usage.InputTokens
 	resp.Usage.OutputTokens += first.Usage.OutputTokens
 	if err := stopped(resp); err != nil {
-		return Answer{}, resp, err
+		return resp, err
 	}
-	answer, perr = parseAnswer(resp.Text)
-	if perr != nil {
-		return Answer{}, resp, refuse(http.StatusBadGateway, "The AI's answer was not in the expected form, even after asking again (%v). Try again, or ask about a smaller part of the document.", perr)
+	if perr = parse(resp.Text); perr != nil {
+		return resp, refuse(http.StatusBadGateway, "The AI's answer was not in the expected form, even after asking again (%v). %s", perr, advice)
 	}
-	return answer, resp, nil
+	return resp, nil
 }
 
 // previewTo is the text callback that streams an answer's answer_markdown to
@@ -556,22 +581,41 @@ func clip2(s string, n int) string {
 // extracted by the Wintermute server that holds the library; nothing is
 // uploaded or parsed here.
 func (e *Engine) withSource(ctx context.Context, p *prepared, libraryID int64) error {
+	src, err := e.readSource(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	p.pc.sourceOf, p.pc.source, p.pc.sourceCut, p.src.source = src.title, src.passages, src.cut, src.bodies
+	return nil
+}
+
+// librarySource is a library document's passages, as far as they fit.
+type librarySource struct {
+	title    string
+	passages []sourcePassage
+	bodies   map[int]string // passage number -> heading and text, for verbatim checks
+	cut      int            // passages left out for length
+}
+
+func (e *Engine) readSource(ctx context.Context, libraryID int64) (librarySource, error) {
 	if libraryID <= 0 {
-		return refuse(http.StatusBadRequest, "Choose a library document to start from.")
+		return librarySource{}, refuse(http.StatusBadRequest, "Choose a library document to start from.")
+	}
+	if e.cfg.Router == nil {
+		return librarySource{}, refuse(http.StatusServiceUnavailable, "No AI provider is configured.")
 	}
 	lib, err := e.cfg.Router.Library()
 	if err != nil {
-		return refuse(http.StatusServiceUnavailable, "The document library is not available: %v", err)
+		return librarySource{}, refuse(http.StatusServiceUnavailable, "The document library is not available: %v", err)
 	}
 	content, err := lib.ReadLibraryDocument(ctx, libraryID)
 	if err != nil {
-		return refuse(http.StatusBadGateway, "The library document could not be read: %v", err)
+		return librarySource{}, refuse(http.StatusBadGateway, "The library document could not be read: %v", err)
 	}
 	if !content.Document.Ready() {
-		return refuse(http.StatusConflict, "%q is still being read by the library. Try again when it is ready.", content.Document.Title)
+		return librarySource{}, refuse(http.StatusConflict, "%q is still being read by the library. Try again when it is ready.", content.Document.Title)
 	}
-	p.pc.sourceOf = firstNonEmpty(content.Document.Title, content.Document.Filename, "the source")
-	p.src.source = map[int]string{}
+	src := librarySource{title: firstNonEmpty(content.Document.Title, content.Document.Filename, "the source"), bodies: map[int]string{}}
 	used := 0
 	chunks := content.Chunks
 	if len(chunks) == 0 && strings.TrimSpace(content.Text) != "" {
@@ -584,17 +628,17 @@ func (e *Engine) withSource(ctx context.Context, p *prepared, libraryID int64) e
 		}
 		body := strings.TrimSpace(c.Body)
 		if used+len(body) > maxSourceChars {
-			p.pc.sourceCut = len(chunks) - i
+			src.cut = len(chunks) - i
 			break
 		}
 		used += len(body)
-		p.pc.source = append(p.pc.source, sourcePassage{ordinal: n, heading: c.Heading, body: body})
-		p.src.source[n] = c.Heading + "\n" + body
+		src.passages = append(src.passages, sourcePassage{ordinal: n, heading: c.Heading, body: body})
+		src.bodies[n] = c.Heading + "\n" + body
 	}
-	if len(p.pc.source) == 0 {
-		return refuse(http.StatusUnprocessableEntity, "%q has no text the library could extract.", p.pc.sourceOf)
+	if len(src.passages) == 0 {
+		return librarySource{}, refuse(http.StatusUnprocessableEntity, "%q has no text the library could extract.", src.title)
 	}
-	return nil
+	return src, nil
 }
 
 // LibraryEntry is one library document, as the new-document dialog lists it.
