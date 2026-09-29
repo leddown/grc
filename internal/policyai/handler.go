@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,6 +39,81 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/policies/:id/studio/ai/proposals", h.Propose)
 	r.POST("/policies/:id/studio/ai/proposals/:proposalID/placements", h.Placements)
 	r.GET("/policies/library", h.Library)
+	r.GET("/policies/app-templates/draft/status", h.TemplateDraftStatus)
+	r.POST("/policies/app-templates/draft", h.DraftTemplate)
+}
+
+// templateHeartbeat is how often a draft's stream says it is still working.
+var templateHeartbeat = 15 * time.Second
+
+// TemplateDraftStatus says whether a template can be drafted from the library
+// and where the request would go; ?local_only=1 asks about a local-only one.
+func (h *Handler) TemplateDraftStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, h.engine.TemplateDraftStatus(c.Request.Context(), c.Query("local_only") == "1"))
+}
+
+// DraftTemplate drafts a template from a library document. Asked for a
+// stream, it reports progress (event: progress, {chars}) while the model
+// writes, then the stored draft (event: result).
+func (h *Handler) DraftTemplate(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBytes)
+	var in TemplateDraftRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if !WantsStream(c) {
+		t, err := h.engine.DraftTemplate(c.Request.Context(), in, h.actor(c), nil)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		c.JSON(http.StatusCreated, t)
+		return
+	}
+	sse := NewSSE(c)
+	sse.Event("progress", gin.H{"chars": 0})
+	var mu sync.Mutex
+	last := 0
+	// A provider that answers whole (Wintermute) is silent until it is done,
+	// and a proxy closes a silent connection (nginx after proxy_read_timeout):
+	// the heartbeat keeps a long draft's stream open. It stops before the
+	// handler returns, after which the response must not be written.
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tick := time.NewTicker(templateHeartbeat)
+		defer tick.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+				mu.Lock()
+				n := last
+				mu.Unlock()
+				sse.Event("progress", gin.H{"chars": n})
+			}
+		}
+	}()
+	t, err := h.engine.DraftTemplate(c.Request.Context(), in, h.actor(c), func(chars int) {
+		mu.Lock()
+		defer mu.Unlock()
+		// A few events a second is plenty to show it moving.
+		if chars-last >= 400 {
+			last = chars
+			sse.Event("progress", gin.H{"chars": chars})
+		}
+	})
+	close(done)
+	wg.Wait()
+	if err != nil {
+		sse.Fail(err)
+		return
+	}
+	sse.Event("result", t)
 }
 
 // Library lists the Wintermute library documents a new document can start

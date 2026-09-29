@@ -39,6 +39,7 @@ func (h *Handler) RegisterReadRoutes(r gin.IRouter) {
 // the admin gate.
 func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/policies/from-template", h.FromTemplate)
+	h.registerAppTemplateRoutes(r)
 	r.POST("/policies/:id/studio/migrate", h.Migrate)
 	r.POST("/policies/:id/studio/sections", h.AddSection)
 	r.POST("/policies/:id/studio/reorder", h.Reorder)
@@ -72,6 +73,7 @@ func documentID(c *gin.Context) (int64, bool) {
 func (h *Handler) fail(c *gin.Context, err error) {
 	var approval policydocs.ApprovalError
 	var conflict ErrConflict
+	var problems ErrTemplateProblems
 	switch {
 	case errors.As(err, &conflict):
 		c.JSON(http.StatusConflict, gin.H{"error": conflict.Msg})
@@ -79,6 +81,10 @@ func (h *Handler) fail(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document or section not found"})
 	case policydocs.IsValidation(err):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, ErrTemplateNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+	case errors.As(err, &problems):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "the template has problems to fix before it can be published", "problems": problems.Problems})
 	case errors.As(err, &approval):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "document is not ready for approval", "findings": approval.Findings})
 	default:
@@ -269,13 +275,14 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 		Description  string         `json:"description"`
 		Frameworks   []string       `json:"frameworks"`
 		Default      bool           `json:"default"`
+		BuiltIn      bool           `json:"built_in"`
 		SectionCount int            `json:"section_count"`
 		Facts        []TemplateFact `json:"facts"`
 	}
 	out := []summary{}
 	for _, t := range h.service.Templates() {
 		out = append(out, summary{ID: t.ID, Version: t.Version, Title: t.Title, DocType: t.DocType, Description: t.Description,
-			Frameworks: t.Frameworks, Default: t.Default, SectionCount: len(t.Sections), Facts: t.Facts})
+			Frameworks: t.Frameworks, Default: t.Default, BuiltIn: h.service.builtInTemplate(t.ID), SectionCount: len(t.Sections), Facts: t.Facts})
 	}
 	c.JSON(http.StatusOK, out)
 }

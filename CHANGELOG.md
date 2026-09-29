@@ -3,6 +3,121 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-29 (Policy Studio: templates made in the app, drafted from library documents)
+
+Administrators can now make the templates *New document* offers without a
+rebuild. The new **Policy Templates** page (Compliance & Risk) drafts one from a
+document in the Wintermute library with the AI, imports one as JSON, or copies
+an existing one. Each template can be edited, is checked against the same rules
+as the built-in templates, is published as a version, and can be retired.
+POLICY_STUDIO.md §13 ("Templates made in the app") is the guide.
+
+- **`internal/policystudio`:**
+  - **Storage.** Templates made in the app live in `policy_templates`, in both
+    dialects:
+    - a working copy, and the published copy *New document* uses, which only
+      the next publish changes;
+    - the version (1.0.0, then the next minor), origin (library, import or
+      copy), source document, the passages each section drew on, drafting
+      notes, and the AI's provider, model and tokens.
+  - **The registry.** `Templates()` and `Template()` now include published
+    templates after the built-in ones. A retired template is not offered and
+    cannot be used for a new document. Documents made from it keep its
+    guidance.
+  - **The rules.** `Template.Problems()` lists every problem at once; the
+    built-in `validate` now uses it. The weak-wording rule the built-in
+    templates were held to in a test ("will", "strive", "endeavour", "where
+    possible", "as appropriate", "is encouraged") is now enforced in
+    production code, so it applies to app templates too.
+  - **Lifecycle.**
+    - A draft is saved whatever its state. Publishing is refused (422, with
+      the problems) while any remain.
+    - The id can change until first publish and is fixed after, because
+      documents refer to it.
+    - An import with an id already in use (built in or not) is refused rather
+      than renamed.
+    - Delete works only while no document was made from the template;
+      otherwise retire it.
+  - **Admin routes** under `/policies/app-templates` and the page at
+    `/policies/templates/manage`. `GET /policies/templates` now marks built-in
+    templates.
+- **`internal/policyai`: drafting.**
+  - `DraftTemplate` reads a library document's passages (`readSource`, now
+    shared with the Studio's library route) and asks for a template in its own
+    contract: structured outputs on Claude, the rules in the message and one
+    repair turn on Wintermute.
+  - The model is told to replace the sample organisation's specifics with fact
+    tokens, to write testable, tier-appropriate text, and to cite the passages
+    each section draws on.
+  - The answer is checked before it is stored:
+    - unknown passages and unknown controls are dropped;
+    - coverage is capped at partial;
+    - facts used but undeclared are declared, and declared but unused ones are
+      removed.
+
+    Each change becomes a note for the reviewer.
+  - *Local only* refuses the cloud. The page shows where a draft will go
+    before it is sent.
+  - `POST /policies/app-templates/draft` streams progress, with a heartbeat
+    every 15 seconds so nginx (proxy_read_timeout) does not close a slow
+    Wintermute draft. `GET …/draft/status` reports availability.
+  - The ask-and-repair loop is now `askContract`, shared by proposals and
+    templates.
+- **The page:**
+  - built-in templates are read-only, with *Copy to edit*;
+  - the editor covers fields, frameworks, facts and sections (heading, kind,
+    text, guidance, suggested controls, the sample passages used), with add,
+    remove and reorder;
+  - the problems to fix and the drafting notes are listed;
+  - *Save*, *Publish* / *Save and publish*, *Retire*, *Offer again*,
+    *Download JSON* and *Delete*;
+  - the draft and import dialogs.
+
+  It is built with `createElement` and `textContent` only. The nav and the
+  *New document* dialog link to it.
+- **`internal/dbsync`:** `policy_templates` is in backups and syncs, upserted on
+  `template_id`. The snapshot format is now v14; a v13 backup restores with the
+  built-in templates only.
+- **Docs:** POLICY_STUDIO.md (the guide and the routes), AI_AGENT.md,
+  Agents.md, the API docs and help.
+- **Verified:**
+  - `go fmt`, `go vet` and `go test ./...` without `-short` (gosec and
+    govulncheck included) are green.
+  - **The rules.** `Problems` reports every rule at once. Built-in templates
+    still have none.
+  - **The lifecycle:**
+    - a free id when one is taken, with rename rules and a built-in id refused;
+    - publishing with problems refused, then 1.0.0 and 1.1.0;
+    - unpublished edits never reach *New document*, and a document made from
+      an app template gets its sections, guidance and version;
+    - retiring hides the template and blocks new documents while keeping
+      guidance; restoring brings it back;
+    - delete is refused while a document uses the template;
+    - import (duplicate, built-in and malformed input refused), copy and
+      delete work.
+  - **Drafting** through the Wintermute and Claude stand-ins:
+    - the delimited sample and the rules reach the model;
+    - the schema goes out on Claude and the answer streams;
+    - passages, controls, coverage and facts are checked, with a note each;
+    - *Local only* refuses Claude before anything is read or sent;
+    - one model call is logged per turn, and a second malformed answer is an
+      error event;
+    - the heartbeat keeps a slow provider's stream moving (race detector
+      clean).
+  - **Access.** Every page and API route answers 403 to a reader with the
+    `/policies` grant and to a user without it. Import, publish, listing in
+    *New document*, creating a document, download, and the refused publish
+    with its problems all work through the real router.
+  - **Headless Chrome:**
+    - a template is drafted from a library document in the dialog;
+    - it opens with its notes and sources;
+    - an edit that says "will" is listed as a problem, and Publish waits for
+      it to be fixed;
+    - *Save and publish* makes it 1.0.0;
+    - *New document* then offers it and makes a document from it.
+  - **Screenshots** of the editor, the sections and the draft dialog at
+    1440×900 and 430×860 in all four themes: no horizontal overflow.
+
 ## 2026-09-29 (deploy: the Policy Studio socket behind nginx)
 
 - **`deploy/grc.nginx`:** the `/collab/` locations now set `Host`,

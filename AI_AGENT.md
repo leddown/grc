@@ -104,7 +104,10 @@ passages are read at request time, numbered `[S1]`… in the AI's context, and
 the AI maps them into the chosen template as suggestions a person decides.
 Nothing is copied in beyond the proposal, which records the library document's
 id and title, and a `source_document` citation's quote is checked verbatim
-against its passage. See [`POLICY_STUDIO.md`](POLICY_STUDIO.md) §13.
+against its passage. The same passages can also become a new **template**
+(Policy Templates → *Draft from a library document*): the AI generalises the
+sample, putting fact tokens where the client's specifics were, and an
+administrator reviews and publishes it. See [`POLICY_STUDIO.md`](POLICY_STUDIO.md) §13.
 
 The practical consequence: a document that has not finished being read on that
 server cannot be imported, and the pickers say so rather than importing a

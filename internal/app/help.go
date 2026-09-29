@@ -324,6 +324,10 @@ func helpPage(c *gin.Context) {
               PDF</em> hands the client the same comparison marked up. When the Ask AI server has a
               document library, <em>New document</em> can also map an existing document from it into
               the template as suggestions.</li>
+            <li>Make your own templates in <a href="/policies/templates/manage">Policy Templates</a>
+              (administrators): have the AI draft one from a sample document in the library, import one
+              as JSON, or copy a built-in one; edit it, fix anything listed, and publish it.
+              <em>New document</em> offers it from then on.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at

@@ -64,8 +64,10 @@ all backed by SQLite and served via Gin.
   policy documents. An in-process ygo (pure-Go Yjs) server holds each Studio
   document; the server validates and projects it into `policy_sections`, which
   stay the system of record for sections and mappings. The editor lives in
-  `web/policy-studio` and ships as an embedded, hashed bundle. Its document
-  templates are JSON in `internal/policystudio/templates/` — see
+  `web/policy-studio` and ships as an embedded, hashed bundle. Its built-in
+  document templates are JSON in `internal/policystudio/templates/`;
+  administrators can also draft (from a library document), import, edit and
+  publish templates in the app, stored in `policy_templates` — see
   `POLICY_STUDIO.md`
 - `internal/policyai` — the Policy Studio's AI proposal engine: context,
   standing rules, strict parsing of the EditProposal contract (structured

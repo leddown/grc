@@ -354,7 +354,7 @@ func TestInternalCommentsStayInternal(t *testing.T) {
 		if r.Method != http.MethodGet || !strings.HasPrefix(r.Path, "/policies") || r.Path == "/policies/:id/studio/comments" {
 			continue
 		}
-		path := strings.NewReplacer(":id", id, ":sectionID", strconv.FormatInt(sections[0].ID, 10), ":clientID", "1").Replace(r.Path)
+		path := strings.NewReplacer(":id", id, ":sectionID", strconv.FormatInt(sections[0].ID, 10), ":clientID", "1", ":tid", "1").Replace(r.Path)
 		if strings.Contains(path, ":") || strings.Contains(path, "*") {
 			t.Errorf("route %s has a parameter this test does not fill in", r.Path)
 			continue

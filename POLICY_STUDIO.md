@@ -347,6 +347,7 @@ client_profile_facts  client_ref, key, value, value_type, source, updated_by, up
 | `POST /ai-chat/ask` from a Studio page | proposal engine | answered as on any page | — | — | 401 |
 | `GET /policies/:id/compare` (JSON), `GET /policies/:id/compare.pdf` (redline) | ✓ | ✓ | — | — | 401 |
 | `GET /policies/library` (library documents to start from) | ✓ | 403 | — | — | 401 |
+| `GET /policies/templates/manage`, `/policies/app-templates` (list, `meta`, `:tid`, `:tid/template.json`; POST `import`, `copy`, `draft`, `:tid/publish`, `retire`, `restore`; PUT, DELETE `:tid`), `GET …/draft/status` | ✓ | 403 | — | — | 401 |
 | `/policies/:id/studio/migrate` | ✓ | 403 | — | — | 401 |
 | `/policies/:id/share-links` (GET, POST, DELETE `:linkID`), `DELETE /policies/:id/guests/:sessionID` | ✓ (not in local mode; off until `studio.guest_links`) | 403 | — | — | 401 |
 | `GET /collab/policies/:id` (WebSocket) | rw if draft or in review (suggest mode in review), else ro | ro | rw if draft and link doc = :id | ro, link doc only | 401 |
@@ -865,8 +866,12 @@ What Phase 1a puts in the hands of a user and an operator.
 
 ### Adding a template
 
-Add one JSON file to `internal/policystudio/templates/` and rebuild; it is
-embedded. `TestTemplatesAreValid` loads every template and refuses one that:
+There are two ways. **In the app** (Compliance & Risk → Policy Templates,
+administrators): draft one from a library document with the AI, import one as
+JSON, or copy an existing one; see the next section. **In the build**: add one
+JSON file to `internal/policystudio/templates/` and rebuild; it is embedded.
+Both are held to the same rules. `TestTemplatesAreValid` loads every built-in
+template and refuses one that:
 
 - has an unknown document type or framework
 - lacks a section kind the lint gate requires for its type
@@ -895,6 +900,53 @@ tables, `**bold**`, `*italic*`, `` `code` ``, links, `{{fact:key}}` and
 test also refuses a template that says *will*, *strive*, *endeavour*, *where
 possible* or *as appropriate*. Name no tools or vendors, and paraphrase
 regulation text rather than quoting it.
+
+### Templates made in the app
+
+The **Policy Templates** page (`/policies/templates/manage`, administrators)
+lists the built-in templates, read-only, and the templates made in the app,
+which are stored in `policy_templates` and offered by *New document* next to
+the built-in ones once published.
+
+- **Draft from a library document.** Choose a document the Wintermute library
+  has finished reading, optionally a document type, a title and an instruction.
+  The AI reads the sample's passages (numbered `[S1]`… and delimited as data,
+  as for the Studio's library route) and writes a template in its own contract
+  (structured outputs on Claude, one repair turn on Wintermute). It is told to
+  replace everything specific to the sample's organisation with fact tokens.
+  What comes back is checked before it is stored:
+  - a passage it cites that the sample does not have is dropped;
+  - a control the catalog does not know is dropped, and coverage is never more
+    than partial;
+  - a fact the text uses but was not declared is declared with a label to
+    check, and a declared fact the text never uses is removed.
+
+  Each change is a note on the draft, with the AI's own notes on what it left
+  out. Each section shows the passages it drew on. Tick **Local only** to
+  refuse the cloud: the sample may be a client's document. The page says where
+  the request goes before it is sent. The progress streams (with a heartbeat
+  every 15 s, so a proxy does not close a slow draft), and a draft may take a
+  few minutes.
+- **Import JSON.** The format of the built-in files and of *Download JSON*. An
+  id already in use is refused rather than renamed.
+- **Copy to edit** on a built-in (or any) template starts a draft from it.
+- **Editing.** Title, id (until first published), type, classification,
+  cadence, description, frameworks, facts, and each section's heading, kind,
+  text, guidance and suggested controls. Sections can be added, removed and
+  reordered. The draft is saved whatever its state. Everything that keeps it
+  from being published is listed, all at once: the checks above, plus the
+  weak-wording rule ("will", "strive", "endeavour", "where possible", "as
+  appropriate", "is encouraged").
+- **Publishing** is refused while any problem is listed. The first publish is
+  version 1.0.0 and each later one the next minor version. Editing a published
+  template changes nothing until it is published again, and a document records
+  the version it was made from. A published template's id is fixed, because
+  documents refer to it.
+- **Retire** stops offering a template; documents made from it keep its
+  guidance, and *Offer again* restores it. **Delete** is only possible while no
+  document was made from it.
+- Templates made in the app are in backups and syncs (snapshot v14), keyed by
+  their id.
 
 ### Rendering (1b)
 
