@@ -3,6 +3,142 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-29 (Policy Studio, Phase 5: compare, Word, start from library, streaming)
+
+The four Phase 5 extras the owner chose. The Studio's *Compare* tab shows what
+changed between any approved version and another, or the current text, word by
+word, and *Download redline PDF* typesets the same comparison. *Word* exports a
+policy as an editable `.docx` through Pandoc when it is installed. *New
+document* can map a document from the Wintermute library into a template as
+suggestions. AI answers now appear as the model writes them. Deferred:
+server-side suggestion injection, OSCAL hooks, and the Yjs v14 attribution
+evaluation. POLICY_STUDIO.md §13 ("Compare, Word, the library and streaming")
+is the operator guide.
+
+- **`internal/policydocs`: compare.**
+  - `Service.Compare(documentID, from, to)` compares two revisions, each an
+    approved version id or `current`.
+  - Sections are aligned by heading (case and spacing ignored). Units
+    (paragraphs, list items, table rows, quotes, callouts) are aligned by an
+    LCS capped at 4M cells. A changed unit is diffed word by word.
+  - A version is read from its structured record (`content_json`), or from its
+    Markdown snapshot for versions approved before 1b. Markdown bullets read as
+    the blocks' bullets, so the same list compares equal either way. A version
+    whose hash no longer verifies is flagged.
+  - `GET /policies/:id/compare?from=&to=` (a `/policies` read route): a
+    malformed reference is 400, an unknown version 404.
+- **The redline.**
+  - `GET /policies/:id/compare.pdf` renders the comparison through the new
+    `policy-redline-typst` template (`templates/typst/policy-redline.typ`, kind
+    `redline`, sample `templates/samples/redline-sample.json`).
+  - Insertions are underlined in green and removals struck through in red,
+    with notes on new, removed and renamed sections and a list of the
+    unchanged ones. The strings are data, never evaluated.
+  - Without Typst it is the source bundle. `doctemplate.WriteResult` is
+    exported for it.
+- **`internal/doctemplate`: Word through Pandoc.**
+  - A third engine, `pandoc` (`PANDOC`, else `PATH`), is detected like Typst
+    and never bundled, so its GPL licence stays outside the binary.
+  - The `policy-docx` template generates Markdown from the payload's blocks
+    (`docxgen.go`). Every string is escaped, a legacy section's body included,
+    and links are allowed only on http, https and mailto.
+  - Pandoc runs `--sandbox --from gfm-raw_html --to docx`: no file reads, no
+    fetches, and HTML in the text is read as text.
+  - The output name, content type and `.docx` filename follow the engine. A
+    Word document is never served inline.
+  - The source bundle has a `build.sh` that runs the same conversion.
+  - The engine card is on the Templates gallery, and its sample preview
+    downloads the Word file.
+  - A *Word* link is in the Studio bar and on the policy page.
+- **`internal/policyai`: start from a library document.**
+  - Action `from_library` with `library_document_id` reads the document
+    through `library.go` (the text was extracted on the Wintermute server;
+    nothing is uploaded or parsed here). It refuses a document still being
+    read.
+  - The passages go into the delimited context as `[S1]`…, capped at 60,000
+    characters. Citations of kind `source_document` are checked verbatim
+    against them.
+  - The proposal records the library document's id and title.
+  - `GET /policies/library` (admin) lists the documents.
+  - The new-document dialog offers *Map in a library document* when there are
+    any. The Studio opens with `?library=`, asks once, and drops the parameter.
+- **Streaming AI answers.**
+  - `aiprovider`: an optional `Streamer` interface. `Claude.AskStream` uses the
+    SDK's streaming Messages API and builds the same `Response` as `Ask`.
+    `Router.AskStream` logs usage once per call, and a provider that cannot
+    stream (Wintermute) hands its answer over whole.
+  - `policyai`:
+    - `ProposeStream` and `DockStream` (behind `Propose` and `Dock`);
+    - an incremental reader that previews only `answer_markdown`, decoding
+      escapes, surrogate pairs and split characters only once they are
+      complete;
+    - an SSE writer that starts the stream on the first event, so a request
+      refused before the model is asked is still a JSON error.
+
+    The events are `answer`, `restart` (before the one repair turn), `result`
+    (the same object as the JSON response) and `error`. Edits are never
+    streamed before validation.
+  - The Studio's proposals, guest proposals and `POST /ai-chat/ask` stream when
+    asked with `Accept: text/event-stream`. The AI panel shows the answer as it
+    is written, and so does the dock, on every page. The AI Chat page still
+    asks for JSON.
+  - The theme layer, which buffers every response to inject its chrome, passes
+    a `text/event-stream` response straight through. Buffered, a stream would
+    have arrived whole.
+- **Docs:** POLICY_STUDIO.md (status, routes, plan, the operator section, and
+  what was and was not verified), DOCUMENT_TEMPLATES.md (Word, the redline),
+  AI_AGENT.md (the library route), RUNTIME_ARGS.md (`PANDOC`), the API docs and
+  help.
+- **Fixes found on the way:**
+  - The new-document dialog's *Cancel* button kept the policy page's old light
+    button colour (`#e1d0b7`) in every theme. It now uses the theme's panel
+    tokens.
+  - In the 40K theme the Compare tab's selects pushed past the side panel. The
+    composer's grid column is now `minmax(0, 1fr)`.
+  - Typst swallowed a `;` after a function call in the redline's legend. It is
+    escaped.
+- **Verified:**
+  - `go fmt`, `go vet` and `go test ./...` without `-short` (gosec and
+    govulncheck included) are green, and `npm audit --omit=dev` is clean. The
+    bundle is 644 KB, 39 packages.
+  - **Compare:** diffs reassemble both texts. Sections are added, removed,
+    renamed or changed as expected. A Markdown list and the same list as blocks
+    compare equal.
+  - **The redline** renders with typst 0.15.1, checked visually. A hostile
+    `#panic(...)` prints as text.
+  - **Word:**
+    - the escaper is fuzzed;
+    - hostile text, and a legacy body with raw HTML and an image reference,
+      read back from Pandoc 3.8.2 as the same text, with no media in the
+      `.docx`;
+    - `--sandbox` alone also refuses to embed a local image;
+    - the sample renders to a document checked visually in LibreOffice;
+    - without Pandoc it is a bundle.
+  - **Library mapping** against a Wintermute stand-in: passages in the
+    context, a verbatim citation verified, an unknown one tagged, and the
+    source recorded.
+  - **Streaming:**
+    - the reader decodes answers fed in random pieces (200 trials);
+    - through Claude's streaming API (stand-in), the pieces arrive and then the
+      validated result, with no edit text before it;
+    - a repair sends `restart`, a refusal mid-stream is an error event, and
+      usage is logged once per call;
+    - a stream passes the theme layer as it is written.
+  - **Headless Chrome**, three consecutive passes of all ten browser tests.
+    The three new ones:
+    - a streamed answer shows in the AI panel and the dock while it is
+      written, then the checked answer replaces it;
+    - the Compare tab shows a word-level change against the approved version
+      and links the redline;
+    - `?library=` maps the library document in once and leaves the address.
+  - **Screenshots** of the Compare tab, the streaming draft and the
+    new-document dialog's library option at 1440×900 and 430×860 in all four
+    themes: no overlap, no horizontal overflow.
+- **Not verified:**
+  - Streaming against the real Anthropic API. No key is configured here, as for
+    Q5.
+  - Microsoft Word opening the `.docx` (LibreOffice has).
+
 ## 2026-09-29 (Policy Studio, Phase 4: guests and workshop mode)
 
 A consultant can now bring the client into a Studio document. Once an

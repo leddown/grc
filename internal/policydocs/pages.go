@@ -72,6 +72,7 @@ dialog.new-doc h2 { margin:0 0 12px; font-size:1.2rem; }
 dialog.new-doc label { display:block; margin:12px 0 4px; font-size:13px; color:var(--muted); }
 dialog.new-doc select, dialog.new-doc input { width:100%; }
 dialog.new-doc .err { color:var(--bad); min-height:1em; }
+dialog.new-doc .actions button:not(.primary) { background:var(--panel); color:var(--ink); border-color:var(--line); }
 :root { color-scheme: light; --ink:#1c2431; --muted:#5e6672; --line:#d7cebf; --accent:#8b3d2e; --green:#0b5d3b; --amber:#9a6700; }
 * { box-sizing: border-box; }
 body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink);
@@ -281,6 +282,7 @@ function renderDetail(){
     '<a class="tab" href="/policies/'+d.id+'/export.html">Export HTML</a>' +
     '<a class="tab" href="/policies/'+d.id+'/export.json" title="Render payload for templates/build.sh">Export JSON</a>' +
     '<a class="tab" href="/templates/render?doc='+d.id+'" title="Typeset as a client deliverable. Returns the render sources when this host has no typesetting engine.">Render PDF</a>' +
+    '<a class="tab" href="/templates/render?doc='+d.id+'&template=policy-docx" title="An editable Word document, converted by Pandoc. Returns the sources when this host has no Pandoc.">Word</a>' +
     (MANAGE ? statusActions(d) : "") + '</div>';
 
   html += '<h3>Document Control</h3>' + controlFields(d, MANAGE);
@@ -585,6 +587,15 @@ async function createDoc(){
   clients.forEach(c => client.appendChild(node("option", { value: String(c.id), text: c.name })));
   client.appendChild(node("option", { value: "new", text: "New client…" }));
   const title = node("input", { id: "nd-title", placeholder: "Leave empty to use the template's title" });
+  // A library document to map into the template, when the Wintermute library
+  // is reachable. Its text is read from there; nothing is uploaded here.
+  const library = node("select", { id: "nd-library" }, [node("option", { value: "", text: "No: start from the template's text" })]);
+  const libraryRow = node("div", { hidden: true }, [node("label", { for: "nd-library", text: "Map in a library document" }), library,
+    node("p", { class: "muted", text: "The AI proposes the source's requirements as suggestions in the new document, each citing the passage it came from; you decide each one." })]);
+  api("GET", "/policies/library").then(docs => {
+    docs.filter(d => d.ready).forEach(d => library.appendChild(node("option", { value: String(d.id), text: d.title })));
+    if (library.options.length > 1) libraryRow.hidden = false;
+  }).catch(() => {});
   const desc = node("p", { class: "muted" });
   const error = node("p", { class: "err", role: "alert" });
   const describe = () => {
@@ -597,7 +608,7 @@ async function createDoc(){
     node("h2", { id: "nd-heading", text: "New document" }),
     node("label", { for: "nd-template", text: "Start from" }), tpl, desc,
     node("label", { for: "nd-client", text: "Client" }), client,
-    node("label", { for: "nd-title", text: "Title" }), title, error,
+    node("label", { for: "nd-title", text: "Title" }), title, libraryRow, error,
   ]);
   const create = node("button", { type: "button", class: "primary", text: "Create" });
   const cancel = node("button", { type: "button", text: "Cancel", onclick: () => { dlg.close(); dlg.remove(); } });
@@ -622,7 +633,7 @@ async function createDoc(){
         return;
       }
       const res = await api("POST", "/policies/from-template", { template_id: tpl.value, client_profile_id: clientID, title: title.value.trim() });
-      location.href = "/policies/" + res.document.id + "/studio";
+      location.href = "/policies/" + res.document.id + "/studio" + (library.value ? "?library=" + encodeURIComponent(library.value) : "");
     } catch(e){
       create.disabled = false;
       error.textContent = "The document wasn't created: " + e.message;

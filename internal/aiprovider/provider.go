@@ -134,6 +134,25 @@ type Provider interface {
 	Ask(ctx context.Context, req Request) (Response, error)
 }
 
+// Streamer is implemented by providers that can hand an answer over as it is
+// written. Wintermute does not: a wintermuted server answers a turn whole.
+type Streamer interface {
+	AskStream(ctx context.Context, req Request, onText func(string)) (Response, error)
+}
+
+// AskStream asks a provider, streaming the answer's text to onText where the
+// provider can; otherwise onText has the whole answer once it is complete.
+func AskStream(ctx context.Context, p Provider, req Request, onText func(string)) (Response, error) {
+	if s, ok := p.(Streamer); ok {
+		return s.AskStream(ctx, req, onText)
+	}
+	resp, err := p.Ask(ctx, req)
+	if err == nil && onText != nil && resp.Text != "" && !resp.Refused {
+		onText(resp.Text)
+	}
+	return resp, err
+}
+
 // Probe is what a connection test reports back.
 type Probe struct {
 	OK bool `json:"ok"`

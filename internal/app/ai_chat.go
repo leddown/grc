@@ -1092,7 +1092,7 @@ func configureCrisisDock(dock crisisDock) { activeCrisisDock = dock }
 
 // policyDock is the Policy Studio's proposal engine, as the AI dock uses it.
 type policyDock interface {
-	Dock(ctx context.Context, documentID int64, question, sessionID string, history []aiprovider.Message, page policyai.PageContext, actor string) (policyai.Result, error)
+	DockStream(ctx context.Context, documentID int64, question, sessionID string, history []aiprovider.Message, page policyai.PageContext, actor string, stream policyai.Stream) (policyai.Result, error)
 }
 
 // activePolicyDock and activeStudioIdentity are wired at startup with the
@@ -1124,10 +1124,15 @@ func policyDockAsk(c *gin.Context, req aiChatRequest) bool {
 	if !ok || !id.Admin || !id.CanReadPolicies {
 		return false
 	}
-	res, err := activePolicyDock.Dock(c.Request.Context(), documentID, req.Question, req.SessionID,
-		boundedHistory(req.History), policyai.ParsePageContext(req.PageContext), id.Username)
+	var stream policyai.Stream
+	sse := policyai.NewSSE(c)
+	if policyai.WantsStream(c) {
+		stream = sse
+	}
+	res, err := activePolicyDock.DockStream(c.Request.Context(), documentID, req.Question, req.SessionID,
+		boundedHistory(req.History), policyai.ParsePageContext(req.PageContext), id.Username, stream)
 	if err != nil {
-		policyai.Fail(c, err)
+		sse.Fail(err)
 		return true
 	}
 	out := gin.H{
@@ -1139,6 +1144,10 @@ func policyDockAsk(c *gin.Context, req aiChatRequest) bool {
 	}
 	if res.HasProposal {
 		out["proposal"] = res
+	}
+	if stream != nil {
+		sse.Event("result", out)
+		return true
 	}
 	c.JSON(http.StatusOK, out)
 	return true
@@ -1243,20 +1252,37 @@ func aiChatAsk(c *gin.Context) {
 		return
 	}
 
-	resp, err := provider.Ask(c.Request.Context(), aiprovider.Request{
+	// The dock asks for a stream, and the answer is shown as it is written
+	// where the provider can stream; the AI Chat page asks for JSON.
+	sse := policyai.NewSSE(c)
+	fail := func(msg string) {
+		if sse.Started() {
+			sse.Event("error", gin.H{"error": msg})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": msg})
+	}
+	ask := aiprovider.Request{
 		System:    req.System,
 		History:   boundedHistory(req.History),
 		Prompt:    dock.Prompt,
 		SessionID: req.SessionID,
 		Agent:     dock.Agent,
 		MaxTokens: aiChatMaxTokens,
-	})
+	}
+	var resp aiprovider.Response
+	streaming := policyai.WantsStream(c)
+	if streaming {
+		resp, err = aiprovider.AskStream(c.Request.Context(), provider, ask, sse.Answer)
+	} else {
+		resp, err = provider.Ask(c.Request.Context(), ask)
+	}
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		fail(err.Error())
 		return
 	}
 	if resp.Refused {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "the model declined to answer this question"})
+		fail("the model declined to answer this question")
 		return
 	}
 
@@ -1266,13 +1292,18 @@ func aiChatAsk(c *gin.Context) {
 	// retries a failed backend against its fallback, so the model that
 	// answered is not always the one that was asked for.
 	logAIUsage(resp.Provider, resp.Model, int64(resp.Usage.InputTokens), int64(resp.Usage.OutputTokens))
-	c.JSON(http.StatusOK, gin.H{
+	out := gin.H{
 		"provider":   resp.Provider,
 		"answer":     resp.Text,
 		"backend":    resp.Backend,
 		"model":      resp.Model,
 		"session_id": resp.SessionID,
-	})
+	}
+	if streaming {
+		sse.Event("result", out)
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // aiChatMaxTokens bounds one chat answer.

@@ -126,6 +126,9 @@ engine only if you want PDFs produced on the server.
 - `TYPST` — path to the `typst` binary, overriding the `PATH` lookup. Typst is
   a single static binary and is the primary path for both templates.
   `scripts/setup.sh INSTALL_TYPST=1` fetches it.
+- `PANDOC` — path to `pandoc` (2.15 or later, for `--sandbox`), which turns a
+  policy into a Word document (the `policy-docx` template). Pandoc is GPL and
+  is never bundled; without it the Word render returns its sources.
 - `TECTONIC` — path to `tectonic`, the preferred LaTeX driver. It downloads
   the TeX packages it needs on first run, so the first LaTeX render on a host
   needs outbound network access and is slow.
@@ -156,7 +159,7 @@ typesetter.
 - `STUDIO_SNAPSHOT_RETENTION`
 
 Flags override environment variables when both are set.
-`TYPST`, `TECTONIC` and `LATEXMK` are environment-only — they name external
+`TYPST`, `PANDOC`, `TECTONIC` and `LATEXMK` are environment-only — they name external
 binaries rather than configure the app, and have no flag equivalent.
 
 ## Local (no-login) laptop mode

@@ -157,13 +157,17 @@ func (s *Service) Render(ctx context.Context, req Request) (Result, error) {
 		return Result{Log: log}, err
 	}
 
-	pdf, err := readOutput(filepath.Join(workspace, outputName))
+	output, contentType, ext := outputName, "application/pdf", ".pdf"
+	if tpl.Engine == EnginePandoc {
+		output, contentType, ext = docxOutputName, docxContentType, ".docx"
+	}
+	pdf, err := readOutput(filepath.Join(workspace, output))
 	if err != nil {
 		return Result{Log: log}, err
 	}
 	return Result{
-		ContentType:   "application/pdf",
-		Filename:      base + ".pdf",
+		ContentType:   contentType,
+		Filename:      base + ext,
 		Body:          pdf,
 		Log:           log,
 		Engine:        status.Command,
@@ -175,6 +179,12 @@ func (s *Service) Render(ctx context.Context, req Request) (Result, error) {
 // never has to guess, and so the LaTeX path cannot collide with the Typst one
 // the way build.sh once did.
 const outputName = "grc-output.pdf"
+
+// The Word path's output.
+const (
+	docxOutputName  = "grc-output.docx"
+	docxContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
 
 // dataName is the payload file inside the workspace. The Typst templates
 // resolve their `--input data=` path relative to the template file, and both
@@ -220,6 +230,9 @@ func buildWorkspace(workspace string, tpl Template, brand Brand, data []byte) er
 			return err
 		}
 		generated := GenerateLaTeX(payload, brand)
+		if tpl.Engine == EnginePandoc {
+			generated = GenerateMarkdown(payload, brand)
+		}
 		if err := os.WriteFile(filepath.Join(workspace, tpl.Entry), []byte(generated), 0o600); err != nil {
 			return fmt.Errorf("writing generated %s: %w", tpl.Entry, err)
 		}
@@ -261,6 +274,11 @@ func compile(ctx context.Context, workspace string, tpl Template, status EngineS
 			// stack, and pdfLaTeX cannot load it.
 			args = []string{"-xelatex", "-interaction=nonstopmode", "-outdir=.", tpl.Entry}
 		}
+	case EnginePandoc:
+		// --sandbox keeps Pandoc from reading any file or fetching any URL
+		// (an image reference would otherwise be embedded from disk), and
+		// gfm without raw_html reads HTML in the text as text.
+		args = []string{"--sandbox", "--from", "gfm-raw_html", "--to", "docx", "--output", docxOutputName, tpl.Entry}
 	default:
 		return "", fmt.Errorf("no compile command for engine %q", tpl.Engine)
 	}

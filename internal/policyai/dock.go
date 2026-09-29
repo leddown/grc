@@ -59,6 +59,12 @@ func ParsePageContext(raw json.RawMessage) PageContext {
 // Dock answers a question asked in the AI dock on a Studio page: an answer,
 // and a validated proposal when the question asked for changes.
 func (e *Engine) Dock(ctx context.Context, documentID int64, question, sessionID string, history []aiprovider.Message, page PageContext, actor string) (Result, error) {
+	return e.DockStream(ctx, documentID, question, sessionID, history, page, actor, nil)
+}
+
+// DockStream is Dock with the answer's text previewed to stream as the model
+// writes it.
+func (e *Engine) DockStream(ctx context.Context, documentID int64, question, sessionID string, history []aiprovider.Message, page PageContext, actor string, stream Stream) (Result, error) {
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return Result{}, refuse(http.StatusBadRequest, "question is required")
@@ -102,7 +108,7 @@ func (e *Engine) Dock(ctx context.Context, documentID int64, question, sessionID
 	if sessionID == "" {
 		req.History = history
 	}
-	answer, resp, err := e.ask(ctx, p, req)
+	answer, resp, err := e.ask(ctx, p, req, stream)
 	if err != nil {
 		e.saveFailed(documentID, Request{Action: "ask", Scope: ScopeDocument, Instruction: question}, actor, p, resp, text, err)
 		return Result{}, err

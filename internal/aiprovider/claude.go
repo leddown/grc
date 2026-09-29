@@ -207,9 +207,49 @@ func claudeMessages(history []Message, prompt string) []anthropic.MessageParam {
 
 // Ask sends one question and returns the answer.
 func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
+	api, params, err := c.prepare(req)
+	if err != nil {
+		return Response{}, err
+	}
+	msg, err := api.Messages.New(ctx, params)
+	if err != nil {
+		return Response{}, fmt.Errorf("claude request: %w", err)
+	}
+	return claudeAnswer(msg, string(params.Model))
+}
+
+// AskStream is Ask with the answer's text handed to onText as the model writes
+// it. The Response is the same one Ask would return, built from the whole
+// stream.
+func (c *Claude) AskStream(ctx context.Context, req Request, onText func(string)) (Response, error) {
+	api, params, err := c.prepare(req)
+	if err != nil {
+		return Response{}, err
+	}
+	stream := api.Messages.NewStreaming(ctx, params)
+	defer func() { _ = stream.Close() }()
+	var msg anthropic.Message
+	for stream.Next() {
+		event := stream.Current()
+		if err := msg.Accumulate(event); err != nil {
+			return Response{}, fmt.Errorf("claude stream: %w", err)
+		}
+		if delta, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok && onText != nil {
+			if text, ok := delta.Delta.AsAny().(anthropic.TextDelta); ok && text.Text != "" {
+				onText(text.Text)
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return Response{}, fmt.Errorf("claude request: %w", err)
+	}
+	return claudeAnswer(&msg, string(params.Model))
+}
+
+func (c *Claude) prepare(req Request) (anthropic.Client, anthropic.MessageNewParams, error) {
 	key := c.key()
 	if key == "" {
-		return Response{}, ErrNotConfigured
+		return anthropic.Client{}, anthropic.MessageNewParams{}, ErrNotConfigured
 	}
 
 	model := strings.TrimSpace(req.Model)
@@ -234,15 +274,10 @@ func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
 			Format: anthropic.JSONOutputFormatParam{Schema: req.OutputSchema},
 		}
 	}
+	return c.client(key), params, nil
+}
 
-	// Bound to a variable first: Messages.New has a pointer receiver, so it
-	// cannot be called on the value a function returns.
-	api := c.client(key)
-	msg, err := api.Messages.New(ctx, params)
-	if err != nil {
-		return Response{}, fmt.Errorf("claude request: %w", err)
-	}
-
+func claudeAnswer(msg *anthropic.Message, model string) (Response, error) {
 	usage := Usage{
 		InputTokens:  int(msg.Usage.InputTokens),
 		OutputTokens: int(msg.Usage.OutputTokens),

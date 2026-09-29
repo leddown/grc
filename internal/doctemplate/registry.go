@@ -22,8 +22,9 @@ import (
 type Engine string
 
 const (
-	EngineTypst Engine = "typst"
-	EngineLaTeX Engine = "latex"
+	EngineTypst  Engine = "typst"
+	EngineLaTeX  Engine = "latex"
+	EnginePandoc Engine = "pandoc"
 )
 
 // Kind is the shape of the render payload a template expects. Templates and
@@ -33,8 +34,9 @@ const (
 type Kind string
 
 const (
-	KindPolicy Kind = "policy"
-	KindReport Kind = "report"
+	KindPolicy  Kind = "policy"
+	KindReport  Kind = "report"
+	KindRedline Kind = "redline"
 )
 
 // Template describes one renderable document template.
@@ -87,6 +89,26 @@ var Templates = []Template{
 		Sources:     []string{"typst/business-report.typ", "typst/brand.typ", "typst/lib.typ"},
 		Entry:       "business-report.typ",
 		SampleData:  "samples/report-sample.json",
+	},
+	{
+		ID:          "policy-redline-typst",
+		Name:        "Redline (Typst)",
+		Engine:      EngineTypst,
+		Kind:        KindRedline,
+		Description: "What changed between two revisions of a policy document — an approved version and the current text, or two approved versions — with insertions underlined and deletions struck through. Rendered from the Studio's Compare panel.",
+		Sources:     []string{"typst/policy-redline.typ", "typst/brand.typ", "typst/lib.typ"},
+		Entry:       "policy-redline.typ",
+		SampleData:  "samples/redline-sample.json",
+	},
+	{
+		ID:          "policy-docx",
+		Name:        "Policy document (Word, Pandoc)",
+		Engine:      EnginePandoc,
+		Kind:        KindPolicy,
+		Description: "The policy as an editable Word document, for a client who reviews in Word. Generated from the payload and converted by Pandoc when it is installed on this host; otherwise the sources are returned to convert elsewhere.",
+		Entry:       "policy-document.md",
+		Generated:   true,
+		SampleData:  "samples/policy-sample.json",
 	},
 	{
 		ID:          "policy-latex",

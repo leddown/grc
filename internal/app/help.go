@@ -319,13 +319,19 @@ func helpPage(c *gin.Context) {
               <em>Workshop</em> in the Studio bar has larger type, focus on one section,
               <em>Present</em> (the others follow you from section to section) and a customer-safe
               view for sharing your screen.</li>
+            <li>See what changed: the Studio's <em>Compare</em> tab sets any approved version
+              against another or against the current text, word by word, and <em>Download redline
+              PDF</em> hands the client the same comparison marked up. When the Ask AI server has a
+              document library, <em>New document</em> can also map an existing document from it into
+              the template as suggestions.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at
               <a href="/policies/coverage">Policy Coverage</a>: which catalog controls have
               approved policy text behind them, and which only have a draft.</li>
-            <li>Export a document as Markdown, HTML or template JSON, or typeset it as a
-              deliverable (see Documents below).</li>
+            <li>Export a document as Markdown, HTML or template JSON, typeset it as a
+              deliverable, or download it as a Word document when Pandoc is installed (see
+              Documents below).</li>
           </ol>
         </div>
       </article>

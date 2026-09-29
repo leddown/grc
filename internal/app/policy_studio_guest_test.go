@@ -19,6 +19,7 @@ import (
 
 	"grc/internal/authn"
 	"grc/internal/db"
+	"grc/internal/doctemplate"
 	"grc/internal/policystudio"
 )
 
@@ -360,5 +361,77 @@ func TestGuestAIFollowsTheLink(t *testing.T) {
 	rec = a.do(http.MethodPost, "/shared/api/ai/proposals/1/placements", `{"placements":[{"suid":"x","status":"placed"}]}`, with)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("a viewer placing a proposal: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Compare and the redline through the whole application: a document approved,
+// then edited, compared with its approved version as JSON and as a PDF (or,
+// without Typst on the machine, the source bundle the renderer falls back to).
+func TestCompareAndRedline(t *testing.T) {
+	templates, err := filepath.Abs("../../templates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newFullApp(t, Options{TemplatesDir: templates})
+	t.Cleanup(func() { doctemplate.DirOverride = "" })
+	rec := a.asAdmin(http.MethodPost, "/policies", `{"title":"Access guideline","doc_type":"guideline","owner_role":"CISO","effective_date":"2026-10-01"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var doc struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &doc)
+	id := strconv.FormatInt(doc.ID, 10)
+	var sec struct {
+		ID int64 `json:"id"`
+	}
+	for i, body := range []string{`{"section_kind":"purpose","heading":"Purpose","body":"Staff will review access."}`, `{"section_kind":"scope","heading":"Scope","body":"- all staff"}`} {
+		rec := a.asAdmin(http.MethodPost, "/policies/"+id+"/sections", body)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("section: %d %s", rec.Code, rec.Body.String())
+		}
+		if i == 0 {
+			_ = json.Unmarshal(rec.Body.Bytes(), &sec)
+		}
+	}
+	for _, step := range []string{"submit", "approve", "reopen"} {
+		if rec := a.asAdmin(http.MethodPost, "/policies/"+id+"/"+step, `{}`); rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", step, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := a.asAdmin(http.MethodPut, "/policies/"+id+"/sections/"+strconv.FormatInt(sec.ID, 10), `{"section_kind":"purpose","heading":"Purpose","body":"Staff must review access."}`); rec.Code != http.StatusOK {
+		t.Fatalf("edit: %d %s", rec.Code, rec.Body.String())
+	}
+	var versionID int64
+	_ = a.conn.QueryRow(`SELECT id FROM policy_versions WHERE document_id = ?`, doc.ID).Scan(&versionID)
+	from := strconv.FormatInt(versionID, 10)
+
+	rec = a.asAdmin(http.MethodGet, "/policies/"+id+"/compare?from="+from, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"changed":1`) || !strings.Contains(rec.Body.String(), `{"op":"added","text":"must"}`) {
+		t.Fatalf("compare: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = a.asAdmin(http.MethodGet, "/policies/"+id+"/compare.pdf?from="+from, "")
+	switch {
+	case rec.Code == http.StatusOK && rec.Header().Get("X-GRC-Bundled") == "1":
+		t.Log("no Typst here: the redline came back as the source bundle")
+	case rec.Code == http.StatusOK && strings.HasPrefix(rec.Body.String(), "%PDF"):
+	default:
+		t.Fatalf("redline: %d %s %s", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String()[:min(200, rec.Body.Len())])
+	}
+	if rec := a.asAdmin(http.MethodGet, "/policies/"+id+"/compare?from=999999", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("an unknown version: %d", rec.Code)
+	}
+
+	rec = a.asAdmin(http.MethodGet, "/templates/render?doc="+id+"&template=policy-docx&inline=1", "")
+	switch {
+	case rec.Code == http.StatusOK && rec.Header().Get("X-GRC-Bundled") == "1":
+		t.Log("no Pandoc here: the Word document came back as the source bundle")
+	case rec.Code == http.StatusOK && strings.HasPrefix(rec.Header().Get("Content-Type"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"):
+		if !strings.HasPrefix(rec.Header().Get("Content-Disposition"), "attachment") {
+			t.Errorf("a Word document is served inline: %s", rec.Header().Get("Content-Disposition"))
+		}
+	default:
+		t.Fatalf("word: %d %s", rec.Code, rec.Header().Get("Content-Type"))
 	}
 }

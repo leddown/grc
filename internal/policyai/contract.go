@@ -34,7 +34,7 @@ const schemaJSON = `{
             "citations": { "type": "array", "items": {
               "type": "object", "additionalProperties": false, "required": ["kind", "ref", "quote"],
               "properties": {
-                "kind": { "type": "string", "enum": ["control", "regulation_clause", "policy_clause", "nfr", "client_fact"] },
+                "kind": { "type": "string", "enum": ["control", "regulation_clause", "policy_clause", "nfr", "client_fact", "source_document"] },
                 "ref": { "type": "string" }, "quote": { "type": "string" } } } } } } },
         "control_mappings": { "type": "array", "items": {
           "type": "object", "additionalProperties": false, "required": ["section_uid", "control_id", "coverage", "rationale"],
@@ -66,7 +66,7 @@ const (
 
 var ops = map[string]bool{OpReplace: true, OpInsertAfter: true, OpInsertBefore: true, OpDelete: true, OpComment: true}
 
-var citationKinds = map[string]bool{"control": true, "regulation_clause": true, "policy_clause": true, "nfr": true, "client_fact": true}
+var citationKinds = map[string]bool{"control": true, "regulation_clause": true, "policy_clause": true, "nfr": true, "client_fact": true, "source_document": true}
 
 // Answer is the whole contract.
 type Answer struct {

@@ -54,6 +54,7 @@ func (h *Handler) RegisterReadRoutes(r gin.IRouter) {
 	r.GET("/policies/:id/data", h.DocumentData)
 	r.GET("/policies/:id/sections", h.SectionsData)
 	r.GET("/policies/:id/versions", h.VersionsData)
+	r.GET("/policies/:id/compare", h.CompareData)
 	r.GET("/policies/:id/lint", h.LintData)
 	r.GET("/policies/:id/export.md", h.ExportMarkdown)
 	r.GET("/policies/:id/export.html", h.ExportHTML)
@@ -643,4 +644,20 @@ func exportFilename(doc Document, ext string) string {
 		name = "policy-document"
 	}
 	return name + "." + ext
+}
+
+// CompareData compares two revisions of a document: ?from= and ?to= are an
+// approved version's id or "current" (the default for to).
+func (h *Handler) CompareData(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	to := c.DefaultQuery("to", CurrentRevision)
+	cmp, err := h.service.Compare(id, c.Query("from"), to)
+	if err != nil {
+		h.fail(c, err, "failed to compare revisions")
+		return
+	}
+	c.JSON(http.StatusOK, cmp)
 }

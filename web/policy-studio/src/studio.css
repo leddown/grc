@@ -179,7 +179,8 @@
 .ps-sugg-excerpt { margin: 0 0 6px; overflow-wrap: anywhere; }
 .ps-sugg-excerpt ins, .ps-prov-list ins { text-decoration: underline; text-decoration-color: var(--gain); background: color-mix(in srgb, var(--gain) 16%, transparent); color: var(--text); }
 .ps-sugg-excerpt del, .ps-prov-list del { text-decoration: line-through; text-decoration-color: var(--error); background: color-mix(in srgb, var(--error) 14%, transparent); color: var(--muted); }
-.ps-composer { display: grid; gap: 8px; margin: 0 0 12px; }
+.ps-composer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0 0 12px; }
+.ps-composer .ps-inline-label select { flex: 1 1 10em; min-width: 0; max-width: 100%; }
 .ps-composer textarea, .ps-thread textarea { width: 100%; min-height: 4em; font: inherit; font-size: 13px; }
 .ps-thread textarea { margin-top: 6px; min-height: 2.5em; }
 .ps-quote { display: block; margin: 0 0 6px; padding: 4px 8px; border-left: 3px solid var(--accent); color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
@@ -213,6 +214,16 @@
 .ps-chips .ps-ai-menu { font-size: 12px; padding: 1px 4px; }
 .ps-presence-ai { color: var(--accent); }
 #global-ai-dock .ps-ai-proposal { margin-top: 8px; }
+
+/* Compare. */
+.ps-diff-section { margin: 0 0 12px; padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+.ps-diff-unit { margin: 3px 0; font-size: 13px; overflow-wrap: anywhere; }
+.ps-diff-unit ins { text-decoration: underline; text-decoration-color: var(--gain); background: color-mix(in srgb, var(--gain) 16%, transparent); color: var(--text); }
+.ps-diff-unit del { text-decoration: line-through; text-decoration-color: var(--error); background: color-mix(in srgb, var(--error) 14%, transparent); color: var(--muted); }
+
+/* An AI answer while it is being written. */
+.ps-ai-draft { margin: 6px 0 10px; padding: 6px 10px; border-left: 3px solid var(--accent); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); max-height: 40vh; overflow: auto; }
+.ps-ai-draft[hidden] { display: none; }
 
 /* Workshop mode. */
 .ps-workshop { position: relative; }

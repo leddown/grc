@@ -63,6 +63,55 @@ async function api(method, url, body, headers) {
   return { data, etag: resp.headers.get('ETag') }
 }
 
+// streamAPI posts a request that answers with server-sent events: onAnswer has
+// each piece of the answer's text as the model writes it, onRestart that the
+// text so far is void. It resolves with the result event. A request refused
+// before the model was asked is answered as JSON and read as api() reads it.
+async function streamAPI(url, body, onAnswer, onRestart) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    credentials: 'same-origin',
+  })
+  if (!(resp.headers.get('Content-Type') || '').startsWith('text/event-stream') || !resp.body) {
+    let data = null
+    const text = await resp.text()
+    if (text) { try { data = JSON.parse(text) } catch (_) { data = { error: text } } }
+    if (!resp.ok) {
+      const err = new Error((data && data.error) || ('The server answered ' + resp.status))
+      err.status = resp.status
+      throw err
+    }
+    return data
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (value) buf += decoder.decode(value, { stream: true })
+    let end
+    while ((end = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, end)
+      buf = buf.slice(end + 2)
+      let name = 'message'
+      let raw = ''
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('event: ')) name = line.slice(7)
+        else if (line.startsWith('data: ')) raw += line.slice(6)
+      }
+      let data = {}
+      try { data = JSON.parse(raw) } catch (_) { /* an unreadable event is skipped */ }
+      if (name === 'result') { reader.cancel().catch(() => {}); return data }
+      if (name === 'error') { reader.cancel().catch(() => {}); throw new Error(data.error || 'The AI request could not be completed.') }
+      if (name === 'answer') onAnswer(String(data.text || ''))
+      if (name === 'restart') onRestart()
+    }
+    if (done) throw new Error('The answer stopped before it was complete. Try again.')
+  }
+}
+
 function colorFor(name) {
   let hash = 0
   for (const ch of String(name)) hash = (hash * 31 + ch.codePointAt(0)) >>> 0
@@ -627,6 +676,7 @@ class Studio {
     // editor, which the first render did not have yet.
     this.renderActions()
     this.applyWorkshop()
+    this.mapLibraryDocument()
     this.editor.on('update', () => this.scheduleSuggestionRefresh())
     host.addEventListener('click', (e) => {
       const mark = e.target.closest && e.target.closest('.ps-comment-mark')
@@ -784,7 +834,8 @@ class Studio {
       this.actions.replaceChildren(...items)
       return
     }
-    items.push(link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF'))
+    items.push(link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF'),
+      link('/templates/render?doc=' + d.id + '&template=policy-docx', 'Word'))
     if (this.canManage) {
       if (d.status === 'draft') items.push(btn('Submit for review', () => this.transition('submit', 'Submitted for review.')))
       if (d.status === 'in_review') {
@@ -898,6 +949,76 @@ class Studio {
     this.pushReview()
   }
 
+  // ---- compare ----
+
+  async loadVersions() {
+    try {
+      const { data } = await api('GET', '/policies/' + this.docId + '/versions')
+      this.versions = (data || []).map((v) => ({ id: v.id, label: v.version_label, approved_at: v.approved_at, approved_by: v.approved_by }))
+    } catch (err) {
+      this.versions = []
+      this.say("The approved versions couldn't be loaded: " + err.message, 'error')
+    }
+    if (this.sideTab === 'compare') this.renderSide()
+  }
+
+  async runCompare(from, to) {
+    this.compareSel = { from, to }
+    try {
+      const { data } = await api('GET', '/policies/' + this.docId + '/compare?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to))
+      this.comparison = data
+    } catch (err) {
+      this.comparison = null
+      this.say("The comparison couldn't be made: " + err.message, 'error')
+    }
+    this.renderSide()
+  }
+
+  comparePanel() {
+    const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-compare' }, h('h2', { class: 'ps-panel-title', id: 'ps-compare', text: 'Compare' }))
+    if (!this.versions) {
+      panel.appendChild(h('p', { class: 'ps-muted', text: 'Loading the approved versions…' }))
+      this.loadVersions()
+      return panel
+    }
+    if (!this.versions.length) {
+      panel.appendChild(h('p', { class: 'ps-muted', text: 'This document has no approved version yet. Once it has, you can see here what changed since.' }))
+      return panel
+    }
+    const sel = this.compareSel || { from: String(this.versions[0].id), to: 'current' }
+    const option = (v) => h('option', { value: String(v.id), text: 'Version ' + v.label + ' · ' + shortTime(v.approved_at) })
+    const from = h('select', { 'aria-label': 'Compare from', 'data-focus-key': 'cmp-from' }, this.versions.map(option))
+    const to = h('select', { 'aria-label': 'Compare to', 'data-focus-key': 'cmp-to' }, h('option', { value: 'current', text: 'The current text' }), this.versions.map(option))
+    from.value = sel.from
+    to.value = sel.to
+    const redline = () => '/policies/' + this.docId + '/compare.pdf?from=' + encodeURIComponent(from.value) + '&to=' + encodeURIComponent(to.value)
+    panel.appendChild(h('div', { class: 'ps-composer' },
+      h('label', { class: 'ps-inline-label' }, 'From ', from), h('label', { class: 'ps-inline-label' }, 'To ', to),
+      h('button', { type: 'button', class: 'ps-primary', text: 'Compare', onclick: () => this.runCompare(from.value, to.value) }),
+      h('a', { class: 'ps-button', href: redline(), onclick: (e) => { e.currentTarget.href = redline() }, text: 'Download redline PDF' })))
+    const c = this.comparison
+    if (!c) return panel
+    panel.appendChild(h('p', { class: 'ps-small', text: c.from.label + ' → ' + c.to.label + ': ' + c.changed + ' section(s) changed, ' + c.added + ' added, ' + c.removed + ' removed.' }))
+    if (!c.from.verified || !c.to.verified) panel.appendChild(h('p', { class: 'ps-small ps-warn', text: 'An approved version here no longer matches the hash recorded when it was approved.' }))
+    const unchanged = []
+    for (const sec of c.sections) {
+      if (sec.op === 'same') { unchanged.push(sec.heading); continue }
+      const note = { added: ' (new section)', removed: ' (removed)' }[sec.op] || (sec.heading_before ? ' (was: ' + sec.heading_before + ')' : '')
+      const box = h('div', { class: 'ps-diff-section', 'data-op': sec.op }, h('h3', { class: 'ps-panel-subtitle', text: sec.heading + note }))
+      for (const u of sec.units) {
+        const p = h('p', { class: 'ps-diff-unit', 'data-op': u.op })
+        if (u.op === 'same') { p.textContent = u.after; p.classList.add('ps-muted') }
+        else if (u.op === 'added') p.appendChild(h('ins', { text: u.after }))
+        else if (u.op === 'removed') p.appendChild(h('del', { text: u.before }))
+        else for (const w of u.words) p.appendChild(w.op === 'same' ? document.createTextNode(w.text) : h(w.op === 'added' ? 'ins' : 'del', { text: w.text }))
+        box.appendChild(p)
+      }
+      panel.appendChild(box)
+    }
+    if (unchanged.length) panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Unchanged: ' + unchanged.join(', ') }))
+    return panel
+  }
+
   // ---- sharing (administrators) ----
 
   async loadSharing() {
@@ -984,6 +1105,19 @@ class Studio {
     this.renderActions()
     this.pushChips()
     if (this.sideTab === 'ai') this.renderSide()
+    this.mapLibraryDocument()
+  }
+
+  // mapLibraryDocument runs once, when the Studio opens on a document just
+  // created from a template with a library document to map in.
+  mapLibraryDocument() {
+    const params = new URLSearchParams(location.search)
+    const id = Number(params.get('library') || 0)
+    if (!id || this.libraryMapped || !this.canAskAI() || this.guest) return
+    this.libraryMapped = true
+    params.delete('library')
+    history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : ''))
+    this.askAI('from_library', 'document', { section_uid: '', block_ids: [], quote: '' }, '', { library_document_id: id })
   }
 
   // A guest whose link allows the AI may ask and preview; only a role that
@@ -1032,7 +1166,7 @@ class Studio {
 
   // askAI runs one request and shows its proposal in the AI tab, previewed
   // privately in this editor until someone chooses to suggest it to everyone.
-  async askAI(action, scope, selection, instruction) {
+  async askAI(action, scope, selection, instruction, extra) {
     if (!this.canAskAI()) { this.say(this.ai.reason || 'AI proposals are not available here.', 'warn'); return }
     if (this.aiBusy) { this.say('The AI is still working on the last request.', 'info'); return }
     this.aiBusy = true
@@ -1042,7 +1176,10 @@ class Studio {
     this.setTab('ai')
     this.say('Asking the AI…', 'info')
     try {
-      const { data } = await api('POST', this.studioURL('/ai/proposals'), { action, scope, selection, instruction: instruction || '' })
+      this.aiDraft = ''
+      const data = await streamAPI(this.studioURL('/ai/proposals'), Object.assign({ action, scope, selection, instruction: instruction || '' }, extra || {}),
+        (text) => { this.aiDraft += text; this.showDraft() }, () => { this.aiDraft = ''; this.showDraft() })
+      this.aiDraft = ''
       this.addProposal(data)
       if (data.has_proposal && data.edits.some((e) => e.status === 'ok')) this.previewProposal(data)
       else this.say(data.answer_markdown ? 'The AI answered; see the AI panel.' : 'The AI proposed no changes.', 'info')
@@ -1053,6 +1190,12 @@ class Studio {
       this.provider.awareness.setLocalStateField('ai', null)
       this.renderSide()
     }
+  }
+
+  showDraft() {
+    if (!this.draftEl || !this.draftEl.isConnected) return
+    this.draftEl.textContent = this.aiDraft
+    this.draftEl.hidden = !this.aiDraft
   }
 
   addProposal(p) {
@@ -1233,7 +1376,13 @@ class Studio {
     } else {
       panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Requests go to ' + this.ai.destination + '. The AI proposes; every change becomes a suggestion someone accepts or rejects.' }))
     }
-    if (this.aiBusy) panel.appendChild(h('p', { class: 'ps-small', role: 'status', text: 'The AI is working…' }))
+    if (this.aiBusy) {
+      panel.appendChild(h('p', { class: 'ps-small', role: 'status', text: 'The AI is working…' }))
+      // The answer as it is written; the proposal is shown once it has been
+      // checked against the document.
+      this.draftEl = h('p', { class: 'ps-ai-draft', hidden: !this.aiDraft, text: this.aiDraft || '' })
+      panel.appendChild(this.draftEl)
+    }
     if (this.canAskAI()) {
       panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Select text for Make testable, Tighten or Ask AI; each section has an AI menu under its heading.' }))
     }
@@ -1573,6 +1722,7 @@ class Studio {
     // the internal work around it.
     let tabs = [['suggestions', 'Suggestions'], ['comments', 'Comments'], ['ai', 'AI'], ['readiness', 'Readiness'], ['facts', 'Facts'],
       ['provenance', 'Provenance'], ['document', 'Document']]
+    if (!this.guest) tabs.splice(tabs.findIndex(([k]) => k === 'provenance') + 1, 0, ['compare', 'Compare'])
     if (this.canManage && !this.guest) tabs.push(['sharing', 'Sharing'])
     if (this.guest) tabs = tabs.filter(([k]) => k === 'suggestions' || k === 'comments' || (k === 'ai' && this.ai.available))
     if (this.workshop.safe) tabs = tabs.filter(([k]) => k === 'suggestions' || k === 'comments')
@@ -1598,7 +1748,7 @@ class Studio {
     })
     const body = { suggestions: () => this.suggestionsPanel(), comments: () => this.commentsPanel(), ai: () => this.aiPanel(), readiness: () => this.readinessPanel(),
       facts: () => this.factsPanel(), provenance: () => this.provenancePanel(), document: () => this.documentControl(),
-      sharing: () => this.sharingPanel() }[this.sideTab]()
+      sharing: () => this.sharingPanel(), compare: () => this.comparePanel() }[this.sideTab]()
     this.side.replaceChildren(bar, h('div', { class: 'ps-tabpanel', role: 'tabpanel', id: 'ps-tabpanel', 'aria-labelledby': 'ps-tab-' + this.sideTab }, body))
     this.renderCounts()
     if (focusedId) {

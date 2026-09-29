@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -93,6 +94,9 @@ type Request struct {
 	Action      string    `json:"action"`
 	Scope       string    `json:"scope"`
 	Selection   Selection `json:"selection"`
+	// LibraryDocumentID names the Wintermute library document a from_library
+	// request maps in.
+	LibraryDocumentID int64 `json:"library_document_id"`
 }
 
 // Result is a validated proposal, as the editor needs it.
@@ -394,12 +398,12 @@ func pendingIn(sections []*policystudio.Node, scope map[string]bool) []string {
 // turn for an answer that is not the contract. A refusal or an answer cut off
 // at the token limit is never parsed: it may look like the contract and not be
 // it.
-func (e *Engine) ask(ctx context.Context, p prepared, req aiprovider.Request) (Answer, aiprovider.Response, error) {
+func (e *Engine) ask(ctx context.Context, p prepared, req aiprovider.Request, stream Stream) (Answer, aiprovider.Response, error) {
 	req.System = standingRules
 	req.OutputSchema = Schema()
 	req.MaxTokens = maxAnswerTokens
 	req.Agent = p.agent
-	resp, err := e.cfg.Router.Ask(ctx, req)
+	resp, err := e.cfg.Router.AskStream(ctx, req, previewTo(stream))
 	if err != nil {
 		return Answer{}, resp, refuse(http.StatusBadGateway, "The AI provider could not answer: %v", err)
 	}
@@ -421,7 +425,10 @@ func (e *Engine) ask(ctx context.Context, p prepared, req aiprovider.Request) (A
 			aiprovider.Message{Role: aiprovider.RoleUser, Text: req.Prompt}, aiprovider.Message{Role: aiprovider.RoleAssistant, Text: resp.Text})
 	}
 	first := resp
-	resp, err = e.cfg.Router.Ask(ctx, repair)
+	if stream != nil {
+		stream.Restart()
+	}
+	resp, err = e.cfg.Router.AskStream(ctx, repair, previewTo(stream))
 	if err != nil {
 		return Answer{}, first, refuse(http.StatusBadGateway, "The AI provider could not answer: %v", err)
 	}
@@ -435,6 +442,16 @@ func (e *Engine) ask(ctx context.Context, p prepared, req aiprovider.Request) (A
 		return Answer{}, resp, refuse(http.StatusBadGateway, "The AI's answer was not in the expected form, even after asking again (%v). Try again, or ask about a smaller part of the document.", perr)
 	}
 	return answer, resp, nil
+}
+
+// previewTo is the text callback that streams an answer's answer_markdown to
+// stream, or nil (no streaming) when there is none.
+func previewTo(stream Stream) func(string) {
+	if stream == nil {
+		return nil
+	}
+	r := &answerReader{out: stream.Answer}
+	return r.write
 }
 
 func stopped(resp aiprovider.Response) error {
@@ -459,6 +476,12 @@ func aiLabel(resp aiprovider.Response) string {
 
 // Propose runs one request from the Studio's inline actions.
 func (e *Engine) Propose(ctx context.Context, documentID int64, req Request, actor string) (Result, error) {
+	return e.ProposeStream(ctx, documentID, req, actor, nil)
+}
+
+// ProposeStream is Propose with the answer's text previewed to stream as the
+// model writes it.
+func (e *Engine) ProposeStream(ctx context.Context, documentID int64, req Request, actor string, stream Stream) (Result, error) {
 	if _, ok := actionInstructions[req.Action]; !ok || req.Action == "ask" && strings.TrimSpace(req.Instruction) == "" {
 		return Result{}, refuse(http.StatusBadRequest, "unknown action %q", req.Action)
 	}
@@ -477,8 +500,14 @@ func (e *Engine) Propose(ctx context.Context, documentID int64, req Request, act
 	if err != nil {
 		return Result{}, err
 	}
+	if req.Action == "from_library" {
+		if err := e.withSource(ctx, &p, req.LibraryDocumentID); err != nil {
+			return Result{}, err
+		}
+		req.Instruction = strings.TrimSpace("library document " + strconv.FormatInt(req.LibraryDocumentID, 10) + ": " + p.pc.sourceOf + ". " + req.Instruction)
+	}
 	text := prompt(p.pc, req.Action, req.Instruction)
-	answer, resp, err := e.ask(ctx, p, aiprovider.Request{Prompt: text})
+	answer, resp, err := e.ask(ctx, p, aiprovider.Request{Prompt: text}, stream)
 	if err != nil {
 		e.saveFailed(documentID, req, actor, p, resp, text, err)
 		return Result{}, err
@@ -521,4 +550,76 @@ func clip2(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// withSource reads a library document into the request's context. The text was
+// extracted by the Wintermute server that holds the library; nothing is
+// uploaded or parsed here.
+func (e *Engine) withSource(ctx context.Context, p *prepared, libraryID int64) error {
+	if libraryID <= 0 {
+		return refuse(http.StatusBadRequest, "Choose a library document to start from.")
+	}
+	lib, err := e.cfg.Router.Library()
+	if err != nil {
+		return refuse(http.StatusServiceUnavailable, "The document library is not available: %v", err)
+	}
+	content, err := lib.ReadLibraryDocument(ctx, libraryID)
+	if err != nil {
+		return refuse(http.StatusBadGateway, "The library document could not be read: %v", err)
+	}
+	if !content.Document.Ready() {
+		return refuse(http.StatusConflict, "%q is still being read by the library. Try again when it is ready.", content.Document.Title)
+	}
+	p.pc.sourceOf = firstNonEmpty(content.Document.Title, content.Document.Filename, "the source")
+	p.src.source = map[int]string{}
+	used := 0
+	chunks := content.Chunks
+	if len(chunks) == 0 && strings.TrimSpace(content.Text) != "" {
+		chunks = []aiprovider.LibraryChunk{{Ordinal: 1, Body: content.Text}}
+	}
+	for i, c := range chunks {
+		n := c.Ordinal
+		if n <= 0 {
+			n = i + 1
+		}
+		body := strings.TrimSpace(c.Body)
+		if used+len(body) > maxSourceChars {
+			p.pc.sourceCut = len(chunks) - i
+			break
+		}
+		used += len(body)
+		p.pc.source = append(p.pc.source, sourcePassage{ordinal: n, heading: c.Heading, body: body})
+		p.src.source[n] = c.Heading + "\n" + body
+	}
+	if len(p.pc.source) == 0 {
+		return refuse(http.StatusUnprocessableEntity, "%q has no text the library could extract.", p.pc.sourceOf)
+	}
+	return nil
+}
+
+// LibraryEntry is one library document, as the new-document dialog lists it.
+type LibraryEntry struct {
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+	Ready bool   `json:"ready"`
+}
+
+// LibraryDocuments lists the library documents a new document can start from.
+func (e *Engine) LibraryDocuments(ctx context.Context) ([]LibraryEntry, error) {
+	if e.cfg.Router == nil {
+		return nil, refuse(http.StatusServiceUnavailable, "No AI provider is configured.")
+	}
+	lib, err := e.cfg.Router.Library()
+	if err != nil {
+		return nil, refuse(http.StatusServiceUnavailable, "The document library is not available: %v", err)
+	}
+	docs, err := lib.LibraryDocuments(ctx)
+	if err != nil {
+		return nil, refuse(http.StatusBadGateway, "The library could not be listed: %v", err)
+	}
+	out := make([]LibraryEntry, 0, len(docs))
+	for _, d := range docs {
+		out = append(out, LibraryEntry{ID: d.ID, Title: firstNonEmpty(d.Title, d.Filename), Ready: d.Ready()})
+	}
+	return out, nil
 }

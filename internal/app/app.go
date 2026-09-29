@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -518,6 +520,52 @@ func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *
 
 	templateHandler := doctemplate.NewHandler(templateService, sessionUsername)
 	templateHandler.RegisterReadRoutes(r)
+
+	// The redline: a comparison of two revisions of a document, typeset.
+	r.GET("/policies/:id/compare.pdf", func(c *gin.Context) {
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document id"})
+			return
+		}
+		cmp, err := policyService.Compare(id, c.Query("from"), c.DefaultQuery("to", policydocs.CurrentRevision))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, policydocs.ErrNotFound) {
+				status = http.StatusNotFound
+			} else if policydocs.IsValidation(err) {
+				status = http.StatusBadRequest
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		doc, err := policyService.GetDocument(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+			return
+		}
+		data, err := json.Marshal(struct {
+			policydocs.Comparison
+			Reference      string `json:"reference"`
+			Classification string `json:"classification"`
+		}{cmp, doc.Reference, doc.Classification})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		base := doc.Reference
+		if strings.TrimSpace(base) == "" {
+			base = doc.Title
+		}
+		result, err := templateService.Render(c.Request.Context(), doctemplate.Request{
+			TemplateID: "policy-redline-typst", Data: data, BaseName: base + "-redline", PDFStandard: doctemplate.PDFStandards[0].Value,
+		})
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error(), "log": result.Log})
+			return
+		}
+		doctemplate.WriteResult(c, result, c.Query("inline") == "1")
+	})
 
 	admin := r.Group("/")
 	if !localMode {

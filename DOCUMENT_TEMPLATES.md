@@ -18,12 +18,14 @@ templates/
     lib.typ                page furniture, cover, tables, callouts
     policy-document.typ    policy / standard / procedure / work instruction
     business-report.typ    assessment and consulting reports
+    policy-redline.typ     the changes between two revisions of a policy
   latex/
     grc.sty           LaTeX equivalent of brand.typ + lib.typ
     policy-document.tex    LaTeX policy document
   samples/
     policy-sample.json     realistic input, matching internal/policydocs
     report-sample.json
+    redline-sample.json    a comparison, as GET /policies/:id/compare returns it
   build.sh
 ```
 
@@ -87,7 +89,40 @@ exclusive — PDF/UA-1 requires PDF 1.7 or earlier, PDF/A-4 requires 2.0.
 | `/templates/manage` | Brand editor — `brand.typ`'s dictionary as a form, stored per install |
 | `GET /templates/render` | Renders. `doc=<id>` or `sample=1`, plus `template=`, `standard=`, `bundle=1`, `inline=1` |
 
-The **Render PDF** action in the policy editor points at the same endpoint.
+The **Render PDF** action in the policy editor points at the same endpoint,
+and so does **Word** (`template=policy-docx`). The Studio's **Download redline
+PDF** is `GET /policies/:id/compare.pdf?from=&to=`, which renders a comparison
+of two revisions through `policy-redline-typst`.
+
+### Word, through Pandoc
+
+`policy-docx` produces an editable `.docx` for a client who reviews in Word.
+Like the LaTeX path, its input is generated from the payload: `docxgen.go`
+writes Markdown from the typed blocks (headings, lists, tables, quotes,
+callouts, bold, italic, links on http, https and mailto only). Every string is
+escaped, a legacy section's body included, so nothing in a policy becomes
+markup. Pandoc converts it with
+
+```sh
+pandoc --sandbox --from gfm-raw_html --to docx --output grc-output.docx policy-document.md
+```
+
+`--sandbox` (Pandoc 2.15 or later) stops it reading any file or fetching any
+URL, and `-raw_html` reads HTML in the text as text. Pandoc is GPL. It is
+never bundled or linked: the app finds it at runtime (`PANDOC`, else `pandoc`
+on `PATH`), as it finds Typst. Without it the render returns the Markdown, the
+payload and a `build.sh` that runs the same command. The Word document follows
+Pandoc's default styles, not the brand. A branded `reference.docx` is a
+possible follow-up.
+
+### The redline
+
+`policy-redline.typ` sets the comparison the Studio's Compare tab shows:
+inserted text underlined in green, removed text struck through in red, a note
+on each section that is new, removed or renamed, and a list of the sections
+with no changes. The data is `GET /policies/:id/compare` plus the document's
+reference and classification. As in every Typst template, the strings are
+placed as content and never evaluated.
 
 ### No engine installed is a normal outcome
 
@@ -99,8 +134,8 @@ template, its dependencies, the brand already applied, the payload, a
 available on demand with `bundle=1`, which is the honest way to hand a designer
 exactly what a render used.
 
-Point `TYPST`, `TECTONIC` or `LATEXMK` at a binary to override the `PATH`
-lookup. Detection is cached per process; **Re-check** on the gallery re-probes
+Point `TYPST`, `PANDOC`, `TECTONIC` or `LATEXMK` at a binary to override
+the `PATH` lookup. Detection is cached per process; **Re-check** on the gallery re-probes
 after an install.
 
 ### What the app does differently from `build.sh`

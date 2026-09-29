@@ -84,8 +84,7 @@ for a scan, LibreOffice for the office formats, and a fleet node to run them on
 if the server is small.
 
 So a regulation or a security document is uploaded **there**, to one agent's
-library, and the two modules that work on documents read the extracted text
-back:
+library, and the modules that work on documents read the extracted text back:
 
 ```
 GET /api/v1/agents/{id}/documents            what the library holds
@@ -100,8 +99,15 @@ passages in, so a report and its citations survive that server being
 unreachable — but the document itself has one home, and re-reading it with a
 better tool happens there and is re-imported here.
 
+The **Policy Studio** can start a new document from a library document: the
+passages are read at request time, numbered `[S1]`… in the AI's context, and
+the AI maps them into the chosen template as suggestions a person decides.
+Nothing is copied in beyond the proposal, which records the library document's
+id and title, and a `source_document` citation's quote is checked verbatim
+against its passage. See [`POLICY_STUDIO.md`](POLICY_STUDIO.md) §13.
+
 The practical consequence: a document that has not finished being read on that
-server cannot be imported, and both pickers say so rather than importing a
+server cannot be imported, and the pickers say so rather than importing a
 fraction of it. A document that server could not read at all cannot be imported
 either, which is the honest outcome — it was never readable here.
 

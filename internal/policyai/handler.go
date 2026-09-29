@@ -36,6 +36,18 @@ func (h *Handler) RegisterReadRoutes(r gin.IRouter) {
 func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/policies/:id/studio/ai/proposals", h.Propose)
 	r.POST("/policies/:id/studio/ai/proposals/:proposalID/placements", h.Placements)
+	r.GET("/policies/library", h.Library)
+}
+
+// Library lists the Wintermute library documents a new document can start
+// from.
+func (h *Handler) Library(c *gin.Context) {
+	docs, err := h.engine.LibraryDocuments(c.Request.Context())
+	if err != nil {
+		Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, docs)
 }
 
 func documentID(c *gin.Context) (int64, bool) {
@@ -106,12 +118,28 @@ func (h *Handler) Propose(c *gin.Context) {
 		return
 	}
 	// The request's context: a person who navigates away cancels the call.
-	res, err := h.engine.Propose(c.Request.Context(), id, req, h.actor(c))
-	if err != nil {
-		Fail(c, err)
+	h.propose(c, id, req, h.actor(c))
+}
+
+// propose answers with the result as JSON, or as a stream of events ending in
+// it when the client asked for one.
+func (h *Handler) propose(c *gin.Context, id int64, req Request, actor string) {
+	if !WantsStream(c) {
+		res, err := h.engine.Propose(c.Request.Context(), id, req, actor)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, res)
 		return
 	}
-	c.JSON(http.StatusOK, res)
+	sse := NewSSE(c)
+	res, err := h.engine.ProposeStream(c.Request.Context(), id, req, actor, sse)
+	if err != nil {
+		sse.Fail(err)
+		return
+	}
+	sse.Event("result", res)
 }
 
 func (h *Handler) Placements(c *gin.Context) {
@@ -187,12 +215,7 @@ func (h *Handler) GuestPropose(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	res, err := h.engine.Propose(c.Request.Context(), g.DocumentID, req, g.Actor())
-	if err != nil {
-		Fail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, res)
+	h.propose(c, g.DocumentID, req, g.Actor())
 }
 
 func (h *Handler) GuestPlacements(c *gin.Context) {

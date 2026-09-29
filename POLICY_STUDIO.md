@@ -5,7 +5,7 @@ policy authoring on top of `internal/policydocs`, live co-editing with the
 customer, tracked suggestions, and an Ask AI agent that proposes changes as
 suggestions a person accepts or rejects.
 
-**Status: Phases 1–4 built.**
+**Status: Phases 1–5 built.**
 
 - **1a:** the collaborative editor, persistence, projection, section integrity,
   control chips, live lint, and migration from the section editor.
@@ -22,9 +22,15 @@ suggestions a person accepts or rejects.
 - **4:** guests (share links, guest sessions, the chromeless guest Studio with
   an enforced CSP, the Sharing panel) and workshop mode (larger type, focus,
   present and follow, the customer-safe view).
+- **5:** the extras the owner chose: compare against any approved version
+  (with a redline PDF), Word export through Pandoc, starting from a library
+  document, and AI answers streamed as they are written.
 
 The owner accepted the recommendations for Q1–Q10 on 2026-09-28
-([§11](#11-open-questions-for-the-owner)). Phase 5 (extras) is next, to be prioritised with the owner. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
+([§11](#11-open-questions-for-the-owner)). For Phase 5 the owner chose four of
+the brief's extras on 2026-09-29; server-side suggestion injection, OSCAL hooks
+and the Yjs v14 attribution evaluation are deferred. [§13](#13-operator-guide)
+is the operator guide. The Phase 0 spike code lives on
 the throwaway branch `spike/policy-studio`.
 
 It follows the `*_FRAMEWORK.md` convention. [`POLICY_MODULE_FRAMEWORK.md`](POLICY_MODULE_FRAMEWORK.md)
@@ -339,6 +345,8 @@ client_profile_facts  client_ref, key, value, value_type, source, updated_by, up
 | `POST /policies/:id/studio/ai/proposals`, `…/ai/proposals/:pid/placements` | ✓ (draft or in review) | 403 | proposals only if `allow_ai` (Phase 4); never decisions | 403 | 401 |
 | `GET /policies/:id/studio/ai/status`, `…/ai/edits` | ✓ | ✓ | — | — | 401 |
 | `POST /ai-chat/ask` from a Studio page | proposal engine | answered as on any page | — | — | 401 |
+| `GET /policies/:id/compare` (JSON), `GET /policies/:id/compare.pdf` (redline) | ✓ | ✓ | — | — | 401 |
+| `GET /policies/library` (library documents to start from) | ✓ | 403 | — | — | 401 |
 | `/policies/:id/studio/migrate` | ✓ | 403 | — | — | 401 |
 | `/policies/:id/share-links` (GET, POST, DELETE `:linkID`), `DELETE /policies/:id/guests/:sessionID` | ✓ (not in local mode; off until `studio.guest_links`) | 403 | — | — | 401 |
 | `GET /collab/policies/:id` (WebSocket) | rw if draft or in review (suggest mode in review), else ro | ro | rw if draft and link doc = :id | ro, link doc only | 401 |
@@ -454,7 +462,7 @@ Phase 1 is by far the largest, so a split is proposed.
 | 2 | Presence, suggest mode, Suggestions panel + keyboard review, decision audit, comments on relative positions with visibility, provenance view, `pending_suggestions` lint, suggest mode in review | 7–9 |
 | 3 | `StopReason` + structured format in `aiprovider`; `internal/policyai` (context, prompts, validation, anchoring, provenance, `ai_policy`, limits); inline actions; dock page-context hook, policy-agent routing, proposal cards, private or shared placement; settings; `AI_AGENT.md` | 9–11 |
 | 4 | Share links, guest sessions, chromeless guest Studio with CSP, guest authorization everywhere, roles (no suggester), audit, Sharing panel with kick and revoke, LOCAL_MODE refusal, external-host nginx example, workshop mode | 8–10 |
-| 5 | Prioritise with the owner | — |
+| 5 | Chosen with the owner: compare and redline, Word export through Pandoc, start from a library document, streamed AI answers. Deferred: server-side suggestion injection, OSCAL hooks, the Yjs v14 attribution evaluation | 5–6 |
 
 **Risks, highest first:**
 
@@ -735,6 +743,52 @@ What Phase 1a puts in the hands of a user and an operator.
   no lint underlines, no AI notes or AI panel, no template guidance, no AI or
   mapping controls, and only the Suggestions and Comments tabs.
 
+### Compare, Word, the library and streaming (Phase 5)
+
+- **Compare.** The Studio's *Compare* tab (staff, not guests) sets any
+  approved version against another, or against the current text. Sections are
+  matched by heading, and paragraphs, list items, table rows, quotes and
+  callouts by an LCS over each section's units. A changed unit is diffed word
+  by word, added text underlined and removed text struck through. A version's
+  sections come from its structured record (`content_json`), or from its
+  Markdown snapshot for versions approved before 1b. A version whose hash no
+  longer verifies is flagged. `GET /policies/:id/compare?from=&to=` returns
+  the comparison (`to` defaults to `current`).
+- **Redline PDF.** *Download redline PDF* typesets the same comparison with
+  `templates/typst/policy-redline.typ` (template `policy-redline-typst`, kind
+  `redline`). As with every Typst render, the text goes in as data and is
+  never evaluated. Without Typst the sources come back as a bundle.
+- **Word.** *Word* in the Studio bar and on the policy page renders the
+  document through the `policy-docx` template: Markdown generated from the
+  render payload's blocks, converted by Pandoc. Pandoc is found at runtime
+  (`PANDOC`, else `pandoc` on PATH) like Typst, and never bundled, so its GPL
+  licence stays outside the binary. Every string is escaped, a legacy
+  section's Markdown body included. Pandoc runs with `--sandbox` (no file
+  reads, no fetches) and reads the input as GFM with raw HTML off. Without
+  Pandoc the sources come back with a `build.sh` that converts them the same
+  way.
+- **Start from a library document.** When the AI provider has a Wintermute
+  library, the new-document dialog offers *Map in a library document*
+  (documents the library has finished reading). The Studio opens with
+  `?library=<id>` and asks the AI once (action `from_library`) to map the
+  document into the template as suggestions, then drops the parameter. The
+  text comes from the library through `library.go`, extracted on the Wintermute
+  server. Nothing is uploaded or parsed here, which keeps the no-ingestion
+  rule. The passages are numbered `[S1]`… in the context, capped at 60,000
+  characters, and cited as `source_document`. A citation's quote is checked
+  verbatim against its passage like any other citation.
+- **Streaming.** The Studio's AI requests and the dock ask for server-sent
+  events (`Accept: text/event-stream`). The answer's text streams as the model
+  writes it: `event: answer`, or `restart` when the one repair turn begins.
+  The validated result follows as `event: result`, the same object the JSON
+  response carries. Only `answer_markdown` is previewed. Edits are never shown
+  before they have been checked, and the preview is replaced by the recorded
+  answer. Claude streams. Wintermute answers a turn whole, so its answer
+  arrives in one piece. A request refused before the model is asked is still
+  an ordinary JSON error. Usage is logged once per model call, as before. The
+  theme layer, which buffers pages to inject its chrome, passes an event
+  stream straight through.
+
 ### How it stores a document
 
 - The live document is Yjs binary in `policy_doc_state` (compacted) plus
@@ -972,9 +1026,47 @@ regulation text rather than quoting it.
   - Screenshots of the join page, the guest Studio, the Sharing tab and the
     Workshop menu at 1440×900 and 430×860 in all four themes: no overlap, no
     horizontal overflow.
+- **Verified (5):**
+  - Compare: word diffs reassemble both texts (every op); sections are
+    aligned by heading and reported added, removed, renamed or changed; a
+    comparison against an approved version reads its structured record; a
+    malformed reference is refused and an unknown version is 404.
+  - The redline PDF renders with typst 0.15.1 (checked visually), including a
+    hostile `#panic(...)` string printed as text; without Typst it is a
+    bundle.
+  - Word: the Markdown escaper is fuzzed (no metacharacter survives
+    unescaped). Hostile runs, headings, lists, tables, quotes, callouts and a
+    legacy body with raw HTML and an image reference read back from Pandoc
+    3.8.2 as the same text, with no media in the `.docx`. `--sandbox` on its
+    own also refuses to embed a local image. The sample renders to a Word
+    document with document control, control mapping and revision history,
+    checked visually in LibreOffice. A Word document is never served inline;
+    without Pandoc it is a bundle whose `build.sh` converts it the same way.
+  - Library mapping against a Wintermute stand-in: the passages are in the
+    context, a verbatim citation is verified, an unknown passage is tagged,
+    a request without a document is refused, and the proposal records its
+    source.
+  - Streaming: the answer reader decodes `answer_markdown` fed in pieces of
+    every size (escapes, surrogate pairs and raw multi-byte characters split
+    across pieces) and previews nothing from an answer that does not begin
+    with it. Through Claude's streaming API (stand-in): the pieces arrive and
+    then the validated result, no edit text precedes the result, the repair
+    turn sends `restart`, a refusal mid-stream is an error event, and each
+    model call is logged once. An event stream passes the theme layer as it
+    is written.
+  - In headless Chrome: a streamed answer shows in the AI panel and in the
+    dock while it is written and is replaced by the checked answer; the
+    Compare tab shows a word-level change against the approved version and
+    links the redline for it; `?library=` maps the library document in once
+    and leaves the address. Every browser test passed three runs in a row.
+  - Screenshots of the Compare tab, the streaming draft and the new-document
+    dialog's library option at 1440×900 and 430×860 in all four themes.
 - **Not yet verified:**
   - The live Claude call (Q5): no Anthropic key is configured on this machine.
-    `internal/policyai/live_test.go` runs it when one is supplied.
+    `internal/policyai/live_test.go` runs it when one is supplied. Streaming
+    against the real API is untested for the same reason; only the stand-in
+    has streamed.
+  - Microsoft Word opening the generated `.docx`; LibreOffice has.
   - A real Wintermute agent answering in the contract; only the stand-in has.
   - PostgreSQL (the adapter tests run when `GRC_TEST_POSTGRES_URL` is set).
   - iOS Safari.

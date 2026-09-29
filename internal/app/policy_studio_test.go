@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -398,5 +399,69 @@ func TestStudioDockAppliesTheDocumentsAIPolicy(t *testing.T) {
 	a.router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "AI is switched off for this document") || stub.calls != 0 {
 		t.Fatalf("dock with AI off: %d %s, %d model calls", rec.Code, rec.Body.String(), stub.calls)
+	}
+}
+
+// Asked for a stream, the dock on a Studio page gets the answer's text and
+// then the result with its proposal, through the theme layer.
+func TestStudioDockStreams(t *testing.T) {
+	stub := &aiStub{}
+	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "dock.db"), nil, stub.router(t))
+	body := `{"question":"make it testable","page":"/policies/` + strconv.FormatInt(a.doc.ID, 10) + `/studio"}`
+	req := httptest.NewRequest(http.MethodPost, "/ai-chat/ask", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: a.admin})
+	rec := httptest.NewRecorder()
+	a.router.ServeHTTP(rec, req)
+	out := rec.Body.String()
+	answer := strings.Index(out, "event: answer\ndata: {\"text\":\"I made the purpose testable and widened the scope.\"}")
+	result := strings.Index(out, "event: result\n")
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/event-stream") || answer < 0 || result < answer ||
+		!strings.Contains(out[result:], `"proposal":{`) || strings.Contains(out, "<script") || stub.calls != 1 {
+		t.Fatalf("%d %s %d calls\n%s", rec.Code, rec.Header().Get("Content-Type"), stub.calls, out)
+	}
+}
+
+// The theme layer buffers a page to inject its chrome; an event stream goes
+// through as it is written.
+func TestThemeLayerPassesAStreamThrough(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(themeMiddleware())
+	read := make(chan struct{})
+	r.GET("/s", func(c *gin.Context) {
+		c.Header("Content-Type", "text/event-stream")
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.WriteString("event: answer\ndata: {}\n\n")
+		c.Writer.Flush()
+		select {
+		case <-read:
+		case <-time.After(5 * time.Second):
+		}
+		_, _ = c.Writer.WriteString("event: result\ndata: {}\n\n")
+	})
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	first := make([]byte, len("event: answer"))
+	done := make(chan error, 1)
+	go func() { _, err := io.ReadFull(resp.Body, first); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil || string(first) != "event: answer" {
+			t.Fatalf("%q %v", first, err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the first event was held back until the handler finished")
+	}
+	close(read)
+	rest, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(rest), "event: result") {
+		t.Fatalf("rest: %q", rest)
 	}
 }

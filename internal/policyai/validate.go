@@ -3,6 +3,7 @@ package policyai
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -78,6 +79,7 @@ type sources struct {
 	facts    map[string]string // recorded client facts, key -> value
 	declared map[string]bool   // keys the template declares or the text uses
 	lookup   func(kind, ref string) (knowledge.Item, bool)
+	source   map[int]string // library passages, by number, when mapping one in
 	newID    func() string
 }
 
@@ -290,6 +292,10 @@ func (src sources) checkCitation(c Citation) CheckedCitation {
 	case "client_fact":
 		v, ok := src.facts[out.Ref]
 		out.Known, body = ok, v
+	case "source_document":
+		n, err := strconv.Atoi(strings.TrimPrefix(strings.ToUpper(out.Ref), "S"))
+		text, ok := src.source[n]
+		out.Known, body = ok && err == nil, text
 	default:
 		kind := map[string]string{"control": knowledge.KindControl, "regulation_clause": knowledge.KindRegulationClause,
 			"policy_clause": knowledge.KindPolicyClause, "nfr": knowledge.KindNFR}[c.Kind]
