@@ -20,9 +20,20 @@ server {
     # sends a ping every 30 s, so 300 s would cut an idle reader off. The app
     # authorizes every upgrade itself (session cookie and Origin), so this
     # block adds no access control of its own.
+    #
+    # The headers are repeated here on purpose: nginx inherits proxy_set_header
+    # from the server block only into a location that sets none of its own, and
+    # this one sets Upgrade and Connection. Without Host the app sees
+    # 127.0.0.1:8081, the browser's Origin no longer matches it, and every
+    # upgrade is refused ("origin not allowed"): the Studio stays on
+    # "Connecting…".
     location /collab/ {
         proxy_pass http://127.0.0.1:8081;
         proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout  3600s;
@@ -78,6 +89,9 @@ server {
 #         limit_req zone=grc_shared burst=20 nodelay;
 #         proxy_pass http://127.0.0.1:8081;
 #         proxy_http_version 1.1;
+#         proxy_set_header Host              $host;
+#         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
 #         proxy_set_header Upgrade    $http_upgrade;
 #         proxy_set_header Connection "upgrade";
 #         proxy_read_timeout  3600s;

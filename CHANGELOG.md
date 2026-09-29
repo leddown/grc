@@ -3,6 +3,18 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-29 (deploy: the Policy Studio socket behind nginx)
+
+- **`deploy/grc.nginx`:** the `/collab/` locations now set `Host`,
+  `X-Forwarded-For` and `X-Forwarded-Proto` themselves, in the main server block
+  and in the commented guest block. nginx inherits `proxy_set_header` from the
+  server block only into a location that sets none of its own, and `/collab/`
+  sets `Upgrade` and `Connection`. So the app saw `Host: 127.0.0.1:8081`, the
+  browser's `Origin` no longer matched it, and every upgrade was refused as
+  "origin not allowed": the Studio stayed on "Connecting…" behind nginx. The
+  app's Origin check is unchanged. `scripts/verify-install.sh` could not catch
+  this, because an unauthenticated upgrade is refused either way.
+
 ## 2026-09-29 (Policy Studio, Phase 5: compare, Word, start from library, streaming)
 
 The four Phase 5 extras the owner chose. The Studio's *Compare* tab shows what
