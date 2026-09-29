@@ -76,6 +76,10 @@ func seedModules(t *testing.T, conn *db.Conn) {
 	mustExec(t, conn, `INSERT INTO policy_comments (id, thread_id, author, body) VALUES (34, 33, 'alice', 'Quarterly?')`)
 	mustExec(t, conn, `INSERT INTO policy_studio_audit (id, document_id, actor, event, detail_json)
 		VALUES (35, 30, 'bob', 'suggestion_accepted', '{"id":"s-1"}')`)
+	mustExec(t, conn, `INSERT INTO policy_ai_proposals (id, document_id, requested_by, action, provider, model)
+		VALUES (36, 30, 'alice', 'testable', 'claude', 'claude-opus-5')`)
+	mustExec(t, conn, `INSERT INTO policy_ai_edits (id, proposal_id, suid, op, block_id, quote)
+		VALUES (37, 36, 'suid-1', 'replace', 'b-1', 'will')`)
 }
 
 // yjsBytes stands in for a Yjs update: binary, with bytes that are not valid
@@ -98,6 +102,7 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"audit_findings": 1, "audit_finding_actions": 1, "audit_finding_history": 1,
 		"policy_doc_state": 1, "policy_doc_updates": 1, "policy_doc_snapshots": 1,
 		"policy_comment_threads": 1, "policy_comments": 1, "policy_studio_audit": 1,
+		"policy_ai_proposals": 1, "policy_ai_edits": 1,
 	} {
 		if got := count(t, dst, table); got != want {
 			t.Errorf("%s count=%d want %d", table, got, want)
@@ -205,8 +210,8 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 29 {
-		t.Errorf("report marks %d tables skipped, want 29", len(skipped))
+	if len(skipped) != 31 {
+		t.Errorf("report marks %d tables skipped, want 31", len(skipped))
 	}
 	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit"} {
 		if !skipped[want] {

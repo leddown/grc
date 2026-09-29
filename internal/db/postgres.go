@@ -923,10 +923,61 @@ CREATE TABLE IF NOT EXISTS policy_studio_audit (
 CREATE INDEX IF NOT EXISTS idx_policy_studio_audit_document
 	ON policy_studio_audit (document_id, id);
 
+-- Policy Studio AI proposals: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_ai_proposals (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	requested_by TEXT NOT NULL DEFAULT '',
+	action TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL DEFAULT '',
+	instruction TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	served_by TEXT NOT NULL DEFAULT '',
+	agent TEXT NOT NULL DEFAULT '',
+	prompt_sha256 TEXT NOT NULL DEFAULT '',
+	context_fingerprint TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL DEFAULT '',
+	answer_markdown TEXT NOT NULL DEFAULT '',
+	mappings_json TEXT NOT NULL DEFAULT '[]',
+	new_facts_json TEXT NOT NULL DEFAULT '[]',
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_ai_proposals_document
+	ON policy_ai_proposals (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_ai_edits (
+	id BIGSERIAL PRIMARY KEY,
+	proposal_id BIGINT NOT NULL,
+	suid TEXT NOT NULL UNIQUE,
+	op TEXT NOT NULL DEFAULT '',
+	block_id TEXT NOT NULL DEFAULT '',
+	section_uid TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	fragment_json TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	citations_json TEXT NOT NULL DEFAULT '[]',
+	validation TEXT NOT NULL DEFAULT '',
+	placement TEXT NOT NULL DEFAULT '',
+	decision TEXT NOT NULL DEFAULT '',
+	decided_by TEXT NOT NULL DEFAULT '',
+	decided_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(proposal_id) REFERENCES policy_ai_proposals(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_ai_edits_proposal
+	ON policy_ai_edits (proposal_id, id);
+
 ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS blocks_json TEXT NOT NULL DEFAULT '';
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS client_profile_id BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS ai_policy TEXT NOT NULL DEFAULT 'inherit';
 ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS snapshot_sha256 TEXT NOT NULL DEFAULT '';
 ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
 

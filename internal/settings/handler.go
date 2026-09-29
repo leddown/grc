@@ -103,6 +103,8 @@ type preferenceRequest struct {
 	WintermuteAgent    *string `json:"wintermute_agent"`
 	CrisisAgent        *string `json:"crisis_agent"`
 	CrisisSendExercise *string `json:"crisis_send_exercise"`
+	PolicyAgent        *string `json:"policy_agent"`
+	PolicySendDocument *string `json:"policy_send_document"`
 }
 
 func (h *Handler) setPreferences(c *gin.Context) {
@@ -124,6 +126,8 @@ func (h *Handler) setPreferences(c *gin.Context) {
 		{PrefWintermuteAgent, req.WintermuteAgent},
 		{PrefCrisisAgent, req.CrisisAgent},
 		{PrefCrisisSendExercise, req.CrisisSendExercise},
+		{PrefPolicyAgent, req.PolicyAgent},
+		{PrefPolicySendDocument, req.PolicySendDocument},
 	}
 	for _, u := range updates {
 		if u.value == nil {

@@ -2,14 +2,18 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +23,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 
+	"grc/internal/aiprovider"
 	"grc/internal/authn"
 	"grc/internal/clientprofile"
 	"grc/internal/policydocs"
@@ -525,4 +530,186 @@ func TestStudioBlockSuggestionsInTheBrowser(t *testing.T) {
 	if n := evalJS[int](t, tab, `document.querySelectorAll('.ps-prosemirror section:nth-of-type(2) tr').length`); n != 3 {
 		t.Fatalf("the table has %d rows, want 3", n)
 	}
+}
+
+// aiStub stands in for a wintermuted server over loopback. It reads the block
+// ids out of the prompt it is sent, the way a model reads the excerpt, and
+// answers with a proposal: one edit on the purpose paragraph, one on the "all
+// staff" list item.
+type aiStub struct {
+	mu    sync.Mutex
+	calls int
+	usage int
+	delay time.Duration
+}
+
+var excerptLine = regexp.MustCompile(`\[([0-9a-f-]{36})\] (?:- |# |## )?(.*)`)
+
+func (s *aiStub) router(t *testing.T) *aiprovider.Router {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/sessions" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sess-e2e"})
+			return
+		}
+		var in map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		bids := map[string]string{}
+		for _, m := range excerptLine.FindAllStringSubmatch(in["text"], -1) {
+			bids[strings.TrimSpace(m[2])] = m[1]
+		}
+		s.mu.Lock()
+		s.calls++
+		delay := s.delay
+		s.mu.Unlock()
+		time.Sleep(delay)
+		answer, _ := json.Marshal(map[string]any{
+			"answer_markdown": "I made the purpose testable and widened the scope.",
+			"proposal": map[string]any{
+				"summary": "Testable purpose",
+				"edits": []any{
+					map[string]any{"op": "replace", "block_id": bids["Why this policy exists."], "quote": "Why this policy exists.",
+						"replacement_markdown": "This policy **must** be followed by all staff.", "rationale": "States an obligation an assessor can test.",
+						"citations": []any{map[string]any{"kind": "control", "ref": "AC-5", "quote": ""}}},
+					map[string]any{"op": "replace", "block_id": bids["all staff"], "quote": "all staff",
+						"replacement_markdown": "all staff and contractors", "rationale": "The scope should name contractors.", "citations": []any{}},
+				},
+				"control_mappings": []any{}, "new_facts": []any{},
+			},
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"reply": string(answer), "status": "complete", "backend": "local", "model": "qwen-policy",
+			"usage": map[string]any{"input_tokens": 1500, "output_tokens": 300}})
+	}))
+	t.Cleanup(srv.Close)
+	wm := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
+		return aiprovider.WintermuteConfig{URL: srv.URL, Token: "t"}
+	})
+	return aiprovider.NewRouter(nil, wm, func() string { return "wintermute" }, func(string, string, int, int) {
+		s.mu.Lock()
+		s.usage++
+		s.mu.Unlock()
+	})
+}
+
+// Phase 3's core flow in the browser: from the dock on a Studio page a
+// request yields a proposal; it previews privately (the other editor sees
+// nothing), then is suggested to everyone. The edit whose text changed in the
+// meantime is reported stale and placed nowhere. The other participant sees
+// the suggestion attributed to the AI with its rationale and citation, and
+// accepting it is recorded with the actor.
+func TestStudioAIProposalInTheBrowser(t *testing.T) {
+	browser := headlessBrowser(t)
+	stub := &aiStub{}
+	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "studio-ai.db"), nil, stub.router(t))
+	id := strconv.FormatInt(a.doc.ID, 10)
+	alice := studioTab(t, browser, a, a.admin)
+	bob := studioTab(t, browser, a, a.admin2)
+	suggestions := `GRCPolicyStudio.suggestions()`
+
+	// The question is typed for real; the form is sent with requestSubmit,
+	// which fires the submit event the dock listens for (chromedp's Submit
+	// calls form.submit(), which does not).
+	if err := chromedp.Run(alice, page.BringToFront(), chromedp.Click(`#global-ai-dock-toggle`, chromedp.ByQuery),
+		chromedp.SendKeys(`#global-ai-dock-input`, "make §1 testable", chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	evalJS[bool](t, alice, `(document.getElementById('global-ai-dock-form').requestSubmit(), true)`)
+	waitJS(t, alice, "the dock shows the proposal as cards", `!!document.querySelector('#global-ai-dock .ps-ai-proposal') && document.querySelectorAll('#global-ai-dock .ps-ai-edit').length === 2`)
+	if stub.calls != 1 || stub.usage != 1 {
+		t.Fatalf("%d model calls, usage logged %d times", stub.calls, stub.usage)
+	}
+	clickDockButton := func(label string) {
+		t.Helper()
+		if !evalJS[bool](t, alice, `(() => { const b = Array.from(document.querySelectorAll('#global-ai-dock .ps-ai-proposal button')).find((x) => x.textContent === '`+label+`'); if (!b) return false; b.click(); return true })()`) {
+			t.Fatalf("no %q button in the dock", label)
+		}
+	}
+
+	clickDockButton("Preview in document")
+	waitJS(t, alice, "Alice sees the preview", `document.querySelectorAll('.ps-ai-preview-ins').length === 2`)
+	if evalJS[int](t, bob, `document.querySelectorAll('.ps-ai-preview-ins').length`) != 0 || evalJS[int](t, bob, suggestions+`.length`) != 0 {
+		t.Fatal("a private preview reached the other editor")
+	}
+
+	// Bob rewrites the list item the second edit quotes.
+	evalJS[bool](t, bob, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text === 'all staff') at = p });
+		e.commands.insertContentAt({ from: at, to: at + 9 }, 'all employees'); return true })()`)
+	waitJS(t, alice, "Alice sees Bob's edit", editorText+`.includes('all employees')`)
+
+	clickDockButton("Suggest to everyone")
+	waitJS(t, alice, "the button keeps its name", `Array.from(document.querySelectorAll('#global-ai-dock .ps-ai-proposal button')).some((b) => b.textContent === 'Suggested to everyone')`)
+	waitJS(t, alice, "the stale edit is reported", `document.querySelector('.ps-toast').textContent.includes("couldn't be placed because the text changed")`)
+	var placements []string
+	rows, err := a.conn.Query(`SELECT placement FROM policy_ai_edits ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var p string
+		_ = rows.Scan(&p)
+		placements = append(placements, p)
+	}
+	rows.Close()
+	if strings.Join(placements, ",") != "placed,stale" {
+		t.Fatalf("placements %v, want placed,stale", placements)
+	}
+	if evalJS[bool](t, alice, editorText+`.includes('and contractors')`) {
+		t.Fatal("the stale edit was placed somewhere else")
+	}
+
+	if err := chromedp.Run(bob, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, bob, "Bob sees the AI's suggestion", suggestions+`.length === 1 && `+suggestions+`[0].authorKind === 'ai' && `+suggestions+`[0].authorName === 'AI · qwen-policy'`)
+	if err := chromedp.Run(bob, chromedp.Click(`#ps-tab-suggestions`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, bob, "with its rationale and citation", `(() => { const li = document.querySelector('.ps-sugg-item'); return !!li && li.textContent.includes('Why: States an obligation') && li.textContent.includes('Cites AC-5') })()`)
+	evalJS[bool](t, bob, `(document.querySelector('.ps-sugg-item .ps-primary').click(), true)`)
+	waitJS(t, bob, "Bob accepts it", suggestions+`.length === 0 && `+editorText+`.includes('must be followed by all staff')`)
+	code, body := getAs(t, a, "/policies/"+id+"/studio/ai/edits", a.reader)
+	if code != 200 || !strings.Contains(body, `"decision":"accept","decided_by":"bob"`) {
+		t.Fatalf("the decision on the AI edit: %d %s", code, body)
+	}
+}
+
+// The inline path: select text, "Make testable" from the selection toolbar.
+// While the model works, the other editor sees that the AI is drafting and
+// where; the proposal arrives in the AI panel previewed privately, and is
+// suggested to everyone from there. An edit outside the selection is refused
+// by the server and listed as such.
+func TestStudioAIInlineActionsInTheBrowser(t *testing.T) {
+	browser := headlessBrowser(t)
+	stub := &aiStub{delay: 2 * time.Second}
+	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "studio-inline.db"), nil, stub.router(t))
+	alice := studioTab(t, browser, a, a.admin)
+	bob := studioTab(t, browser, a, a.admin2)
+
+	waitJS(t, alice, "AI is available", `!!document.querySelector('.ps-ai-menu')`)
+	// The toolbar follows a selection in a focused editor.
+	if err := chromedp.Run(alice, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	evalJS[bool](t, alice, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text === 'Why this policy exists.') at = p });
+		e.chain().focus().setTextSelection({ from: at, to: at + 23 }).run(); return true })()`)
+	waitJS(t, alice, "the selection toolbar appears", `!!document.querySelector('.ps-bubble') && !document.querySelector('.ps-bubble').hidden`)
+	if !evalJS[bool](t, alice, `(() => { const b = Array.from(document.querySelectorAll('.ps-bubble button')).find((x) => x.textContent === 'Make testable'); if (!b) return false; b.click(); return true })()`) {
+		t.Fatal("no Make testable button")
+	}
+	if err := chromedp.Run(bob, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, bob, "Bob sees the AI drafting", `Array.from(document.querySelectorAll('.ps-presence-ai')).some((li) => li.textContent.includes('drafting in §1'))`)
+	if err := chromedp.Run(alice, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "the proposal is in the AI panel, previewed", `!!document.querySelector('.ps-tabpanel .ps-ai-proposal') && document.querySelectorAll('.ps-ai-preview-ins').length === 1`)
+	if !evalJS[bool](t, alice, `document.querySelector('.ps-tabpanel .ps-ai-proposal').textContent.includes("1 edit(s) the server refused")`) {
+		t.Fatal("the edit outside the selection was not listed as refused")
+	}
+	waitJS(t, bob, "Bob's drafting indicator clears", `document.querySelectorAll('.ps-presence-ai').length === 0`)
+	evalJS[bool](t, alice, `(Array.from(document.querySelectorAll('.ps-tabpanel .ps-ai-proposal button')).find((b) => b.textContent === 'Suggest to everyone').click(), true)`)
+	waitJS(t, bob, "Bob sees the AI's suggestion", `GRCPolicyStudio.suggestions().length === 1 && GRCPolicyStudio.suggestions()[0].authorKind === 'ai'`)
 }

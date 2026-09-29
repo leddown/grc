@@ -59,6 +59,10 @@ import (
 // v9 added Audit Findings & Remediation (audit_findings, audit_finding_actions,
 // audit_finding_history). A v8-or-older backup restores with those empty.
 //
+// v13 added the Studio's AI proposals (policy_ai_proposals, policy_ai_edits)
+// and policy_documents.ai_policy; a v12 backup restores with no proposals and
+// every document inheriting the AI routing.
+//
 // v12 added the Studio's review layer (policy_comment_threads,
 // policy_comments, policy_studio_audit); a v11 backup restores with no comments
 // and no decision history.
@@ -76,7 +80,7 @@ import (
 // an existing backup unrestorable — that was the effect when the handler
 // compared for equality, and it is the failure mode to watch for on the next
 // bump.
-const SnapshotVersion = 12
+const SnapshotVersion = 13
 
 // Snapshot is a portable, engine-independent dump of every managed table — the
 // same tables (and columns) dbsync.Sync copies. It is the on-the-wire format

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,8 @@ import (
 	"grc/internal/aiprovider"
 	"grc/internal/crisisexercise"
 	"grc/internal/pageui"
+	"grc/internal/policyai"
+	"grc/internal/policystudio"
 	"grc/internal/settings"
 )
 
@@ -53,8 +56,13 @@ type aiChatRequest struct {
 	SessionID string `json:"session_id"`
 	// Page is the path the AI dock was asked from. On a Crisis Exercises page
 	// the question goes to that module's agent, about the exercise on screen
-	// (see crisisDockTurn).
+	// (see crisisDockTurn). On a Policy Studio page it goes to the proposal
+	// engine (see policyDockAsk).
 	Page string `json:"page"`
+	// PageContext is what the page says is in view (window.GRCAskAIContext).
+	// It narrows scope only; it is never trusted for which document or
+	// whether the person may use AI on it.
+	PageContext json.RawMessage `json:"page_context"`
 }
 
 // aiChatTurn is one earlier message in the conversation.
@@ -931,7 +939,9 @@ func aiChatWintermuteStatus(c *gin.Context) {
 		"default_backend":  aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
 		"default_agent":    aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
 		// The agent the dock asks on Crisis Exercises pages, when one is set.
-		"crisis_agent":  aiChatPreference(settings.PrefCrisisAgent, ""),
+		"crisis_agent": aiChatPreference(settings.PrefCrisisAgent, ""),
+		// The agent the dock asks on Policy Studio pages, when one is set.
+		"policy_agent":  aiChatPreference(settings.PrefPolicyAgent, ""),
 		"default_model": aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
 	})
 }
@@ -1080,6 +1090,60 @@ var activeCrisisDock crisisDock
 
 func configureCrisisDock(dock crisisDock) { activeCrisisDock = dock }
 
+// policyDock is the Policy Studio's proposal engine, as the AI dock uses it.
+type policyDock interface {
+	Dock(ctx context.Context, documentID int64, question, sessionID string, history []aiprovider.Message, page policyai.PageContext, actor string) (policyai.Result, error)
+}
+
+// activePolicyDock and activeStudioIdentity are wired at startup with the
+// Studio. Nil leaves Studio pages' questions as any other page's.
+var (
+	activePolicyDock     policyDock
+	activeStudioIdentity policystudio.IdentityFunc
+)
+
+func configurePolicyDock(dock policyDock, identity policystudio.IdentityFunc) {
+	activePolicyDock, activeStudioIdentity = dock, identity
+}
+
+// policyDockAsk answers a dock question asked on a Policy Studio page through
+// the proposal engine, and reports whether it did. Which document is asked
+// about comes from the path, and whether the person may use AI on it from
+// their session -- an administrator with the policy grant, as for every AI
+// feature that spends model calls; anyone else is answered as on any other
+// page. The engine logs usage through the router, once per model call.
+func policyDockAsk(c *gin.Context, req aiChatRequest) bool {
+	if req.Provider != "" || activePolicyDock == nil || activeStudioIdentity == nil {
+		return false
+	}
+	documentID, ok := policyai.StudioDocument(req.Page)
+	if !ok {
+		return false
+	}
+	id, ok := activeStudioIdentity(c.Request)
+	if !ok || !id.Admin || !id.CanReadPolicies {
+		return false
+	}
+	res, err := activePolicyDock.Dock(c.Request.Context(), documentID, req.Question, req.SessionID,
+		boundedHistory(req.History), policyai.ParsePageContext(req.PageContext), id.Username)
+	if err != nil {
+		policyai.Fail(c, err)
+		return true
+	}
+	out := gin.H{
+		"provider":    res.Provider,
+		"answer":      res.Answer,
+		"model":       res.Model,
+		"session_id":  res.SessionID,
+		"destination": res.Destination,
+	}
+	if res.HasProposal {
+		out["proposal"] = res
+	}
+	c.JSON(http.StatusOK, out)
+	return true
+}
+
 // crisisDockTurn prepares a question the AI dock asked from a Crisis Exercises
 // page for that module's agent. Any other question — from another page, or
 // from the AI Chat page, which names its own provider and agent — goes as it
@@ -1158,6 +1222,12 @@ func aiChatAsk(c *gin.Context) {
 
 	if req.Question == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
+		return
+	}
+
+	// The Studio's engine chooses its own route (the document's AI policy
+	// decides where it may go), so it is asked before the dock's provider.
+	if policyDockAsk(c, req) {
 		return
 	}
 

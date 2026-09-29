@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -33,6 +34,7 @@ type Claude struct {
 	mu     sync.Mutex
 	api    anthropic.Client
 	apiKey string
+	caps   map[string]capability
 }
 
 // NewClaude returns a Claude provider. keyFunc is required; model may be empty,
@@ -227,6 +229,11 @@ func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
 	if system := strings.TrimSpace(req.System); system != "" {
 		params.System = []anthropic.TextBlockParam{{Text: system}}
 	}
+	if req.OutputSchema != nil {
+		params.OutputConfig = anthropic.OutputConfigParam{
+			Format: anthropic.JSONOutputFormatParam{Schema: req.OutputSchema},
+		}
+	}
 
 	// Bound to a variable first: Messages.New has a pointer receiver, so it
 	// cannot be called on the value a function returns.
@@ -245,7 +252,7 @@ func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
 	// empty or partial content, so reading content first misreads it.
 	if msg.StopReason == anthropic.StopReasonRefusal {
 		return Response{
-			Provider: NameClaude, Model: model, Usage: usage, Refused: true,
+			Provider: NameClaude, Model: model, Usage: usage, Refused: true, StopReason: StopRefusal,
 		}, nil
 	}
 
@@ -256,14 +263,65 @@ func (c *Claude) Ask(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 	answer := strings.TrimSpace(text.String())
-	if answer == "" {
+	stop := string(msg.StopReason)
+	if answer == "" && stop != StopMaxTokens {
 		return Response{}, errNoAnswer
 	}
 
 	return Response{
-		Text:     answer,
-		Provider: NameClaude,
-		Model:    model,
-		Usage:    usage,
+		Text:       answer,
+		Provider:   NameClaude,
+		Model:      model,
+		Usage:      usage,
+		StopReason: stop,
 	}, nil
 }
+
+// capabilityTTL is how long a model's reported capabilities are trusted before
+// they are asked for again.
+const capabilityTTL = time.Hour
+
+type capability struct {
+	structured bool
+	at         time.Time
+}
+
+// SupportsStructuredOutputs reports whether a model accepts output_config
+// schemas, from the Models API's own capability record rather than a list in
+// this code, which would go stale with the next model. It is a metadata call,
+// not billed as tokens, and the answer is cached per model.
+func (c *Claude) SupportsStructuredOutputs(ctx context.Context, model string) (bool, error) {
+	key := c.key()
+	if key == "" {
+		return false, ErrNotConfigured
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = c.resolvedModel()
+	}
+	c.mu.Lock()
+	if cached, ok := c.caps[model]; ok && time.Since(cached.at) < capabilityTTL {
+		c.mu.Unlock()
+		return cached.structured, nil
+	}
+	c.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+	defer cancel()
+	api := c.client(key)
+	info, err := api.Models.Get(ctx, model, anthropic.ModelGetParams{})
+	if err != nil {
+		return false, fmt.Errorf("look up Claude model %s: %w", model, err)
+	}
+	supported := info.Capabilities.StructuredOutputs.Supported
+	c.mu.Lock()
+	if c.caps == nil {
+		c.caps = map[string]capability{}
+	}
+	c.caps[model] = capability{structured: supported, at: time.Now()}
+	c.mu.Unlock()
+	return supported, nil
+}
+
+// ResolvedModel is the model a request that names none is sent to.
+func (c *Claude) ResolvedModel() string { return c.resolvedModel() }

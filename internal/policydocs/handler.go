@@ -294,13 +294,21 @@ func (h *Handler) UpdateDocument(c *gin.Context) {
 	// client_profile_id is newer than the section editor's save, which does
 	// not send it; a payload that leaves it out keeps the document's client
 	// rather than silently unlinking it.
+	// ai_policy likewise: a save that does not mention it must not reset a
+	// document marked local-only to "inherit".
 	var present struct {
-		ClientProfileID *int64 `json:"client_profile_id"`
+		ClientProfileID *int64  `json:"client_profile_id"`
+		AIPolicy        *string `json:"ai_policy"`
 	}
 	_ = json.Unmarshal(raw, &present)
-	if present.ClientProfileID == nil {
+	if present.ClientProfileID == nil || present.AIPolicy == nil {
 		if existing, err := h.service.GetDocument(id); err == nil {
-			payload.ClientProfileID = existing.ClientProfileID
+			if present.ClientProfileID == nil {
+				payload.ClientProfileID = existing.ClientProfileID
+			}
+			if present.AIPolicy == nil {
+				payload.AIPolicy = existing.AIPolicy
+			}
 		}
 	}
 	updated, err := h.service.UpdateDocument(id, payload)

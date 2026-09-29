@@ -154,3 +154,35 @@ func FuzzSectionFromMarkdown(f *testing.F) {
 		_ = SectionMarkdown(sec, nil)
 	})
 }
+
+func TestRestrictedMarkdownRefusesWhatTheSchemaDoesNotAllow(t *testing.T) {
+	ids := 0
+	newID := func() string { ids++; return fmt.Sprintf("b%d", ids) }
+	blocks, err := RestrictedMarkdown("Staff **must** review access to {{fact:system_name}} under [[control:AC-2]].\n\n- one\n- [two](https://example.com)", newID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 || blocks[0].Type != "paragraph" || blocks[1].Type != "bulletList" {
+		t.Fatalf("blocks: %+v", blocks)
+	}
+	var kinds []string
+	for _, n := range blocks[0].Content {
+		kinds = append(kinds, n.Type)
+	}
+	if strings.Join(kinds, ",") != "text,text,text,factToken,text,controlRef,text" {
+		t.Fatalf("inline: %v", kinds)
+	}
+	for _, bad := range []string{
+		"# A heading", "<script>alert(1)</script>", "Text <b>bold</b>", "![x](https://e.com/i.png)",
+		"```\ncode\n```", "> quoted", "[x](javascript:alert(1))", "| a | b |\n|---|---|\n| 1 | 2 |x", "   ",
+		"A missing [[UNRESOLVED: key]]", "---",
+	} {
+		if bs, err := RestrictedMarkdown(bad, newID); err == nil {
+			// A pipe table without the extension is plain text, which is allowed.
+			if strings.HasPrefix(bad, "|") && len(bs) == 1 && bs[0].Type == "paragraph" {
+				continue
+			}
+			t.Errorf("accepted %q: %+v", bad, bs)
+		}
+	}
+}

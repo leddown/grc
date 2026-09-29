@@ -159,6 +159,21 @@ func settingsPage(c *gin.Context) {
           exercise instead. Questions that go to Claude always carry it: Claude has no agent to
           fetch anything with.
         </p>
+        <div class="row">
+          <select id="wmPolicyAgent" aria-label="Policy Studio agent">
+            <option value="">Policy Studio: the same agent</option>
+          </select>
+          <label class="check"><input id="policySendDocument" type="checkbox"> Send the document with every question</label>
+        </div>
+        <p class="meta">
+          The <em>Policy Studio agent</em> writes the AI proposals in the Policy Studio &mdash;
+          <em>Make testable</em>, <em>Draft this section</em>, the section review &mdash; and answers
+          Ask AI on a Studio page. Each request carries the live text it is about, since the
+          knowledge API trails live editing. An Ask AI conversation is given the document when it
+          starts and again whenever the document changes; tick the box to send it with every
+          question. Requests to Claude always carry the document. A document marked
+          <em>local only</em> is never sent to Claude.
+        </p>
       </div>
       <div class="row">
         <button id="saveProvider">Save</button>
@@ -385,6 +400,10 @@ func settingsPage(c *gin.Context) {
     ensureOption(wmCrisisAgent, crisisAgent, crisisAgent);
     wmCrisisAgent.value = crisisAgent;
     crisisSendExercise.checked = prefs['ai.crisis.send_exercise'] === 'true';
+    const policyAgent = prefs['ai.policy.agent'] || '';
+    ensureOption(wmPolicyAgent, policyAgent, policyAgent);
+    wmPolicyAgent.value = policyAgent;
+    policySendDocument.checked = prefs['ai.policy.send_document'] === 'true';
     if (wmURL.value.trim()) {
       loadAgents(agent).catch(function () { /* reported inline */ });
       loadCatalog(backend, model).catch(function () { /* reported inline */ });
@@ -576,6 +595,8 @@ func settingsPage(c *gin.Context) {
   const wmAgentLink = document.getElementById('wmAgentLink');
   const wmCrisisAgent = document.getElementById('wmCrisisAgent');
   const crisisSendExercise = document.getElementById('crisisSendExercise');
+  const wmPolicyAgent = document.getElementById('wmPolicyAgent');
+  const policySendDocument = document.getElementById('policySendDocument');
 
   // The agent list comes from the Wintermute server itself rather than being
   // typed in, because a mistyped agent id is the difference between a grounded
@@ -617,6 +638,16 @@ func settingsPage(c *gin.Context) {
       });
       ensureOption(wmCrisisAgent, wantCrisis, wantCrisis + ' — not on this server');
       wmCrisisAgent.value = wantCrisis || '';
+      const wantPolicy = wmPolicyAgent.value;
+      while (wmPolicyAgent.options.length > 1) wmPolicyAgent.remove(1);
+      agents.forEach(function (agent) {
+        const opt = document.createElement('option');
+        opt.value = agent.id;
+        opt.textContent = agent.name + (agent.description ? ' — ' + agent.description : '');
+        wmPolicyAgent.appendChild(opt);
+      });
+      ensureOption(wmPolicyAgent, wantPolicy, wantPolicy + ' — not on this server');
+      wmPolicyAgent.value = wantPolicy || '';
       wmAgentDetail.textContent = agents.length
         ? agents.length + ' agent(s) on this server.'
         : 'This server has no agents yet — create one there first.';
@@ -672,6 +703,8 @@ func settingsPage(c *gin.Context) {
           wintermute_agent: wmAgent.value.trim(),
           crisis_agent: wmCrisisAgent.value.trim(),
           crisis_send_exercise: crisisSendExercise.checked ? 'true' : '',
+          policy_agent: wmPolicyAgent.value.trim(),
+          policy_send_document: policySendDocument.checked ? 'true' : '',
         }),
       });
       const data = await res.json().catch(function () { return {}; });

@@ -71,6 +71,11 @@ type Request struct {
 	Agent string
 	// MaxTokens bounds the answer. Zero means the provider's default.
 	MaxTokens int
+	// OutputSchema, when set, is a JSON Schema the answer must match. Claude
+	// enforces it with structured outputs (output_config.format); Wintermute
+	// has no equivalent, so a caller that sets it must still validate the
+	// answer and say what it wants in the prompt.
+	OutputSchema map[string]any
 }
 
 // Usage is the token accounting for one answer, for the shared ai_usage_log.
@@ -96,12 +101,24 @@ type Response struct {
 	// continues that conversation. Empty for providers that do not.
 	SessionID string
 	Usage     Usage
+	// StopReason is why the model stopped, when the provider says:
+	// StopEndTurn, StopMaxTokens, StopRefusal or another provider value. An
+	// answer that stopped for any reason but StopEndTurn may be cut short, and
+	// a structured answer cut short does not match its schema.
+	StopReason string
 	// Refused reports that the provider's safety classifiers declined the
 	// request. This is a successful HTTP 200 with empty or partial content, so
 	// a caller that reads Text without checking this misreads a refusal as a
 	// malformed answer.
 	Refused bool
 }
+
+// Stop reasons a caller acts on.
+const (
+	StopEndTurn   = "end_turn"
+	StopMaxTokens = "max_tokens"
+	StopRefusal   = "refusal"
+)
 
 // Provider answers questions.
 type Provider interface {

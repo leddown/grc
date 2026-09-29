@@ -27,6 +27,7 @@ const (
 	ThreadOpen         = "open"
 	ThreadResolved     = "resolved"
 	AuthorHuman        = "human"
+	AuthorAI           = "ai"
 )
 
 // Audit events.
@@ -147,9 +148,21 @@ func excerpt(s string) string {
 	return string(r[:max]) + "…"
 }
 
-// liveSections reads the document as it stands now: the sections the server
+// LiveSections reads the document as it stands now: the sections the server
 // accepts, from a private copy of the live room (or the store).
-func (s *Service) liveSections(documentID int64) ([]*Node, error) {
+//
+// A document nobody has opened in the editor yet has no state; it is seeded
+// from its section rows first, exactly as opening it would.
+func (s *Service) LiveSections(documentID int64) ([]*Node, error) {
+	if s.collab.GetDoc(RoomName(documentID)) == nil {
+		if _, exists, err := s.store.stateToken(documentID); err != nil {
+			return nil, err
+		} else if !exists {
+			if err := s.prepare(documentID); err != nil {
+				return nil, err
+			}
+		}
+	}
 	data, err := s.currentState(documentID)
 	if err != nil {
 		return nil, err
@@ -208,7 +221,7 @@ func (s *Service) Decide(documentID int64, req DecisionRequest, actor string) ([
 	if _, err := s.reviewable(documentID, "suggestions can be decided"); err != nil {
 		return nil, err
 	}
-	sections, err := s.liveSections(documentID)
+	sections, err := s.LiveSections(documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -238,6 +251,12 @@ func (s *Service) Decide(documentID int64, req DecisionRequest, actor string) ([
 		}
 		if _, err := tx.Exec(`INSERT INTO policy_studio_audit (document_id, actor, actor_kind, event, detail_json, created_at)
 			VALUES (?, ?, ?, ?, ?, ?)`, documentID, actor, AuthorHuman, event, string(detail), stamp); err != nil {
+			return nil, err
+		}
+		// A suggestion an AI proposal placed carries its edit's suid as its
+		// id; the proposal's own record of the decision is kept with it.
+		if _, err := tx.Exec(`UPDATE policy_ai_edits SET decision = ?, decided_by = ?, decided_at = ? WHERE suid = ?`,
+			req.Decision, actor, stamp, info.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -428,6 +447,17 @@ func commentBody(body string) (string, error) {
 
 // CreateThread starts a thread on a span of a section.
 func (s *Service) CreateThread(documentID int64, in NewThread, actor string) (Thread, error) {
+	return s.createThread(documentID, in, ThreadComment, "", actor, actor, AuthorHuman)
+}
+
+// CreateAIThread records the rationale of an AI edit as a thread anchored on
+// the text it is about, linked to the edit's suggestion. The thread is started
+// by the person who placed the proposal; its comment is the AI's.
+func (s *Service) CreateAIThread(documentID int64, in NewThread, suid, aiLabel, placedBy string) (Thread, error) {
+	return s.createThread(documentID, in, ThreadAIRationale, suid, placedBy, aiLabel, AuthorAI)
+}
+
+func (s *Service) createThread(documentID int64, in NewThread, kind, suid, actor, author, authorKind string) (Thread, error) {
 	if _, err := s.reviewable(documentID, "comments can be added"); err != nil {
 		return Thread{}, err
 	}
@@ -462,19 +492,19 @@ func (s *Service) CreateThread(documentID int64, in NewThread, actor string) (Th
 	}
 	defer func() { _ = tx.Rollback() }()
 	id, err := tx.Insert(`INSERT INTO policy_comment_threads (document_id, section_uid, anchor_start, anchor_end, quote,
-		visibility, kind, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		documentID, row.UID, in.AnchorStart, in.AnchorEnd, quote, in.Visibility, ThreadComment, ThreadOpen, actor, stamp, stamp)
+		visibility, kind, suggestion_suid, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		documentID, row.UID, in.AnchorStart, in.AnchorEnd, quote, in.Visibility, kind, suid, ThreadOpen, actor, stamp, stamp)
 	if err != nil {
 		return Thread{}, err
 	}
 	if _, err := tx.Exec(`INSERT INTO policy_comments (thread_id, author, author_kind, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-		id, actor, AuthorHuman, body, stamp); err != nil {
+		id, author, authorKind, body, stamp); err != nil {
 		return Thread{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return Thread{}, err
 	}
-	if err := s.audit(documentID, actor, EventThreadCreated, map[string]any{"thread_id": id, "section_uid": row.UID, "visibility": in.Visibility}); err != nil {
+	if err := s.audit(documentID, actor, EventThreadCreated, map[string]any{"thread_id": id, "section_uid": row.UID, "visibility": in.Visibility, "kind": kind}); err != nil {
 		return Thread{}, err
 	}
 	return s.thread(documentID, id)
@@ -624,5 +654,11 @@ func (s *Service) reviewVersion(documentID int64) (string, error) {
 	if err := s.store.db.QueryRow(`SELECT COUNT(*), MAX(id) FROM policy_studio_audit WHERE document_id = ?`, documentID).Scan(&audit, &maxAudit); err != nil {
 		return "", err
 	}
-	return strconv.FormatInt(threads, 10) + ":" + updated.String + ":" + strconv.FormatInt(maxAudit.Int64, 10), nil
+	// AI edits placed as suggestions bring their rationale with them.
+	var placed int64
+	if err := s.store.db.QueryRow(`SELECT COUNT(*) FROM policy_ai_edits ed JOIN policy_ai_proposals p ON p.id = ed.proposal_id
+		WHERE p.document_id = ? AND ed.placement = 'placed'`, documentID).Scan(&placed); err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(threads, 10) + ":" + updated.String + ":" + strconv.FormatInt(maxAudit.Int64, 10) + ":" + strconv.FormatInt(placed, 10), nil
 }

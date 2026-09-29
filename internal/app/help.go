@@ -302,6 +302,15 @@ func helpPage(c *gin.Context) {
               can't be approved until each one is decided. Select text and choose <em>Comment</em>
               to discuss it, internally or shared with the client. <em>Provenance</em> shows where
               each section came from and who accepted which change.</li>
+            <li>Ask the AI: select text and choose <em>Make testable</em>, <em>Tighten</em> or
+              <em>Explain for the customer</em>, use the <em>AI…</em> menu under a section heading
+              (draft, review, suggest control mappings), <em>Fix with AI</em> on a readiness finding,
+              type <code>/ai</code> in an empty paragraph, or ask in the Ask AI panel. The AI proposes;
+              its edits preview privately until you choose <em>Suggest to everyone</em>, and then
+              they are suggestions like anyone else's, with the AI's reasons and sources beside
+              them. Nothing it invents about the client is taken as fact: a missing detail comes back
+              as a fact to fill in. Under Document control, <em>AI</em> can keep a document local
+              only (never the cloud) or switch AI off for it.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at

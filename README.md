@@ -71,6 +71,9 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
   policy documents over an in-process Yjs server (ygo), projected into the
   policy module's section rows, with tracked suggestions, anchored comments and
   provenance (see [POLICY_STUDIO.md](POLICY_STUDIO.md))
+- `internal/policyai` — the Studio's AI proposals: an edit the AI proposes is
+  validated on the server and placed as a suggestion a person accepts or
+  rejects; it never writes the document itself
 - `internal/clientprofile` — the clients policies are written for and the facts
   about each, which fill a document's fact tokens (a model or a template never
   supplies them)

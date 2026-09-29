@@ -227,6 +227,15 @@ func TestSetPreferencesStoresTheCrisisExerciseAgent(t *testing.T) {
 	if rec := put(`{"crisis_send_exercise":"sometimes"}`); rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d for a value that is neither true nor false, want 400", rec.Code)
 	}
+
+	// The Policy Studio pair behaves the same way, and leaves the crisis pair alone.
+	got = prefs(put(`{"policy_agent":" policies ","policy_send_document":"1"}`))
+	if got[PrefPolicyAgent] != "policies" || got[PrefPolicySendDocument] != "true" || got[PrefCrisisAgent] != "crisis-exercises" {
+		t.Errorf("policy pair = %q/%q, crisis agent %q", got[PrefPolicyAgent], got[PrefPolicySendDocument], got[PrefCrisisAgent])
+	}
+	if rec := put(`{"policy_send_document":"maybe"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d for policy_send_document=maybe, want 400", rec.Code)
+	}
 }
 
 func TestListCatalogWithoutAServerURL(t *testing.T) {

@@ -57,6 +57,18 @@ did before.
    module's questions, its Agent conversation and Ask AI on its pages then go
    to it. If that agent cannot reach this server, tick **Send the open exercise
    with each question**. See [CRISIS_EXERCISE.md](CRISIS_EXERCISE.md).
+6. **Optionally, give the Policy Studio an agent of its own.** Create an agent
+   with the `grc` source and the regulations and standards policies are
+   written against (DORA, its RTS, ISO 27001, NIST) in its library, and pick it
+   as the **Policy Studio agent**. The Studio's AI proposals (*Make testable*,
+   *Draft this section*, the section review) and Ask AI on a Studio page then go
+   to it. Every request carries the live text it is about, because the
+   knowledge API trails live editing; an Ask AI conversation is given the
+   document when it starts and whenever it changes, or with every question when
+   **Send the document with every question** is ticked. The agent answers in
+   JSON (Wintermute has no structured outputs, so a malformed answer gets one
+   repair turn); a document marked *local only* never goes to Claude. See
+   [POLICY_STUDIO.md](POLICY_STUDIO.md).
 
 The Settings page and the AI Chat page then link to that agent's page on
 Wintermute, which is where documents are uploaded — that server owns the

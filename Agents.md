@@ -67,6 +67,12 @@ all backed by SQLite and served via Gin.
   `web/policy-studio` and ships as an embedded, hashed bundle. Its document
   templates are JSON in `internal/policystudio/templates/` — see
   `POLICY_STUDIO.md`
+- `internal/policyai` — the Policy Studio's AI proposal engine: context,
+  standing rules, strict parsing of the EditProposal contract (structured
+  outputs on Claude, one repair turn on Wintermute), server-side validation and
+  anchoring of every edit, `ai_policy` routing, limits, and the record of each
+  proposal and decision. The AI never writes the document: edits become
+  suggestions a person decides
 - `internal/clientprofile` — client profiles and their facts (the
   anti-hallucination store): what a policy states about a client comes from
   here or stays an unresolved token that blocks approval

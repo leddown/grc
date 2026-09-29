@@ -1497,10 +1497,12 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       const provider = String(data.provider || 'claude');
       const wintermute = provider === 'wintermute'
         || (provider === 'auto' && data.configured && data.token_configured);
-      // Crisis Exercises pages ask that module's own agent when Settings names one.
+      // Crisis Exercises and Policy Studio pages ask their module's own agent
+      // when Settings names one.
       const onCrisisPage = /^\/crisis-exercises(\/|$)/.test(location.pathname);
+      const onStudioPage = /^\/policies\/[0-9]+\/studio\/?$/.test(location.pathname);
       const agent = wintermute
-        ? String((onCrisisPage && data.crisis_agent) || data.default_agent || '')
+        ? String((onCrisisPage && data.crisis_agent) || (onStudioPage && data.policy_agent) || data.default_agent || '')
         : '';
       const label = wintermute
         ? 'Wintermute' + (agent ? ' · ' + agent : ' · no agent')
@@ -1557,6 +1559,29 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
   if (toggleBtn) {
     toggleBtn.addEventListener('click', open);
   }
+  // A page may open the dock with a question started, as the Policy Studio's
+  // "Ask AI…" does with a selection.
+  window.GRCAIDock = {
+    open(prefill) {
+      open();
+      if (prefill) input.value = String(prefill);
+      input.focus();
+    }
+  };
+
+  // What the page says is in view, when it says anything: the Policy Studio
+  // registers window.GRCAskAIContext. It is a hint about scope; the server
+  // decides what the question may reach from the path and the session.
+  function pageContext() {
+    if (typeof window.GRCAskAIContext !== 'function') return undefined;
+    try {
+      const value = window.GRCAskAIContext();
+      const raw = JSON.stringify(value);
+      return raw && raw.length <= 8000 ? value : undefined;
+    } catch (_) {
+      return undefined;
+    }
+  }
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
       log.replaceChildren();
@@ -1594,7 +1619,8 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
           session_id: sessionID,
           // On a Crisis Exercises page the server sends the question to that
           // module's agent, about the exercise on screen.
-          page: location.pathname
+          page: location.pathname,
+          page_context: pageContext()
         })
       });
       const data = await resp.json();
@@ -1606,7 +1632,14 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       history.push({ role: 'user', content: value });
       history.push({ role: 'assistant', content: answer });
       sessionID = data.session_id || '';
-      addMessage(data.model ? 'AI · ' + data.model : 'AI', answer, 'ai');
+      const row = addMessage(data.model ? 'AI · ' + data.model : 'AI', answer, 'ai');
+      // A proposal to change the document is shown by the page that owns the
+      // document, as cards with its own actions; the dock only makes room.
+      if (data.proposal && window.GRCPolicyStudio && typeof window.GRCPolicyStudio.renderProposal === 'function') {
+        const cards = window.GRCPolicyStudio.renderProposal(data.proposal);
+        if (cards) row.appendChild(cards);
+        log.scrollTop = log.scrollHeight;
+      }
     } catch (err) {
       pending.remove();
       addMessage('Error', (err && err.message) || 'request failed', 'note');

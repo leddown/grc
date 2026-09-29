@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"grc/internal/aiprovider"
 	"grc/internal/authn"
 	"grc/internal/clientprofile"
 	"grc/internal/db"
@@ -29,6 +30,7 @@ type studioApp struct {
 	policies *policydocs.Service
 	clients  *clientprofile.Service
 	know     *knowledge.Service
+	conn     *db.Conn
 	doc      policydocs.Document
 	admin    string // session tokens
 	admin2   string // a second administrator, "bob"
@@ -47,7 +49,7 @@ func newStudioApp(t *testing.T) *studioApp {
 // newStudioAppAt builds the app over dbPath. prev, when given, is an earlier
 // instance over the same database: its users, sessions and document are
 // reused, which is what a restart looks like.
-func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp) *studioApp {
+func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp, ai ...*aiprovider.Router) *studioApp {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	conn, err := db.OpenSQLite(dbPath)
@@ -72,14 +74,19 @@ func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp) *studioApp {
 	registerPublicPageRoutes(router, false)
 	policies := registerPolicyDocRoutes(router, conn, auth, adminGate, false)
 	know := knowledge.NewService(knowledge.NewStore(conn))
-	studio, err := registerPolicyStudioRoutes(router, conn, policies, auth, know, adminGate, Options{})
+	var aiRouter *aiprovider.Router
+	if len(ai) > 0 {
+		aiRouter = ai[0]
+		registerAIAuxRoutes(router)
+	}
+	studio, err := registerPolicyStudioRoutes(router, conn, policies, auth, know, aiRouter, nil, adminGate, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = studio.Shutdown(context.Background()) })
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	app := &studioApp{router: router, server: srv, studio: studio, policies: policies, clients: clientprofile.NewService(conn), know: know}
+	app := &studioApp{router: router, server: srv, studio: studio, policies: policies, clients: clientprofile.NewService(conn), know: know, conn: conn}
 	if prev != nil {
 		app.doc, app.admin, app.admin2, app.reader, app.outside = prev.doc, prev.admin, prev.admin2, prev.reader, prev.outside
 		return app
@@ -228,6 +235,12 @@ func TestStudioPagesFollowThePolicyGrants(t *testing.T) {
 		{http.MethodPatch, "/policies/" + id + "/studio/comments/1", a.reader, http.StatusForbidden},
 		{http.MethodPost, "/policies/" + id + "/studio/decisions", a.reader, http.StatusForbidden},
 		{http.MethodPost, "/policies/" + id + "/studio/decisions", "", http.StatusUnauthorized},
+		{http.MethodGet, "/policies/" + id + "/studio/ai/status", a.reader, http.StatusOK},
+		{http.MethodGet, "/policies/" + id + "/studio/ai/edits", a.reader, http.StatusOK},
+		{http.MethodGet, "/policies/" + id + "/studio/ai/status", a.outside, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/ai/proposals", a.reader, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/ai/proposals", "", http.StatusUnauthorized},
+		{http.MethodPost, "/policies/" + id + "/studio/ai/proposals/1/placements", a.reader, http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		if got := do(tc.method, tc.path, tc.token); got != tc.want {
@@ -358,5 +371,29 @@ func TestInternalCommentsStayInternal(t *testing.T) {
 	raw, _ := json.Marshal(bundle)
 	if strings.Contains(string(raw), "INTERNAL-7f3c") {
 		t.Fatal("the knowledge export carries an internal comment")
+	}
+}
+
+// The dock on a Studio page answers through the proposal engine, which applies
+// the document's AI policy before anything is sent.
+func TestStudioDockAppliesTheDocumentsAIPolicy(t *testing.T) {
+	stub := &aiStub{}
+	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "dock.db"), nil, stub.router(t))
+	d, err := a.policies.GetDocument(a.doc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.AIPolicy = "off"
+	if _, err := a.policies.UpdateDocument(d.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"question":"make it testable","page":"/policies/` + strconv.FormatInt(a.doc.ID, 10) + `/studio"}`
+	req := httptest.NewRequest(http.MethodPost, "/ai-chat/ask", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: a.admin})
+	rec := httptest.NewRecorder()
+	a.router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "AI is switched off for this document") || stub.calls != 0 {
+		t.Fatalf("dock with AI off: %d %s, %d model calls", rec.Code, rec.Body.String(), stub.calls)
 	}
 }

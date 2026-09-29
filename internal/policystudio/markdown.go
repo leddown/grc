@@ -525,3 +525,61 @@ func parseSection(raw, uid string) (*Node, error) {
 	}
 	return &n, Validate(&n)
 }
+
+// restrictedParser has no table extension: AI output may not build tables.
+var restrictedParser = goldmark.New()
+
+// RestrictedMarkdown parses Markdown written by a model into schema blocks.
+// Unlike SectionFromMarkdown, which keeps whatever text a legacy body had, it
+// refuses anything outside the restricted set -- paragraphs, - and 1. lists,
+// **bold**, *italic*, `code`, links, {{fact:key}} and [[control:ID]] -- rather
+// than converting it, so raw HTML, headings, tables, images and code blocks
+// never reach the document. The blocks returned are schema-valid.
+func RestrictedMarkdown(body string, newID func() string) ([]*Node, error) {
+	source := []byte(strings.TrimSpace(body))
+	if len(source) == 0 {
+		return nil, fmt.Errorf("the replacement is empty")
+	}
+	// A model states a missing fact as {{fact:key}}; the legacy placeholder
+	// would otherwise be converted like one.
+	if strings.Contains(body, "[[UNRESOLVED") {
+		return nil, fmt.Errorf("write a missing fact as {{fact:key}}, not [[UNRESOLVED: key]]")
+	}
+	doc := restrictedParser.Parser().Parse(text.NewReader(source))
+	if err := restrictedAST(doc); err != nil {
+		return nil, err
+	}
+	c := converter{source: source, newID: newID}
+	var blocks []*Node
+	for child := doc.FirstChild(); child != nil; child = child.NextSibling() {
+		blocks = append(blocks, c.blocks(child)...)
+	}
+	probe := &Node{Type: "doc", Content: []*Node{{Type: "policySection", Attrs: map[string]any{"uid": "probe", "kind": "other"},
+		Content: append([]*Node{{Type: "sectionHeading", Attrs: map[string]any{"bid": "probe"}}}, blocks...)}}}
+	if err := Validate(probe); err != nil {
+		return nil, err
+	}
+	return blocks, nil
+}
+
+func restrictedAST(n ast.Node) error {
+	for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+		switch v := child.(type) {
+		case *ast.Paragraph, *ast.TextBlock, *ast.List, *ast.ListItem, *ast.Text, *ast.String, *ast.CodeSpan, *ast.Emphasis:
+		case *ast.Link:
+			if linkHref(string(v.Destination)) != nil {
+				return fmt.Errorf("the link to %q is not an https, http or mailto link", string(v.Destination))
+			}
+		case *ast.Heading:
+			return fmt.Errorf("headings are not allowed in a proposed edit")
+		case *ast.HTMLBlock, *ast.RawHTML:
+			return fmt.Errorf("raw HTML is not allowed in a proposed edit")
+		default:
+			return fmt.Errorf("%s is not allowed in a proposed edit", strings.ToLower(strings.TrimPrefix(fmt.Sprintf("%T", child), "*ast.")))
+		}
+		if err := restrictedAST(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}

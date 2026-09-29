@@ -139,7 +139,8 @@ row count and exits non-zero on the first error.
   POLICY_STUDIO.md). The review layer (`policy_comment_threads`,
   `policy_comments`, `policy_studio_audit`) follows the same rule: comment
   anchors are Yjs relative positions into that state, so they are backed up but
-  not synced.
+  not synced. So do the AI proposals (`policy_ai_proposals`, `policy_ai_edits`):
+  an edit's suid is a suggestion id inside that state.
 - **The derived link table is rebuilt.** `security_nfr_control_links` has no
   stable key (it is regenerated from the catalogs + overrides), so it is
   replaced wholesale on the destination to stay consistent with the rows just

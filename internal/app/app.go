@@ -177,7 +177,7 @@ func Run(options Options) error {
 	// registerKnowledgeRoutes because that function declines to serve the API
 	// without a token, and the resolver needs the service either way.
 	knowledgeService := knowledge.NewService(knowledge.NewStore(sqliteDB))
-	studioService, err := registerPolicyStudioRoutes(router, sqliteDB, policyService, authService, knowledgeService, adminMiddleware, options)
+	studioService, err := registerPolicyStudioRoutes(router, sqliteDB, policyService, authService, knowledgeService, aiRouter, settingsService, adminMiddleware, options)
 	if err != nil {
 		return err
 	}

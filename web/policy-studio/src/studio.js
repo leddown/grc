@@ -21,6 +21,7 @@ import {
   enableSuggestChanges, disableSuggestChanges, applySuggestion, revertSuggestion, selectSuggestion,
 } from '@handlewithcare/prosemirror-suggest-changes'
 import { studioExtensions, FRAGMENT } from './schema.js'
+import { aiPreview, previewKey, previewItem, locate, suggestionTransaction, fragmentText } from './ai.js'
 
 const POLL_MS = 4000
 
@@ -219,8 +220,10 @@ function structuralSummary(x) {
 // Suggest mode: edits become suggestion marks rather than changes. Ids are
 // UUIDs, not the library's max+1 counter, which two clients suggesting at once
 // would both pick. The library only sets `id`; authorship is filled in here
-// for the ids this client created, never for a mark that arrived from a peer.
-function suggestMode(user) {
+// for the ids this client created, never for a mark that arrived from a peer:
+// the person's own, or an AI edit this client placed (aiAttribution, keyed by
+// the edit's suid).
+function suggestMode(user, aiAttribution) {
   const mine = new Set()
   const newSuid = () => { const id = crypto.randomUUID(); mine.add(id); return id }
   return Extension.create({
@@ -231,13 +234,15 @@ function suggestMode(user) {
         new Plugin({
           key: new PluginKey('suggestionAttribution'),
           appendTransaction(trs, _old, state) {
-            if (!mine.size || !trs.some((tr) => tr.docChanged && !tr.getMeta('y-sync$'))) return null
+            if ((!mine.size && !aiAttribution.size) || !trs.some((tr) => tr.docChanged && !tr.getMeta('y-sync$'))) return null
             const now = new Date().toISOString()
             let tr = null
             state.doc.descendants((node, pos) => {
               for (const mark of node.marks) {
-                if (!SUGGESTION_TYPES.includes(mark.type.name) || mark.attrs.authorId || !mine.has(mark.attrs.id)) continue
-                const attrs = Object.assign({}, mark.attrs, { authorId: user.id, authorKind: 'human', authorName: user.name, createdAt: now })
+                if (!SUGGESTION_TYPES.includes(mark.type.name) || mark.attrs.authorId) continue
+                const ai = aiAttribution.get(mark.attrs.id)
+                if (!ai && !mine.has(mark.attrs.id)) continue
+                const attrs = Object.assign({}, mark.attrs, ai || { authorId: user.id, authorKind: 'human', authorName: user.name }, { createdAt: now })
                 tr = tr || state.tr
                 if (node.isText) tr.removeMark(pos, pos + node.nodeSize, mark).addMark(pos, pos + node.nodeSize, mark.type.create(attrs))
                 else tr.removeNodeMark(pos, mark).addNodeMark(pos, mark.type.create(attrs))
@@ -391,6 +396,15 @@ class Studio {
     this.showAuthors = false
     this.showResolved = false
     this.replyDrafts = {}
+    // AI: availability for this document, the proposals asked for in this
+    // session (newest first), the rationale of AI suggestions in the
+    // document, and who each AI suggestion this client places is by.
+    this.ai = { available: false, destination: '', reason: '' }
+    this.proposals = []
+    this.aiEdits = {}
+    this.aiAttribution = new Map()
+    this.aiBusy = false
+    this.cardHosts = new Map()
     this.composer = null
     this.sideTab = 'readiness'
     try { this.sideTab = localStorage.getItem('grc.policyStudio.tab') || 'readiness' } catch (_) { /* storage may be unavailable */ }
@@ -417,6 +431,7 @@ class Studio {
     this.connect()
     this.renderPanels()
     this.loadReview(true)
+    this.loadAI()
     this.poll()
     document.addEventListener('keydown', (e) => this.reviewKeys(e))
   }
@@ -518,7 +533,9 @@ class Studio {
   renderPresence() {
     const me = this.provider.awareness.clientID
     const seen = new Map()
+    const drafting = []
     for (const [id, st] of this.provider.awareness.getStates()) {
+      if (st.ai && st.user) drafting.push(st.ai.section > 0 ? '§' + st.ai.section : 'the document')
       if (!st.user || !st.user.name) continue
       const prev = seen.get(st.user.name)
       seen.set(st.user.name, { name: st.user.name, color: st.user.color, you: (prev && prev.you) || id === me })
@@ -528,7 +545,8 @@ class Studio {
       const dot = h('span', { class: 'ps-presence-dot', 'aria-hidden': 'true' })
       dot.style.background = p.color || 'var(--accent)'
       return h('li', { class: 'ps-presence-person', title: p.you ? p.name + ' (you)' : p.name }, dot, p.you ? p.name + ' (you)' : p.name)
-    }))
+    }), ...drafting.map((where) => h('li', { class: 'ps-presence-person ps-presence-ai', role: 'status' },
+      h('span', { class: 'ps-kind-badge', 'data-kind': 'ai', text: 'AI' }), ' drafting in ' + where)))
   }
 
   mount(ydoc) {
@@ -545,8 +563,9 @@ class Studio {
           CollaborationCaret.configure({ provider: this.provider, user: { name: this.user, color: colorFor(this.user) } }),
           sectionIntegrity(() => this.say("Sections can't be added, removed, merged or split by typing. Use the outline on the left.", 'warn')),
           controlChips((info) => this.chipRow(info)),
-          suggestMode({ id: this.user, name: this.user }),
+          suggestMode({ id: this.user, name: this.user }, this.aiAttribution),
           reviewDecorations(),
+          aiPreview(),
         ],
       }),
       // Lets suggestMode rewrite local transactions into suggestions.
@@ -554,6 +573,20 @@ class Studio {
       editorProps: {
         attributes: { 'aria-label': 'Policy text', class: 'ps-prosemirror' },
         transformPastedHTML: sanitizePastedHTML,
+        // "/ai" alone in a paragraph, then Enter, asks the AI to draft there.
+        handleKeyDown: (view, event) => {
+          if (event.key !== 'Enter' || event.shiftKey) return false
+          const { $from, empty } = view.state.selection
+          const para = $from.parent
+          if (!empty || para.type.name !== 'paragraph' || para.textContent.trim() !== '/ai' || !this.canAskAI()) return false
+          const start = $from.start()
+          view.dispatch(view.state.tr.delete(start, start + para.content.size))
+          const instruction = window.prompt('What should the AI draft here?', '')
+          if (instruction === null) return true
+          const section = view.state.doc.resolve(start).node(1)
+          this.askAI('draft_section', 'section', { section_uid: section.attrs.uid, block_ids: [para.attrs.bid], quote: '' }, instruction)
+          return true
+        },
       },
     })
     this.pushChips()
@@ -571,8 +604,21 @@ class Studio {
       this.focusThread(t)
     })
     this.refreshSuggestions(true)
+    this.editor.on('selectionUpdate', () => this.renderBubble())
+    this.editor.on('focus', () => this.renderBubble())
+    this.editor.on('blur', () => setTimeout(() => this.renderBubble(), 150))
     window.GRCPolicyStudio.editor = this.editor
     window.GRCPolicyStudio.suggestions = () => suggestionsIn(this.editor.state.doc)
+    // The dock shows a proposal's cards too; the host it is given is kept so
+    // the cards there follow what happens to the proposal.
+    window.GRCPolicyStudio.renderProposal = (p) => {
+      this.addProposal(p)
+      const host = h('div', { class: 'ps-ai-dock-host' }, this.proposalCards(p, { inDock: true }))
+      this.cardHosts.set(p.id, host)
+      return host
+    }
+    window.GRCPolicyStudio.proposals = () => this.proposals
+    window.GRCAskAIContext = () => this.pageContext()
     let paper = false
     try { paper = localStorage.getItem('grc.policyStudio.paper') === '1' } catch (_) { /* storage may be unavailable */ }
     if (paper) this.togglePaper()
@@ -601,10 +647,13 @@ class Studio {
 
   async refresh() {
     const res = await api('GET', '/policies/' + this.docId + '/studio/state')
+    const before = this.state && this.state.document
     this.state = res.data
     this.etag = res.etag
     this.renderPanels()
     await this.loadReview()
+    const d = this.state.document
+    if (!before || before.status !== d.status || before.ai_policy !== d.ai_policy) this.loadAI()
   }
 
   // Comments and provenance are fetched when the state says they changed.
@@ -612,14 +661,17 @@ class Studio {
     if (!force && this.reviewVersion === this.state.review_version) return
     this.reviewVersion = this.state.review_version
     try {
-      const [{ data: threads }, { data: prov }] = await Promise.all([
+      const [{ data: threads }, { data: prov }, { data: aiEdits }] = await Promise.all([
         api('GET', '/policies/' + this.docId + '/studio/comments'),
         api('GET', '/policies/' + this.docId + '/studio/provenance'),
+        api('GET', '/policies/' + this.docId + '/studio/ai/edits'),
       ])
       this.threads = threads || []
       this.provenance = prov || []
+      this.aiEdits = {}
+      for (const e of aiEdits || []) this.aiEdits[e.suid] = e
       this.pushReview()
-      if (this.sideTab === 'comments' || this.sideTab === 'provenance') this.renderSide()
+      if (this.sideTab === 'comments' || this.sideTab === 'provenance' || this.sideTab === 'suggestions') this.renderSide()
       this.renderCounts()
     } catch (_) { this.reviewVersion = null }
   }
@@ -699,6 +751,297 @@ class Studio {
       if (d.status === 'retired') items.push(btn('Reinstate as draft', () => this.transition('reopen', 'Reinstated as a draft.')))
     }
     this.actions.replaceChildren(...items)
+  }
+
+  // ---- AI proposals ----
+
+  async loadAI() {
+    try {
+      const { data } = await api('GET', '/policies/' + this.docId + '/studio/ai/status')
+      this.ai = data || this.ai
+    } catch (err) {
+      this.ai = { available: false, reason: err.message }
+    }
+    this.renderActions()
+    this.pushChips()
+    if (this.sideTab === 'ai') this.renderSide()
+  }
+
+  canAskAI() { return !!(this.state.can_edit && this.ai.available && this.editor) }
+
+  // selectionScope describes the selection for a request: the text blocks it
+  // touches and the selected text.
+  selectionScope() {
+    const st = this.editor.state
+    const { from, to, empty } = st.selection
+    const blockIds = []
+    st.doc.nodesBetween(from, to, (node) => {
+      if (node.isTextblock && node.attrs.bid && !blockIds.includes(node.attrs.bid)) blockIds.push(node.attrs.bid)
+    })
+    const section = st.doc.resolve(from).node(1)
+    return {
+      section_uid: section && section.attrs.uid ? section.attrs.uid : '',
+      block_ids: empty ? [] : blockIds,
+      quote: empty ? '' : st.doc.textBetween(from, to, ' ').slice(0, 1000),
+    }
+  }
+
+  sectionNumber(uid) {
+    const attached = this.state.sections.filter((x) => !x.detached)
+    return attached.findIndex((x) => x.uid === uid) + 1
+  }
+
+  // askAI runs one request and shows its proposal in the AI tab, previewed
+  // privately in this editor until someone chooses to suggest it to everyone.
+  async askAI(action, scope, selection, instruction) {
+    if (!this.canAskAI()) { this.say(this.ai.reason || 'AI proposals are not available here.', 'warn'); return }
+    if (this.aiBusy) { this.say('The AI is still working on the last request.', 'info'); return }
+    this.aiBusy = true
+    const n = this.sectionNumber(selection.section_uid)
+    // Everyone in the document sees that the AI is drafting, and where.
+    this.provider.awareness.setLocalStateField('ai', { section: n > 0 ? n : 0 })
+    this.setTab('ai')
+    this.say('Asking the AI…', 'info')
+    try {
+      const { data } = await api('POST', '/policies/' + this.docId + '/studio/ai/proposals', { action, scope, selection, instruction: instruction || '' })
+      this.addProposal(data)
+      if (data.has_proposal && data.edits.some((e) => e.status === 'ok')) this.previewProposal(data)
+      else this.say(data.answer_markdown ? 'The AI answered; see the AI panel.' : 'The AI proposed no changes.', 'info')
+    } catch (err) {
+      this.say(err.message, 'error')
+    } finally {
+      this.aiBusy = false
+      this.provider.awareness.setLocalStateField('ai', null)
+      this.renderSide()
+    }
+  }
+
+  addProposal(p) {
+    p.ui = { state: 'new', statuses: {} }
+    this.proposals = [p].concat(this.proposals.filter((x) => x.id !== p.id)).slice(0, 10)
+  }
+
+  okEdits(p) { return (p.edits || []).filter((e) => e.status === 'ok') }
+
+  // proposalChanged redraws a proposal wherever it is shown.
+  proposalChanged(p) {
+    const host = this.cardHosts.get(p.id)
+    if (host && host.isConnected) host.replaceChildren(this.proposalCards(p, { inDock: true }))
+    this.renderSide()
+  }
+
+  // previewProposal shows a proposal's edits in this editor only.
+  previewProposal(p) {
+    if (!this.editor) return
+    const st = this.editor.state
+    const items = []
+    const statuses = {}
+    for (const edit of this.okEdits(p)) {
+      const where = locate(st.doc, edit)
+      statuses[edit.suid] = where.status === 'ok' ? 'previewed' : where.status
+      if (where.status === 'ok') items.push(previewItem(st, edit, where))
+    }
+    this.editor.view.dispatch(st.tr.setMeta(previewKey, { items }).setMeta('addToHistory', false))
+    p.ui = { state: 'previewed', statuses }
+    this.previewing = p.id
+    this.reportPlacements(p, statuses)
+    const stale = Object.values(statuses).filter((x) => x !== 'previewed').length
+    this.say(items.length + ' edit' + (items.length === 1 ? '' : 's') + ' previewed privately' +
+      (stale ? '; ' + stale + " couldn't be placed because the text changed. Ask again to re-anchor them." : '. Only you can see them.'), stale ? 'warn' : 'info')
+    this.proposalChanged(p)
+  }
+
+  clearPreview() {
+    if (!this.editor) return
+    this.editor.view.dispatch(this.editor.state.tr.setMeta(previewKey, { items: [] }).setMeta('addToHistory', false))
+    this.previewing = null
+  }
+
+  // shareProposal places each edit in the shared document as a suggestion
+  // attributed to the AI, re-locating it against the text as it is now; an
+  // edit whose text has changed is reported stale and never placed elsewhere.
+  shareProposal(p) {
+    if (!this.editor || !this.state.can_edit) return
+    this.clearPreview()
+    const statuses = {}
+    const anchors = {}
+    let placed = 0
+    for (const edit of this.okEdits(p)) {
+      const st = this.editor.state
+      const where = locate(st.doc, edit)
+      if (where.status !== 'ok') { statuses[edit.suid] = where.status; continue }
+      if (edit.op === 'comment') {
+        const from = where.textFrom !== undefined ? where.textFrom : where.from
+        const to = where.textTo !== undefined ? where.textTo : where.to
+        anchors[edit.suid] = { section_uid: edit.section_uid, anchor_start: absToRel(st, from), anchor_end: absToRel(st, to), quote: st.doc.textBetween(from, to, ' ').slice(0, 1000) }
+        statuses[edit.suid] = 'placed'
+        placed++
+        continue
+      }
+      this.aiAttribution.set(edit.suid, { authorId: 'ai', authorKind: 'ai', authorName: p.ai_label || 'AI', proposalId: String(p.id) })
+      const tr = suggestionTransaction(st, edit, where)
+      if (!tr) { statuses[edit.suid] = 'conflict'; continue }
+      const before = this.editor.state.doc
+      this.editor.view.dispatch(tr)
+      statuses[edit.suid] = this.editor.state.doc === before ? 'conflict' : 'placed'
+      if (statuses[edit.suid] === 'placed') placed++
+    }
+    p.ui = { state: 'shared', statuses }
+    this.reportPlacements(p, statuses, anchors)
+    const missed = Object.values(statuses).filter((x) => x !== 'placed').length
+    const total = Object.keys(statuses).length
+    const msg = missed
+      ? placed + ' of ' + total + ' edits suggested to everyone; ' + missed + " couldn't be placed because the text changed. Ask again to re-anchor them."
+      : 'Suggested to everyone: ' + placed + ' edit' + (placed === 1 ? '' : 's') + ', attributed to ' + (p.ai_label || 'the AI') + '.'
+    this.say(msg, missed ? 'warn' : 'info')
+    this.announce(msg)
+    this.refreshSuggestions(false)
+    this.proposalChanged(p)
+  }
+
+  discardProposal(p) {
+    if (this.previewing === p.id) this.clearPreview()
+    const statuses = {}
+    for (const e of this.okEdits(p)) if (!p.ui.statuses[e.suid] || p.ui.statuses[e.suid] === 'previewed') statuses[e.suid] = 'discarded'
+    p.ui = { state: 'discarded', statuses: Object.assign({}, p.ui.statuses, statuses) }
+    if (Object.keys(statuses).length) this.reportPlacements(p, statuses)
+    this.proposalChanged(p)
+  }
+
+  async reportPlacements(p, statuses, anchors) {
+    const placements = Object.entries(statuses).map(([suid, status]) => Object.assign({ suid, status }, (anchors || {})[suid] || {}))
+    if (!placements.length) return
+    try {
+      await api('POST', '/policies/' + this.docId + '/studio/ai/proposals/' + p.id + '/placements', { placements })
+      if (Object.values(statuses).includes('placed')) this.loadReview(true)
+    } catch (err) {
+      this.say("Where the edits went wasn't recorded: " + err.message, 'warn')
+    }
+  }
+
+  // proposalCards renders a proposal: the answer, each edit as quote →
+  // replacement with its rationale, citations and warnings, the edits the
+  // server refused and why, mapping and fact proposals, and the three actions.
+  // The dock shows the same cards (window.GRCPolicyStudio.renderProposal).
+  proposalCards(p, opts) {
+    const box = h('div', { class: 'ps-ai-proposal', 'data-proposal': String(p.id) })
+    box.appendChild(h('p', { class: 'ps-small ps-muted' }, h('span', { class: 'ps-kind-badge', 'data-kind': 'ai', text: 'AI' }), ' ', p.destination || p.ai_label || ''))
+    // In the dock the answer is already the message above the cards.
+    if (p.answer_markdown && !(opts && opts.inDock)) box.appendChild(h('p', { class: 'ps-ai-answer', text: p.answer_markdown }))
+    if (p.summary) box.appendChild(h('p', {}, h('strong', { text: p.summary })))
+    const ok = this.okEdits(p)
+    const list = h('ol', { class: 'ps-ai-edits' })
+    const opLabels = { replace: 'Replace', delete: 'Delete', insert_after: 'Add after', insert_before: 'Add before', comment: 'Comment' }
+    for (const e of ok) {
+      const status = p.ui && p.ui.statuses[e.suid]
+      const li = h('li', { class: 'ps-ai-edit' },
+        h('div', { class: 'ps-sugg-meta' }, h('strong', { text: opLabels[e.op] || e.op }), ' ',
+          status ? h('span', { class: 'ps-kind-badge', 'data-status': status, text: { previewed: 'previewed', placed: 'suggested', stale: 'stale', conflict: 'conflict', discarded: 'discarded' }[status] || status }) : null))
+      const ex = h('p', { class: 'ps-sugg-excerpt' })
+      if (e.op !== 'insert_after' && e.op !== 'insert_before' && e.quote) ex.appendChild(h(e.op === 'comment' ? 'span' : 'del', { text: e.quote.length > 200 ? e.quote.slice(0, 200) + '…' : e.quote }))
+      if (e.op === 'replace' || e.op === 'insert_after' || e.op === 'insert_before') {
+        if (ex.childNodes.length) ex.appendChild(document.createTextNode(' → '))
+        ex.appendChild(h('ins', { text: fragmentText(e) || e.replacement_markdown }))
+      }
+      li.appendChild(ex)
+      if (e.rationale) li.appendChild(h('p', { class: 'ps-small', text: e.rationale }))
+      if (e.citations && e.citations.length) {
+        li.appendChild(h('ul', { class: 'ps-ai-citations' }, e.citations.map((c) => h('li', { class: 'ps-small' },
+          h('strong', { text: c.ref }), ' (' + c.kind.replace('_', ' ') + ')',
+          c.quote ? ': “' + c.quote + '”' : '',
+          c.known ? (c.verified ? ' ✓ quoted verbatim' : '') : ' — not found in this installation',
+          c.note && c.known ? ' — ' + c.note : ''))))
+      }
+      for (const w of e.warnings || []) li.appendChild(h('p', { class: 'ps-small ps-warn', text: w }))
+      list.appendChild(li)
+    }
+    if (ok.length) box.appendChild(list)
+    const refused = (p.edits || []).filter((e) => e.status !== 'ok')
+    if (refused.length) {
+      box.appendChild(h('details', { class: 'ps-small' }, h('summary', { text: refused.length + ' edit(s) the server refused' }),
+        h('ul', {}, refused.map((e) => h('li', { text: (e.quote ? '“' + e.quote.slice(0, 80) + '”: ' : '') + e.reason })))))
+    }
+    const mappings = (p.control_mappings || []).filter((m) => m.kept)
+    if (mappings.length) {
+      box.appendChild(h('p', { class: 'ps-small ps-muted', text: 'Control mappings the AI proposes:' }))
+      box.appendChild(h('ul', { class: 'ps-ai-citations' }, mappings.map((m) => {
+        const sec = this.state.sections.find((x) => x.uid === m.section_uid)
+        const li = h('li', { class: 'ps-small' }, h('strong', { text: m.control_id }), ' ' + (m.control_name || '') + ' — ' + m.coverage + ', ' + (sec ? sec.heading : 'a section') + '. ' + m.rationale)
+        if (m.note) li.appendChild(h('span', { class: 'ps-warn', text: ' ' + m.note }))
+        if (sec && this.state.can_edit && this.state.document.status === 'draft') {
+          li.appendChild(h('button', { type: 'button', class: 'ps-link-button', text: 'Map it', onclick: () => this.command('POST', '/sections/' + sec.id + '/controls', { control_id: m.control_id, coverage: m.coverage, note: 'Proposed by ' + (p.ai_label || 'the AI') }, m.control_id + ' mapped.') }))
+        }
+        return li
+      })))
+    }
+    if ((p.new_facts || []).length) {
+      box.appendChild(h('p', { class: 'ps-small ps-muted', text: 'Client facts the text now needs (fill them in under Facts): ' + p.new_facts.map((f) => f.key).join(', ') }))
+    }
+    if (ok.length && this.state.can_edit) {
+      const state = p.ui ? p.ui.state : 'new'
+      box.appendChild(h('div', { class: 'ps-review-all' },
+        h('button', { type: 'button', text: state === 'previewed' ? 'Previewed privately' : 'Preview in document', disabled: state === 'shared' || state === 'discarded', onclick: () => this.previewProposal(p) }),
+        h('button', { type: 'button', class: 'ps-primary', text: state === 'shared' ? 'Suggested to everyone' : 'Suggest to everyone', disabled: state === 'shared' || state === 'discarded', onclick: () => this.shareProposal(p) }),
+        h('button', { type: 'button', text: state === 'discarded' ? 'Discarded' : 'Discard', disabled: state === 'shared' || state === 'discarded', onclick: () => this.discardProposal(p) })))
+    }
+    return box
+  }
+
+  aiPanel() {
+    const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-ai' }, h('h2', { class: 'ps-panel-title', id: 'ps-ai', text: 'AI' }))
+    if (!this.ai.available) {
+      panel.appendChild(h('p', { class: 'ps-muted', text: this.ai.reason || 'AI proposals are not available for this document.' }))
+    } else {
+      panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Requests go to ' + this.ai.destination + '. The AI proposes; every change becomes a suggestion someone accepts or rejects.' }))
+    }
+    if (this.aiBusy) panel.appendChild(h('p', { class: 'ps-small', role: 'status', text: 'The AI is working…' }))
+    if (this.canAskAI()) {
+      panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Select text for Make testable, Tighten or Ask AI; each section has an AI menu under its heading.' }))
+    }
+    if (!this.proposals.length) panel.appendChild(h('p', { class: 'ps-muted', text: 'No proposals yet.' }))
+    for (const p of this.proposals) panel.appendChild(this.proposalCards(p))
+    return panel
+  }
+
+  // ---- the selection toolbar ----
+
+  renderBubble() {
+    if (!this.bubble) {
+      this.bubble = h('div', { class: 'ps-bubble', role: 'toolbar', 'aria-label': 'AI actions for the selection', hidden: true })
+      this.canvas.parentNode.appendChild(this.bubble)
+    }
+    const st = this.editor.state
+    if (!this.canAskAI() || st.selection.empty || !this.editor.isFocused && !this.bubble.contains(document.activeElement)) {
+      this.bubble.hidden = true
+      return
+    }
+    const run = (action) => () => { const sel = this.selectionScope(); this.bubble.hidden = true; this.askAI(action, 'selection', sel) }
+    this.bubble.replaceChildren(
+      h('button', { type: 'button', text: 'Make testable', onclick: run('testable') }),
+      h('button', { type: 'button', text: 'Tighten', onclick: run('tighten') }),
+      h('button', { type: 'button', text: 'Explain for the customer', onclick: run('explain_for_customer') }),
+      h('button', { type: 'button', text: 'Ask AI…', onclick: () => {
+        const sel = this.selectionScope()
+        this.bubble.hidden = true
+        if (window.GRCAIDock) window.GRCAIDock.open(sel.quote ? 'About “' + sel.quote.slice(0, 120) + '”: ' : '')
+      } }))
+    const end = this.editor.view.coordsAtPos(st.selection.to)
+    const box = this.canvas.parentNode.getBoundingClientRect()
+    this.bubble.style.top = Math.max(0, end.bottom - box.top + this.canvas.parentNode.scrollTop + 6) + 'px'
+    this.bubble.style.left = Math.max(8, Math.min(end.left - box.left, box.width - 360)) + 'px'
+    this.bubble.hidden = false
+  }
+
+  // pageContext is what the AI dock sends with a question asked here.
+  pageContext() {
+    const ctx = { kind: 'policy_studio', document_id: Number(this.docId), mode: this.suggesting() ? 'suggesting' : 'editing',
+      pending_counts: { suggestions: this.suggestions.length, comments: this.threads.filter((t) => t.status === 'open').length } }
+    if (this.editor) {
+      const sel = this.selectionScope()
+      ctx.section_uid = sel.section_uid
+      ctx.selection = { block_ids: sel.block_ids, quote: sel.quote }
+    }
+    return ctx
   }
 
   // ---- suggest mode and review state ----
@@ -927,6 +1270,16 @@ class Studio {
       row.appendChild(chip)
     }
     if (editable) row.appendChild(h('button', { type: 'button', class: 'ps-chip-add', text: '+ Control', onclick: (e) => this.openPicker(sec, e.currentTarget) }))
+    if (this.canAskAI()) {
+      const ask = (action) => () => this.askAI(action, 'section', { section_uid: sec.uid, block_ids: [], quote: '' })
+      const menu = h('select', { class: 'ps-ai-menu', 'aria-label': 'AI for ' + (sec.heading || 'this section'),
+        onchange: (e) => { const v = e.target.value; e.target.value = ''; if (v) ask(v)() } },
+        h('option', { value: '', text: 'AI…' }),
+        h('option', { value: 'draft_section', text: 'Draft this section' }),
+        h('option', { value: 'review', text: 'Review section' }),
+        h('option', { value: 'map_controls', text: 'Suggest control mappings' }))
+      row.appendChild(menu)
+    }
     if (!sec.guidance) return row
     // Template guidance: what the section is for and what it answers to. It is
     // shown here only, never in the document.
@@ -975,7 +1328,7 @@ class Studio {
   }
 
   renderSide() {
-    const tabs = [['suggestions', 'Suggestions'], ['comments', 'Comments'], ['readiness', 'Readiness'], ['facts', 'Facts'],
+    const tabs = [['suggestions', 'Suggestions'], ['comments', 'Comments'], ['ai', 'AI'], ['readiness', 'Readiness'], ['facts', 'Facts'],
       ['provenance', 'Provenance'], ['document', 'Document']]
     if (!tabs.some(([k]) => k === this.sideTab)) this.sideTab = 'readiness'
     const focusedId = this.side.contains(document.activeElement) && document.activeElement.dataset ? document.activeElement.dataset.focusKey : ''
@@ -997,7 +1350,7 @@ class Studio {
       this.tabButtons[key] = b
       bar.appendChild(b)
     })
-    const body = { suggestions: () => this.suggestionsPanel(), comments: () => this.commentsPanel(), readiness: () => this.readinessPanel(),
+    const body = { suggestions: () => this.suggestionsPanel(), comments: () => this.commentsPanel(), ai: () => this.aiPanel(), readiness: () => this.readinessPanel(),
       facts: () => this.factsPanel(), provenance: () => this.provenancePanel(), document: () => this.documentControl() }[this.sideTab]()
     this.side.replaceChildren(bar, h('div', { class: 'ps-tabpanel', role: 'tabpanel', id: 'ps-tabpanel', 'aria-labelledby': 'ps-tab-' + this.sideTab }, body))
     this.renderCounts()
@@ -1011,9 +1364,16 @@ class Studio {
     const s = this.state
     const errors = s.findings.filter((f) => f.severity === 'error')
     const warnings = s.findings.filter((f) => f.severity !== 'error')
-    const finding = (f) => h('li', { class: 'ps-finding ps-finding-' + f.severity },
-      h('span', { class: 'ps-finding-kind', text: f.severity === 'error' ? 'Blocks approval' : 'Advisory' }),
-      f.heading ? h('strong', { text: f.heading }) : null, ' ', f.message)
+    const sectionOf = (f) => f.section_id ? s.sections.find((x) => x.id === f.section_id) : null
+    const finding = (f) => {
+      const sec = sectionOf(f)
+      return h('li', { class: 'ps-finding ps-finding-' + f.severity },
+        h('span', { class: 'ps-finding-kind', text: f.severity === 'error' ? 'Blocks approval' : 'Advisory' }),
+        f.heading ? h('strong', { text: f.heading }) : null, ' ', f.message,
+        sec && this.canAskAI() && f.rule !== 'pending_suggestions'
+          ? h('div', {}, h('button', { type: 'button', class: 'ps-link-button', text: 'Fix with AI', onclick: () => this.askAI('fix_lint', 'section', { section_uid: sec.uid, block_ids: [], quote: '' }, f.message) }))
+          : null)
+    }
     return h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-readiness' },
       h('h2', { class: 'ps-panel-title', id: 'ps-readiness', text: 'Readiness' }),
       h('p', { class: 'ps-muted', text: errors.length ? errors.length + ' issue(s) block approval.' : 'Nothing blocks approval.' }),
@@ -1088,6 +1448,14 @@ class Studio {
     if (x.changed) ex.appendChild(h('span', { class: 'ps-muted', text: x.changed }))
     if (!x.inserted && !x.deleted && !x.changed) ex.appendChild(h('span', { class: 'ps-muted', text: structuralSummary(x) }))
     li.appendChild(ex)
+    const ai = this.aiEdits[x.id]
+    if (ai) {
+      if (ai.rationale) li.appendChild(h('p', { class: 'ps-small', text: 'Why: ' + ai.rationale }))
+      if (ai.citations.length) {
+        li.appendChild(h('p', { class: 'ps-small ps-muted', text: 'Cites ' + ai.citations.map((c) => c.ref + (c.known ? '' : ' (unknown)')).join(', ') }))
+      }
+      li.appendChild(h('p', { class: 'ps-small ps-muted', text: 'Asked for by ' + ai.requested_by + ' · ' + shortTime(ai.created_at) }))
+    }
     if (canDecide) {
       li.appendChild(h('div', { class: 'ps-sugg-actions' },
         h('button', { type: 'button', class: 'ps-primary', text: 'Accept', onclick: () => this.decide([x.id], 'accept') }),
@@ -1446,6 +1814,11 @@ class Studio {
     const cls = h('select', { id: 'ps-f-classification', disabled: !editable })
     for (const c of this.meta.classifications) cls.appendChild(h('option', { value: c, selected: c === d.classification, text: c }))
     form.appendChild(h('label', { for: 'ps-f-classification' }, 'Classification', cls))
+    const aiPolicy = h('select', { id: 'ps-f-ai-policy', disabled: !editable })
+    for (const [v, label] of [['inherit', 'AI: wherever Settings sends it'], ['local_only', 'AI: local only, never the cloud'], ['off', 'AI: off for this document']]) {
+      aiPolicy.appendChild(h('option', { value: v, selected: v === (d.ai_policy || 'inherit'), text: label }))
+    }
+    form.appendChild(h('label', { for: 'ps-f-ai-policy' }, 'AI', aiPolicy))
     if (editable) {
       form.appendChild(h('button', { type: 'submit', class: 'ps-primary', text: 'Save document control' }))
       form.addEventListener('submit', async (e) => {
@@ -1453,6 +1826,7 @@ class Studio {
         const next = Object.assign({}, d)
         for (const [key, , type] of fields) next[key] = type === 'number' ? Number(inputs[key].value || 0) : inputs[key].value
         next.classification = cls.value
+        next.ai_policy = aiPolicy.value
         try {
           await api('PUT', '/policies/' + d.id, next)
           await this.refresh()

@@ -58,7 +58,7 @@ const documentColumns = `
 	d.approver, d.classification, d.frameworks_json, d.effective_date,
 	d.review_cadence_months, d.next_review_date, d.parent_document_id,
 	d.summary, d.author, d.created_at, d.updated_at, d.editor_format, d.projection_version, d.projection_token,
-	d.client_profile_id, d.template_id, d.template_version,
+	d.client_profile_id, d.template_id, d.template_version, d.ai_policy,
 	COALESCE((SELECT p.title FROM policy_documents p WHERE p.id = d.parent_document_id), '') AS parent_title,
 	(SELECT COUNT(*) FROM policy_sections s WHERE s.document_id = d.id) AS section_count,
 	(SELECT COUNT(*) FROM policy_versions v WHERE v.document_id = d.id) AS version_count,
@@ -129,12 +129,12 @@ func (r *SQLiteRepository) CreateDocument(d Document) (Document, error) {
 		(client_id, client_name, doc_type, reference, title, status, owner_role, approver,
 		 classification, frameworks_json, effective_date, review_cadence_months,
 		 next_review_date, parent_document_id, summary, author, created_at, updated_at,
-		 editor_format, client_profile_id, template_id, template_version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 editor_format, client_profile_id, template_id, template_version, ai_policy)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		d.ClientID, d.ClientName, d.DocType, d.Reference, d.Title, d.Status, d.OwnerRole, d.Approver,
 		d.Classification, encodeFrameworks(d.Frameworks), d.EffectiveDate, d.ReviewCadenceMonths,
 		d.NextReviewDate, d.ParentDocumentID, d.Summary, d.Author, d.CreatedAt, d.UpdatedAt,
-		d.EditorFormat, d.ClientProfileID, d.TemplateID, d.TemplateVersion)
+		d.EditorFormat, d.ClientProfileID, d.TemplateID, d.TemplateVersion, d.AIPolicy)
 	if err != nil {
 		return Document{}, err
 	}
@@ -146,12 +146,12 @@ func (r *SQLiteRepository) UpdateDocument(id int64, d Document) (Document, error
 		client_id = ?, client_name = ?, doc_type = ?, reference = ?, title = ?, owner_role = ?,
 		approver = ?, classification = ?, frameworks_json = ?, effective_date = ?,
 		review_cadence_months = ?, next_review_date = ?, parent_document_id = ?,
-		summary = ?, client_profile_id = ?, updated_at = ?
+		summary = ?, client_profile_id = ?, ai_policy = ?, updated_at = ?
 		WHERE id = ?`,
 		d.ClientID, d.ClientName, d.DocType, d.Reference, d.Title, d.OwnerRole, d.Approver,
 		d.Classification, encodeFrameworks(d.Frameworks), d.EffectiveDate,
 		d.ReviewCadenceMonths, d.NextReviewDate, d.ParentDocumentID,
-		d.Summary, d.ClientProfileID, d.UpdatedAt, id)
+		d.Summary, d.ClientProfileID, d.AIPolicy, d.UpdatedAt, id)
 	if err != nil {
 		return Document{}, err
 	}
@@ -432,7 +432,7 @@ func scanDocument(s scanner) (Document, error) {
 		&d.OwnerRole, &d.Approver, &d.Classification, &frameworksJSON, &d.EffectiveDate,
 		&d.ReviewCadenceMonths, &d.NextReviewDate, &d.ParentDocumentID, &d.Summary,
 		&d.Author, &d.CreatedAt, &d.UpdatedAt, &d.EditorFormat, &d.ProjectionVersion, &d.ProjectionToken,
-		&d.ClientProfileID, &d.TemplateID, &d.TemplateVersion,
+		&d.ClientProfileID, &d.TemplateID, &d.TemplateVersion, &d.AIPolicy,
 		&d.ParentTitle, &d.SectionCount,
 		&d.VersionCount, &d.LatestLabel, &d.ChildCount)
 	if err != nil {

@@ -154,6 +154,26 @@ func openAPIJSON(c *gin.Context) {
 					"security":    []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
+			"/policies/{id}/studio/ai/proposals": gin.H{
+				"post": gin.H{
+					"summary":     "Ask the AI for a proposal on a Studio document",
+					"description": "Body: {action: testable|tighten|rewrite|fix_lint|draft_section|expand|explain_for_customer|map_controls|review, scope: selection|section|document, selection {section_uid, block_ids, quote}, instruction}. The document's ai_policy decides where it may go (local_only refuses Claude; off refuses AI). Every edit comes back validated against the live document with status ok or rejected and a reason; nothing is written: the editor places accepted edits as suggestions. One request at a time per person, a rate limit per document.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/policies/{id}/studio/ai/proposals/{proposalID}/placements": gin.H{
+				"post": gin.H{
+					"summary":     "Record where the editor placed a proposal's edits",
+					"description": "Body: {placements: [{suid, status: previewed|placed|stale|conflict|discarded, section_uid, anchor_start, anchor_end, quote}]}. A placed comment edit starts an AI rationale thread at the anchors.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/policies/{id}/studio/ai/status": gin.H{
+				"get": gin.H{"summary": "Whether AI proposals are available on a document, and where they go"},
+			},
+			"/policies/{id}/studio/ai/edits": gin.H{
+				"get": gin.H{"summary": "The AI edits placed in a document as suggestions, with rationale, checked citations and the decision"},
+			},
 			"/policies/{id}/studio/provenance": gin.H{
 				"get": gin.H{"summary": "Where each section came from, and who suggested, accepted or rejected each decided suggestion, and when"},
 			},

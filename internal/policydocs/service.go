@@ -605,6 +605,10 @@ func normalizeDocument(d *Document) {
 	if d.ReviewCadenceMonths <= 0 {
 		d.ReviewCadenceMonths = 12
 	}
+	d.AIPolicy = strings.TrimSpace(d.AIPolicy)
+	if d.AIPolicy == "" {
+		d.AIPolicy = AIPolicyInherit
+	}
 
 	cleaned := make([]string, 0, len(d.Frameworks))
 	seen := make(map[string]bool, len(d.Frameworks))
@@ -628,6 +632,9 @@ func (s *Service) validateDocument(id int64, d Document) error {
 	}
 	if !contains(Classifications, d.Classification) {
 		return invalid("unknown classification %q", d.Classification)
+	}
+	if !contains(AIPolicies, d.AIPolicy) {
+		return invalid("ai_policy must be inherit, local_only or off")
 	}
 	if d.ReviewCadenceMonths < 1 || d.ReviewCadenceMonths > 120 {
 		return invalid("review cadence must be between 1 and 120 months")

@@ -5,7 +5,7 @@ policy authoring on top of `internal/policydocs`, live co-editing with the
 customer, tracked suggestions, and an Ask AI agent that proposes changes as
 suggestions a person accepts or rejects.
 
-**Status: Phases 1 and 2 built.**
+**Status: Phases 1–3 built.**
 
 - **1a:** the collaborative editor, persistence, projection, section integrity,
   control chips, live lint, and migration from the section editor.
@@ -16,9 +16,12 @@ suggestions a person accepts or rejects.
   keyboard review, the decision audit, comments anchored on the live text,
   provenance, the blocking `pending_suggestions` rule, and suggesting in
   review.
+- **3:** AI proposals: the `internal/policyai` engine, inline actions, the
+  Ask AI dock on Studio pages, private preview and shared placement as
+  suggestions attributed to the AI, `ai_policy`, and the Policy Studio agent.
 
 The owner accepted the recommendations for Q1–Q10 on 2026-09-28
-([§11](#11-open-questions-for-the-owner)). Phase 3 (AI proposals) is next. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
+([§11](#11-open-questions-for-the-owner)). Phase 4 (guest access and workshop mode) is next. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
 the throwaway branch `spike/policy-studio`.
 
 It follows the `*_FRAMEWORK.md` convention. [`POLICY_MODULE_FRAMEWORK.md`](POLICY_MODULE_FRAMEWORK.md)
@@ -265,9 +268,11 @@ policy_comment_threads id, document_id, section_uid, anchor_start TEXT, anchor_e
                       status, created_by, created_at, updated_at, resolved_by, resolved_at         (2)
 policy_comments       id, thread_id, author, author_kind, body, created_at                      (2)
 policy_ai_proposals   id, document_id, requested_by, action, scope, instruction, provider, model, served_by,
-                      agent, prompt_sha256, context_fingerprint, status, input_tokens, output_tokens, created_at
-policy_ai_edits       id, proposal_id, suid UNIQUE, op, block_id, quote, fragment_json, rationale,
-                      citations_json, validation, placement, decision, decided_by, decided_at
+                      agent, prompt_sha256, context_fingerprint, status, summary, answer_markdown,
+                      mappings_json, new_facts_json, input_tokens, output_tokens, created_at       (3)
+policy_ai_edits       id, proposal_id, suid UNIQUE, op, block_id, section_uid, quote, fragment_json,
+                      rationale, citations_json, validation, placement, decision, decided_by,
+                      decided_at                                                                  (3)
 policy_share_links    id, document_id, token_sha256 UNIQUE, label, role, allow_ai, max_uses, uses,
                       created_by, created_at, expires_at, revoked_at
 policy_guest_sessions id, link_id, session_sha256 UNIQUE, display_name, created_at, last_seen_at, expires_at
@@ -327,7 +332,9 @@ client_profile_facts  client_ref, key, value, value_type, source, updated_by, up
 | `/policies/:id/studio/comments` | all threads; post, reply, resolve (draft or in review) | read internal+shared | shared only | shared only (commenter posts) | 401 |
 | `POST /policies/:id/studio/decisions` | draft or in review | 403 | 403 | 403 | 401 |
 | `GET /policies/:id/studio/provenance` | ✓ | ✓ | — | — | 401 |
-| `/policies/:id/studio/ai/proposals`, `…/ai/edits/:uid/decision` | ✓ (decision: admin only) | 403 | proposals only if `allow_ai`; never decisions | 403 | 401 |
+| `POST /policies/:id/studio/ai/proposals`, `…/ai/proposals/:pid/placements` | ✓ (draft or in review) | 403 | proposals only if `allow_ai` (Phase 4); never decisions | 403 | 401 |
+| `GET /policies/:id/studio/ai/status`, `…/ai/edits` | ✓ | ✓ | — | — | 401 |
+| `POST /ai-chat/ask` from a Studio page | proposal engine | answered as on any page | — | — | 401 |
 | `/policies/:id/studio/migrate` | ✓ | 403 | — | — | 401 |
 | `/policies/:id/share-links` | ✓ | 403 | — | — | 401 |
 | `GET /collab/policies/:id` (WebSocket) | rw if draft or in review (suggest mode in review), else ro | ro | rw if draft and link doc = :id | ro | 401 |
@@ -583,6 +590,76 @@ What Phase 1a puts in the hands of a user and an operator.
   has handled the keydown; in suggest mode that splits a list item twice. The
   browser tests send Enter as a DOM keydown for that reason.
 
+### AI proposals (Phase 3)
+
+- **Where to ask.** Select text for *Make testable*, *Tighten*, *Explain for
+  the customer* or *Ask AI…*; the *AI…* menu under each section heading has
+  *Draft this section*, *Review section* and *Suggest control mappings*; each
+  readiness finding on a section has *Fix with AI*; `/ai` then Enter in an
+  empty paragraph drafts there; and the Ask AI dock answers on a Studio page
+  about the document ("make §3 testable"). All of it is for administrators,
+  on drafts and documents in review, like every feature that spends model
+  calls.
+- **Where it goes.** The document's *AI* setting (Document control) decides:
+  wherever Settings routes AI, *local only* (a Wintermute server, never
+  Claude), or *off*. It is enforced when the request is built. The AI panel
+  and each proposal say where requests go ("AI · Claude (cloud) · model" or
+  "AI · Wintermute · agent"). On Claude, the engine asks the Models API
+  whether the configured model supports structured outputs and refuses with
+  a clear message if it does not (Q6); there is no silent fallback.
+- **The Policy Studio agent** (Settings → AI providers) is the Wintermute
+  agent Studio requests go to. Every request carries the live text it is
+  about, since the knowledge API trails live editing. An Ask AI conversation
+  is given the document when it starts and whenever it changes, or with every
+  question when *Send the document with every question* is ticked.
+- **What the model sees.** The standing rules (the brief's Appendix A) as the
+  system prompt. Then, inside delimiters carrying a per-request random nonce
+  the document cannot contain: document control and the tier's rule, the
+  outline, the scope's baseline text as `[block_id] text` lines, pending
+  suggestions and lint findings in scope, the client's facts (and which are
+  missing), a BM25 shortlist of about 12 catalog controls and 6 regulation
+  clauses (the NFR module's scorer), with hard caps and truncation markers.
+  The document, its comments and anything a customer wrote are data.
+- **What the server checks** before anything is shown:
+  - the answer is exactly the contract (strictly parsed; Claude is also held
+    to it by structured outputs). A malformed answer gets one repair turn with
+    the parser's error, then a clear error. A refusal or an answer cut off at
+    the token limit is never parsed ("ask about a smaller part");
+  - every edit's block is in the request's scope and not itself a pending
+    suggestion, and its quote appears exactly once in that block's baseline
+    text after normalisation (NFC, collapsed whitespace, unified quotes and
+    dashes) without overlapping a pending suggestion;
+  - replacement Markdown is parsed on the server into schema nodes, refusing
+    headings, tables, images, code, quotes, raw HTML and unsafe links;
+  - a `{{fact:key}}` the client profile lacks becomes an unresolved token and a
+    proposed new fact, never a value;
+  - citations are looked up (unknown ones tagged), and a citation quote is kept
+    only if it appears verbatim in the cited record; unknown controls are
+    dropped from mapping proposals, and a *full* coverage claim is flagged for
+    the person to make;
+  - at most 25 edits and 4000 characters per replacement.
+  Refused edits are shown with the reason and never placed.
+- **Placing it.** A proposal previews privately first: decorations in the
+  requester's editor only, nothing in the shared document. *Suggest to
+  everyone* re-locates each edit against the text as it is now and places it
+  as a suggestion whose id is the edit's suid, attributed to "AI · model" with
+  the proposal id. An edit whose quote changed meanwhile is *stale*, and one
+  that became ambiguous or now overlaps someone's pending suggestion is a
+  *conflict*: both are reported and never placed elsewhere. A comment edit
+  becomes an AI rationale thread on its text. Every placement is recorded.
+- **Deciding.** AI suggestions are decided like any other, from the
+  Suggestions panel, which shows the AI's reason, citations, and who asked for
+  it. The decision is recorded in the Studio audit and on the edit
+  (`policy_ai_edits.decision`, with the actor from the session), and appears
+  in provenance.
+- **While it works** everyone in the document sees "AI drafting in §N".
+  Requests run one at a time per person, at most 8 a minute per document,
+  time out after 150 s, and are cancelled when the requester navigates away.
+  Usage is logged once per model call through the router.
+- **The live check (Q5)** is `internal/policyai/live_test.go`, behind the
+  `live` build tag: one real Claude call on synthetic text,
+  `ANTHROPIC_API_KEY=... go test -tags live -run Live -v ./internal/policyai/`.
+
 ### How it stores a document
 
 - The live document is Yjs binary in `policy_doc_state` (compacted) plus
@@ -763,7 +840,38 @@ regulation text rather than quoting it.
   - Screenshots of the Suggestions, Comments and Provenance panels at
     1440×900 and 430×860 in all four themes: no overlap, no horizontal
     overflow.
+- **Verified (3):**
+  - Claude through the pinned SDK against a stand-in for its API: the
+    contract goes out as `output_config.format`, and the model's
+    structured-output capability is looked up and cached; a model without it,
+    a refusal and a `max_tokens` stop are refused and never parsed.
+  - Wintermute against a loopback stand-in: prose-wrapped JSON is refused,
+    repaired once on the same session, and a second failure is an error.
+  - Usage is logged once per model call; every request and every failure is
+    recorded with provider, model, prompt hash and tokens.
+  - Validation: out-of-scope blocks, ambiguous and missing quotes, disallowed
+    Markdown, unknown and unverifiable citations, unknown mapping controls and
+    invented facts, each as the brief requires.
+  - Text in the document telling the model to approve the policy arrives inside
+    the delimited context, not the system prompt, and changes nothing: an edit
+    outside the scope is refused, the status stays draft, no mapping is made.
+  - `ai_policy`: local only refuses Claude before anything is sent and allows
+    Wintermute; off refuses both.
+  - In headless Chrome: from the dock on a Studio page a request yields
+    proposal cards; the preview is private (the other editor sees nothing);
+    shared, the edit whose text changed is reported stale and placed nowhere;
+    the other editor sees the suggestion as "AI · model" with its rationale
+    and citation; accepting it records the decision with the actor. And the
+    inline path: the selection toolbar's *Make testable*, "AI drafting in §1"
+    on the other editor while it runs, the refused out-of-selection edit
+    listed, and the suggestion placed from the AI panel.
+  - Screenshots of the selection toolbar, the AI panel with a private preview,
+    and the dock's proposal cards at 1440×900 and 430×860 in all four themes:
+    no overlap, no horizontal overflow.
 - **Not yet verified:**
+  - The live Claude call (Q5): no Anthropic key is configured on this machine.
+    `internal/policyai/live_test.go` runs it when one is supplied.
+  - A real Wintermute agent answering in the contract; only the stand-in has.
   - PostgreSQL (the adapter tests run when `GRC_TEST_POSTGRES_URL` is set).
   - iOS Safari.
   - A 30-page document in the browser.

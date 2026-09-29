@@ -191,6 +191,9 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		Model:     stringField(turn, "model"),
 		SessionID: sessionID,
 		Usage:     extractUsage(turn),
+		// Passed through when the server reports it; empty otherwise, which a
+		// caller must treat as "not known", not as a complete answer.
+		StopReason: stringField(turn, "stop_reason"),
 	}, nil
 }
 

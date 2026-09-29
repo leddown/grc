@@ -1,18 +1,18 @@
 {
   "entry": {
-    "js": "policy-studio.10d594bea587.js",
-    "css": "policy-studio.d68058b9509e.css"
+    "js": "policy-studio.489163f5385c.js",
+    "css": "policy-studio.4c6190f9af19.css"
   },
   "files": [
     {
-      "file": "policy-studio.10d594bea587.js",
-      "sha256": "10d594bea587128fddaaa0cf13619514687968a031a7bf271cf5b1640b765b08",
-      "bytes": 611198
+      "file": "policy-studio.489163f5385c.js",
+      "sha256": "489163f5385c6ca4c9cf30747316cba8c45e7174acbcd90b4f3b6528ddf51c20",
+      "bytes": 629544
     },
     {
-      "file": "policy-studio.d68058b9509e.css",
-      "sha256": "d68058b9509e62652aca4f1552ff203f5678d3d76054d5c6a259e50fc243a671",
-      "bytes": 17954
+      "file": "policy-studio.4c6190f9af19.css",
+      "sha256": "4c6190f9af19e5b4c2db36b56b49c9d4359d911dc54170a1af825fc8e808df54",
+      "bytes": 19903
     }
   ],
   "packages": [

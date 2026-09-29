@@ -8,12 +8,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"grc/internal/aiprovider"
 	"grc/internal/authn"
 	"grc/internal/clientprofile"
 	"grc/internal/db"
 	"grc/internal/knowledge"
+	"grc/internal/policyai"
 	"grc/internal/policydocs"
 	"grc/internal/policystudio"
+	"grc/internal/settings"
 )
 
 // studioPagePath stands for every Studio page when deciding whether a
@@ -83,6 +86,8 @@ func registerPolicyStudioRoutes(
 	policyService *policydocs.Service,
 	authService *authn.Service,
 	knowledgeService *knowledge.Service,
+	aiRouter *aiprovider.Router,
+	settingsService *settings.Service,
 	adminMiddleware gin.HandlerFunc,
 	options Options,
 ) (*policystudio.Service, error) {
@@ -111,11 +116,31 @@ func registerPolicyStudioRoutes(
 	handler.RegisterPublicRoutes(r)
 	clientHandler := clientprofile.NewHandler(clients, actor)
 	clientHandler.RegisterReadRoutes(r)
+
+	// The proposal engine. Its questions go to the Policy Studio agent
+	// Settings names, and so do the AI dock's on Studio pages.
+	preference := func(key string) string {
+		if settingsService == nil {
+			return ""
+		}
+		return settingsService.Preference(key)
+	}
+	engine := policyai.NewEngine(policyai.Config{
+		Conn: conn, Studio: service, Policies: policyService, Knowledge: knowledgeService, Router: aiRouter,
+		Agent:        func() string { return preference(settings.PrefPolicyAgent) },
+		SendDocument: func() bool { return preference(settings.PrefPolicySendDocument) == "true" },
+	})
+	identity := studioIdentity(authService, options.LocalMode)
+	configurePolicyDock(engine, identity)
+	aiHandler := policyai.NewHandler(engine, actor)
+	aiHandler.RegisterReadRoutes(r)
+
 	admin := r.Group("/")
 	if !options.LocalMode {
 		admin.Use(adminMiddleware)
 	}
 	handler.RegisterAdminRoutes(admin)
 	clientHandler.RegisterAdminRoutes(admin)
+	aiHandler.RegisterAdminRoutes(admin)
 	return service, nil
 }

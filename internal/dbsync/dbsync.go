@@ -190,7 +190,7 @@ var syncOrder = []tableSpec{
 			"effective_date", "review_cadence_months", "next_review_date",
 			"parent_document_id", "summary", "author", "created_at", "updated_at",
 			"editor_format", "projection_version", "projection_token",
-			"client_profile_id", "template_id", "template_version",
+			"client_profile_id", "template_id", "template_version", "ai_policy",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -540,6 +540,25 @@ var syncOrder = []tableSpec{
 	{
 		table:        "policy_studio_audit",
 		cols:         []string{"id", "document_id", "actor", "actor_kind", "event", "detail_json", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// AI proposals and their edits belong with the audit above: the edits'
+	// suids are suggestion ids in Yjs state a sync does not carry.
+	{
+		table: "policy_ai_proposals",
+		cols: []string{"id", "document_id", "requested_by", "action", "scope", "instruction", "provider", "model",
+			"served_by", "agent", "prompt_sha256", "context_fingerprint", "status", "summary", "answer_markdown",
+			"mappings_json", "new_facts_json", "input_tokens", "output_tokens", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "policy_ai_edits",
+		cols: []string{"id", "proposal_id", "suid", "op", "block_id", "section_uid", "quote", "fragment_json",
+			"rationale", "citations_json", "validation", "placement", "decision", "decided_by", "decided_at"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
 		strat:        skipInSync,

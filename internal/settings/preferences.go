@@ -40,6 +40,14 @@ const (
 	// the exercise it is about instead of the agent fetching it from the
 	// knowledge API — for an agent that cannot reach this server.
 	PrefCrisisSendExercise = "ai.crisis.send_exercise"
+	// PrefPolicyAgent names the Wintermute agent the Policy Studio's AI
+	// proposals and its Ask AI questions go to. Empty means the same agent as
+	// the rest of the application.
+	PrefPolicyAgent = "ai.policy.agent"
+	// PrefPolicySendDocument is "true" when every Ask AI question on a Studio
+	// page carries the document to a Wintermute agent, rather than when the
+	// conversation starts and whenever the document has changed.
+	PrefPolicySendDocument = "ai.policy.send_document"
 )
 
 // Provider choices for PrefAIProvider.
@@ -67,6 +75,8 @@ var prefDefaults = map[string]string{
 	PrefWintermuteAgent:    "",
 	PrefCrisisAgent:        "",
 	PrefCrisisSendExercise: "",
+	PrefPolicyAgent:        "",
+	PrefPolicySendDocument: "",
 }
 
 // prefEnvFallback maps a preference to the environment variable that supplies
@@ -173,7 +183,7 @@ func (s *Service) SetPreference(key, value string) error {
 	}
 	// Stored as "true" or nothing, so a value that merely looks like a yes
 	// cannot be read as on by one reader and off by another.
-	if key == PrefCrisisSendExercise && value != "" {
+	if (key == PrefCrisisSendExercise || key == PrefPolicySendDocument) && value != "" {
 		on, err := strconv.ParseBool(value)
 		if err != nil {
 			return fmt.Errorf("%s must be true or false, not %q", key, value)

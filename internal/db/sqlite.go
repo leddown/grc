@@ -919,6 +919,60 @@ func OpenSQLite(path string) (*Conn, error) {
 	CREATE INDEX IF NOT EXISTS idx_policy_studio_audit_document
 		ON policy_studio_audit (document_id, id);
 
+	-- Policy Studio AI proposals (internal/policyai): each request, what served
+	-- it (provider, model, backend, agent, prompt hash) and what it cost, and
+	-- each edit it proposed with the server's validation, where the requester's
+	-- editor placed it, and the human decision. The AI never writes text: an
+	-- edit becomes a suggestion someone accepts or rejects.
+	CREATE TABLE IF NOT EXISTS policy_ai_proposals (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		requested_by TEXT NOT NULL DEFAULT '',
+		action TEXT NOT NULL DEFAULT '',
+		scope TEXT NOT NULL DEFAULT '',
+		instruction TEXT NOT NULL DEFAULT '',
+		provider TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		served_by TEXT NOT NULL DEFAULT '',
+		agent TEXT NOT NULL DEFAULT '',
+		prompt_sha256 TEXT NOT NULL DEFAULT '',
+		context_fingerprint TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT '',
+		summary TEXT NOT NULL DEFAULT '',
+		answer_markdown TEXT NOT NULL DEFAULT '',
+		mappings_json TEXT NOT NULL DEFAULT '[]',
+		new_facts_json TEXT NOT NULL DEFAULT '[]',
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_ai_proposals_document
+		ON policy_ai_proposals (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_ai_edits (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		proposal_id INTEGER NOT NULL,
+		suid TEXT NOT NULL UNIQUE,
+		op TEXT NOT NULL DEFAULT '',
+		block_id TEXT NOT NULL DEFAULT '',
+		section_uid TEXT NOT NULL DEFAULT '',
+		quote TEXT NOT NULL DEFAULT '',
+		fragment_json TEXT NOT NULL DEFAULT '',
+		rationale TEXT NOT NULL DEFAULT '',
+		citations_json TEXT NOT NULL DEFAULT '[]',
+		validation TEXT NOT NULL DEFAULT '',
+		placement TEXT NOT NULL DEFAULT '',
+		decision TEXT NOT NULL DEFAULT '',
+		decided_by TEXT NOT NULL DEFAULT '',
+		decided_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(proposal_id) REFERENCES policy_ai_proposals(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_ai_edits_proposal
+		ON policy_ai_edits (proposal_id, id);
+
 	-- Client profiles (internal/clientprofile): the clients policies are
 	-- written for, and the facts about each that a policy may state but a
 	-- model must never invent. Kept here rather than in the CRM on wintermute
@@ -1096,6 +1150,7 @@ func OpenSQLite(path string) (*Conn, error) {
 		{"policy_documents", "client_profile_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"policy_documents", "template_id", "TEXT NOT NULL DEFAULT ''"},
 		{"policy_documents", "template_version", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_documents", "ai_policy", "TEXT NOT NULL DEFAULT 'inherit'"},
 		{"policy_versions", "snapshot_sha256", "TEXT NOT NULL DEFAULT ''"},
 		{"policy_versions", "content_json", "TEXT NOT NULL DEFAULT ''"},
 	} {

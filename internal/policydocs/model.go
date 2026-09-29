@@ -160,6 +160,10 @@ type Document struct {
 	// created from; empty for a document written from scratch.
 	TemplateID      string `json:"template_id"`
 	TemplateVersion string `json:"template_version"`
+	// AIPolicy says where this document's text may be sent for AI proposals:
+	// AIPolicyInherit (wherever Settings routes AI), AIPolicyLocalOnly (only
+	// to a Wintermute server, never the cloud) or AIPolicyOff.
+	AIPolicy string `json:"ai_policy"`
 
 	// Derived (read-only) fields populated by list/get queries.
 	ParentTitle  string `json:"parent_title"`
@@ -204,6 +208,16 @@ const (
 	EditorMarkdown = "markdown"
 	EditorStudio   = "studio"
 )
+
+// AI policies (Document.AIPolicy).
+const (
+	AIPolicyInherit   = "inherit"
+	AIPolicyLocalOnly = "local_only"
+	AIPolicyOff       = "off"
+)
+
+// AIPolicies lists the values Document.AIPolicy accepts.
+var AIPolicies = []string{AIPolicyInherit, AIPolicyLocalOnly, AIPolicyOff}
 
 // SectionProjection is one section as the Studio projection computed it from
 // the live document.
