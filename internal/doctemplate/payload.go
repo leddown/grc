@@ -40,7 +40,53 @@ type PolicySection struct {
 	Heading     string        `json:"heading"`
 	Body        string        `json:"body"`
 	SectionKind string        `json:"section_kind"`
+	Blocks      []PolicyBlock `json:"blocks,omitempty"`
 	Controls    []PolicyClaim `json:"controls"`
+}
+
+// PolicyBlock is the rich form of a section (policydocs.Block): see
+// DOCUMENT_TEMPLATES.md, "Blocks". A section with blocks renders from them; one
+// without renders from Body.
+type PolicyBlock struct {
+	Type   string          `json:"type"`
+	Level  int             `json:"level,omitempty"`
+	Start  int             `json:"start,omitempty"`
+	Kind   string          `json:"kind,omitempty"`
+	Runs   []PolicyRun     `json:"runs,omitempty"`
+	Items  [][]PolicyBlock `json:"items,omitempty"`
+	Rows   []PolicyRow     `json:"rows,omitempty"`
+	Blocks []PolicyBlock   `json:"blocks,omitempty"`
+}
+
+type PolicyRow struct {
+	Header bool            `json:"header"`
+	Cells  [][]PolicyBlock `json:"cells"`
+}
+
+type PolicyRun struct {
+	Text    string         `json:"text"`
+	Marks   []string       `json:"marks,omitempty"`
+	Href    string         `json:"href,omitempty"`
+	Fact    *PolicyRunFact `json:"fact,omitempty"`
+	Control *struct {
+		ID string `json:"id"`
+	} `json:"control,omitempty"`
+	Break bool `json:"break,omitempty"`
+}
+
+type PolicyRunFact struct {
+	Key        string `json:"key"`
+	Value      string `json:"value"`
+	Unresolved bool   `json:"unresolved"`
+}
+
+func (r PolicyRun) hasMark(m string) bool {
+	for _, x := range r.Marks {
+		if x == m {
+			return true
+		}
+	}
+	return false
 }
 
 type PolicyClaim struct {

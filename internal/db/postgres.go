@@ -830,6 +830,215 @@ CREATE TABLE IF NOT EXISTS audit_finding_history (
 CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
 	ON audit_finding_history (finding_id, id);
 
+-- Policy Studio: see internal/db/sqlite.go for what each table holds.
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS editor_format TEXT NOT NULL DEFAULT 'markdown';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS projection_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS projection_token TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS uid TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS detached_at TEXT NOT NULL DEFAULT '';
+UPDATE policy_sections SET uid = md5(random()::text || clock_timestamp()::text || id::text) WHERE uid = '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_sections_uid ON policy_sections(uid);
+
+CREATE TABLE IF NOT EXISTS policy_doc_state (
+	document_id BIGINT PRIMARY KEY,
+	state BYTEA NOT NULL,
+	projection_token TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS policy_doc_updates (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	upd BYTEA NOT NULL,
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_doc_updates_document
+	ON policy_doc_updates (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_doc_snapshots (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	reason TEXT NOT NULL DEFAULT '',
+	format TEXT NOT NULL DEFAULT 'yjs',
+	state BYTEA NOT NULL,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
+	ON policy_doc_snapshots (document_id, id);
+
+-- Policy Studio review layer: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_comment_threads (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	section_uid TEXT NOT NULL DEFAULT '',
+	anchor_start TEXT NOT NULL DEFAULT '',
+	anchor_end TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	visibility TEXT NOT NULL DEFAULT 'internal',
+	kind TEXT NOT NULL DEFAULT 'comment',
+	suggestion_suid TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'open',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	resolved_by TEXT NOT NULL DEFAULT '',
+	resolved_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_comment_threads_document
+	ON policy_comment_threads (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_comments (
+	id BIGSERIAL PRIMARY KEY,
+	thread_id BIGINT NOT NULL,
+	author TEXT NOT NULL DEFAULT '',
+	author_kind TEXT NOT NULL DEFAULT 'human',
+	body TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(thread_id) REFERENCES policy_comment_threads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_comments_thread
+	ON policy_comments (thread_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_studio_audit (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	actor TEXT NOT NULL DEFAULT '',
+	actor_kind TEXT NOT NULL DEFAULT 'human',
+	event TEXT NOT NULL DEFAULT '',
+	detail_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_studio_audit_document
+	ON policy_studio_audit (document_id, id);
+
+-- Policy Studio AI proposals: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_ai_proposals (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	requested_by TEXT NOT NULL DEFAULT '',
+	action TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL DEFAULT '',
+	instruction TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	served_by TEXT NOT NULL DEFAULT '',
+	agent TEXT NOT NULL DEFAULT '',
+	prompt_sha256 TEXT NOT NULL DEFAULT '',
+	context_fingerprint TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL DEFAULT '',
+	answer_markdown TEXT NOT NULL DEFAULT '',
+	mappings_json TEXT NOT NULL DEFAULT '[]',
+	new_facts_json TEXT NOT NULL DEFAULT '[]',
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_ai_proposals_document
+	ON policy_ai_proposals (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_ai_edits (
+	id BIGSERIAL PRIMARY KEY,
+	proposal_id BIGINT NOT NULL,
+	suid TEXT NOT NULL UNIQUE,
+	op TEXT NOT NULL DEFAULT '',
+	block_id TEXT NOT NULL DEFAULT '',
+	section_uid TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	fragment_json TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	citations_json TEXT NOT NULL DEFAULT '[]',
+	validation TEXT NOT NULL DEFAULT '',
+	placement TEXT NOT NULL DEFAULT '',
+	decision TEXT NOT NULL DEFAULT '',
+	decided_by TEXT NOT NULL DEFAULT '',
+	decided_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(proposal_id) REFERENCES policy_ai_proposals(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_ai_edits_proposal
+	ON policy_ai_edits (proposal_id, id);
+
+-- Policy Studio guest access: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_share_links (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	token_sha256 TEXT NOT NULL UNIQUE,
+	label TEXT NOT NULL DEFAULT '',
+	role TEXT NOT NULL DEFAULT 'viewer',
+	allow_ai INTEGER NOT NULL DEFAULT 0,
+	max_uses INTEGER NOT NULL DEFAULT 0,
+	uses INTEGER NOT NULL DEFAULT 0,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	expires_at TEXT NOT NULL DEFAULT '',
+	revoked_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_share_links_document
+	ON policy_share_links (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_guest_sessions (
+	id BIGSERIAL PRIMARY KEY,
+	link_id BIGINT NOT NULL,
+	session_sha256 TEXT NOT NULL UNIQUE,
+	display_name TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	last_seen_at TEXT NOT NULL DEFAULT '',
+	expires_at TEXT NOT NULL DEFAULT '',
+	ended_at TEXT NOT NULL DEFAULT '',
+	end_reason TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(link_id) REFERENCES policy_share_links(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_guest_sessions_link
+	ON policy_guest_sessions (link_id, id);
+
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS blocks_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS client_profile_id BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS ai_policy TEXT NOT NULL DEFAULT 'inherit';
+ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS snapshot_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
+
+-- Client profiles: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS client_profiles (
+	id BIGSERIAL PRIMARY KEY,
+	name TEXT NOT NULL,
+	crm_ref TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS client_profile_facts (
+	client_id BIGINT NOT NULL,
+	key TEXT NOT NULL,
+	value TEXT NOT NULL DEFAULT '',
+	value_type TEXT NOT NULL DEFAULT 'text',
+	source TEXT NOT NULL DEFAULT 'manual',
+	updated_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (client_id, key),
+	FOREIGN KEY(client_id) REFERENCES client_profiles(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_control_id ON rcsa_controls(control_id);
 CREATE INDEX IF NOT EXISTS idx_rcsa_controls_family_type ON rcsa_controls(family, control_type);
 CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain);

@@ -1497,10 +1497,12 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       const provider = String(data.provider || 'claude');
       const wintermute = provider === 'wintermute'
         || (provider === 'auto' && data.configured && data.token_configured);
-      // Crisis Exercises pages ask that module's own agent when Settings names one.
+      // Crisis Exercises and Policy Studio pages ask their module's own agent
+      // when Settings names one.
       const onCrisisPage = /^\/crisis-exercises(\/|$)/.test(location.pathname);
+      const onStudioPage = /^\/policies\/[0-9]+\/studio\/?$/.test(location.pathname);
       const agent = wintermute
-        ? String((onCrisisPage && data.crisis_agent) || data.default_agent || '')
+        ? String((onCrisisPage && data.crisis_agent) || (onStudioPage && data.policy_agent) || data.default_agent || '')
         : '';
       const label = wintermute
         ? 'Wintermute' + (agent ? ' · ' + agent : ' · no agent')
@@ -1557,6 +1559,29 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
   if (toggleBtn) {
     toggleBtn.addEventListener('click', open);
   }
+  // A page may open the dock with a question started, as the Policy Studio's
+  // "Ask AI…" does with a selection.
+  window.GRCAIDock = {
+    open(prefill) {
+      open();
+      if (prefill) input.value = String(prefill);
+      input.focus();
+    }
+  };
+
+  // What the page says is in view, when it says anything: the Policy Studio
+  // registers window.GRCAskAIContext. It is a hint about scope; the server
+  // decides what the question may reach from the path and the session.
+  function pageContext() {
+    if (typeof window.GRCAskAIContext !== 'function') return undefined;
+    try {
+      const value = window.GRCAskAIContext();
+      const raw = JSON.stringify(value);
+      return raw && raw.length <= 8000 ? value : undefined;
+    } catch (_) {
+      return undefined;
+    }
+  }
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
       log.replaceChildren();
@@ -1573,6 +1598,36 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
     if (event.key === 'Escape' && dock.classList.contains('open')) close();
   });
 
+  // readEvents reads an answer streamed as server-sent events and resolves
+  // with its result event.
+  async function readEvents(body, onAnswer, onRestart) {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.value) buf += decoder.decode(chunk.value, { stream: true });
+      let end;
+      while ((end = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, end);
+        buf = buf.slice(end + 2);
+        let name = 'message';
+        let raw = '';
+        block.split('\n').forEach((line) => {
+          if (line.indexOf('event: ') === 0) name = line.slice(7);
+          else if (line.indexOf('data: ') === 0) raw += line.slice(6);
+        });
+        let data = {};
+        try { data = JSON.parse(raw); } catch (_) { /* skipped */ }
+        if (name === 'result') { reader.cancel().catch(() => {}); return data; }
+        if (name === 'error') { reader.cancel().catch(() => {}); throw new Error(data.error || 'request failed'); }
+        if (name === 'answer') onAnswer(String(data.text || ''));
+        if (name === 'restart') onRestart();
+      }
+      if (chunk.done) throw new Error('the answer stopped before it was complete');
+    }
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const value = String(input.value || '').trim();
@@ -1580,12 +1635,27 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
     input.value = '';
     addMessage('You', value, 'user');
     const pending = addMessage('AI', 'Thinking…', 'note');
+    const pendingText = pending.lastChild;
+    let streamed = '';
+    // Each piece of the answer as the model writes it; restart voids what has
+    // been shown, because the answer is being asked for again.
+    const onAnswer = (text) => {
+      streamed += text;
+      pending.className = 'global-ai-dock-msg ai';
+      pendingText.nodeValue = streamed;
+      log.scrollTop = log.scrollHeight;
+    };
+    const onRestart = () => {
+      streamed = '';
+      pending.className = 'global-ai-dock-msg note';
+      pendingText.nodeValue = 'Thinking…';
+    };
     if (sendBtn) sendBtn.disabled = true;
     input.disabled = true;
     try {
       const resp = await fetch('/ai-chat/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
         body: JSON.stringify({
           question: value,
           // A resumed Wintermute session already holds the transcript; sending
@@ -1594,11 +1664,17 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
           session_id: sessionID,
           // On a Crisis Exercises page the server sends the question to that
           // module's agent, about the exercise on screen.
-          page: location.pathname
+          page: location.pathname,
+          page_context: pageContext()
         })
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      let data;
+      if ((resp.headers.get('Content-Type') || '').indexOf('text/event-stream') === 0 && resp.body) {
+        data = await readEvents(resp.body, onAnswer, onRestart);
+      } else {
+        data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      }
       pending.remove();
       const answer = data.answer || '(empty answer)';
       // Recorded only on success: a question that never got an answer would
@@ -1606,7 +1682,14 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       history.push({ role: 'user', content: value });
       history.push({ role: 'assistant', content: answer });
       sessionID = data.session_id || '';
-      addMessage(data.model ? 'AI · ' + data.model : 'AI', answer, 'ai');
+      const row = addMessage(data.model ? 'AI · ' + data.model : 'AI', answer, 'ai');
+      // A proposal to change the document is shown by the page that owns the
+      // document, as cards with its own actions; the dock only makes room.
+      if (data.proposal && window.GRCPolicyStudio && typeof window.GRCPolicyStudio.renderProposal === 'function') {
+        const cards = window.GRCPolicyStudio.renderProposal(data.proposal);
+        if (cards) row.appendChild(cards);
+        log.scrollTop = log.scrollHeight;
+      }
     } catch (err) {
       pending.remove();
       addMessage('Error', (err && err.message) || 'request failed', 'note');
@@ -1756,14 +1839,38 @@ func themeToggleTag(theme string) string {
 type htmlCaptureWriter struct {
 	gin.ResponseWriter
 	body bytes.Buffer
+	// streaming is set for an event stream, which is written through as it
+	// comes: buffered, an answer streamed by the AI would arrive whole.
+	streaming bool
+}
+
+func (w *htmlCaptureWriter) passthrough() bool {
+	if !w.streaming && strings.HasPrefix(strings.ToLower(w.Header().Get("Content-Type")), "text/event-stream") {
+		w.streaming = true
+	}
+	return w.streaming
 }
 
 func (w *htmlCaptureWriter) Write(data []byte) (int, error) {
+	if w.passthrough() {
+		return w.ResponseWriter.Write(data)
+	}
 	return w.body.Write(data)
 }
 
 func (w *htmlCaptureWriter) WriteString(s string) (int, error) {
+	if w.passthrough() {
+		return w.ResponseWriter.WriteString(s)
+	}
 	return w.body.WriteString(s)
+}
+
+// Flush reaches the client only for a stream; anything else is written, with
+// its length, when the handler is done.
+func (w *htmlCaptureWriter) Flush() {
+	if w.passthrough() {
+		w.ResponseWriter.Flush()
+	}
 }
 
 func themeMiddleware() gin.HandlerFunc {
@@ -1774,6 +1881,9 @@ func themeMiddleware() gin.HandlerFunc {
 		theme := currentTheme(c)
 
 		c.Next()
+		if capture.streaming {
+			return
+		}
 
 		contentType := strings.ToLower(capture.Header().Get("Content-Type"))
 		payload := capture.body.Bytes()

@@ -56,8 +56,9 @@ func withEngines(t *testing.T, statuses map[Engine]EngineStatus) {
 
 func noEngines() map[Engine]EngineStatus {
 	return map[Engine]EngineStatus{
-		EngineTypst: {Engine: EngineTypst, Command: "typst", Detail: "none of typst found on PATH"},
-		EngineLaTeX: {Engine: EngineLaTeX, Command: "tectonic", Detail: "none of tectonic, latexmk found on PATH"},
+		EngineTypst:  {Engine: EngineTypst, Command: "typst", Detail: "none of typst found on PATH"},
+		EngineLaTeX:  {Engine: EngineLaTeX, Command: "tectonic", Detail: "none of tectonic, latexmk found on PATH"},
+		EnginePandoc: {Engine: EnginePandoc, Command: "pandoc", Detail: "none of pandoc found on PATH"},
 	}
 }
 
@@ -885,8 +886,8 @@ func TestRoutesServeTheCatalogAndPages(t *testing.T) {
 	if len(catalog.Templates) != len(Templates) {
 		t.Errorf("catalog has %d templates, want %d", len(catalog.Templates), len(Templates))
 	}
-	if len(catalog.Engines) != 2 {
-		t.Errorf("catalog has %d engines, want 2", len(catalog.Engines))
+	if len(catalog.Engines) != len(engineCandidates) {
+		t.Errorf("catalog has %d engines, want %d", len(catalog.Engines), len(engineCandidates))
 	}
 	if !catalog.DirAvailable {
 		t.Error("catalog reports the templates directory as unavailable")

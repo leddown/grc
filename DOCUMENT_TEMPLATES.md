@@ -18,12 +18,14 @@ templates/
     lib.typ                page furniture, cover, tables, callouts
     policy-document.typ    policy / standard / procedure / work instruction
     business-report.typ    assessment and consulting reports
+    policy-redline.typ     the changes between two revisions of a policy
   latex/
     grc.sty           LaTeX equivalent of brand.typ + lib.typ
     policy-document.tex    LaTeX policy document
   samples/
     policy-sample.json     realistic input, matching internal/policydocs
     report-sample.json
+    redline-sample.json    a comparison, as GET /policies/:id/compare returns it
   build.sh
 ```
 
@@ -49,7 +51,9 @@ Render a real document by passing its JSON:
 ./build.sh policy ../../exports/POL-AC-001.json
 ```
 
-Outputs land in `templates/out/` (gitignored).
+Outputs land in `templates/out/`. The PDFs already there are committed
+reference renders of the samples, so a local rebuild shows up as a change to
+them; restore them (`git checkout templates/out`) unless the templates changed.
 
 For the LaTeX path, `build.sh latex` prefers
 [tectonic](https://tectonic-typesetting.github.io/) — also a single binary,
@@ -85,7 +89,40 @@ exclusive — PDF/UA-1 requires PDF 1.7 or earlier, PDF/A-4 requires 2.0.
 | `/templates/manage` | Brand editor — `brand.typ`'s dictionary as a form, stored per install |
 | `GET /templates/render` | Renders. `doc=<id>` or `sample=1`, plus `template=`, `standard=`, `bundle=1`, `inline=1` |
 
-The **Render PDF** action in the policy editor points at the same endpoint.
+The **Render PDF** action in the policy editor points at the same endpoint,
+and so does **Word** (`template=policy-docx`). The Studio's **Download redline
+PDF** is `GET /policies/:id/compare.pdf?from=&to=`, which renders a comparison
+of two revisions through `policy-redline-typst`.
+
+### Word, through Pandoc
+
+`policy-docx` produces an editable `.docx` for a client who reviews in Word.
+Like the LaTeX path, its input is generated from the payload: `docxgen.go`
+writes Markdown from the typed blocks (headings, lists, tables, quotes,
+callouts, bold, italic, links on http, https and mailto only). Every string is
+escaped, a legacy section's body included, so nothing in a policy becomes
+markup. Pandoc converts it with
+
+```sh
+pandoc --sandbox --from gfm-raw_html --to docx --output grc-output.docx policy-document.md
+```
+
+`--sandbox` (Pandoc 2.15 or later) stops it reading any file or fetching any
+URL, and `-raw_html` reads HTML in the text as text. Pandoc is GPL. It is
+never bundled or linked: the app finds it at runtime (`PANDOC`, else `pandoc`
+on `PATH`), as it finds Typst. Without it the render returns the Markdown, the
+payload and a `build.sh` that runs the same command. The Word document follows
+Pandoc's default styles, not the brand. A branded `reference.docx` is a
+possible follow-up.
+
+### The redline
+
+`policy-redline.typ` sets the comparison the Studio's Compare tab shows:
+inserted text underlined in green, removed text struck through in red, a note
+on each section that is new, removed or renamed, and a list of the sections
+with no changes. The data is `GET /policies/:id/compare` plus the document's
+reference and classification. As in every Typst template, the strings are
+placed as content and never evaluated.
 
 ### No engine installed is a normal outcome
 
@@ -97,8 +134,8 @@ template, its dependencies, the brand already applied, the payload, a
 available on demand with `bundle=1`, which is the honest way to hand a designer
 exactly what a render used.
 
-Point `TYPST`, `TECTONIC` or `LATEXMK` at a binary to override the `PATH`
-lookup. Detection is cached per process; **Re-check** on the gallery re-probes
+Point `TYPST`, `PANDOC`, `TECTONIC` or `LATEXMK` at a binary to override
+the `PATH` lookup. Detection is cached per process; **Re-check** on the gallery re-probes
 after an install.
 
 ### What the app does differently from `build.sh`
@@ -257,9 +294,9 @@ error-prone scripts.
 
 The LaTeX templates are supplied for clients whose house style is already LaTeX,
 and are deliberately typographically identical so both produce documents that
-look like they came from the same firm. **The LaTeX policy template does not
-read the JSON** — fill it in by hand, or generate the `.tex` from a script if
-you need it automated.
+look like they came from the same firm. The committed
+`templates/latex/policy-document.tex` is a hand-filled reference; what the app
+compiles is generated from the JSON payload by `internal/doctemplate/latexgen.go`.
 
 ### Migrating an existing LaTeX template
 
@@ -308,6 +345,7 @@ Copy `policy-document.typ`. The pieces you compose from `lib.typ`:
 | `data-table(...)` | House table style: hairlines, tinted header, zebra rows |
 | `callout(title, body)` | Boxed aside for summaries and scope notes |
 | `section-block(h, body, note)` | Numbered section with an optional trailing note |
+| `render-blocks(blocks)` | A section's rich content (see Blocks below), every string placed as data |
 | `approval-block(...)` | Signature lines |
 | `toc(depth)` | Contents with an accent rule |
 
@@ -320,7 +358,7 @@ Copy `policy-document.typ`. The pieces you compose from `lib.typ`:
 title, reference, doc_type, status, classification, owner_role, approver,
 client_name, frameworks[], effective_date, review_cadence_months,
 next_review_date, summary,
-sections[]  { heading, body, section_kind, controls[] { control_id, coverage } }
+sections[]  { heading, body, section_kind, blocks[]?, controls[] { control_id, coverage } }
 controls[]  { control_id, control_name, coverage, section_heading }
 versions[]  { version_label, approved_by, approved_at, change_summary }
 ```
@@ -340,6 +378,34 @@ It is a dedicated `TemplateExport` type rather than the internal structs
 serialised directly -- row ids and provenance have no business in a client
 deliverable's data file, and a separate type means renaming an internal JSON tag
 cannot silently produce PDFs with blank fields.
+
+### Blocks
+
+A section written in the Policy Studio also carries `blocks`, its rich content;
+a section written in the section editor has only `body`. A template renders
+from `blocks` when present and from `body` otherwise, and `body` is always
+filled, so a consumer written before blocks keeps working.
+
+```
+blocks[]  { type, level?, start?, kind?, runs[]?, items[][]?, rows[]?, blocks[]? }
+  type    paragraph | heading (level 2|3) | bullet_list | ordered_list (start)
+          | table | blockquote | callout (kind note|important)
+  runs[]  { text, marks[]? (bold|italic|code), href?, fact? { key, value, unresolved },
+            control? { id }, break? }
+  items   a list's items, each a sequence of blocks (a paragraph, nested lists)
+  rows[]  { header, cells[] }  — each cell a sequence of paragraphs; no merged cells
+```
+
+A fact's `text` is its value, or `[[UNRESOLVED: key]]` with `unresolved: true`
+when the client profile has none (the lint gate refuses to approve such a
+document). The blocks are those the Studio projected when the document was last
+a draft, so an approved document's deliverable cannot change afterwards.
+
+Every string in blocks is data. The Typst helper places each as text, never
+evaluating it; the LaTeX generator escapes each and percent-encodes and escapes
+link targets; the HTML export escapes each and re-checks link schemes (https,
+http, mailto). Tests render a payload made of `#panic(...)`, `#read(...)`,
+`\input{...}`, braces, dollars and markup through all three.
 
 ---
 

@@ -1,0 +1,225 @@
+{
+  "id": "ict-infosec-policy",
+  "version": "1.0.0",
+  "title": "ICT and Information Security Policy",
+  "doc_type": "policy",
+  "frameworks": [
+    "DORA",
+    "ISO 27001",
+    "NIST CSF",
+    "NIST 800-53"
+  ],
+  "description": "The top-level ICT and information security policy of an entity in scope of DORA: what it protects, why, who is responsible, how exceptions are handled and how it is kept current. It sits above the ICT security policies, standards and procedures listed in its Documentation section.",
+  "review_cadence_months": 12,
+  "classification": "Internal",
+  "default": true,
+  "facts": [
+    {
+      "key": "legal_entity_name",
+      "label": "Legal entity name",
+      "description": "The registered name of the entity the policy is issued by.",
+      "example": "Example Bank AG",
+      "value_type": "text"
+    },
+    {
+      "key": "dor_strategy_reference",
+      "label": "Digital operational resilience strategy",
+      "description": "The title and version of the entity's digital operational resilience strategy, whose information security objectives this policy implements.",
+      "example": "Digital Operational Resilience Strategy 2026–2028, v1.2",
+      "value_type": "text"
+    },
+    {
+      "key": "scope_entities",
+      "label": "Entities in scope",
+      "description": "The legal entities, branches and subsidiaries the policy applies to.",
+      "example": "Example Bank AG and its subsidiaries Example Leasing GmbH and Example Payments S.A.",
+      "value_type": "text"
+    },
+    {
+      "key": "scope_exclusions",
+      "label": "Scope exclusions",
+      "description": "Anything deliberately left out of scope, with the reason. Write 'None' when nothing is excluded.",
+      "example": "None",
+      "value_type": "text"
+    },
+    {
+      "key": "management_body_name",
+      "label": "Management body",
+      "description": "The body that approves the policy and bears ultimate responsibility for ICT risk.",
+      "example": "Management Board",
+      "value_type": "text"
+    },
+    {
+      "key": "ciso_role_title",
+      "label": "Information security officer role",
+      "description": "The title of the role that owns the information security programme.",
+      "example": "Chief Information Security Officer",
+      "value_type": "text"
+    },
+    {
+      "key": "ict_risk_function_name",
+      "label": "ICT risk control function",
+      "description": "The second-line function that monitors ICT risk independently.",
+      "example": "ICT Risk Management function",
+      "value_type": "text"
+    },
+    {
+      "key": "internal_audit_function_name",
+      "label": "Internal audit function",
+      "description": "The third-line function that audits the arrangements this policy requires.",
+      "example": "Group Internal Audit",
+      "value_type": "text"
+    },
+    {
+      "key": "policy_kpi_set",
+      "label": "Indicators and measures",
+      "description": "Where the indicators used to monitor this policy are defined.",
+      "example": "the ICT security key risk and performance indicators in the ICT Risk Dashboard",
+      "value_type": "text"
+    },
+    {
+      "key": "exception_approval_authority",
+      "label": "Exception approval authority",
+      "description": "Who may approve an exception to this policy.",
+      "example": "the Chief Information Security Officer, with the ICT Risk Management function consulted",
+      "value_type": "text"
+    },
+    {
+      "key": "sanctions_reference",
+      "label": "Disciplinary rules",
+      "description": "The document or process under which breaches by staff are sanctioned.",
+      "example": "the Staff Disciplinary Procedure",
+      "value_type": "text"
+    },
+    {
+      "key": "policy_review_events",
+      "label": "Events that trigger a review",
+      "description": "The events, beyond the annual review, after which this policy is reviewed.",
+      "example": "a major ICT-related incident, an instruction from a competent authority, material findings from digital operational resilience testing or audit, and material changes to the entity's activities",
+      "value_type": "list"
+    },
+    {
+      "key": "policy_owner_role",
+      "label": "Policy owner role",
+      "description": "The role accountable for keeping this policy current. It is also the document's owner role.",
+      "example": "Chief Information Security Officer",
+      "value_type": "text"
+    }
+  ],
+  "sections": [
+    {
+      "uid_seed": "purpose",
+      "heading": "Purpose",
+      "kind": "purpose",
+      "content": "This policy sets out how {{fact:legal_entity_name}} protects its information and its ICT systems, so that the risks they carry are managed within the risk tolerance its management body has set.\n\nIt gives effect to the information security objectives of the digital operational resilience strategy ({{fact:dor_strategy_reference}}). It is the top of the entity's information security documentation: the standards, procedures and work instructions below it set out how its requirements are met.",
+      "guidance": "State why the policy exists and the risk it manages. RTS (EU) 2024/1532 Art. 2(2)(a) expects ICT security policies to align with the information security objectives of the digital operational resilience strategy (DORA Art. 6(8)); NIST CSF 2.0 GV.PO-01 expects policy established from organisational context, strategy and priorities. Keep it to what and why: tools, settings and frequencies belong in the documents below.",
+      "proposed_mappings": [
+        {
+          "control_id": "PM-1",
+          "coverage": "partial",
+          "note": "Programme-level policy intent"
+        },
+        {
+          "control_id": "PM-9",
+          "coverage": "supporting",
+          "note": "Link to the risk tolerance set by the management body"
+        }
+      ]
+    },
+    {
+      "uid_seed": "scope",
+      "heading": "Scope",
+      "kind": "scope",
+      "content": "This policy applies to:\n\n- {{fact:scope_entities}}\n- all ICT assets and information systems owned, operated or used by or on behalf of these entities, including those provided by ICT third-party service providers\n- all information processed, stored or transmitted by these systems, in any form\n- all members of staff, contractors and third parties with access to that information or those systems\n- all locations from which these systems are operated or accessed\n\nExclusions: {{fact:scope_exclusions}}. Every exclusion must be approved by the owner of this policy and recorded with its justification.",
+      "guidance": "Name the entities, assets, data, people (third parties included), locations and exclusions. An assessor asks why anything is out of scope, so every exclusion needs a recorded reason.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "statements",
+      "heading": "Policy statements",
+      "kind": "statements",
+      "content": "### Information security objectives\n\n1. Networks and the infrastructure that carries them must be protected against unauthorised access and use, and segmented according to the risk of what they carry.\n2. ICT systems and information must be protected against intrusion, misuse of data and unauthorised change.\n3. The availability, authenticity, integrity and confidentiality of information must be preserved at rest, in use and in transit, including by cryptographic protection when the classification of the information requires it.\n4. Data must be transmitted accurately and promptly, without major disruption to the services that depend on it.\n\n### How this policy is implemented\n\n- Every requirement of this policy must be implemented through a documented standard or procedure that is approved by its owner and traceable to this policy.\n- Standards and procedures must take recognised leading practices and international standards into account, and must record which ones they follow.\n- Technical settings, products, tools and operational frequencies must be specified in standards and procedures, not in this policy.\n- Information and ICT assets must be classified, and the protection applied to them must be proportionate to their classification.",
+      "guidance": "Testable must-statements for the four security objectives of RTS (EU) 2024/1532 Art. 2(1)(a)–(d): network security; protection against intrusion and data misuse; availability, authenticity, integrity and confidentiality, including through cryptography; accurate and prompt data transmission. Art. 2(2)(h) expects leading practices and standards to be considered. No tool or product names: those make the policy re-approvable every time a tool changes.",
+      "proposed_mappings": [
+        {
+          "control_id": "PM-1",
+          "coverage": "partial",
+          "note": "Policy statements of the security programme"
+        }
+      ]
+    },
+    {
+      "uid_seed": "roles",
+      "heading": "Roles and responsibilities",
+      "kind": "roles",
+      "content": "| Role | Responsibilities |\n|---|---|\n| {{fact:management_body_name}} | Approves this policy, sets the risk tolerance for ICT risk, and bears ultimate responsibility for managing ICT risk. |\n| {{fact:ciso_role_title}} | Owns the information security programme, maintains this policy and the documents below it, and reports on their implementation to the {{fact:management_body_name}} at the intervals it sets. |\n| {{fact:ict_risk_function_name}} (second line) | Monitors ICT risk independently of the functions that manage it, and challenges how this policy is implemented. |\n| {{fact:internal_audit_function_name}} (third line) | Audits the design and the effectiveness of the arrangements this policy requires. |\n| System and information owners | Ensure the systems and information they own are protected as this policy and its standards require. |\n| All staff and contractors | Must comply with this policy and the documents below it, and must report suspected security incidents without delay. |\n\n### Segregation of duties\n\nDuties must be segregated so that no individual can initiate, approve and verify the same security-relevant activity. The functions that operate ICT systems, that monitor ICT risk and that audit them must be kept separate, following the three lines of defence. When segregation is not feasible, compensating controls must be documented and approved by the {{fact:ict_risk_function_name}}.",
+      "guidance": "Responsibilities at every level (RTS (EU) 2024/1532 Art. 2(2)(d)) and for developing, implementing and maintaining the policies (Art. 2(2)(i)); segregation of duties under the three lines of defence or another internal control model, to avoid conflicts of interest (Art. 2(2)(g)). NIST SP 800-53 PM-2 names a senior information security officer; AC-5 is separation of duties. Name roles, never people.",
+      "proposed_mappings": [
+        {
+          "control_id": "PM-2",
+          "coverage": "partial",
+          "note": "Senior information security officer role"
+        },
+        {
+          "control_id": "AC-5",
+          "coverage": "supporting",
+          "note": "Segregation of duties requirement"
+        }
+      ]
+    },
+    {
+      "uid_seed": "commitment",
+      "heading": "Management commitment",
+      "kind": "management_commitment",
+      "content": "The {{fact:management_body_name}} approves this policy and commits the resources, including budget and staff, needed to implement and maintain it. The date of its formal approval is recorded in the document control of each approved version.\n\nThe {{fact:management_body_name}} must receive regular reports on the implementation of this policy and on the entity's ICT risk, and must direct corrective action when they show that the policy is not met.",
+      "guidance": "The management body's endorsement and resourcing. RTS (EU) 2024/1532 Art. 2(2)(b) requires the policies to state the date of formal approval by the management body: the Studio records it in the document control at approval. The NIST SP 800-53 '-1' controls expect management commitment to be stated.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "coordination",
+      "heading": "Coordination among organisational entities",
+      "kind": "coordination",
+      "content": "The implementation of this policy must be coordinated with the functions responsible for:\n\n- ICT risk management\n- business continuity and ICT response and recovery\n- human resources\n- procurement and ICT third-party risk\n- legal and compliance\n- data protection\n\nThe {{fact:ciso_role_title}} must consult these functions when this policy, or a standard or procedure below it, changes in a way that affects them.",
+      "guidance": "Who else must be consulted. The NIST SP 800-53 '-1' controls name coordination among organisational entities; FedRAMP expects it in every family policy.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "exceptions",
+      "heading": "Monitoring, indicators and exceptions",
+      "kind": "exceptions",
+      "content": "### Monitoring\n\nThe implementation of this policy must be monitored against a defined set of indicators and measures ({{fact:policy_kpi_set}}), reported to the {{fact:management_body_name}}.\n\n### Exceptions\n\n- An exception to this policy must be requested in writing, risk-assessed and approved by {{fact:exception_approval_authority}} before it takes effect.\n- Every exception must be recorded with its justification, compensating controls, owner and expiry date.\n- An exception must not be approved if it would leave the entity unable to maintain its digital operational resilience; compensating controls must keep resilience intact for as long as the exception lasts.\n- Open exceptions must be reviewed before they expire and reported to the {{fact:ict_risk_function_name}}.",
+      "guidance": "RTS (EU) 2024/1532 Art. 2(2)(c): indicators and measures to monitor implementation, a record of exceptions, and operational resilience kept intact while an exception exists. Point to the entity's exceptions process rather than restating it; the maximum duration of an exception is a client decision, not a template default.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "compliance",
+      "heading": "Compliance and enforcement",
+      "kind": "compliance",
+      "content": "Compliance with this policy must be verified through monitoring, independent review and internal audit. Non-compliance must be reported to the {{fact:ciso_role_title}}, recorded and remediated.\n\nA breach of this policy by a member of staff may lead to disciplinary action under {{fact:sanctions_reference}}; a breach by a contractor or third party may lead to measures under their contract.",
+      "guidance": "The consequences of non-compliance, unless another policy already sets them (RTS (EU) 2024/1532 Art. 2(2)(e)), and the sanctions route: NIST SP 800-53 PS-8 is the formal sanctions process.",
+      "proposed_mappings": [
+        {
+          "control_id": "PS-8",
+          "coverage": "supporting",
+          "note": "Reference to the sanctions process"
+        }
+      ]
+    },
+    {
+      "uid_seed": "documentation",
+      "heading": "Documentation maintained",
+      "kind": "related_documents",
+      "content": "The following documents must be maintained below this policy, each approved by its owner and reviewed with this policy:\n\n- ICT risk management policy\n- ICT asset management policy and procedures\n- Encryption and cryptographic controls policy\n- ICT operations security policy and procedures\n- Network security management policy\n- ICT project and change management policy\n- Physical and environmental security policy\n- Human resources policy, including ICT security awareness and training\n- Identity management and access control policy\n- ICT-related incident management policy and procedures\n- ICT business continuity policy and ICT response and recovery plans\n\nRecords showing that these documents are applied must be kept for the periods the entity's records retention rules set.",
+      "guidance": "The documentation to be maintained (RTS (EU) 2024/1532 Art. 2(2)(f)). The list follows the subordinate policies the RTS sets out in Arts. 3 to 26; it names them, it does not restate them.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "review",
+      "heading": "Review and maintenance",
+      "kind": "other",
+      "content": "This policy must be reviewed at least once a year, and after any of these events: {{fact:policy_review_events}}.\n\nA review must take account of material changes to the entity's activities and processes, to the threat landscape, and to its legal and regulatory obligations. The {{fact:policy_owner_role}} is responsible for the review, and every revised version must be approved by the {{fact:management_body_name}} before it takes effect.",
+      "guidance": "Review at least yearly and after defined events (DORA Art. 6(5), via RTS (EU) 2024/1532 Art. 2(2)(j)), taking material changes in activities, threats and legal obligations into account (Art. 2(2)(k)). NIST CSF 2.0 GV.PO-02 expects policy reviewed and updated as requirements, threats, technology and mission change; the review triggers are organisation-defined parameters, so they are a fact.",
+      "proposed_mappings": []
+    }
+  ]
+}

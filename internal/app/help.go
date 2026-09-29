@@ -287,13 +287,51 @@ func helpPage(c *gin.Context) {
             <li>Browse what exists at <a href="/policies">Policy Library</a>.</li>
             <li>Write in <a href="/policies/manage">Policy Editor</a>: sections in order, each able
               to cite the controls it satisfies.</li>
+            <li>Or write together in the Policy Studio (<em>Open in Studio</em> on any document): one
+              live document that several people edit at once, with lists, tables and formatting, the
+              sections and their control mappings kept as they are, and readiness checked as you
+              type. Moving a document into the Studio is one way.</li>
+            <li>Start one from a template with <em>New document</em>: the ICT and Information
+              Security Policy (DORA, ISO 27001, NIST) or a standard, procedure or work instruction
+              skeleton, written for a client. What the policy says about the client — names, roles,
+              review triggers — comes from that client's facts; anything not yet recorded shows as
+              a missing fact and blocks approval until someone fills it in.</li>
+            <li>Review it in the Studio: turn on <em>Suggesting</em> and your edits become
+              suggestions that an administrator accepts or rejects (J and K move between them, A
+              accepts, R rejects). While a document is in review every edit is a suggestion, and it
+              can't be approved until each one is decided. Select text and choose <em>Comment</em>
+              to discuss it, internally or shared with the client. <em>Provenance</em> shows where
+              each section came from and who accepted which change.</li>
+            <li>Ask the AI: select text and choose <em>Make testable</em>, <em>Tighten</em> or
+              <em>Explain for the customer</em>, use the <em>AI…</em> menu under a section heading
+              (draft, review, suggest control mappings), <em>Fix with AI</em> on a readiness finding,
+              type <code>/ai</code> in an empty paragraph, or ask in the Ask AI panel. The AI proposes;
+              its edits preview privately until you choose <em>Suggest to everyone</em>, and then
+              they are suggestions like anyone else's, with the AI's reasons and sources beside
+              them. Nothing it invents about the client is taken as fact: a missing detail comes back
+              as a fact to fill in. Under Document control, <em>AI</em> can keep a document local
+              only (never the cloud) or switch AI off for it.</li>
+            <li>Work with the client live: once an administrator switches on <em>Guest links</em> in
+              Settings &rarr; Policy Studio, the Studio's <em>Sharing</em> tab creates a link for one
+              document &mdash; to read, comment or edit, for a set time &mdash; which the client opens
+              with just their name. They see the document, the suggestions and the comments you
+              share, and nothing else; you can remove them or withdraw the link at any moment.
+              <em>Workshop</em> in the Studio bar has larger type, focus on one section,
+              <em>Present</em> (the others follow you from section to section) and a customer-safe
+              view for sharing your screen.</li>
+            <li>See what changed: the Studio's <em>Compare</em> tab sets any approved version
+              against another or against the current text, word by word, and <em>Download redline
+              PDF</em> hands the client the same comparison marked up. When the Ask AI server has a
+              document library, <em>New document</em> can also map an existing document from it into
+              the template as suggestions.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at
               <a href="/policies/coverage">Policy Coverage</a>: which catalog controls have
               approved policy text behind them, and which only have a draft.</li>
-            <li>Export a document as Markdown, HTML or template JSON, or typeset it as a
-              deliverable (see Documents below).</li>
+            <li>Export a document as Markdown, HTML or template JSON, typeset it as a
+              deliverable, or download it as a Word document when Pandoc is installed (see
+              Documents below).</li>
           </ol>
         </div>
       </article>

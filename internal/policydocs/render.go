@@ -107,6 +107,15 @@ func RenderHTML(doc Document, sections []Section, refs []ControlRef) string {
     table.control th, table.control td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
     table.control th { background:#efe6d6; width:34%; font-weight:600; }
     .body { white-space:pre-wrap; line-height:1.55; }
+    .blocks { line-height:1.55; }
+    .blocks h3, .blocks h4 { font-family:Arial,sans-serif; margin:16px 0 6px; }
+    .blocks table.content { width:100%; border-collapse:collapse; font-size:14px; margin:10px 0; }
+    .blocks table.content th, .blocks table.content td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+    .blocks table.content th { background:#efe6d6; }
+    .blocks blockquote { margin:10px 0; padding-left:14px; border-left:3px solid var(--line); color:var(--muted); }
+    .blocks .callout { margin:10px 0; padding:10px 14px; border-left:4px solid var(--accent); background:#efe6d6; }
+    .blocks mark.unresolved { background:#e9cf8f; }
+    .blocks .control-ref { font-family:Arial,sans-serif; font-size:0.9em; }
     .empty { color:var(--muted); font-style:italic; }
     .satisfies { color:var(--muted); font-family:Arial,sans-serif; font-size:12px;
                  margin:6px 0 0; font-style:italic; }
@@ -140,7 +149,9 @@ func RenderHTML(doc Document, sections []Section, refs []ControlRef) string {
 	for _, s := range sections {
 		b.WriteString("    <h2>" + html.EscapeString(s.Heading) + "</h2>\n")
 		body := strings.TrimSpace(s.Body)
-		if body == "" {
+		if blocks := decodeBlocks(s.BlocksJSON); len(blocks) > 0 {
+			b.WriteString(`    <div class="blocks">` + "\n" + BlocksHTML(blocks) + "    </div>\n")
+		} else if body == "" {
 			b.WriteString(`    <p class="empty">No content.</p>` + "\n")
 		} else {
 			b.WriteString(`    <div class="body">` + html.EscapeString(body) + "</div>\n")

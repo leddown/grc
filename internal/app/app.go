@@ -1,12 +1,20 @@
 package app
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,6 +30,7 @@ import (
 	"grc/internal/nfrenrich"
 	"grc/internal/nfrlink"
 	"grc/internal/policydocs"
+	"grc/internal/policystudio"
 	"grc/internal/regcoverage"
 	"grc/internal/reporting"
 	"grc/internal/reports"
@@ -63,6 +72,13 @@ type Options struct {
 	// rendered by /templates. Empty means search (see doctemplate.Dir); as with
 	// DocsDir, a value set here is used as-is.
 	TemplatesDir string
+	// StudioAllowedOrigins is a comma-separated list of origins, besides the
+	// request's own host, allowed to open the Policy Studio collaboration
+	// socket.
+	StudioAllowedOrigins string
+	// StudioSnapshotRetention is how many Studio snapshots are kept per
+	// document.
+	StudioSnapshotRetention int
 }
 
 func DefaultOptions() Options {
@@ -100,6 +116,17 @@ func Run(options Options) error {
 		return runDBSync(options, sqliteDB)
 	}
 
+	router, studioService, err := buildRouter(sqliteDB, options)
+	if err != nil {
+		return err
+	}
+	return serve(options.ListenAddr, router, studioService)
+}
+
+// buildRouter wires every route of the application over an open database.
+// Run serves what it returns; the route-enumeration tests build the same
+// router, so what they walk is what is served.
+func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio.Service, error) {
 	configureAIUsageStore(sqliteDB)
 	configureStoredJSONStore(sqliteDB)
 
@@ -110,7 +137,7 @@ func Run(options Options) error {
 
 	userHandler, authService, authHandler, controlHandler, securityNFRHandler, nfrLinkHandler, reportsHandler, riskRegisterHandler, err := buildHandlers(sqliteDB)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if authHandler != nil {
 		authHandler.SetTrustProxyHeaders(options.TrustProxyHeaders)
@@ -154,10 +181,6 @@ func Run(options Options) error {
 	registerSettingsRoutes(router, settingsService, aiRouter, settingsStorage(options), adminMiddleware, options.LocalMode)
 	policyService := registerPolicyDocRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
 	registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
-	registerNFREnrichmentRoutes(
-		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
-	registerRegulationCoverageRoutes(
-		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 
 	// One knowledge service, two consumers. It is the read-only view over every
 	// catalog in this installation, and both the machine-facing API an external
@@ -167,15 +190,50 @@ func Run(options Options) error {
 	// registerKnowledgeRoutes because that function declines to serve the API
 	// without a token, and the resolver needs the service either way.
 	knowledgeService := knowledge.NewService(knowledge.NewStore(sqliteDB))
+	studioService, err := registerPolicyStudioRoutes(router, sqliteDB, policyService, authService, knowledgeService, aiRouter, settingsService, adminMiddleware, options)
+	if err != nil {
+		return nil, nil, err
+	}
+	registerNFREnrichmentRoutes(
+		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
+	registerRegulationCoverageRoutes(
+		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
+
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
 		router, sqliteDB, knowledgeService, settingsService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 	registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
-	if err := router.Run(options.ListenAddr); err != nil {
+	return router, studioService, nil
+}
+
+// serve runs the HTTP server until SIGINT or SIGTERM, then shuts down the
+// Policy Studio first -- flushing every open document's pending edits and
+// disconnecting its editors, which http.Server.Shutdown cannot do for a
+// hijacked WebSocket -- and then the server itself.
+func serve(addr string, handler http.Handler, studio *policystudio.Service) error {
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 15 * time.Second}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := studio.Shutdown(shutdownCtx); err != nil {
+			log.Printf("policy studio shutdown: %v", err)
+		}
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("server shutdown: %v", err)
+		}
+	}()
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("server failed: %w", err)
 	}
+	stop()
+	<-done
 	return nil
 }
 
@@ -462,6 +520,52 @@ func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *
 
 	templateHandler := doctemplate.NewHandler(templateService, sessionUsername)
 	templateHandler.RegisterReadRoutes(r)
+
+	// The redline: a comparison of two revisions of a document, typeset.
+	r.GET("/policies/:id/compare.pdf", func(c *gin.Context) {
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document id"})
+			return
+		}
+		cmp, err := policyService.Compare(id, c.Query("from"), c.DefaultQuery("to", policydocs.CurrentRevision))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, policydocs.ErrNotFound) {
+				status = http.StatusNotFound
+			} else if policydocs.IsValidation(err) {
+				status = http.StatusBadRequest
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		doc, err := policyService.GetDocument(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+			return
+		}
+		data, err := json.Marshal(struct {
+			policydocs.Comparison
+			Reference      string `json:"reference"`
+			Classification string `json:"classification"`
+		}{cmp, doc.Reference, doc.Classification})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		base := doc.Reference
+		if strings.TrimSpace(base) == "" {
+			base = doc.Title
+		}
+		result, err := templateService.Render(c.Request.Context(), doctemplate.Request{
+			TemplateID: "policy-redline-typst", Data: data, BaseName: base + "-redline", PDFStandard: doctemplate.PDFStandards[0].Value,
+		})
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error(), "log": result.Log})
+			return
+		}
+		doctemplate.WriteResult(c, result, c.Query("inline") == "1")
+	})
 
 	admin := r.Group("/")
 	if !localMode {

@@ -1,0 +1,57 @@
+{
+  "name": "minimal",
+  "input": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-8",
+          "kind": "other"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h8"
+            }
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p9"
+            },
+            "content": []
+          }
+        ]
+      }
+    ]
+  },
+  "update": "AQcBAAcBBnBvbGljeQMNcG9saWN5U2VjdGlvbgcAAQADDnNlY3Rpb25IZWFkaW5nKAABAQNiaWQBdwRiLWg4hwEBAwlwYXJhZ3JhcGgoAAEDA2JpZAF3BGItcDkoAAEAA3VpZAF3A3MtOCgAAQAEa2luZAF3BW90aGVyAA==",
+  "expected": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-8",
+          "kind": "other"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h8"
+            }
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p9"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

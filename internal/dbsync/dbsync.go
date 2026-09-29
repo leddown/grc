@@ -169,6 +169,19 @@ var syncOrder = []tableSpec{
 	// Policy documents are id-keyed: sections and versions carry a foreign key
 	// to the document, and a document's parent_document_id points at another
 	// row in this same table, so the ids have to survive the copy.
+	// Client profiles and their facts (internal/clientprofile). Profiles are
+	// id-keyed because policy documents point at them by id.
+	{
+		table:        "client_profiles",
+		cols:         []string{"id", "name", "crm_ref", "notes", "created_at", "updated_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "client_profile_facts",
+		cols:         []string{"client_id", "key", "value", "value_type", "source", "updated_by", "updated_at"},
+		conflictCols: []string{"client_id", "key"},
+	},
 	{
 		table: "policy_documents",
 		cols: []string{
@@ -176,6 +189,8 @@ var syncOrder = []tableSpec{
 			"owner_role", "approver", "classification", "frameworks_json",
 			"effective_date", "review_cadence_months", "next_review_date",
 			"parent_document_id", "summary", "author", "created_at", "updated_at",
+			"editor_format", "projection_version", "projection_token",
+			"client_profile_id", "template_id", "template_version", "ai_policy",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -183,8 +198,9 @@ var syncOrder = []tableSpec{
 	{
 		table: "policy_sections",
 		cols: []string{
-			"id", "document_id", "ordinal", "heading", "body", "section_kind",
-			"provenance", "provenance_detail", "updated_at",
+			"id", "uid", "document_id", "ordinal", "heading", "body", "section_kind",
+			"provenance", "provenance_detail", "updated_at", "content_json", "detached_at",
+			"blocks_json",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -193,7 +209,7 @@ var syncOrder = []tableSpec{
 		table: "policy_versions",
 		cols: []string{
 			"id", "document_id", "version_label", "approved_by", "approved_at",
-			"change_summary", "snapshot",
+			"change_summary", "snapshot", "content_json", "snapshot_sha256",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -465,6 +481,84 @@ var syncOrder = []tableSpec{
 	{
 		table:        "audit_finding_history",
 		cols:         []string{"id", "finding_id", "at", "actor", "event", "from_value", "to_value", "note"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// ---- Policy Studio (internal/policystudio) ----
+	//
+	// The live collaborative document of each Studio policy, as Yjs binary.
+	// These travel in a full snapshot, so a restore brings every Studio
+	// document back exactly, but not in -sync-to / -sync-from: an update log is
+	// a history that only means something next to the state it was written
+	// against, and merging one deployment's log into another's would stitch two
+	// documents together. A sync carries the section rows instead (with their
+	// content_json); the destination notices the rows no longer match the
+	// state they were projected from and rebuilds the document from them.
+	{
+		table:        "policy_doc_state",
+		cols:         []string{"document_id", "state", "projection_token", "updated_at"},
+		conflictCols: []string{"document_id"},
+		blobCols:     []string{"state"},
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_doc_updates",
+		cols:         []string{"id", "document_id", "upd", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		blobCols:     []string{"upd"},
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_doc_snapshots",
+		cols:         []string{"id", "document_id", "reason", "format", "state", "created_by", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		blobCols:     []string{"state"},
+		strat:        skipInSync,
+	},
+	// Comment anchors are Yjs relative positions into the state above, so the
+	// threads, and the audit that refers to their suggestions, stay out of a
+	// sync for the same reason: the destination rebuilds its document from the
+	// rows, and these would point into a document it does not have.
+	{
+		table: "policy_comment_threads",
+		cols: []string{"id", "document_id", "section_uid", "anchor_start", "anchor_end", "quote", "visibility", "kind",
+			"suggestion_suid", "status", "created_by", "created_at", "updated_at", "resolved_by", "resolved_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_comments",
+		cols:         []string{"id", "thread_id", "author", "author_kind", "body", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_studio_audit",
+		cols:         []string{"id", "document_id", "actor", "actor_kind", "event", "detail_json", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// AI proposals and their edits belong with the audit above: the edits'
+	// suids are suggestion ids in Yjs state a sync does not carry.
+	{
+		table: "policy_ai_proposals",
+		cols: []string{"id", "document_id", "requested_by", "action", "scope", "instruction", "provider", "model",
+			"served_by", "agent", "prompt_sha256", "context_fingerprint", "status", "summary", "answer_markdown",
+			"mappings_json", "new_facts_json", "input_tokens", "output_tokens", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "policy_ai_edits",
+		cols: []string{"id", "proposal_id", "suid", "op", "block_id", "section_uid", "quote", "fragment_json",
+			"rationale", "citations_json", "validation", "placement", "decision", "decided_by", "decided_at"},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
 		strat:        skipInSync,

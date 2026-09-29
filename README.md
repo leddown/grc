@@ -2,10 +2,11 @@
 
 Internal Go web application for RCSA (Risk and Control Self-Assessment) and
 consulting practice management. It bundles a NIST control catalog, a security
-NFR catalog with NFR-to-control linking, a security risk register, Jira
-reporting/connector, an HTML/CSS-to-PDF GRC report generator, a lightweight
-consulting CRM, and an AI chat assistant — all backed by SQLite and served via
-Gin.
+NFR catalog with NFR-to-control linking, a security risk register, policy
+authoring (including the collaborative Policy Studio), Jira reporting/connector,
+an HTML/CSS-to-PDF GRC report generator, and an AI chat assistant — all backed
+by SQLite (or PostgreSQL) and served via Gin. The consulting CRM moved to
+wintermute.
 
 ## Quick start
 
@@ -53,8 +54,6 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
   dashboards
 - `internal/reporting` — HTML/CSS-to-PDF GRC report generation (see its
   [README](internal/reporting/README.md))
-- `internal/crm` — consulting CRM: clients → engagements → billable time →
-  billing
 - `internal/jira` — Jira Cloud REST connector (issues/projects/search)
 - `internal/db` — SQLite connection + schema setup
 - `internal/crisisexercise` — risk and crisis scenario planning and exercises:
@@ -68,6 +67,20 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
 - `internal/knowledge` — read-only, machine-facing query surface over this
   installation's catalogs, for an AI agent to consult (see
   [AI_AGENT.md](AI_AGENT.md))
+- `internal/policystudio` — the Policy Studio: collaborative WYSIWYG editing of
+  policy documents over an in-process Yjs server (ygo), projected into the
+  policy module's section rows, with tracked suggestions, anchored comments,
+  provenance, guest links for working with a client live, and workshop mode
+  (see [POLICY_STUDIO.md](POLICY_STUDIO.md))
+- `internal/policyai` — the Studio's AI proposals: an edit the AI proposes is
+  validated on the server and placed as a suggestion a person accepts or
+  rejects; it never writes the document itself
+- `internal/clientprofile` — the clients policies are written for and the facts
+  about each, which fill a document's fact tokens (a model or a template never
+  supplies them)
+- `web/policy-studio` — the Studio's editor sources (Tiptap), built with Node
+  into a committed, embedded bundle by `scripts/build-policy-studio.sh`; Node is
+  never needed to build or run the app
 - `internal/regcoverage` — Regulation Coverage: import an EU regulation from
   the AI agent's library, map every article to Security NFRs and 800-53, and
   get a versioned report you can question and revise (see
@@ -90,5 +103,7 @@ storage, `golang.org/x/crypto/bcrypt` for password hashing.
   installation's own data, via an agent on your Wintermute server
 - [REGULATION_COVERAGE.md](REGULATION_COVERAGE.md) — the Regulation Coverage
   web module: the analysis loop, how a mapping is checked, cost and limits
+- [POLICY_STUDIO.md](POLICY_STUDIO.md) — the Policy Studio: design, decisions,
+  operator guide
 - [FAQ.md](FAQ.md) — `security-patches` → `main` merge procedure
 - [CHANGELOG.md](CHANGELOG.md) — change history / rollback reference

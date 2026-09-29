@@ -200,7 +200,7 @@ func (s *Service) Catalog() (Catalog, error) {
 	// Ordered rather than ranged over the map, so the gallery does not shuffle
 	// its engine cards between page loads.
 	engines := make([]EngineStatus, 0, len(statuses))
-	for _, engine := range []Engine{EngineTypst, EngineLaTeX} {
+	for _, engine := range []Engine{EngineTypst, EngineLaTeX, EnginePandoc} {
 		engines = append(engines, statuses[engine])
 	}
 

@@ -16,6 +16,10 @@ var skippedTables = map[string]string{
 	"app_state":       "this deployment's own configuration, which should not follow the data to another server",
 	"app_secrets":     "ciphertext whose key file never travels in a snapshot, so copying it hides that the credential must be set again",
 	"sqlite_sequence": "SQLite's internal AUTOINCREMENT bookkeeping, rebuilt by the inserts themselves",
+	// Guest access is live credentials: a restored link or session would let
+	// someone back into a document on a server that never invited them.
+	"policy_share_links":    "Policy Studio share links are live credentials for people outside the installation",
+	"policy_guest_sessions": "Policy Studio guest sessions are live credentials, and ephemeral",
 }
 
 // TestSyncOrderCoversEverySchemaTable is the guard on the whole backup path: a

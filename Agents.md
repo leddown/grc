@@ -60,6 +60,22 @@ all backed by SQLite and served via Gin.
   communications, the board and the supervisory authorities. Every objective,
   phase, inject, decision and finding can cite the controls, NFRs, regulation
   clauses, risks and frameworks it exercises — see `CRISIS_EXERCISE.md`
+- `internal/policystudio` — the Policy Studio: collaborative WYSIWYG authoring of
+  policy documents. An in-process ygo (pure-Go Yjs) server holds each Studio
+  document; the server validates and projects it into `policy_sections`, which
+  stay the system of record for sections and mappings. The editor lives in
+  `web/policy-studio` and ships as an embedded, hashed bundle. Its document
+  templates are JSON in `internal/policystudio/templates/` — see
+  `POLICY_STUDIO.md`
+- `internal/policyai` — the Policy Studio's AI proposal engine: context,
+  standing rules, strict parsing of the EditProposal contract (structured
+  outputs on Claude, one repair turn on Wintermute), server-side validation and
+  anchoring of every edit, `ai_policy` routing, limits, and the record of each
+  proposal and decision. The AI never writes the document: edits become
+  suggestions a person decides
+- `internal/clientprofile` — client profiles and their facts (the
+  anti-hallucination store): what a policy states about a client comes from
+  here or stays an unresolved token that blocks approval
 - `internal/knowledge` — the read-only `/api/knowledge` surface an external AI
   agent queries: NFRs, controls, regulation coverage, policies, risks and crisis
   exercises, behind its own read-only token. The agent itself lives in wintermuted, not here —
@@ -78,6 +94,21 @@ all backed by SQLite and served via Gin.
   helpers
 - Root helper scripts: `admin_setup_login.sh` (first-boot bootstrap),
   `run_local.sh` (local no-auth launch)
+
+## The Policy Studio editor bundle (`web/policy-studio`)
+
+- The bundle in `internal/policystudio/assets` is committed, so `go build`
+  never needs Node. Change the editor in `web/policy-studio/src` and rebuild
+  with `scripts/build-policy-studio.sh` (Node 24 LTS, `npm ci
+  --ignore-scripts` from the committed lockfile). Commit the rebuilt assets,
+  `THIRD_PARTY_NOTICES.md`, `schema.snapshot.json` and the fixtures together.
+- The build refuses a bundled package whose licence is not MIT, BSD, Apache-2.0,
+  ISC or MPL-2.0, and a bundle over 800 KB; `go test` checks the embedded files
+  against the manifest and the Go schema against `schema.snapshot.json`.
+- `web/policy-studio/patches/apply-y-tiptap-node-marks.mjs` patches
+  `@tiptap/y-tiptap` so node marks survive Yjs (POLICY_STUDIO.md §3.3). It
+  refuses any version but the one it was written for: bumping y-tiptap means
+  re-reading the patch against the new source.
 
 ## Conventions & Code Style
 
@@ -109,7 +140,10 @@ all backed by SQLite and served via Gin.
   `local.db`, and their `-shm`/`-wal` files are gitignored; keep it that way
 - Use HTTPS in production so auth cookies are sent with `Secure`
 - Agents must check for security patches for all internal libraries/modules
-  before finalizing changes
+  before finalizing changes — including the Policy Studio's JavaScript
+  dependencies: run `npm audit --omit=dev` in `web/policy-studio`, and apply
+  fixes (an updated lockfile, then a rebuilt bundle) on the `security-patches`
+  branch like any Go module
 - A full security patch audit across all internal libraries and modules
   should run periodically; no automated cadence exists yet, so treat this
   as a manual review duty when working in this repo

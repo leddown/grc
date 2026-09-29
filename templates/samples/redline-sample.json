@@ -1,0 +1,74 @@
+{
+  "document_id": 1,
+  "title": "ICT and Information Security Policy",
+  "reference": "POL-ISMS-001",
+  "classification": "Internal",
+  "from": {
+    "ref": "12",
+    "label": "Version 1.0",
+    "approved_at": "2026-09-01T10:00:00Z",
+    "approved_by": "Dana Reviewer",
+    "verified": true
+  },
+  "to": {
+    "ref": "current",
+    "label": "Current text (draft)",
+    "verified": true
+  },
+  "added": 1,
+  "removed": 0,
+  "changed": 1,
+  "sections": [
+    {
+      "op": "same",
+      "heading": "Purpose",
+      "units": [
+        {
+          "op": "same",
+          "before": "This policy sets out how Example Bank AG protects its information.",
+          "after": "This policy sets out how Example Bank AG protects its information."
+        }
+      ]
+    },
+    {
+      "op": "changed",
+      "heading": "Scope",
+      "units": [
+        {
+          "op": "changed",
+          "before": "• all staff",
+          "after": "• all staff and contractors",
+          "words": [
+            {
+              "op": "same",
+              "text": "• all staff"
+            },
+            {
+              "op": "added",
+              "text": " and contractors"
+            }
+          ]
+        },
+        {
+          "op": "same",
+          "before": "• all systems",
+          "after": "• all systems"
+        },
+        {
+          "op": "added",
+          "after": "• all locations from which these systems are operated"
+        }
+      ]
+    },
+    {
+      "op": "added",
+      "heading": "Exceptions",
+      "units": [
+        {
+          "op": "added",
+          "after": "Every exception must be approved by #panic(\"owner\") and time-limited."
+        }
+      ]
+    }
+  ]
+}

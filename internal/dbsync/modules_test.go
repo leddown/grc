@@ -64,7 +64,27 @@ func seedModules(t *testing.T, conn *db.Conn) {
 		VALUES (20, 19, 0, 'Quarterly privileged access recertification', 'IAM lead')`)
 	mustExec(t, conn, `INSERT INTO audit_finding_history (id, finding_id, event, to_value)
 		VALUES (21, 19, 'created', 'Open')`)
+
+	mustExec(t, conn, `INSERT INTO policy_documents (id, title, editor_format, projection_token)
+		VALUES (30, 'ICT and Information Security Policy', 'studio', 'tok-1')`)
+	mustExec(t, conn, `INSERT INTO policy_doc_state (document_id, state, projection_token) VALUES (30, ?, 'tok-1')`, yjsBytes)
+	mustExec(t, conn, `INSERT INTO policy_doc_updates (id, document_id, upd) VALUES (31, 30, ?)`, yjsBytes)
+	mustExec(t, conn, `INSERT INTO policy_doc_snapshots (id, document_id, reason, format, state)
+		VALUES (32, 30, 'pre_migration', 'legacy_json', ?)`, yjsBytes)
+	mustExec(t, conn, `INSERT INTO policy_comment_threads (id, document_id, section_uid, anchor_start, anchor_end, quote)
+		VALUES (33, 30, 'sec-1', 'AQID', 'AQIE', 'Staff must review access')`)
+	mustExec(t, conn, `INSERT INTO policy_comments (id, thread_id, author, body) VALUES (34, 33, 'alice', 'Quarterly?')`)
+	mustExec(t, conn, `INSERT INTO policy_studio_audit (id, document_id, actor, event, detail_json)
+		VALUES (35, 30, 'bob', 'suggestion_accepted', '{"id":"s-1"}')`)
+	mustExec(t, conn, `INSERT INTO policy_ai_proposals (id, document_id, requested_by, action, provider, model)
+		VALUES (36, 30, 'alice', 'testable', 'claude', 'claude-opus-5')`)
+	mustExec(t, conn, `INSERT INTO policy_ai_edits (id, proposal_id, suid, op, block_id, quote)
+		VALUES (37, 36, 'suid-1', 'replace', 'b-1', 'will')`)
 }
+
+// yjsBytes stands in for a Yjs update: binary, with bytes that are not valid
+// UTF-8, which is what the BLOB path has to carry intact.
+var yjsBytes = []byte{0x01, 0x02, 0xff, 0x00, 0xfe, 0x80}
 
 // checkModules asserts the seeded rows arrived intact, ids and all.
 func checkModules(t *testing.T, dst *db.Conn) {
@@ -80,6 +100,9 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"crisis_ex_participants": 1, "crisis_ex_references": 1, "crisis_ex_versions": 1,
 		"crisis_ex_chat": 1,
 		"audit_findings": 1, "audit_finding_actions": 1, "audit_finding_history": 1,
+		"policy_doc_state": 1, "policy_doc_updates": 1, "policy_doc_snapshots": 1,
+		"policy_comment_threads": 1, "policy_comments": 1, "policy_studio_audit": 1,
+		"policy_ai_proposals": 1, "policy_ai_edits": 1,
 	} {
 		if got := count(t, dst, table); got != want {
 			t.Errorf("%s count=%d want %d", table, got, want)
@@ -97,6 +120,14 @@ func checkModules(t *testing.T, dst *db.Conn) {
 	}
 	if got := scalar(t, dst, `SELECT rationale FROM crisis_ex_classification WHERE exercise_id = 4`); got == "" {
 		t.Error("classification rationale is empty")
+	}
+
+	var state []byte
+	if err := dst.QueryRow(`SELECT state FROM policy_doc_state WHERE document_id = 30`).Scan(&state); err != nil {
+		t.Fatalf("read studio state: %v", err)
+	}
+	if !bytes.Equal(state, yjsBytes) {
+		t.Errorf("studio state = %v, want %v (binary column must survive byte for byte)", state, yjsBytes)
 	}
 
 	var content []byte
@@ -179,10 +210,10 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 23 {
-		t.Errorf("report marks %d tables skipped, want 23", len(skipped))
+	if len(skipped) != 31 {
+		t.Errorf("report marks %d tables skipped, want 31", len(skipped))
 	}
-	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings"} {
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit"} {
 		if !skipped[want] {
 			t.Errorf("%s is not reported as skipped", want)
 		}

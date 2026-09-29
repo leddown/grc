@@ -112,7 +112,7 @@ var Classifications = []string{"Public", "Internal", "Confidential", "Restricted
 // one Access Control policy typically satisfies ISO Annex A, NIST AC-1,
 // FedRAMP's AC family policy and PCI DSS clauses at the same time, and
 // authoring one document per framework produces copies that diverge.
-var Frameworks = []string{"ISO 27001", "NIST 800-53", "NIST CSF", "FedRAMP", "PCI DSS", "SOC 2", "HIPAA"}
+var Frameworks = []string{"ISO 27001", "NIST 800-53", "NIST CSF", "FedRAMP", "PCI DSS", "SOC 2", "HIPAA", "DORA"}
 
 // Document is an authored policy-family document.
 type Document struct {
@@ -141,6 +141,29 @@ type Document struct {
 	Author    string `json:"author"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	// EditorFormat says which editor owns the text: EditorMarkdown (the
+	// per-section editor) or EditorStudio (the collaborative Policy Studio
+	// document, projected into the section rows). The move is one way and is
+	// made by MarkStudio, never by UpdateDocument.
+	EditorFormat string `json:"editor_format"`
+	// ProjectionVersion counts the Studio projections written into the
+	// section rows, so a client can tell whether what it read is current.
+	ProjectionVersion int `json:"projection_version"`
+	// ProjectionToken pairs the rows with the Studio document state that
+	// produced them; see SQLiteRepository.ApplyProjection.
+	ProjectionToken string `json:"-"`
+	// ClientProfileID names the client profile whose facts fill the
+	// document's fact tokens; 0 when none is chosen. It is separate from
+	// ClientID, which still points into the CRM that moved to wintermute.
+	ClientProfileID int64 `json:"client_profile_id"`
+	// TemplateID and TemplateVersion record the template a document was
+	// created from; empty for a document written from scratch.
+	TemplateID      string `json:"template_id"`
+	TemplateVersion string `json:"template_version"`
+	// AIPolicy says where this document's text may be sent for AI proposals:
+	// AIPolicyInherit (wherever Settings routes AI), AIPolicyLocalOnly (only
+	// to a Wintermute server, never the cloud) or AIPolicyOff.
+	AIPolicy string `json:"ai_policy"`
 
 	// Derived (read-only) fields populated by list/get queries.
 	ParentTitle  string `json:"parent_title"`
@@ -155,7 +178,10 @@ type Document struct {
 // belongs to the template module (phase 5) and a half-implemented Markdown
 // parser here would have to be thrown away when it lands.
 type Section struct {
-	ID               int64  `json:"id"`
+	ID int64 `json:"id"`
+	// UID is the section's stable identity inside a Studio document, where
+	// sections move and the autoincrement id means nothing to the editor.
+	UID              string `json:"uid"`
 	DocumentID       int64  `json:"document_id"`
 	Ordinal          int    `json:"ordinal"`
 	Heading          string `json:"heading"`
@@ -164,6 +190,45 @@ type Section struct {
 	Provenance       string `json:"provenance"`
 	ProvenanceDetail string `json:"provenance_detail"`
 	UpdatedAt        string `json:"updated_at"`
+	// ContentJSON is the section as ProseMirror JSON, suggestions included,
+	// for a Studio document; empty for a Markdown one.
+	ContentJSON string `json:"content_json,omitempty"`
+	// DetachedAt is set when the section's node disappeared from the Studio
+	// document. The row, and its control mappings, are kept until an explicit
+	// delete; the editor never deletes a row.
+	DetachedAt string `json:"detached_at,omitempty"`
+	// BlocksJSON is the section's rendered blocks (see Block) as the last
+	// projection computed them, client facts resolved. Frozen with the rest
+	// of the row once the document leaves draft.
+	BlocksJSON string `json:"-"`
+}
+
+// Editor formats.
+const (
+	EditorMarkdown = "markdown"
+	EditorStudio   = "studio"
+)
+
+// AI policies (Document.AIPolicy).
+const (
+	AIPolicyInherit   = "inherit"
+	AIPolicyLocalOnly = "local_only"
+	AIPolicyOff       = "off"
+)
+
+// AIPolicies lists the values Document.AIPolicy accepts.
+var AIPolicies = []string{AIPolicyInherit, AIPolicyLocalOnly, AIPolicyOff}
+
+// SectionProjection is one section as the Studio projection computed it from
+// the live document.
+type SectionProjection struct {
+	UID         string
+	Ordinal     int
+	Heading     string
+	Body        string
+	SectionKind string
+	ContentJSON string
+	BlocksJSON  string
 }
 
 // Version is an immutable snapshot taken at approval. The snapshot is the
@@ -178,6 +243,12 @@ type Version struct {
 	ApprovedAt    string `json:"approved_at"`
 	ChangeSummary string `json:"change_summary"`
 	Snapshot      string `json:"snapshot"`
+	// ContentJSON is the approved sections in structured form (headings,
+	// kinds, bodies, blocks and control claims), and SnapshotSHA256 the hash
+	// of Snapshot and ContentJSON together, so an approved version can be
+	// shown to be the one that was approved.
+	ContentJSON    string `json:"content_json,omitempty"`
+	SnapshotSHA256 string `json:"snapshot_sha256"`
 }
 
 // Coverage levels for a section-to-control mapping. The distinction matters in

@@ -116,7 +116,7 @@ func (h *Handler) ResetBrand(c *gin.Context) {
 func (h *Handler) RefreshEngines(c *gin.Context) {
 	statuses := RefreshEngines()
 	engines := make([]EngineStatus, 0, len(statuses))
-	for _, engine := range []Engine{EngineTypst, EngineLaTeX} {
+	for _, engine := range []Engine{EngineTypst, EngineLaTeX, EnginePandoc} {
 		engines = append(engines, statuses[engine])
 	}
 	c.JSON(http.StatusOK, gin.H{"engines": engines})
@@ -165,8 +165,14 @@ func (h *Handler) RenderEndpoint(c *gin.Context) {
 		return
 	}
 
+	WriteResult(c, result, c.Query("inline") == "1")
+}
+
+// WriteResult sends a render result: the PDF, or the source bundle when the
+// engine is missing, with what happened in headers.
+func WriteResult(c *gin.Context, result Result, inline bool) {
 	disposition := "attachment"
-	if c.Query("inline") == "1" && !result.Bundled {
+	if inline && !result.Bundled && result.ContentType == "application/pdf" {
 		disposition = "inline"
 	}
 	c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, result.Filename))

@@ -821,7 +821,224 @@ func OpenSQLite(path string) (*Conn, error) {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
-		ON audit_finding_history (finding_id, id);`
+		ON audit_finding_history (finding_id, id);
+
+	-- Policy Studio (internal/policystudio): the live collaborative document
+	-- of a Studio-format policy, as Yjs binary. policy_doc_state is the
+	-- compacted state plus projection_token, written in the same transaction
+	-- as policy_documents.projection_token by every projection -- a mismatch at
+	-- load means the rows were changed outside the Studio (a sync or restore)
+	-- and win. policy_doc_updates
+	-- is the append-only log between compactions. policy_doc_snapshots are
+	-- point-in-time copies (interval, status change, before migration).
+	CREATE TABLE IF NOT EXISTS policy_doc_state (
+		document_id INTEGER PRIMARY KEY,
+		state BLOB NOT NULL,
+		projection_token TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS policy_doc_updates (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		upd BLOB NOT NULL,
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_doc_updates_document
+		ON policy_doc_updates (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_doc_snapshots (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		reason TEXT NOT NULL DEFAULT '',
+		format TEXT NOT NULL DEFAULT 'yjs',
+		state BLOB NOT NULL,
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
+		ON policy_doc_snapshots (document_id, id);
+
+	-- Policy Studio review layer. Comment threads anchor on Yjs relative
+	-- positions (base64) into the live document rather than on marks inside
+	-- it, so a comment never travels in the shared text and internal threads
+	-- can be withheld from guests server-side. The audit table records who
+	-- decided which suggestion and every comment action; the actor always
+	-- comes from the session, never from a request body.
+	CREATE TABLE IF NOT EXISTS policy_comment_threads (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		section_uid TEXT NOT NULL DEFAULT '',
+		anchor_start TEXT NOT NULL DEFAULT '',
+		anchor_end TEXT NOT NULL DEFAULT '',
+		quote TEXT NOT NULL DEFAULT '',
+		visibility TEXT NOT NULL DEFAULT 'internal',
+		kind TEXT NOT NULL DEFAULT 'comment',
+		suggestion_suid TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'open',
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		resolved_by TEXT NOT NULL DEFAULT '',
+		resolved_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_comment_threads_document
+		ON policy_comment_threads (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		thread_id INTEGER NOT NULL,
+		author TEXT NOT NULL DEFAULT '',
+		author_kind TEXT NOT NULL DEFAULT 'human',
+		body TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(thread_id) REFERENCES policy_comment_threads(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_comments_thread
+		ON policy_comments (thread_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_studio_audit (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		actor TEXT NOT NULL DEFAULT '',
+		actor_kind TEXT NOT NULL DEFAULT 'human',
+		event TEXT NOT NULL DEFAULT '',
+		detail_json TEXT NOT NULL DEFAULT '{}',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_studio_audit_document
+		ON policy_studio_audit (document_id, id);
+
+	-- Policy Studio AI proposals (internal/policyai): each request, what served
+	-- it (provider, model, backend, agent, prompt hash) and what it cost, and
+	-- each edit it proposed with the server's validation, where the requester's
+	-- editor placed it, and the human decision. The AI never writes text: an
+	-- edit becomes a suggestion someone accepts or rejects.
+	CREATE TABLE IF NOT EXISTS policy_ai_proposals (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		requested_by TEXT NOT NULL DEFAULT '',
+		action TEXT NOT NULL DEFAULT '',
+		scope TEXT NOT NULL DEFAULT '',
+		instruction TEXT NOT NULL DEFAULT '',
+		provider TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		served_by TEXT NOT NULL DEFAULT '',
+		agent TEXT NOT NULL DEFAULT '',
+		prompt_sha256 TEXT NOT NULL DEFAULT '',
+		context_fingerprint TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT '',
+		summary TEXT NOT NULL DEFAULT '',
+		answer_markdown TEXT NOT NULL DEFAULT '',
+		mappings_json TEXT NOT NULL DEFAULT '[]',
+		new_facts_json TEXT NOT NULL DEFAULT '[]',
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_ai_proposals_document
+		ON policy_ai_proposals (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_ai_edits (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		proposal_id INTEGER NOT NULL,
+		suid TEXT NOT NULL UNIQUE,
+		op TEXT NOT NULL DEFAULT '',
+		block_id TEXT NOT NULL DEFAULT '',
+		section_uid TEXT NOT NULL DEFAULT '',
+		quote TEXT NOT NULL DEFAULT '',
+		fragment_json TEXT NOT NULL DEFAULT '',
+		rationale TEXT NOT NULL DEFAULT '',
+		citations_json TEXT NOT NULL DEFAULT '[]',
+		validation TEXT NOT NULL DEFAULT '',
+		placement TEXT NOT NULL DEFAULT '',
+		decision TEXT NOT NULL DEFAULT '',
+		decided_by TEXT NOT NULL DEFAULT '',
+		decided_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(proposal_id) REFERENCES policy_ai_proposals(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_ai_edits_proposal
+		ON policy_ai_edits (proposal_id, id);
+
+	-- Policy Studio guest access. A share link lets someone outside the
+	-- installation into one document with one role until it expires or is
+	-- revoked; a guest session is what redeeming it creates. Both hold only
+	-- SHA-256 hashes of their tokens: the link is shown once, and the session
+	-- cookie is never stored. Neither is in a backup or a sync: they are live
+	-- credentials (see internal/dbsync).
+	CREATE TABLE IF NOT EXISTS policy_share_links (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		token_sha256 TEXT NOT NULL UNIQUE,
+		label TEXT NOT NULL DEFAULT '',
+		role TEXT NOT NULL DEFAULT 'viewer',
+		allow_ai INTEGER NOT NULL DEFAULT 0,
+		max_uses INTEGER NOT NULL DEFAULT 0,
+		uses INTEGER NOT NULL DEFAULT 0,
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		expires_at TEXT NOT NULL DEFAULT '',
+		revoked_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_share_links_document
+		ON policy_share_links (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_guest_sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		link_id INTEGER NOT NULL,
+		session_sha256 TEXT NOT NULL UNIQUE,
+		display_name TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		last_seen_at TEXT NOT NULL DEFAULT '',
+		expires_at TEXT NOT NULL DEFAULT '',
+		ended_at TEXT NOT NULL DEFAULT '',
+		end_reason TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(link_id) REFERENCES policy_share_links(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_guest_sessions_link
+		ON policy_guest_sessions (link_id, id);
+
+	-- Client profiles (internal/clientprofile): the clients policies are
+	-- written for, and the facts about each that a policy may state but a
+	-- model must never invent. Kept here rather than in the CRM on wintermute
+	-- so a document's facts never depend on another server being reachable;
+	-- crm_ref records the CRM client a profile corresponds to, when there is one.
+	CREATE TABLE IF NOT EXISTS client_profiles (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		crm_ref TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS client_profile_facts (
+		client_id INTEGER NOT NULL,
+		key TEXT NOT NULL,
+		value TEXT NOT NULL DEFAULT '',
+		value_type TEXT NOT NULL DEFAULT 'text',
+		source TEXT NOT NULL DEFAULT 'manual',
+		updated_by TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (client_id, key),
+		FOREIGN KEY(client_id) REFERENCES client_profiles(id) ON DELETE CASCADE
+	);`
 
 	const stateSchema = `
 	CREATE TABLE IF NOT EXISTS app_state (
@@ -956,6 +1173,36 @@ func OpenSQLite(path string) (*Conn, error) {
 	// deliverable's cover page must not change because somebody renamed a client
 	// a year later.
 	if err := ensureColumn(db, "policy_documents", "client_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	// Policy Studio. editor_format says which editor owns a document's text
+	// (markdown: the legacy per-section editor; studio: the collaborative
+	// document, projected into the section rows). uid is a section's stable
+	// identity inside that document, independent of the autoincrement id that
+	// mappings hang off.
+	for _, col := range []struct{ table, name, def string }{
+		{"policy_documents", "editor_format", "TEXT NOT NULL DEFAULT 'markdown'"},
+		{"policy_documents", "projection_version", "INTEGER NOT NULL DEFAULT 0"},
+		{"policy_documents", "projection_token", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "uid", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "content_json", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "detached_at", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_sections", "blocks_json", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_documents", "client_profile_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"policy_documents", "template_id", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_documents", "template_version", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_documents", "ai_policy", "TEXT NOT NULL DEFAULT 'inherit'"},
+		{"policy_versions", "snapshot_sha256", "TEXT NOT NULL DEFAULT ''"},
+		{"policy_versions", "content_json", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := ensureColumn(db, col.table, col.name, col.def); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := db.Exec(`UPDATE policy_sections SET uid = lower(hex(randomblob(16))) WHERE uid = ''`); err != nil {
+		return nil, fmt.Errorf("backfill policy section uids: %w", err)
+	}
+	if err := ensureIndex(db, "idx_policy_sections_uid", "CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_sections_uid ON policy_sections(uid)"); err != nil {
 		return nil, err
 	}
 	if err := ensureColumn(db, "stored_json_documents", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {

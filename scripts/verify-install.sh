@@ -214,6 +214,50 @@ route_reachable /policies/coverage/data  "coverage report data"
 route_reachable /policies/control-search "control picker search"
 
 echo
+echo "==> Policy Studio"
+# The bundle name carries its content hash, so it is read from the manifest
+# the build committed; a binary built before the Studio, or from a different
+# checkout, serves a different name (or none) and fails here.
+STUDIO_MANIFEST="$REPO_ROOT/internal/policystudio/assets/manifest.json"
+if [ -r "$STUDIO_MANIFEST" ]; then
+  STUDIO_JS="$(sed -n 's/.*"js": *"\([^"]*\)".*/\1/p' "$STUDIO_MANIFEST" | head -n 1)"
+  STUDIO_JS_TYPE="$(curl -s -o /dev/null -w '%{http_code} %{content_type}' --max-time 10 "${BASE_URL}/assets/policy-studio/${STUDIO_JS}" 2>/dev/null)"
+  case "$STUDIO_JS_TYPE" in
+    "200 text/javascript"*) ok "Studio editor bundle served ($STUDIO_JS)" ;;
+    *) bad "Studio editor bundle $STUDIO_JS not served correctly (got: $STUDIO_JS_TYPE) — stale binary?" ;;
+  esac
+else
+  warn "no Studio manifest in $REPO_ROOT; skipping the bundle check"
+fi
+# An unauthenticated upgrade must be refused by the collab gate (401/403);
+# a 404 means the route is missing, a 400 that the upgrade never reached it
+# (a proxy dropping the Upgrade header).
+COLLAB_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Origin: ${BASE_URL}" \
+  "${BASE_URL}/collab/policies/1" 2>/dev/null)"
+LOCAL_MODE_VALUE="${LOCAL_MODE:-$(read_env LOCAL_MODE)}"
+case "$COLLAB_CODE" in
+  401|403) ok "collaboration socket refuses an unauthenticated upgrade ($COLLAB_CODE)" ;;
+  101)     if [ "$LOCAL_MODE_VALUE" = "true" ]; then
+             ok "collaboration socket upgrades (local mode: no sign-in, by design)"
+           else
+             bad "collaboration socket ACCEPTED an unauthenticated upgrade"
+           fi ;;
+  404)     bad "collaboration socket MISSING (/collab/policies/1 → 404)" ;;
+  *)       bad "collaboration socket answered an unauthenticated upgrade with $COLLAB_CODE, want 401/403" ;;
+esac
+# The guest API must refuse a request without a guest session (401); a 404
+# means the /shared/ routes are missing, and a 302 that something sends
+# guests to the sign-in page.
+SHARED_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${BASE_URL}/shared/api/state" 2>/dev/null)"
+case "$SHARED_CODE" in
+  401) ok "guest API refuses a request without a guest session (401)" ;;
+  404) bad "guest API MISSING (/shared/api/state → 404)" ;;
+  *)   bad "guest API answered a request without a guest session with $SHARED_CODE, want 401" ;;
+esac
+
+echo
 echo "==> Control catalog detail endpoint"
 route_reachable /controls/data/AC-1 "per-control record"
 
@@ -321,7 +365,7 @@ DATABASE_URL="${DATABASE_URL:-$(read_env DATABASE_URL)}"
 SQLITE_PATH="${SQLITE_PATH:-$(read_env SQLITE_PATH)}"
 [ -z "$SQLITE_PATH" ] && SQLITE_PATH="/var/lib/${APP_NAME}/users.db"
 
-REQUIRED_TABLES="rcsa_controls security_nfrs auth_users policy_documents policy_sections policy_versions policy_section_controls"
+REQUIRED_TABLES="rcsa_controls security_nfrs auth_users policy_documents policy_sections policy_versions policy_section_controls policy_doc_state policy_doc_updates policy_doc_snapshots"
 
 if [ -n "$DATABASE_URL" ]; then
   if command -v psql >/dev/null 2>&1; then

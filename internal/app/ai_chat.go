@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,8 @@ import (
 	"grc/internal/aiprovider"
 	"grc/internal/crisisexercise"
 	"grc/internal/pageui"
+	"grc/internal/policyai"
+	"grc/internal/policystudio"
 	"grc/internal/settings"
 )
 
@@ -53,8 +56,13 @@ type aiChatRequest struct {
 	SessionID string `json:"session_id"`
 	// Page is the path the AI dock was asked from. On a Crisis Exercises page
 	// the question goes to that module's agent, about the exercise on screen
-	// (see crisisDockTurn).
+	// (see crisisDockTurn). On a Policy Studio page it goes to the proposal
+	// engine (see policyDockAsk).
 	Page string `json:"page"`
+	// PageContext is what the page says is in view (window.GRCAskAIContext).
+	// It narrows scope only; it is never trusted for which document or
+	// whether the person may use AI on it.
+	PageContext json.RawMessage `json:"page_context"`
 }
 
 // aiChatTurn is one earlier message in the conversation.
@@ -931,7 +939,9 @@ func aiChatWintermuteStatus(c *gin.Context) {
 		"default_backend":  aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
 		"default_agent":    aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
 		// The agent the dock asks on Crisis Exercises pages, when one is set.
-		"crisis_agent":  aiChatPreference(settings.PrefCrisisAgent, ""),
+		"crisis_agent": aiChatPreference(settings.PrefCrisisAgent, ""),
+		// The agent the dock asks on Policy Studio pages, when one is set.
+		"policy_agent":  aiChatPreference(settings.PrefPolicyAgent, ""),
 		"default_model": aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
 	})
 }
@@ -1080,6 +1090,69 @@ var activeCrisisDock crisisDock
 
 func configureCrisisDock(dock crisisDock) { activeCrisisDock = dock }
 
+// policyDock is the Policy Studio's proposal engine, as the AI dock uses it.
+type policyDock interface {
+	DockStream(ctx context.Context, documentID int64, question, sessionID string, history []aiprovider.Message, page policyai.PageContext, actor string, stream policyai.Stream) (policyai.Result, error)
+}
+
+// activePolicyDock and activeStudioIdentity are wired at startup with the
+// Studio. Nil leaves Studio pages' questions as any other page's.
+var (
+	activePolicyDock     policyDock
+	activeStudioIdentity policystudio.IdentityFunc
+)
+
+func configurePolicyDock(dock policyDock, identity policystudio.IdentityFunc) {
+	activePolicyDock, activeStudioIdentity = dock, identity
+}
+
+// policyDockAsk answers a dock question asked on a Policy Studio page through
+// the proposal engine, and reports whether it did. Which document is asked
+// about comes from the path, and whether the person may use AI on it from
+// their session -- an administrator with the policy grant, as for every AI
+// feature that spends model calls; anyone else is answered as on any other
+// page. The engine logs usage through the router, once per model call.
+func policyDockAsk(c *gin.Context, req aiChatRequest) bool {
+	if req.Provider != "" || activePolicyDock == nil || activeStudioIdentity == nil {
+		return false
+	}
+	documentID, ok := policyai.StudioDocument(req.Page)
+	if !ok {
+		return false
+	}
+	id, ok := activeStudioIdentity(c.Request)
+	if !ok || !id.Admin || !id.CanReadPolicies {
+		return false
+	}
+	var stream policyai.Stream
+	sse := policyai.NewSSE(c)
+	if policyai.WantsStream(c) {
+		stream = sse
+	}
+	res, err := activePolicyDock.DockStream(c.Request.Context(), documentID, req.Question, req.SessionID,
+		boundedHistory(req.History), policyai.ParsePageContext(req.PageContext), id.Username, stream)
+	if err != nil {
+		sse.Fail(err)
+		return true
+	}
+	out := gin.H{
+		"provider":    res.Provider,
+		"answer":      res.Answer,
+		"model":       res.Model,
+		"session_id":  res.SessionID,
+		"destination": res.Destination,
+	}
+	if res.HasProposal {
+		out["proposal"] = res
+	}
+	if stream != nil {
+		sse.Event("result", out)
+		return true
+	}
+	c.JSON(http.StatusOK, out)
+	return true
+}
+
 // crisisDockTurn prepares a question the AI dock asked from a Crisis Exercises
 // page for that module's agent. Any other question — from another page, or
 // from the AI Chat page, which names its own provider and agent — goes as it
@@ -1161,6 +1234,12 @@ func aiChatAsk(c *gin.Context) {
 		return
 	}
 
+	// The Studio's engine chooses its own route (the document's AI policy
+	// decides where it may go), so it is asked before the dock's provider.
+	if policyDockAsk(c, req) {
+		return
+	}
+
 	provider, err := aiChatProvider(req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1173,20 +1252,37 @@ func aiChatAsk(c *gin.Context) {
 		return
 	}
 
-	resp, err := provider.Ask(c.Request.Context(), aiprovider.Request{
+	// The dock asks for a stream, and the answer is shown as it is written
+	// where the provider can stream; the AI Chat page asks for JSON.
+	sse := policyai.NewSSE(c)
+	fail := func(msg string) {
+		if sse.Started() {
+			sse.Event("error", gin.H{"error": msg})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": msg})
+	}
+	ask := aiprovider.Request{
 		System:    req.System,
 		History:   boundedHistory(req.History),
 		Prompt:    dock.Prompt,
 		SessionID: req.SessionID,
 		Agent:     dock.Agent,
 		MaxTokens: aiChatMaxTokens,
-	})
+	}
+	var resp aiprovider.Response
+	streaming := policyai.WantsStream(c)
+	if streaming {
+		resp, err = aiprovider.AskStream(c.Request.Context(), provider, ask, sse.Answer)
+	} else {
+		resp, err = provider.Ask(c.Request.Context(), ask)
+	}
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		fail(err.Error())
 		return
 	}
 	if resp.Refused {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "the model declined to answer this question"})
+		fail("the model declined to answer this question")
 		return
 	}
 
@@ -1196,13 +1292,18 @@ func aiChatAsk(c *gin.Context) {
 	// retries a failed backend against its fallback, so the model that
 	// answered is not always the one that was asked for.
 	logAIUsage(resp.Provider, resp.Model, int64(resp.Usage.InputTokens), int64(resp.Usage.OutputTokens))
-	c.JSON(http.StatusOK, gin.H{
+	out := gin.H{
 		"provider":   resp.Provider,
 		"answer":     resp.Text,
 		"backend":    resp.Backend,
 		"model":      resp.Model,
 		"session_id": resp.SessionID,
-	})
+	}
+	if streaming {
+		sse.Event("result", out)
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // aiChatMaxTokens bounds one chat answer.

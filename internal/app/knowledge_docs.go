@@ -16,6 +16,7 @@ var markdownKnowledgeDocs = map[string]string{
 	"risk-register":  "RISK_REGISTER_FRAMEWORK.md",
 	"audit-findings": "AUDIT_FINDINGS.md",
 	"policy-module":  "POLICY_MODULE_FRAMEWORK.md",
+	"policy-studio":  "POLICY_STUDIO.md",
 	"templates":      "DOCUMENT_TEMPLATES.md",
 }
 

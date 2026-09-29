@@ -35,6 +35,9 @@ var engineCandidates = map[Engine][]struct {
 	EngineTypst: {
 		{Command: "typst", EnvVar: "TYPST"},
 	},
+	EnginePandoc: {
+		{Command: "pandoc", EnvVar: "PANDOC"},
+	},
 	EngineLaTeX: {
 		// tectonic first: a single binary that fetches the TeX packages it
 		// needs, which is far less to install than a distribution. latexmk is
@@ -138,7 +141,7 @@ func detectEngine(engine Engine, candidates []struct {
 // request input — nothing a user types reaches this function.
 func resolveBinary(command, envVar string) (string, error) {
 	if configured := strings.TrimSpace(os.Getenv(envVar)); configured != "" {
-		// #nosec G703 -- the path is trusted operator configuration (TYPST,
+		// #nosec G703 -- the path is trusted operator configuration (TYPST, PANDOC,
 		// TECTONIC, LATEXMK), read once at startup from the process
 		// environment, and is never influenced by a request.
 		info, err := os.Stat(configured)

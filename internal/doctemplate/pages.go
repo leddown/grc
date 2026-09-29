@@ -591,6 +591,10 @@ $('previewPdf').addEventListener('click', async () => {
       const a = document.createElement('a');
       a.href = href; a.download = 'template-sources.zip'; a.click();
       status.textContent = res.headers.get('X-GRC-Reason') || 'No engine installed — downloaded the sources instead.';
+    } else if (!(res.headers.get('Content-Type') || '').startsWith('application/pdf')) {
+      const a = document.createElement('a');
+      a.href = href; a.download = 'template-sample.docx'; a.click();
+      status.textContent = 'Downloaded the sample; a browser cannot preview a Word document.';
     } else {
       window.open(href, '_blank');
       status.textContent = 'Opened in a new tab.';

@@ -100,12 +100,23 @@ func (r *Router) Describe() string {
 
 // Ask routes one question and records its usage.
 func (r *Router) Ask(ctx context.Context, req Request) (Response, error) {
+	return r.AskStream(ctx, req, nil)
+}
+
+// AskStream is Ask with the answer's text streamed to onText (see the
+// package's AskStream). A nil onText is Ask.
+func (r *Router) AskStream(ctx context.Context, req Request, onText func(string)) (Response, error) {
 	provider, err := r.Selected()
 	if err != nil {
 		return Response{}, err
 	}
 
-	resp, err := provider.Ask(ctx, req)
+	var resp Response
+	if onText == nil {
+		resp, err = provider.Ask(ctx, req)
+	} else {
+		resp, err = AskStream(ctx, provider, req, onText)
+	}
 	if err != nil {
 		return Response{}, err
 	}

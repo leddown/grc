@@ -66,6 +66,13 @@ func listPageHTML(manage bool) string {
 }
 
 const policyCSS = `
+dialog.new-doc { width:min(560px, calc(100vw - 32px)); background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:20px; }
+dialog.new-doc::backdrop { background:rgba(0,0,0,0.55); }
+dialog.new-doc h2 { margin:0 0 12px; font-size:1.2rem; }
+dialog.new-doc label { display:block; margin:12px 0 4px; font-size:13px; color:var(--muted); }
+dialog.new-doc select, dialog.new-doc input { width:100%; }
+dialog.new-doc .err { color:var(--bad); min-height:1em; }
+dialog.new-doc .actions button:not(.primary) { background:var(--panel); color:var(--ink); border-color:var(--line); }
 :root { color-scheme: light; --ink:#1c2431; --muted:#5e6672; --line:#d7cebf; --accent:#8b3d2e; --green:#0b5d3b; --amber:#9a6700; }
 * { box-sizing: border-box; }
 body { margin:0; font-family: Georgia, "Times New Roman", serif; color:var(--ink);
@@ -230,6 +237,7 @@ function renderList(){
       '<div class="row-meta">'+esc(titleCase(d.doc_type))+
         (d.client_name ? " · " + esc(d.client_name) : "") +
         " · " + d.section_count + " section(s)" +
+        (d.editor_format === "studio" ? " · Studio" : "") +
         (d.latest_version_label ? " · " + esc(d.latest_version_label) : "") +
         (due ? ' · <strong style="color:#8b3d2e;">review due</strong>' : "") +
       '</div></div>';
@@ -258,7 +266,8 @@ async function selectDoc(id){
 function renderDetail(){
   const d = state.selected;
   if (!d){ el("detail").innerHTML = '<p class="muted">Select a document, or create one.</p>'; return; }
-  const editable = MANAGE && d.status === "draft";
+  const studio = d.editor_format === "studio";
+  const editable = MANAGE && d.status === "draft" && !studio;
 
   let html = "";
   if (state.error) html += '<div class="err">'+esc(state.error)+'</div>';
@@ -267,11 +276,13 @@ function renderDetail(){
           '<span class="pill '+esc(d.status)+'">'+esc(titleCase(d.status))+'</span></div>';
 
   html += '<div class="actions">' +
+    '<a class="tab" href="/policies/'+d.id+'/studio">Open in Studio</a>' +
     '<a class="tab" href="/policies/'+d.id+'/view" target="_blank" rel="noopener noreferrer">Preview</a>' +
     '<a class="tab" href="/policies/'+d.id+'/export.md">Export Markdown</a>' +
     '<a class="tab" href="/policies/'+d.id+'/export.html">Export HTML</a>' +
     '<a class="tab" href="/policies/'+d.id+'/export.json" title="Render payload for templates/build.sh">Export JSON</a>' +
     '<a class="tab" href="/templates/render?doc='+d.id+'" title="Typeset as a client deliverable. Returns the render sources when this host has no typesetting engine.">Render PDF</a>' +
+    '<a class="tab" href="/templates/render?doc='+d.id+'&template=policy-docx" title="An editable Word document, converted by Pandoc. Returns the sources when this host has no Pandoc.">Word</a>' +
     (MANAGE ? statusActions(d) : "") + '</div>';
 
   html += '<h3>Document Control</h3>' + controlFields(d, MANAGE);
@@ -287,6 +298,8 @@ function renderDetail(){
   if (!state.sections.length) html += '<p class="muted">No sections yet.</p>';
   else html += state.sections.map((s,i) => sectionHTML(s, i, editable)).join("");
   if (editable) html += '<button id="addSection" type="button">Add section</button>';
+  else if (studio)
+    html += '<p class="muted">This document is edited in the Policy Studio. <a href="/policies/'+d.id+'/studio">Open it there</a> to change its sections.</p>';
   else if (MANAGE && d.status !== "draft")
     html += '<p class="muted">Sections are locked while the document is '+esc(titleCase(d.status))+'. Reopen it to draft to edit.</p>';
 
@@ -550,14 +563,85 @@ async function act(method, url, body){
   }
 }
 
+// New document: a template (instantiated on the server into a Policy Studio
+// document, known client facts filled in) or a blank section-editor document.
+// The dialog is built with createElement and textContent throughout.
+function node(tag, props, kids){
+  const n = document.createElement(tag);
+  Object.entries(props || {}).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === false) return;
+    if (k === "text") n.textContent = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? "" : String(v));
+  });
+  (kids || []).forEach(c => n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
+  return n;
+}
+
 async function createDoc(){
-  const title = prompt("Document title:");
-  if (!title) return;
-  try {
-    const created = await api("POST", "/policies", { title: title, doc_type: "policy" });
-    await loadDocs();
-    await selectDoc(created.id);
-  } catch(e){ el("status").textContent = "Create failed: " + e.message; }
+  let templates = [], clients = [];
+  try { [templates, clients] = await Promise.all([api("GET", "/policies/templates"), api("GET", "/policies/clients")]); }
+  catch(e){ el("status").textContent = "Could not load templates: " + e.message; return; }
+  const tpl = node("select", { id: "nd-template" });
+  templates.forEach(t => tpl.appendChild(node("option", { value: t.id, selected: t.default, text: t.title + " — " + t.section_count + " sections" })));
+  tpl.appendChild(node("option", { value: "", text: "Blank document (section editor)" }));
+  const client = node("select", { id: "nd-client" }, [node("option", { value: "0", text: "No client yet" })]);
+  clients.forEach(c => client.appendChild(node("option", { value: String(c.id), text: c.name })));
+  client.appendChild(node("option", { value: "new", text: "New client…" }));
+  const title = node("input", { id: "nd-title", placeholder: "Leave empty to use the template's title" });
+  // A library document to map into the template, when the Wintermute library
+  // is reachable. Its text is read from there; nothing is uploaded here.
+  const library = node("select", { id: "nd-library" }, [node("option", { value: "", text: "No: start from the template's text" })]);
+  const libraryRow = node("div", { hidden: true }, [node("label", { for: "nd-library", text: "Map in a library document" }), library,
+    node("p", { class: "muted", text: "The AI proposes the source's requirements as suggestions in the new document, each citing the passage it came from; you decide each one." })]);
+  api("GET", "/policies/library").then(docs => {
+    docs.filter(d => d.ready).forEach(d => library.appendChild(node("option", { value: String(d.id), text: d.title })));
+    if (library.options.length > 1) libraryRow.hidden = false;
+  }).catch(() => {});
+  const desc = node("p", { class: "muted" });
+  const error = node("p", { class: "err", role: "alert" });
+  const describe = () => {
+    const t = templates.find(x => x.id === tpl.value);
+    desc.textContent = t ? t.description + (t.facts.length ? " It uses " + t.facts.length + " client facts; the ones the client already has are filled in." : "") : "An empty document written section by section in the Policy Editor.";
+  };
+  tpl.addEventListener("change", describe);
+  describe();
+  const dlg = node("dialog", { class: "new-doc", "aria-labelledby": "nd-heading" }, [
+    node("h2", { id: "nd-heading", text: "New document" }),
+    node("label", { for: "nd-template", text: "Start from" }), tpl, desc,
+    node("label", { for: "nd-client", text: "Client" }), client,
+    node("label", { for: "nd-title", text: "Title" }), title, libraryRow, error,
+  ]);
+  const create = node("button", { type: "button", class: "primary", text: "Create" });
+  const cancel = node("button", { type: "button", text: "Cancel", onclick: () => { dlg.close(); dlg.remove(); } });
+  dlg.appendChild(node("div", { class: "actions" }, [create, cancel]));
+  create.addEventListener("click", async () => {
+    error.textContent = "";
+    create.disabled = true;
+    try {
+      let clientID = Number(client.value) || 0;
+      if (client.value === "new") {
+        const name = prompt("Client name:");
+        if (!name || !name.trim()) { create.disabled = false; return; }
+        clientID = (await api("POST", "/policies/clients", { name: name.trim() })).id;
+      }
+      if (!tpl.value) {
+        const t = title.value.trim();
+        if (!t) { error.textContent = "A blank document needs a title."; create.disabled = false; return; }
+        const created = await api("POST", "/policies", { title: t, doc_type: "policy", client_profile_id: clientID });
+        dlg.close(); dlg.remove();
+        await loadDocs();
+        await selectDoc(created.id);
+        return;
+      }
+      const res = await api("POST", "/policies/from-template", { template_id: tpl.value, client_profile_id: clientID, title: title.value.trim() });
+      location.href = "/policies/" + res.document.id + "/studio" + (library.value ? "?library=" + encodeURIComponent(library.value) : "");
+    } catch(e){
+      create.disabled = false;
+      error.textContent = "The document wasn't created: " + e.message;
+    }
+  });
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  tpl.focus();
 }
 
 (async function init(){
@@ -566,8 +650,7 @@ async function createDoc(){
     const n = el(id);
     n.addEventListener(id === "searchInput" ? "input" : "change", () => loadDocs());
   });
-  const newBtn = el("newBtn");
-  if (MANAGE) newBtn.addEventListener("click", createDoc); else newBtn.style.display = "none";
+  el("newBtn").addEventListener("click", createDoc);
   await loadDocs();
 })();
 `

@@ -1,7 +1,10 @@
 package policydocs
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,6 +54,7 @@ func (h *Handler) RegisterReadRoutes(r gin.IRouter) {
 	r.GET("/policies/:id/data", h.DocumentData)
 	r.GET("/policies/:id/sections", h.SectionsData)
 	r.GET("/policies/:id/versions", h.VersionsData)
+	r.GET("/policies/:id/compare", h.CompareData)
 	r.GET("/policies/:id/lint", h.LintData)
 	r.GET("/policies/:id/export.md", h.ExportMarkdown)
 	r.GET("/policies/:id/export.html", h.ExportHTML)
@@ -278,10 +282,35 @@ func (h *Handler) UpdateDocument(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var payload Document
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document payload"})
 		return
+	}
+	var payload Document
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document payload"})
+		return
+	}
+	// client_profile_id is newer than the section editor's save, which does
+	// not send it; a payload that leaves it out keeps the document's client
+	// rather than silently unlinking it.
+	// ai_policy likewise: a save that does not mention it must not reset a
+	// document marked local-only to "inherit".
+	var present struct {
+		ClientProfileID *int64  `json:"client_profile_id"`
+		AIPolicy        *string `json:"ai_policy"`
+	}
+	_ = json.Unmarshal(raw, &present)
+	if present.ClientProfileID == nil || present.AIPolicy == nil {
+		if existing, err := h.service.GetDocument(id); err == nil {
+			if present.ClientProfileID == nil {
+				payload.ClientProfileID = existing.ClientProfileID
+			}
+			if present.AIPolicy == nil {
+				payload.AIPolicy = existing.AIPolicy
+			}
+		}
 	}
 	updated, err := h.service.UpdateDocument(id, payload)
 	if err != nil {
@@ -350,9 +379,33 @@ func (h *Handler) Approve(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
+// refuseStudioDocument answers 409 when a Studio document's text is written
+// through the per-section endpoints. For such a document the rows are a
+// projection of the live collaborative document; a write here would be
+// overwritten by the next projection, and a structural one would leave the
+// two disagreeing about which sections exist.
+func (h *Handler) refuseStudioDocument(c *gin.Context, id int64) bool {
+	doc, err := h.service.GetDocument(id)
+	if err != nil {
+		h.fail(c, err, "failed to load document")
+		return true
+	}
+	if doc.EditorFormat != EditorStudio {
+		return false
+	}
+	c.JSON(http.StatusConflict, gin.H{
+		"error":  "this document is edited in the Policy Studio; change its sections there",
+		"studio": fmt.Sprintf("/policies/%d/studio", id),
+	})
+	return true
+}
+
 func (h *Handler) CreateSection(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
+		return
+	}
+	if h.refuseStudioDocument(c, id) {
 		return
 	}
 	var payload Section
@@ -372,6 +425,9 @@ func (h *Handler) CreateSection(c *gin.Context) {
 func (h *Handler) UpdateSection(c *gin.Context) {
 	docID, ok := parseID(c, "id")
 	if !ok {
+		return
+	}
+	if h.refuseStudioDocument(c, docID) {
 		return
 	}
 	sectionID, ok := parseID(c, "sectionID")
@@ -397,6 +453,9 @@ func (h *Handler) DeleteSection(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if h.refuseStudioDocument(c, docID) {
+		return
+	}
 	sectionID, ok := parseID(c, "sectionID")
 	if !ok {
 		return
@@ -411,6 +470,9 @@ func (h *Handler) DeleteSection(c *gin.Context) {
 func (h *Handler) ReorderSections(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
+		return
+	}
+	if h.refuseStudioDocument(c, id) {
 		return
 	}
 	var payload struct {
@@ -582,4 +644,20 @@ func exportFilename(doc Document, ext string) string {
 		name = "policy-document"
 	}
 	return name + "." + ext
+}
+
+// CompareData compares two revisions of a document: ?from= and ?to= are an
+// approved version's id or "current" (the default for to).
+func (h *Handler) CompareData(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	to := c.DefaultQuery("to", CurrentRevision)
+	cmp, err := h.service.Compare(id, c.Query("from"), to)
+	if err != nil {
+		h.fail(c, err, "failed to compare revisions")
+		return
+	}
+	c.JSON(http.StatusOK, cmp)
 }

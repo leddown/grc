@@ -96,6 +96,13 @@ func bundleBuildScript(tpl Template, pdfStandard string) string {
 		sb.WriteString("  ${PDF_STD:+--pdf-standard \"$PDF_STD\"} \\\n")
 		fmt.Fprintf(&sb, "  %s %s\n\n", tpl.Entry, outputName)
 		fmt.Fprintf(&sb, "echo \"wrote %s\"\n", outputName)
+	case EnginePandoc:
+		sb.WriteString("PANDOC=\"${PANDOC:-pandoc}\"\n")
+		sb.WriteString("if ! command -v \"$PANDOC\" >/dev/null 2>&1; then\n")
+		sb.WriteString("  echo \"pandoc not found: https://pandoc.org/installing.html\" >&2\n")
+		sb.WriteString("  exit 1\nfi\n\n")
+		fmt.Fprintf(&sb, "\"$PANDOC\" --sandbox --from gfm-raw_html --to docx --output %s %s\n\n", docxOutputName, tpl.Entry)
+		fmt.Fprintf(&sb, "echo \"wrote %s\"\n", docxOutputName)
 	case EngineLaTeX:
 		sb.WriteString("# XeLaTeX or LuaLaTeX, not pdfLaTeX: grc.sty uses fontspec.\n")
 		sb.WriteString("if command -v tectonic >/dev/null 2>&1; then\n")
@@ -123,6 +130,9 @@ func bundleReadme(tpl Template, brand Brand, pdfStandard string) string {
 	case EngineTypst:
 		sb.WriteString("Requires typst, a single static binary with no dependencies:\n")
 		sb.WriteString("    https://github.com/typst/typst/releases\n\n")
+	case EnginePandoc:
+		sb.WriteString("Requires pandoc (2.15 or later, for --sandbox):\n")
+		sb.WriteString("    https://pandoc.org/installing.html\n\n")
 	case EngineLaTeX:
 		sb.WriteString("Requires tectonic (a single binary that downloads the TeX packages it\n")
 		sb.WriteString("needs on first run) or a TeX distribution with XeLaTeX:\n")
