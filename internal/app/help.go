@@ -311,6 +311,14 @@ func helpPage(c *gin.Context) {
               them. Nothing it invents about the client is taken as fact: a missing detail comes back
               as a fact to fill in. Under Document control, <em>AI</em> can keep a document local
               only (never the cloud) or switch AI off for it.</li>
+            <li>Work with the client live: once an administrator switches on <em>Guest links</em> in
+              Settings &rarr; Policy Studio, the Studio's <em>Sharing</em> tab creates a link for one
+              document &mdash; to read, comment or edit, for a set time &mdash; which the client opens
+              with just their name. They see the document, the suggestions and the comments you
+              share, and nothing else; you can remove them or withdraw the link at any moment.
+              <em>Workshop</em> in the Studio bar has larger type, focus on one section,
+              <em>Present</em> (the others follow you from section to section) and a customer-safe
+              view for sharing your screen.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at

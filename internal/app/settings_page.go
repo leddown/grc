@@ -183,6 +183,27 @@ func settingsPage(c *gin.Context) {
       <p class="meta" id="backendList"></p>
     </div>
 
+    <h2>Policy Studio</h2>
+    <div class="cred">
+      <h3>Guest links <span id="guestPill" class="pill off">off</span></h3>
+      <div class="row">
+        <label class="check"><input id="guestLinks" type="checkbox"> Let administrators invite people from outside this installation into a document</label>
+      </div>
+      <div class="row">
+        <label>Invitations last <input id="inviteHours" type="number" min="1" max="168" placeholder="8" style="width:6em"> hours unless their creator says otherwise</label>
+      </div>
+      <p class="meta">
+        A guest opens a link, gives their name and works in that one document &mdash; reading,
+        commenting or editing, as the link allows &mdash; and nothing else. The pages they use,
+        under <code>/shared/</code>, are reachable without an account, which is why this is off
+        until you switch it on. Each link expires (at most after 7 days), can be withdrawn, and is
+        shown once. Links are never available in local mode. See POLICY_STUDIO.md, &ldquo;Guests&rdquo;,
+        for exposing them on a separate external hostname.
+      </p>
+      <div class="row"><button id="saveStudio">Save</button></div>
+      <p class="meta" id="studioDetail"></p>
+    </div>
+
     <p class="keyring" id="keyring"></p>
   </main>
 
@@ -738,8 +759,41 @@ func settingsPage(c *gin.Context) {
     }
   });
 
+  const guestLinks = document.getElementById('guestLinks');
+  const inviteHours = document.getElementById('inviteHours');
+  const guestPill = document.getElementById('guestPill');
+  const studioDetail = document.getElementById('studioDetail');
+  function renderStudio(data) {
+    guestLinks.checked = !!data.guest_links;
+    inviteHours.value = data.invite_hours || '';
+    guestPill.textContent = data.guest_links ? 'on' : 'off';
+    guestPill.className = 'pill ' + (data.guest_links ? 'on' : 'off');
+  }
+  async function loadStudio() {
+    try {
+      const res = await fetch('/api/settings/policy-studio');
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      renderStudio(data);
+    } catch (err) { studioDetail.textContent = 'Could not load: ' + err.message; }
+  }
+  document.getElementById('saveStudio').addEventListener('click', async function () {
+    try {
+      const res = await fetch('/api/settings/policy-studio', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guest_links: guestLinks.checked, invite_hours: inviteHours.value.trim() }),
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      renderStudio(data);
+      studioDetail.textContent = 'Saved. In use now.';
+    } catch (err) { studioDetail.textContent = err.message; }
+  });
+
   load();
   loadProviders();
+  loadStudio();
 })();
 </script>
 </body>

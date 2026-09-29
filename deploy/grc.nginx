@@ -39,3 +39,52 @@ server {
         proxy_connect_timeout 10s;
     }
 }
+
+# Policy Studio guests on a separate external hostname (optional).
+#
+# Guests reach /shared/ (the join page, their Studio and its API), /collab/
+# (the collaboration socket, which checks their guest cookie and Origin) and
+# /assets/policy-studio/ (the editor bundle). This server block proxies those
+# three and nothing else, so the rest of the application -- sign-in, the
+# catalogs, the knowledge API, Settings -- is not reachable from outside at
+# all. Guest links are off until an administrator enables them in Settings →
+# Policy Studio; add this hostname to -studio-allowed-origins (or
+# STUDIO_ALLOWED_ORIGINS), and run the app with -trust-proxy so the guest cookie
+# is marked Secure. limit_req bounds how fast one address can try link tokens.
+#
+# limit_req_zone $binary_remote_addr zone=grc_shared:10m rate=10r/s;
+#
+# server {
+#     listen 443 ssl;
+#     listen [::]:443 ssl;
+#     server_name policies.example.com;
+#
+#     ssl_certificate     /etc/nginx/ssl/policies.example.com.crt;
+#     ssl_certificate_key /etc/nginx/ssl/policies.example.com.key;
+#     ssl_protocols       TLSv1.2 TLSv1.3;
+#
+#     proxy_set_header Host              $host;
+#     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+#     proxy_set_header X-Forwarded-Proto $scheme;
+#
+#     location /shared/ {
+#         limit_req zone=grc_shared burst=20 nodelay;
+#         proxy_pass http://127.0.0.1:8081;
+#     }
+#     location /assets/policy-studio/ {
+#         proxy_pass http://127.0.0.1:8081;
+#     }
+#     location /collab/ {
+#         limit_req zone=grc_shared burst=20 nodelay;
+#         proxy_pass http://127.0.0.1:8081;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade    $http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#         proxy_read_timeout  3600s;
+#         proxy_send_timeout  3600s;
+#         proxy_buffering off;
+#     }
+#     location / {
+#         return 404;
+#     }
+# }

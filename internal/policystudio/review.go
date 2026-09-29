@@ -512,6 +512,12 @@ func (s *Service) createThread(documentID int64, in NewThread, kind, suid, actor
 
 // Reply adds a comment to a thread; replying to a resolved thread reopens it.
 func (s *Service) Reply(documentID, threadID int64, text, actor string) (Thread, error) {
+	return s.reply(documentID, threadID, text, actor, AuthorHuman, false)
+}
+
+// reply is Reply for any author; sharedOnly refuses an internal thread, which
+// a guest must not learn exists.
+func (s *Service) reply(documentID, threadID int64, text, actor, authorKind string, sharedOnly bool) (Thread, error) {
 	if _, err := s.reviewable(documentID, "comments can be added"); err != nil {
 		return Thread{}, err
 	}
@@ -519,8 +525,14 @@ func (s *Service) Reply(documentID, threadID int64, text, actor string) (Thread,
 	if err != nil {
 		return Thread{}, err
 	}
-	if _, err := s.thread(documentID, threadID); err != nil {
+	audience := AudienceInternal
+	if sharedOnly {
+		audience = AudienceShared
+	}
+	if threads, err := s.threads(documentID, audience, threadID); err != nil {
 		return Thread{}, err
+	} else if len(threads) == 0 {
+		return Thread{}, policydocs.ErrNotFound
 	}
 	stamp := s.store.stamp()
 	tx, err := s.store.db.Begin()
@@ -529,7 +541,7 @@ func (s *Service) Reply(documentID, threadID int64, text, actor string) (Thread,
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`INSERT INTO policy_comments (thread_id, author, author_kind, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-		threadID, actor, AuthorHuman, body, stamp); err != nil {
+		threadID, actor, authorKind, body, stamp); err != nil {
 		return Thread{}, err
 	}
 	if _, err := tx.Exec(`UPDATE policy_comment_threads SET status = ?, resolved_by = '', resolved_at = '', updated_at = ? WHERE id = ?`,
@@ -640,6 +652,16 @@ func (s *Service) threads(documentID int64, audience Audience, only int64) ([]Th
 		}
 	}
 	return out, crows.Err()
+}
+
+// sharedReviewVersion is reviewVersion for a guest: it moves only with shared
+// threads, so not even the timing of internal activity reaches a guest.
+func (s *Service) sharedReviewVersion(documentID int64) (string, error) {
+	var threads int64
+	var updated sql.NullString
+	err := s.store.db.QueryRow(`SELECT COUNT(*), MAX(updated_at) FROM policy_comment_threads WHERE document_id = ? AND visibility = ?`,
+		documentID, VisibilityShared).Scan(&threads, &updated)
+	return strconv.FormatInt(threads, 10) + ":" + updated.String, err
 }
 
 // reviewVersion changes whenever a thread or a decision is recorded, so the

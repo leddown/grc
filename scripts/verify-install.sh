@@ -247,6 +247,15 @@ case "$COLLAB_CODE" in
   404)     bad "collaboration socket MISSING (/collab/policies/1 → 404)" ;;
   *)       bad "collaboration socket answered an unauthenticated upgrade with $COLLAB_CODE, want 401/403" ;;
 esac
+# The guest API must refuse a request without a guest session (401); a 404
+# means the /shared/ routes are missing, and a 302 that something sends
+# guests to the sign-in page.
+SHARED_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${BASE_URL}/shared/api/state" 2>/dev/null)"
+case "$SHARED_CODE" in
+  401) ok "guest API refuses a request without a guest session (401)" ;;
+  404) bad "guest API MISSING (/shared/api/state → 404)" ;;
+  *)   bad "guest API answered a request without a guest session with $SHARED_CODE, want 401" ;;
+esac
 
 echo
 echo "==> Control catalog detail endpoint"

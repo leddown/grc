@@ -242,7 +242,7 @@ function suggestMode(user, aiAttribution) {
                 if (!SUGGESTION_TYPES.includes(mark.type.name) || mark.attrs.authorId) continue
                 const ai = aiAttribution.get(mark.attrs.id)
                 if (!ai && !mine.has(mark.attrs.id)) continue
-                const attrs = Object.assign({}, mark.attrs, ai || { authorId: user.id, authorKind: 'human', authorName: user.name }, { createdAt: now })
+                const attrs = Object.assign({}, mark.attrs, ai || { authorId: user.id, authorKind: user.kind || 'human', authorName: user.name }, { createdAt: now })
                 tr = tr || state.tr
                 if (node.isText) tr.removeMark(pos, pos + node.nodeSize, mark).addMark(pos, pos + node.nodeSize, mark.type.create(attrs))
                 else tr.removeNodeMark(pos, mark).addNodeMark(pos, mark.type.create(attrs))
@@ -332,7 +332,7 @@ function reviewDecorations() {
       return [new Plugin({
         key: reviewKey,
         state: {
-          init: () => ({ threads: [], showAuthors: false, accepted: {}, currentSuggestion: '', currentThread: 0 }),
+          init: () => ({ threads: [], showAuthors: false, accepted: {}, currentSuggestion: '', currentThread: 0, focus: false, focusUid: '' }),
           apply: (tr, value) => {
             const next = tr.getMeta(reviewKey)
             return next ? Object.assign({}, value, next) : value
@@ -357,6 +357,14 @@ function reviewDecorations() {
                 decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'ps-prov-block', title: r.accepted[node.attrs.bid] }))
               }
             })
+            if (r.focus) {
+              const here = state.selection.$from.index(0)
+              state.doc.forEach((section, offset, i) => {
+                if (r.focusUid ? section.attrs.uid === r.focusUid : i === here) {
+                  decos.push(Decoration.node(offset, offset + section.nodeSize, { class: 'ps-section-current' }))
+                }
+              })
+            }
             for (const t of r.threads) {
               if (t.status !== 'open') continue
               const range = threadRange(state, t)
@@ -379,6 +387,19 @@ class Studio {
     this.docId = root.dataset.documentId
     this.canManage = root.dataset.canManage === 'true'
     this.user = root.dataset.user || 'You'
+    // A guest (someone let in by a share link) reaches this document through
+    // /shared/api only; the server decides everything the role allows.
+    this.guest = root.dataset.guest === 'true'
+    this.guestRole = root.dataset.role || ''
+    this.ended = false
+    this.userSuggesting = this.guest
+    // Workshop mode: larger type, focus and the customer-safe view are this
+    // viewer's own, remembered in this browser; presenting and following are
+    // shared with the others through awareness.
+    this.workshop = { large: false, focus: false, safe: false, presenting: false, follow: null, optOut: false }
+    try { Object.assign(this.workshop, JSON.parse(localStorage.getItem('grc.policyStudio.workshop') || '{}'), { presenting: false, follow: null }) } catch (_) { /* storage may be unavailable */ }
+    if (this.guest) this.workshop.safe = false
+    this.sharing = null
     this.state = null
     this.etag = null
     this.meta = null
@@ -386,7 +407,6 @@ class Studio {
     this.provider = null
     this.canEdit = false
     this.chipsVersion = 0
-    this.userSuggesting = false
     this.suggestions = []
     this.threads = []
     this.provenance = []
@@ -410,11 +430,16 @@ class Studio {
     try { this.sideTab = localStorage.getItem('grc.policyStudio.tab') || 'readiness' } catch (_) { /* storage may be unavailable */ }
   }
 
+  // studioURL is where this document's Studio API is for this viewer.
+  studioURL(path) {
+    return (this.guest ? '/shared/api' : '/policies/' + this.docId + '/studio') + path
+  }
+
   async start() {
     try {
       const [{ data: meta }, { data: state, etag }] = await Promise.all([
-        api('GET', '/policies/meta'),
-        api('GET', '/policies/' + this.docId + '/studio/state'),
+        this.guest ? Promise.resolve({ data: { section_kinds: [], coverage_levels: [], classifications: [] } }) : api('GET', '/policies/meta'),
+        api('GET', this.studioURL('/state')),
       ])
       this.meta = meta
       this.state = state
@@ -451,7 +476,9 @@ class Studio {
     this.toast = h('div', { class: 'ps-toast', role: 'status', 'aria-live': 'polite' })
     this.root.replaceChildren(
       h('header', { class: 'ps-bar' },
-        h('div', { class: 'ps-bar-title' }, h('a', { href: '/policies', class: 'ps-back', text: 'Policies' }), this.titleEl, this.statusPill, this.counts),
+        h('div', { class: 'ps-bar-title' },
+          this.guest ? h('span', { class: 'ps-back', text: 'Shared with you' }) : h('a', { href: '/policies', class: 'ps-back', text: 'Policies' }),
+          this.titleEl, this.statusPill, this.counts),
         h('div', { class: 'ps-bar-meta' }, this.connection, this.presence),
         this.actions),
       h('div', { class: 'ps-body' }, this.outline, h('section', { class: 'ps-canvas', 'aria-label': 'Document' }, this.canvas), this.side),
@@ -534,8 +561,10 @@ class Studio {
     const me = this.provider.awareness.clientID
     const seen = new Map()
     const drafting = []
+    this.presenters = []
     for (const [id, st] of this.provider.awareness.getStates()) {
       if (st.ai && st.user) drafting.push(st.ai.section > 0 ? '§' + st.ai.section : 'the document')
+      if (st.present && st.user && id !== me) this.presenters.push({ id, name: st.user.name, uid: st.present.uid })
       if (!st.user || !st.user.name) continue
       const prev = seen.get(st.user.name)
       seen.set(st.user.name, { name: st.user.name, color: st.user.color, you: (prev && prev.you) || id === me })
@@ -546,7 +575,9 @@ class Studio {
       dot.style.background = p.color || 'var(--accent)'
       return h('li', { class: 'ps-presence-person', title: p.you ? p.name + ' (you)' : p.name }, dot, p.you ? p.name + ' (you)' : p.name)
     }), ...drafting.map((where) => h('li', { class: 'ps-presence-person ps-presence-ai', role: 'status' },
-      h('span', { class: 'ps-kind-badge', 'data-kind': 'ai', text: 'AI' }), ' drafting in ' + where)))
+      h('span', { class: 'ps-kind-badge', 'data-kind': 'ai', text: 'AI' }), ' drafting in ' + where)),
+    ...this.followChips())
+    this.followPresenter()
   }
 
   mount(ydoc) {
@@ -560,10 +591,10 @@ class Studio {
         factNodeView,
         extra: [
           Collaboration.configure({ document: ydoc, field: FRAGMENT }),
-          CollaborationCaret.configure({ provider: this.provider, user: { name: this.user, color: colorFor(this.user) } }),
+          CollaborationCaret.configure({ provider: this.provider, user: { name: this.guest ? this.user + ' (guest)' : this.user, color: colorFor(this.user) } }),
           sectionIntegrity(() => this.say("Sections can't be added, removed, merged or split by typing. Use the outline on the left.", 'warn')),
           controlChips((info) => this.chipRow(info)),
-          suggestMode({ id: this.user, name: this.user }, this.aiAttribution),
+          suggestMode({ id: this.user, name: this.guest ? this.user + ' (guest)' : this.user, kind: this.guest ? 'guest' : 'human' }, this.aiAttribution),
           reviewDecorations(),
           aiPreview(),
         ],
@@ -595,6 +626,7 @@ class Studio {
     // The header's editor actions (suggest mode, comment, authors) need the
     // editor, which the first render did not have yet.
     this.renderActions()
+    this.applyWorkshop()
     this.editor.on('update', () => this.scheduleSuggestionRefresh())
     host.addEventListener('click', (e) => {
       const mark = e.target.closest && e.target.closest('.ps-comment-mark')
@@ -604,7 +636,11 @@ class Studio {
       this.focusThread(t)
     })
     this.refreshSuggestions(true)
-    this.editor.on('selectionUpdate', () => this.renderBubble())
+    this.editor.on('selectionUpdate', () => {
+      this.renderBubble()
+      this.present()
+      if (this.workshop.focus) this.pushReview()
+    })
     this.editor.on('focus', () => this.renderBubble())
     this.editor.on('blur', () => setTimeout(() => this.renderBubble(), 150))
     window.GRCPolicyStudio.editor = this.editor
@@ -630,14 +666,19 @@ class Studio {
     const tick = async () => {
       if (document.visibilityState === 'visible') {
         try {
-          const res = await api('GET', '/policies/' + this.docId + '/studio/state', undefined, this.etag ? { 'If-None-Match': this.etag } : {})
+          const res = await api('GET', this.studioURL('/state'), undefined, this.etag ? { 'If-None-Match': this.etag } : {})
           if (!res.notModified) {
             this.state = res.data
             this.etag = res.etag
             this.renderPanels()
           }
           await this.loadReview()
-        } catch (_) { /* the connection indicator already says the server is unreachable */ }
+          if (this.sideTab === 'sharing') await this.loadSharing()
+        } catch (err) {
+          // A guest whose session ended (revoked, removed, expired) is told
+          // so; anything else the connection indicator already reports.
+          if (err.status === 401 && this.guest) { this.endAccess('Your access to this document has ended. Ask the person who invited you for a new link.'); return }
+        }
       }
       this.pollTimer = setTimeout(tick, POLL_MS)
     }
@@ -646,7 +687,7 @@ class Studio {
   }
 
   async refresh() {
-    const res = await api('GET', '/policies/' + this.docId + '/studio/state')
+    const res = await api('GET', this.studioURL('/state'))
     const before = this.state && this.state.document
     this.state = res.data
     this.etag = res.etag
@@ -661,10 +702,11 @@ class Studio {
     if (!force && this.reviewVersion === this.state.review_version) return
     this.reviewVersion = this.state.review_version
     try {
+      const none = Promise.resolve({ data: [] })
       const [{ data: threads }, { data: prov }, { data: aiEdits }] = await Promise.all([
-        api('GET', '/policies/' + this.docId + '/studio/comments'),
-        api('GET', '/policies/' + this.docId + '/studio/provenance'),
-        api('GET', '/policies/' + this.docId + '/studio/ai/edits'),
+        api('GET', this.studioURL('/comments')),
+        this.guest ? none : api('GET', '/policies/' + this.docId + '/studio/provenance'),
+        this.guest ? none : api('GET', '/policies/' + this.docId + '/studio/ai/edits'),
       ])
       this.threads = threads || []
       this.provenance = prov || []
@@ -735,9 +777,14 @@ class Studio {
       items.push(h('button', { type: 'button', 'aria-pressed': this.showAuthors ? 'true' : 'false', text: 'Show authors',
         title: 'Colour suggestions by author and mark accepted text', onclick: () => { this.showAuthors = !this.showAuthors; this.pushReview(); this.renderActions() } }))
     }
-    items.push(
-      h('button', { type: 'button', 'aria-pressed': paper ? 'true' : 'false', text: paper ? 'Screen view' : 'Paper view', onclick: () => this.togglePaper() }),
-      link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF'))
+    items.push(h('button', { type: 'button', 'aria-pressed': paper ? 'true' : 'false', text: paper ? 'Screen view' : 'Paper view', onclick: () => this.togglePaper() }))
+    items.push(this.workshopButton())
+    if (this.guest) {
+      items.push(btn('Leave', () => this.leave()))
+      this.actions.replaceChildren(...items)
+      return
+    }
+    items.push(link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF'))
     if (this.canManage) {
       if (d.status === 'draft') items.push(btn('Submit for review', () => this.transition('submit', 'Submitted for review.')))
       if (d.status === 'in_review') {
@@ -753,11 +800,183 @@ class Studio {
     this.actions.replaceChildren(...items)
   }
 
+  // ---- workshop mode ----
+
+  saveWorkshop() {
+    const { large, focus, safe, optOut } = this.workshop
+    try { localStorage.setItem('grc.policyStudio.workshop', JSON.stringify({ large, focus, safe, optOut })) } catch (_) { /* storage may be unavailable */ }
+  }
+
+  applyWorkshop() {
+    this.root.classList.toggle('ps-large', !!this.workshop.large)
+    this.root.classList.toggle('ps-customer-safe', !!this.workshop.safe)
+    this.canvas.classList.toggle('ps-focus', !!this.workshop.focus)
+    this.saveWorkshop()
+    this.pushReview()
+    this.pushChips()
+    this.renderSide()
+    this.renderCounts()
+    this.renderActions()
+  }
+
+  workshopButton() {
+    const toggle = (key, label, hint) => {
+      const box = h('input', { type: 'checkbox', 'data-workshop': key, onchange: (e) => {
+        this.workshop[key] = e.target.checked
+        if (key === 'presenting') this.present()
+        this.applyWorkshop()
+      } })
+      box.checked = !!this.workshop[key]
+      return h('label', { class: 'ps-inline-label', title: hint || '' }, box, ' ' + label)
+    }
+    const panel = h('div', { class: 'ps-workshop-panel' },
+      toggle('large', 'Larger type'),
+      toggle('focus', 'Focus on the current section', 'Dim every other section'),
+      toggle('presenting', 'Present', 'The others who follow you see the section you are in'),
+      this.guest ? null : toggle('safe', 'Customer-safe view', 'Hide internal comments, AI notes and lint, for sharing your screen'))
+    const details = h('details', { class: 'ps-workshop', ontoggle: (e) => { this.workshopOpen = e.target.open } },
+      h('summary', { class: 'ps-button', text: 'Workshop' }), panel)
+    details.open = !!this.workshopOpen
+    return details
+  }
+
+  // present tells the others, through awareness, which section this editor
+  // is in while presenting.
+  present() {
+    if (!this.provider || !this.editor) return
+    if (!this.workshop.presenting) {
+      if (this.provider.awareness.getLocalState() && this.provider.awareness.getLocalState().present) this.provider.awareness.setLocalStateField('present', null)
+      return
+    }
+    const section = this.editor.state.doc.child(this.editor.state.selection.$from.index(0))
+    const uid = section ? section.attrs.uid : ''
+    const cur = this.provider.awareness.getLocalState() && this.provider.awareness.getLocalState().present
+    if (!cur || cur.uid !== uid) this.provider.awareness.setLocalStateField('present', { uid })
+  }
+
+  // followTarget is the presenter this viewer follows: the one they chose,
+  // or -- for a guest who has not opted out -- whoever is presenting.
+  followTarget() {
+    const presenters = this.presenters || []
+    if (this.workshop.follow) return presenters.find((p) => p.id === this.workshop.follow) || null
+    if (this.guest && !this.workshop.optOut) return presenters[0] || null
+    return null
+  }
+
+  followChips() {
+    const presenters = this.presenters || []
+    if (!presenters.length) return []
+    const target = this.followTarget()
+    if (target) {
+      return [h('li', { class: 'ps-presence-person ps-following', role: 'status' }, 'Following ' + target.name + ' ',
+        h('button', { type: 'button', class: 'ps-link-button', text: 'Stop following', onclick: () => {
+          this.workshop.follow = null
+          this.workshop.optOut = true
+          this.followedUid = ''
+          this.saveWorkshop()
+          this.pushReview()
+          this.renderPresence()
+        } }))]
+    }
+    return presenters.map((p) => h('li', { class: 'ps-presence-person' }, p.name + ' is presenting ',
+      h('button', { type: 'button', class: 'ps-link-button', text: 'Follow', onclick: () => {
+        this.workshop.follow = p.id
+        this.workshop.optOut = false
+        this.followedUid = ''
+        this.renderPresence()
+      } })))
+  }
+
+  // followPresenter keeps this viewport on the presenter's section. It moves
+  // the view, never this viewer's own cursor or selection.
+  followPresenter() {
+    const target = this.followTarget()
+    if (!target || !target.uid || target.uid === this.followedUid) return
+    this.followedUid = target.uid
+    const el = this.canvas.querySelector('section[data-uid="' + CSS.escape(target.uid) + '"]')
+    if (el) el.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    this.pushReview()
+  }
+
+  // ---- sharing (administrators) ----
+
+  async loadSharing() {
+    try {
+      const { data } = await api('GET', '/policies/' + this.docId + '/share-links')
+      this.sharing = data
+    } catch (err) {
+      this.sharing = { enabled: false, reason: err.message, links: [], guests: [] }
+    }
+    if (this.sideTab === 'sharing') this.renderSide()
+  }
+
+  sharingPanel() {
+    const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-sharing' }, h('h2', { class: 'ps-panel-title', id: 'ps-sharing', text: 'Sharing' }))
+    if (!this.sharing) {
+      panel.appendChild(h('p', { class: 'ps-muted', text: 'Loading…' }))
+      this.loadSharing()
+      return panel
+    }
+    const sh = this.sharing
+    panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Invite someone from outside this installation into this document, and only this one. They give their name when they open the link.' }))
+    if (!sh.enabled) {
+      panel.appendChild(h('p', { class: 'ps-warn', text: sh.reason }))
+    } else {
+      const label = h('input', { 'aria-label': 'Label', placeholder: 'Label, e.g. CISO workshop', maxlength: '120' })
+      const role = h('select', { 'aria-label': 'Role' },
+        h('option', { value: 'viewer', text: 'Can read' }), h('option', { value: 'commenter', text: 'Can comment' }), h('option', { value: 'editor', text: 'Can edit (as suggestions by default)' }))
+      const hours = h('input', { type: 'number', min: '1', max: '168', 'aria-label': 'Hours until it expires', placeholder: 'Hours (default 8)' })
+      const uses = h('input', { type: 'number', min: '1', max: '500', 'aria-label': 'How many times it can be used', placeholder: 'Uses (default 20)' })
+      const ai = h('input', { type: 'checkbox' })
+      panel.appendChild(h('div', { class: 'ps-composer' }, label, role, hours, uses,
+        h('label', { class: 'ps-inline-label' }, ai, ' Let them use the AI assistant'),
+        h('button', { type: 'button', class: 'ps-primary', text: 'Create link', onclick: async () => {
+          try {
+            const { data } = await api('POST', '/policies/' + this.docId + '/share-links', {
+              label: label.value, role: role.value, expires_hours: Number(hours.value || 0), max_uses: Number(uses.value || 0), allow_ai: ai.checked,
+            })
+            this.newLink = location.origin + data.path
+            await this.loadSharing()
+            this.say('Link created. Copy it now: it is shown only this once.', 'info')
+          } catch (err) { this.say("The link wasn't created: " + err.message, 'error') }
+        } })))
+    }
+    if (this.newLink) {
+      const box = h('input', { readonly: true, class: 'ps-share-url', 'aria-label': 'The new link', value: this.newLink, 'data-focus-key': 'share-url' })
+      panel.appendChild(h('div', { class: 'ps-share-new' }, h('p', { class: 'ps-small', text: 'Shown this once. Send it to the person you are inviting.' }), box,
+        h('button', { type: 'button', text: 'Copy', onclick: async () => {
+          try { await navigator.clipboard.writeText(this.newLink); this.say('Copied.', 'info') } catch (_) { box.select() }
+        } }),
+        h('button', { type: 'button', class: 'ps-link-button', text: 'Done', onclick: () => { this.newLink = ''; this.renderSide() } })))
+    }
+    const roles = { viewer: 'can read', commenter: 'can comment', editor: 'can edit' }
+    if (sh.guests.length) {
+      panel.appendChild(h('h3', { class: 'ps-panel-subtitle', text: 'In the document now or recently' }))
+      panel.appendChild(h('ul', { class: 'ps-threads' }, sh.guests.map((g) => h('li', { class: 'ps-thread' },
+        h('strong', { text: g.display_name }), ' ' + roles[g.role] + ' · seen ' + shortTime(g.last_seen_at) + ' ',
+        h('button', { type: 'button', class: 'ps-danger', text: 'Remove', onclick: async () => {
+          if (!window.confirm('Remove ' + g.display_name + ' from this document now?')) return
+          try { await api('DELETE', '/policies/' + this.docId + '/guests/' + g.id); await this.loadSharing(); this.say(g.display_name + ' removed.', 'info') } catch (err) { this.say(err.message, 'error') }
+        } })))))
+    }
+    if (sh.links.length) {
+      panel.appendChild(h('h3', { class: 'ps-panel-subtitle', text: 'Links' }))
+      panel.appendChild(h('ul', { class: 'ps-threads' }, sh.links.map((l) => h('li', { class: 'ps-thread', 'data-link': String(l.id) },
+        h('strong', { text: l.label || 'Link ' + l.id }), ' ' + roles[l.role] + (l.allow_ai ? ', with AI' : ''),
+        h('div', { class: 'ps-small ps-muted', text: l.status + ' · used ' + l.uses + ' of ' + l.max_uses + ' · until ' + shortTime(l.expires_at) }),
+        l.status === 'active' ? h('button', { type: 'button', class: 'ps-danger', text: 'Withdraw', onclick: async () => {
+          if (!window.confirm('Withdraw this link? Everyone who joined with it is disconnected.')) return
+          try { await api('DELETE', '/policies/' + this.docId + '/share-links/' + l.id); await this.loadSharing(); this.say('Link withdrawn; its guests are disconnected.', 'info') } catch (err) { this.say(err.message, 'error') }
+        } }) : null))))
+    }
+    return panel
+  }
+
   // ---- AI proposals ----
 
   async loadAI() {
     try {
-      const { data } = await api('GET', '/policies/' + this.docId + '/studio/ai/status')
+      const { data } = await api('GET', this.studioURL('/ai/status'))
       this.ai = data || this.ai
     } catch (err) {
       this.ai = { available: false, reason: err.message }
@@ -767,7 +986,27 @@ class Studio {
     if (this.sideTab === 'ai') this.renderSide()
   }
 
-  canAskAI() { return !!(this.state.can_edit && this.ai.available && this.editor) }
+  // A guest whose link allows the AI may ask and preview; only a role that
+  // can edit may suggest what it proposes to everyone.
+  canAskAI() { return !!(this.ai.available && this.editor && (this.guest || this.state.can_edit)) }
+
+  // ---- guests ----
+
+  endAccess(message) {
+    if (this.ended) return
+    this.ended = true
+    clearTimeout(this.pollTimer)
+    if (this.provider) this.provider.destroy()
+    if (this.editor) this.editor.setEditable(false)
+    this.root.replaceChildren(h('main', { class: 'ps-guest-join', role: 'alert' },
+      h('h1', { text: 'Your access has ended' }), h('p', { text: message })))
+  }
+
+  async leave() {
+    if (!window.confirm('Leave this document? You will need a new link to come back.')) return
+    try { await api('POST', this.studioURL('/leave'), {}) } catch (_) { /* leaving anyway */ }
+    this.endAccess('You have left the document.')
+  }
 
   // selectionScope describes the selection for a request: the text blocks it
   // touches and the selected text.
@@ -803,7 +1042,7 @@ class Studio {
     this.setTab('ai')
     this.say('Asking the AI…', 'info')
     try {
-      const { data } = await api('POST', '/policies/' + this.docId + '/studio/ai/proposals', { action, scope, selection, instruction: instruction || '' })
+      const { data } = await api('POST', this.studioURL('/ai/proposals'), { action, scope, selection, instruction: instruction || '' })
       this.addProposal(data)
       if (data.has_proposal && data.edits.some((e) => e.status === 'ok')) this.previewProposal(data)
       else this.say(data.answer_markdown ? 'The AI answered; see the AI panel.' : 'The AI proposed no changes.', 'info')
@@ -912,7 +1151,7 @@ class Studio {
     const placements = Object.entries(statuses).map(([suid, status]) => Object.assign({ suid, status }, (anchors || {})[suid] || {}))
     if (!placements.length) return
     try {
-      await api('POST', '/policies/' + this.docId + '/studio/ai/proposals/' + p.id + '/placements', { placements })
+      await api('POST', this.studioURL('/ai/proposals/' + p.id + '/placements'), { placements })
       if (Object.values(statuses).includes('placed')) this.loadReview(true)
     } catch (err) {
       this.say("Where the edits went wasn't recorded: " + err.message, 'warn')
@@ -1069,7 +1308,7 @@ class Studio {
       }
     }
     this.editor.view.dispatch(this.editor.state.tr.setMeta(reviewKey, {
-      threads: this.threads, showAuthors: this.showAuthors, accepted, currentSuggestion: this.currentSuggestion, currentThread: this.currentThread,
+      threads: this.visibleThreads(), showAuthors: this.showAuthors, accepted, focus: !!this.workshop.focus, focusUid: this.followedUid || '', currentSuggestion: this.currentSuggestion, currentThread: this.currentThread,
     }).setMeta('addToHistory', false))
   }
 
@@ -1100,7 +1339,7 @@ class Studio {
 
   renderCounts() {
     const n = this.suggestions.length
-    const open = this.threads.filter((t) => t.status === 'open').length
+    const open = this.visibleThreads().filter((t) => t.status === 'open').length
     const parts = []
     if (n) parts.push(n + ' suggestion' + (n === 1 ? '' : 's'))
     if (open) parts.push(open + ' comment' + (open === 1 ? '' : 's'))
@@ -1168,7 +1407,7 @@ class Studio {
 
   renderOutline() {
     const s = this.state
-    const editable = s.can_edit
+    const editable = s.can_edit && !this.guest
     const attached = s.sections.filter((x) => !x.detached)
     const detached = s.sections.filter((x) => x.detached)
     const list = h('ol', { class: 'ps-outline-list' })
@@ -1254,7 +1493,9 @@ class Studio {
 
   chipRow(info) {
     const sec = info.section
-    const editable = this.state.can_edit
+    // A guest is told nothing about control mappings or template guidance.
+    if (this.guest) return h('span', { class: 'ps-chips-none', contenteditable: 'false' })
+    const editable = this.state.can_edit && !this.workshop.safe
     const row = h('div', { class: 'ps-chips', contenteditable: 'false', 'aria-label': 'Controls this section satisfies' },
       h('span', { class: 'ps-chips-label', text: 'Satisfies:' }))
     if (!sec.controls.length) row.appendChild(h('span', { class: 'ps-muted', text: 'no controls mapped' }))
@@ -1270,7 +1511,7 @@ class Studio {
       row.appendChild(chip)
     }
     if (editable) row.appendChild(h('button', { type: 'button', class: 'ps-chip-add', text: '+ Control', onclick: (e) => this.openPicker(sec, e.currentTarget) }))
-    if (this.canAskAI()) {
+    if (this.canAskAI() && !this.workshop.safe) {
       const ask = (action) => () => this.askAI(action, 'section', { section_uid: sec.uid, block_ids: [], quote: '' })
       const menu = h('select', { class: 'ps-ai-menu', 'aria-label': 'AI for ' + (sec.heading || 'this section'),
         onchange: (e) => { const v = e.target.value; e.target.value = ''; if (v) ask(v)() } },
@@ -1280,7 +1521,7 @@ class Studio {
         h('option', { value: 'map_controls', text: 'Suggest control mappings' }))
       row.appendChild(menu)
     }
-    if (!sec.guidance) return row
+    if (!sec.guidance || this.workshop.safe) return row
     // Template guidance: what the section is for and what it answers to. It is
     // shown here only, never in the document.
     return h('div', { class: 'ps-section-extras', contenteditable: 'false' }, row,
@@ -1328,9 +1569,14 @@ class Studio {
   }
 
   renderSide() {
-    const tabs = [['suggestions', 'Suggestions'], ['comments', 'Comments'], ['ai', 'AI'], ['readiness', 'Readiness'], ['facts', 'Facts'],
+    // A guest, and the customer-safe view, see the review and nothing of
+    // the internal work around it.
+    let tabs = [['suggestions', 'Suggestions'], ['comments', 'Comments'], ['ai', 'AI'], ['readiness', 'Readiness'], ['facts', 'Facts'],
       ['provenance', 'Provenance'], ['document', 'Document']]
-    if (!tabs.some(([k]) => k === this.sideTab)) this.sideTab = 'readiness'
+    if (this.canManage && !this.guest) tabs.push(['sharing', 'Sharing'])
+    if (this.guest) tabs = tabs.filter(([k]) => k === 'suggestions' || k === 'comments' || (k === 'ai' && this.ai.available))
+    if (this.workshop.safe) tabs = tabs.filter(([k]) => k === 'suggestions' || k === 'comments')
+    if (!tabs.some(([k]) => k === this.sideTab)) this.sideTab = tabs.some(([k]) => k === 'readiness') ? 'readiness' : 'suggestions'
     const focusedId = this.side.contains(document.activeElement) && document.activeElement.dataset ? document.activeElement.dataset.focusKey : ''
     this.tabButtons = {}
     const bar = h('div', { class: 'ps-tabs', role: 'tablist', 'aria-label': 'Panels' })
@@ -1351,7 +1597,8 @@ class Studio {
       bar.appendChild(b)
     })
     const body = { suggestions: () => this.suggestionsPanel(), comments: () => this.commentsPanel(), ai: () => this.aiPanel(), readiness: () => this.readinessPanel(),
-      facts: () => this.factsPanel(), provenance: () => this.provenancePanel(), document: () => this.documentControl() }[this.sideTab]()
+      facts: () => this.factsPanel(), provenance: () => this.provenancePanel(), document: () => this.documentControl(),
+      sharing: () => this.sharingPanel() }[this.sideTab]()
     this.side.replaceChildren(bar, h('div', { class: 'ps-tabpanel', role: 'tabpanel', id: 'ps-tabpanel', 'aria-labelledby': 'ps-tab-' + this.sideTab }, body))
     this.renderCounts()
     if (focusedId) {
@@ -1448,7 +1695,7 @@ class Studio {
     if (x.changed) ex.appendChild(h('span', { class: 'ps-muted', text: x.changed }))
     if (!x.inserted && !x.deleted && !x.changed) ex.appendChild(h('span', { class: 'ps-muted', text: structuralSummary(x) }))
     li.appendChild(ex)
-    const ai = this.aiEdits[x.id]
+    const ai = this.workshop.safe ? null : this.aiEdits[x.id]
     if (ai) {
       if (ai.rationale) li.appendChild(h('p', { class: 'ps-small', text: 'Why: ' + ai.rationale }))
       if (ai.citations.length) {
@@ -1563,7 +1810,7 @@ class Studio {
     const c = this.composer
     if (!c.body.trim()) { this.say('Write something first.', 'warn'); return }
     try {
-      await api('POST', '/policies/' + this.docId + '/studio/comments', {
+      await api('POST', this.studioURL('/comments'), {
         section_uid: c.uid, anchor_start: c.start, anchor_end: c.end, quote: c.quote, visibility: c.visibility, body: c.body,
       })
       this.composer = null
@@ -1575,7 +1822,7 @@ class Studio {
 
   async threadAction(t, method, path, body, done) {
     try {
-      await api(method, '/policies/' + this.docId + '/studio/comments/' + t.id + path, body)
+      await api(method, this.studioURL('/comments/' + t.id + path), body)
       delete this.replyDrafts[t.id]
       await this.loadReview(true)
       this.renderSide()
@@ -1596,6 +1843,13 @@ class Studio {
     this.side.querySelectorAll('.ps-thread').forEach((el) => el.classList.toggle('ps-thread-current', el.dataset.thread === String(t.id)))
   }
 
+  // visibleThreads are the threads this view shows: all of them for staff,
+  // the shared ones in the customer-safe view (a guest is only ever sent
+  // shared ones).
+  visibleThreads() {
+    return this.workshop.safe ? this.threads.filter((t) => t.visibility === 'shared') : this.threads
+  }
+
   commentsPanel() {
     const can = !!this.state.can_comment
     const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-comments' }, h('h2', { class: 'ps-panel-title', id: 'ps-comments', text: 'Comments' }))
@@ -1603,9 +1857,12 @@ class Studio {
       const c = this.composer
       const body = h('textarea', { 'aria-label': 'Comment', 'data-focus-key': 'composer-body', placeholder: 'Your comment', oninput: (e) => { c.body = e.target.value } })
       body.value = c.body
-      const vis = h('select', { 'aria-label': 'Who can see it', onchange: (e) => { c.visibility = e.target.value } },
-        h('option', { value: 'internal', selected: c.visibility === 'internal', text: 'Internal: your team only' }),
-        h('option', { value: 'shared', selected: c.visibility === 'shared', text: 'Shared: the client sees it when they join' }))
+      const vis = this.guest
+        ? h('p', { class: 'ps-muted ps-small', text: 'Everyone in the document sees your comment.' })
+        : h('select', { 'aria-label': 'Who can see it', onchange: (e) => { c.visibility = e.target.value } },
+          h('option', { value: 'internal', selected: c.visibility === 'internal', text: 'Internal: your team only' }),
+          h('option', { value: 'shared', selected: c.visibility === 'shared', text: 'Shared: the client sees it when they join' }))
+      if (this.workshop.safe && !this.guest) c.visibility = 'shared'
       panel.appendChild(h('div', { class: 'ps-composer' },
         h('blockquote', { class: 'ps-quote', text: c.quote }), body, vis,
         h('div', { class: 'ps-fact-actions' },
@@ -1614,13 +1871,13 @@ class Studio {
     } else if (can) {
       panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Select text in the document and choose Comment.' }))
     }
-    const resolved = this.threads.filter((t) => t.status !== 'open').length
+    const resolved = this.visibleThreads().filter((t) => t.status !== 'open').length
     if (resolved) {
       const box = h('input', { type: 'checkbox', 'data-focus-key': 'show-resolved', onchange: (e) => { this.showResolved = e.target.checked; this.renderSide() } })
       box.checked = this.showResolved
       panel.appendChild(h('label', { class: 'ps-inline-label' }, box, ' Show resolved (' + resolved + ')'))
     }
-    const shown = this.threads.filter((t) => this.showResolved || t.status === 'open')
+    const shown = this.visibleThreads().filter((t) => this.showResolved || t.status === 'open')
     if (!shown.length && !this.composer) panel.appendChild(h('p', { class: 'ps-muted', text: 'No open comments.' }))
     const st = this.editor ? this.editor.state : null
     const pos = (t) => { const r = st && threadRange(st, t); return r ? r.from : Infinity }
@@ -1658,7 +1915,7 @@ class Studio {
           if (!(this.replyDrafts[t.id] || '').trim()) { this.say('Write a reply first.', 'warn'); return }
           this.threadAction(t, 'POST', '/replies', { body: this.replyDrafts[t.id] }, 'Reply posted.')
         } }),
-        t.status === 'open'
+        this.guest ? null : t.status === 'open'
           ? h('button', { type: 'button', text: 'Resolve', onclick: () => this.threadAction(t, 'PATCH', '', { status: 'resolved' }, 'Comment resolved.') })
           : h('button', { type: 'button', text: 'Reopen', onclick: () => this.threadAction(t, 'PATCH', '', { status: 'open' }, 'Comment reopened.') })))
     }

@@ -214,6 +214,40 @@
 .ps-presence-ai { color: var(--accent); }
 #global-ai-dock .ps-ai-proposal { margin-top: 8px; }
 
+/* Workshop mode. */
+.ps-workshop { position: relative; }
+.ps-workshop > summary { list-style: none; }
+.ps-workshop > summary::-webkit-details-marker { display: none; }
+.ps-workshop-panel { position: absolute; z-index: 7; right: 0; top: calc(100% + 4px); min-width: 250px; padding: 10px 12px; display: grid; gap: 4px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.ps-large .ps-prosemirror { font-size: 22px; }
+.ps-large .ps-prosemirror .ps-section-heading { font-size: 28px; }
+.ps-large .ps-prosemirror h2 { font-size: 24px; }
+.ps-large .ps-prosemirror h3 { font-size: 21px; }
+.ps-focus .ps-prosemirror .ps-section:not(.ps-section-current) { opacity: .35; transition: opacity .2s; }
+.ps-customer-safe .ps-section-has-errors .ps-section-heading { text-decoration: none; }
+.ps-customer-safe .ps-chip-unknown { color: var(--text); border-color: var(--border); }
+.ps-following { border-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .ps-focus .ps-prosemirror .ps-section { transition: none; } }
+
+/* Sharing and the guest pages. */
+.ps-share-new { display: grid; gap: 6px; margin: 0 0 12px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface-2); color: var(--text); }
+.ps-share-url { width: 100%; font: inherit; font-size: 12px; }
+.ps-guest-body { margin: 0; background: var(--bg); color: var(--text); }
+.ps-guest .ps-bar { top: 0; }
+.ps-guest { --ps-top: 0px; }
+.ps-guest .ps-back { flex: none; white-space: nowrap; }
+.ps-guest-join { max-width: 34rem; margin: 10vh auto; padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font-family: "Liberation Sans", Arial, sans-serif; }
+.ps-guest-join h1 { margin: 0 0 10px; font-size: 22px; }
+.ps-guest-join input { box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; }
+.ps-guest-join button { padding: 8px 14px; font: inherit; }
+.ps-composer > input, .ps-composer > select, .ps-composer > textarea, .ps-composer > button { box-sizing: border-box; width: 100%; min-width: 0; }
+@media (max-width: 700px) {
+  /* The bar's buttons wrap, so a menu anchored to one would run off the screen. */
+  .ps-workshop-panel { position: static; margin-top: 6px; }
+}
+.ps-chips-none { display: none; }
+
 .ps-toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: min(560px, calc(100vw - 32px)); padding: 10px 14px;
   border-radius: 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20; }
 .ps-toast-visible { opacity: 1; }

@@ -96,8 +96,10 @@ The API binary accepts command-line flags for runtime behavior.
   authenticates by session cookie, so an unchecked origin would let another
   site open it as the signed-in user. Behind nginx the forwarded `Host` is the
   external name, so this is only needed when the app is reached under a
-  second name. A malformed entry (a path, a wildcard, no scheme) stops
-  startup.  
+  second name -- such as the external hostname Policy Studio guests use (see
+  POLICY_STUDIO.md, "Guests"; guest links themselves are switched on in
+  Settings → Policy Studio, not by a flag). A malformed entry (a path, a
+  wildcard, no scheme) stops startup.  
   Default: empty (the request's own host only)
 
 - `-studio-snapshot-retention`  

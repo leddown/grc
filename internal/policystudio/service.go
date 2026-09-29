@@ -37,6 +37,12 @@ type Options struct {
 	// Clients resolves fact tokens against a document's client profile. Nil
 	// leaves every fact unresolved.
 	Clients *clientprofile.Service
+	// LocalMode refuses guest links: with no accounts there is no telling a
+	// guest from anyone else (Q9).
+	LocalMode bool
+	// GuestLinks reports whether guest links are switched on
+	// (studio.guest_links); nil means off.
+	GuestLinks func() bool
 }
 
 // Service is the Policy Studio: the collaboration server, the persistence
@@ -50,6 +56,9 @@ type Service struct {
 	onProjected func(int64)
 	clients     *clientprofile.Service
 	templates   []Template
+	localMode   bool
+	guestLinks  func() bool
+	stop        chan struct{}
 	log         *slog.Logger
 	now         func() time.Time
 
@@ -74,6 +83,9 @@ func NewService(conn *db.Conn, policies *policydocs.Service, opts Options) *Serv
 		origins:     opts.AllowedOrigins,
 		onProjected: opts.OnProjected,
 		clients:     opts.Clients,
+		localMode:   opts.LocalMode,
+		guestLinks:  opts.GuestLinks,
+		stop:        make(chan struct{}),
 		log:         slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		now:         time.Now,
 		locks:       map[int64]time.Time{},
@@ -100,6 +112,7 @@ func NewService(conn *db.Conn, policies *policydocs.Service, opts Options) *Serv
 	if s.clients != nil {
 		s.clients.OnFactsChanged(s.reprojectClient)
 	}
+	go s.runGuestJanitor()
 	policies.SetHooks(policydocs.Hooks{
 		BeforeTransition:  s.beforeTransition,
 		AfterTransition:   s.afterTransition,
@@ -112,6 +125,9 @@ func NewService(conn *db.Conn, policies *policydocs.Service, opts Options) *Serv
 // Shutdown flushes every room and stops the projection timers.
 func (s *Service) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
+	if !s.closed {
+		close(s.stop)
+	}
 	s.closed = true
 	for _, t := range s.timers {
 		t.Stop()

@@ -973,6 +973,47 @@ func OpenSQLite(path string) (*Conn, error) {
 	CREATE INDEX IF NOT EXISTS idx_policy_ai_edits_proposal
 		ON policy_ai_edits (proposal_id, id);
 
+	-- Policy Studio guest access. A share link lets someone outside the
+	-- installation into one document with one role until it expires or is
+	-- revoked; a guest session is what redeeming it creates. Both hold only
+	-- SHA-256 hashes of their tokens: the link is shown once, and the session
+	-- cookie is never stored. Neither is in a backup or a sync: they are live
+	-- credentials (see internal/dbsync).
+	CREATE TABLE IF NOT EXISTS policy_share_links (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		token_sha256 TEXT NOT NULL UNIQUE,
+		label TEXT NOT NULL DEFAULT '',
+		role TEXT NOT NULL DEFAULT 'viewer',
+		allow_ai INTEGER NOT NULL DEFAULT 0,
+		max_uses INTEGER NOT NULL DEFAULT 0,
+		uses INTEGER NOT NULL DEFAULT 0,
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		expires_at TEXT NOT NULL DEFAULT '',
+		revoked_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_share_links_document
+		ON policy_share_links (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_guest_sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		link_id INTEGER NOT NULL,
+		session_sha256 TEXT NOT NULL UNIQUE,
+		display_name TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		last_seen_at TEXT NOT NULL DEFAULT '',
+		expires_at TEXT NOT NULL DEFAULT '',
+		ended_at TEXT NOT NULL DEFAULT '',
+		end_reason TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(link_id) REFERENCES policy_share_links(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_guest_sessions_link
+		ON policy_guest_sessions (link_id, id);
+
 	-- Client profiles (internal/clientprofile): the clients policies are
 	-- written for, and the facts about each that a policy may state but a
 	-- model must never invent. Kept here rather than in the CRM on wintermute

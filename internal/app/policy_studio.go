@@ -1,10 +1,13 @@
 package app
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 
@@ -104,6 +107,10 @@ func registerPolicyStudioRoutes(
 		OnProjected: func(int64) {
 			knowledgeService.Invalidate(knowledge.KindPolicy, knowledge.KindPolicyClause)
 		},
+		LocalMode: options.LocalMode,
+		GuestLinks: func() bool {
+			return settingsService != nil && settingsService.Preference(settings.PrefStudioGuestLinks) == "true"
+		},
 	})
 	knowledgeService.WithLivePolicies(service.Live)
 
@@ -111,9 +118,14 @@ func registerPolicyStudioRoutes(
 	if options.LocalMode {
 		actor = func(*gin.Context) string { return localStudioUser }
 	}
-	handler := policystudio.NewHandler(service, actor)
+	handler := policystudio.NewHandler(service, actor).WithGuestPage(policystudio.GuestPage{
+		Chromeless:   renderWithoutGlobalChrome,
+		InlineHashes: func(c *gin.Context) ([]string, []string) { return themeInlineHashes(currentTheme(c)) },
+		Secure:       requestSecure,
+	})
 	handler.RegisterReadRoutes(r)
 	handler.RegisterPublicRoutes(r)
+	handler.RegisterGuestRoutes(r)
 	clientHandler := clientprofile.NewHandler(clients, actor)
 	clientHandler.RegisterReadRoutes(r)
 
@@ -134,13 +146,67 @@ func registerPolicyStudioRoutes(
 	configurePolicyDock(engine, identity)
 	aiHandler := policyai.NewHandler(engine, actor)
 	aiHandler.RegisterReadRoutes(r)
+	aiHandler.RegisterGuestRoutes(r, handler.GuestGate)
 
 	admin := r.Group("/")
 	if !options.LocalMode {
 		admin.Use(adminMiddleware)
 	}
 	handler.RegisterAdminRoutes(admin)
+	handler.RegisterSharingRoutes(admin)
 	clientHandler.RegisterAdminRoutes(admin)
 	aiHandler.RegisterAdminRoutes(admin)
 	return service, nil
+}
+
+// requestSecure reports whether a request arrived over HTTPS, trusting
+// X-Forwarded-Proto only under -trust-proxy, the rule the sign-in cookie
+// follows.
+func requestSecure(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	return trustProxyHeaders && strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")
+}
+
+type inlineHashes struct{ scripts, styles []string }
+
+var (
+	inlineHashMu    sync.Mutex
+	inlineHashCache = map[string]inlineHashes{}
+)
+
+// themeInlineHashes are the CSP hashes of the inline script and style blocks
+// the theme layer injects into a chromeless page in this theme, computed from
+// the same strings it injects, so the guest page's enforced CSP cannot drift
+// from them (Q10).
+func themeInlineHashes(theme string) (scripts, styles []string) {
+	inlineHashMu.Lock()
+	defer inlineHashMu.Unlock()
+	if h, ok := inlineHashCache[theme]; ok {
+		return h.scripts, h.styles
+	}
+	head := headInsertTag(theme)
+	h := inlineHashes{scripts: blockHashes(head, "script"), styles: blockHashes(head, "style")}
+	inlineHashCache[theme] = h
+	return h.scripts, h.styles
+}
+
+// blockHashes hashes the content of every <tag>…</tag> block in s.
+func blockHashes(s, tag string) []string {
+	var out []string
+	for {
+		open := strings.Index(s, "<"+tag)
+		if open < 0 {
+			return out
+		}
+		start := strings.Index(s[open:], ">")
+		end := strings.Index(s[open:], "</"+tag+">")
+		if start < 0 || end < 0 || end < start {
+			return out
+		}
+		sum := sha256.Sum256([]byte(s[open+start+1 : open+end]))
+		out = append(out, "sha256-"+base64.StdEncoding.EncodeToString(sum[:]))
+		s = s[open+end+len("</"+tag+">"):]
+	}
 }

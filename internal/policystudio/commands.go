@@ -349,6 +349,52 @@ type State struct {
 	Client        *ClientState     `json:"client"`
 	Facts         []FactState      `json:"facts"`
 	Template      *TemplateSummary `json:"template"`
+	// Guest is set on a guest's state: who they are and what their link allows.
+	Guest *GuestInfo `json:"guest,omitempty"`
+}
+
+// GuestInfo is a guest's own session, as their page shows it.
+type GuestInfo struct {
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	AllowAI   bool   `json:"allow_ai"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+// GuestState is the document's state reduced to what a guest may see: its
+// text structure and status, the client facts the text uses, and what the
+// guest may do. Lint, control mappings, template guidance, provenance and every
+// count of internal review activity are left out.
+func (s *Service) GuestState(g GuestSession) (State, error) {
+	st, _, err := s.State(g.DocumentID, Identity{})
+	if err != nil {
+		return State{}, err
+	}
+	st.Findings, st.Problems, st.Template = []policydocs.Finding{}, []Problem{}, nil
+	d := st.Document
+	st.Document = policydocs.Document{ID: d.ID, Title: d.Title, Reference: d.Reference, DocType: d.DocType, Status: d.Status,
+		Classification: d.Classification, OwnerRole: d.OwnerRole, EffectiveDate: d.EffectiveDate, ClientName: d.ClientName,
+		EditorFormat: d.EditorFormat, Frameworks: d.Frameworks, ProjectionVersion: d.ProjectionVersion}
+	facts := make([]FactState, 0, len(st.Facts))
+	for _, f := range st.Facts {
+		if f.Used {
+			facts = append(facts, FactState{Key: f.Key, Label: f.Label, ValueType: f.ValueType, Value: f.Value, Resolved: f.Resolved, Used: true})
+		}
+	}
+	st.Facts = facts
+	for i := range st.Sections {
+		sec := &st.Sections[i]
+		sec.Controls, sec.Guidance, sec.Provenance, sec.ProvDetails = []policydocs.ControlRef{}, "", "", ""
+	}
+	st.Role = "guest_" + g.Role
+	st.CanEdit = g.Role == RoleEditor && d.Status == policydocs.StatusDraft && !st.Transitioning
+	st.SuggestOnly, st.CanDecide = false, false
+	st.CanComment = g.CanComment() && projected(d.Status)
+	if st.ReviewVersion, err = s.sharedReviewVersion(g.DocumentID); err != nil {
+		return State{}, err
+	}
+	st.Guest = &GuestInfo{Name: g.DisplayName, Role: g.Role, AllowAI: g.AllowAI, ExpiresAt: g.ExpiresAt}
+	return st, nil
 }
 
 // TemplateSummary names the template a document came from.

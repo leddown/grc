@@ -3,6 +3,147 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-29 (Policy Studio, Phase 4: guests and workshop mode)
+
+A consultant can now bring the client into a Studio document. Once an
+administrator switches on *Guest links* (Settings → Policy Studio), the
+Studio's *Sharing* tab creates a link for one document with a role (read,
+comment or edit), an expiry and, optionally, the AI assistant. The client opens
+the link, gives their name, and works in that document live: nothing else in
+the installation is reachable to them. *Workshop* adds larger type, focus on
+one section, *Present* and *Follow*, and a customer-safe view for sharing a
+screen. POLICY_STUDIO.md ("Guests", "Workshop mode") is the operator guide.
+
+- `internal/policystudio`:
+  - **Share links and guest sessions** (`policy_share_links`,
+    `policy_guest_sessions`):
+    - Tokens are 32 random bytes, stored only as SHA-256 and compared in
+      constant time. The link is shown once.
+    - Links last 8 hours by default and at most 7 days, with 20 uses by
+      default. The use count is checked and incremented in one statement.
+    - Withdrawing a link or removing a guest ends the session at once, by
+      closing the room so every peer reconnects and the guest is refused.
+    - A 5-second sweep ends sessions that outlive their link, and ended
+      sessions are purged 30 days after expiry (Q8).
+    - Everything is refused in local mode (Q9) and while the feature is off.
+  - **The collab decision** admits a guest cookie to exactly one room, its
+    link's document: read-write for the editor role on drafts, read-only
+    otherwise. The Origin allowlist applies as before.
+  - **`/shared`** carries the join page, the guest Studio and a JSON API with
+    one gate, `GuestGate`, taking the document from the session only:
+    - the guest's state is reduced: no lint, control mappings, template
+      guidance, provenance or author, and only the facts the text uses;
+    - it has its own review version, moved only by shared threads;
+    - shared threads only, and a guest's comments and replies are always
+      shared;
+    - leaving ends the session.
+
+    Every `/shared` response sends `Referrer-Policy: no-referrer` and
+    `no-store`.
+  - **The guest page** is chromeless, with an enforced CSP (Q10):
+    - scripts come from this origin with a nonce, plus the theme layer's one
+      constant inline script by hash;
+    - style blocks come from this origin or the theme layer, by hash, and
+      style attributes are allowed;
+    - `connect-src` is this origin and its `ws:`/`wss:`;
+    - `frame-ancestors`, `base-uri` and `object-src` are none.
+
+    The hashes are computed from the strings the theme layer injects.
+  - **The cookie** is `grc_guest`: HttpOnly and SameSite=Strict, with Secure
+    under the sign-in cookie's rule.
+  - **Audit:** link creation and withdrawal, joins, leaves, removals and
+    expiries.
+  - **No suggester role.** As found in Phase 0, ygo has no hook that sees an
+    update before it is applied, so the server could not enforce one.
+- **`internal/policyai`:** guest AI routes under `/shared/api/ai`, only when
+  the link allows AI. An editor may place what the AI proposes; the other roles
+  only preview. A guest records placements only for their own proposals, and
+  their AI rationale threads are shared.
+- **`internal/settings`:** `studio.guest_links` (off by default) and
+  `studio.invite_hours`, on a new Policy Studio card in Settings, with
+  `GET`/`PUT /api/settings/policy-studio`.
+- **The Studio editor:**
+  - **Guest mode:**
+    - "Shared with you" and *Leave* in the header;
+    - an editor guest starts in suggest mode, attributed "Name (guest)" as
+      author kind *guest*;
+    - only the Suggestions and Comments tabs, plus AI when the link allows it;
+    - no structure, control, fact or status controls;
+    - a clear "your access has ended" screen as soon as the server refuses the
+      session.
+  - **The Sharing tab** (administrators): create a link (shown once, with
+    *Copy*), see who is in the document and *Remove* them, and *Withdraw* a
+    link.
+  - **Workshop mode:**
+    - larger type and focus, remembered per browser;
+    - *Present*, which shares your current section through awareness;
+    - *Follow*: guests follow automatically and can opt out, staff choose
+      whom to follow. It moves the view, never the follower's cursor;
+    - the customer-safe view: shared comments only, no lint, AI notes or
+      guidance, and only the Suggestions and Comments tabs.
+- **`internal/app`:**
+  - `buildRouter` is split out of `Run`, so the route-enumeration test walks
+    exactly the router that is served.
+  - Guest routes and hashes are wired, the API docs and help are updated, and
+    RUNTIME_ARGS notes the external hostname.
+- **Deploy:**
+  - `deploy/grc.nginx` has a commented server block for a separate external
+    hostname. It proxies only `/shared/`, `/collab/` and
+    `/assets/policy-studio/`, with TLS and `limit_req`, and answers 404 to
+    everything else.
+  - `scripts/verify-install.sh` checks that the guest API answers 401 without
+    a session.
+- **`internal/dbsync`:** share links and guest sessions are in neither backups
+  nor syncs, because they are live credentials. The coverage test records why.
+- **Fixes found on the way:**
+  - The theme layer's head block includes an inline script, which the first
+    enforced CSP would have blocked. It is now hashed like the style blocks,
+    and the test checks every inline block on the page against the header.
+  - gosec flagged the guest cookie built with `http.Cookie` and a runtime
+    Secure flag. It is now set through Gin, as the sign-in cookie is.
+  - On a phone the Workshop menu opened off-screen, and the Sharing form ran
+    past its panel.
+- **Verified:**
+  - `go fmt`, `go vet` and `go test ./...` without `-short` (gosec and
+    govulncheck included) are green, and `npm audit --omit=dev` is clean. The
+    bundle is 639 KB, 39 packages, all MIT.
+  - **Route enumeration.** Every route of the whole application (over 150),
+    enumerated from the router `Run` builds, answers a guest cookie exactly as
+    it answers no credentials, outside `/shared` and `/collab`.
+  - **Internal comments.** None appears in any guest response or on the
+    guest page. A guest's comment is always shared, and a guest cannot reply
+    to an internal thread.
+  - **The socket.** A guest for document A cannot open room B, and a
+    cross-origin upgrade is refused, both through a real WebSocket.
+  - **Link lifecycle:**
+    - validation, tokens stored only as hashes, and the atomic use count;
+    - revocation cuts off the API at once, and removal works;
+    - expired links are refused (join page and redemption);
+    - the sweep ends sessions and the purge removes them.
+  - **Refusals.** Local mode and the off switch refuse links.
+  - **The CSP** is enforced in all four themes, every inline script and style
+    block on the page is covered by a hash, the bundle carries the nonce, and
+    no chrome is injected.
+  - **Guest AI** follows the link.
+  - **Headless Chrome**, three consecutive passes of all seven browser tests.
+    The new one:
+    - the link is created in the Sharing tab, and the guest joins;
+    - the guest suggests with real keys, and the administrator sees
+      "Carla (guest)";
+    - the guest sees the shared comment and never the internal one;
+    - Present and Follow move the guest to §5, and after *Stop following* the
+      guest stays put;
+    - the customer-safe view hides the internal comment and panels;
+    - withdrawing the link ends the guest's access within seconds.
+  - **Screenshots** of the join page, the guest Studio, the Sharing tab and
+    the Workshop menu at 1440×900 and 430×860 in all four themes: no overlap,
+    no horizontal overflow.
+- **Not verified:**
+  - The nginx external-hostname block. It is a commented example, not
+    exercised against a real nginx.
+  - A guest on iOS Safari.
+  - PostgreSQL, and the live Claude call (Q5, still no key here).
+
 ## 2026-09-29 (Policy Studio, Phase 3: AI proposals and Ask AI)
 
 The AI can now propose changes to a Studio document, which people decide on.

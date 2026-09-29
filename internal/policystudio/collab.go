@@ -51,7 +51,21 @@ func (s *Service) decide(r *http.Request, documentID int64) Decision {
 	}
 	id, ok := s.identity(r)
 	if !ok {
-		return Decision{Reason: "not signed in"}
+		// A guest session reaches exactly one room: its link's document.
+		// Read-write only for the editor role, and only on a draft.
+		g, isGuest := s.Guest(r)
+		if !isGuest {
+			return Decision{Reason: "not signed in"}
+		}
+		if g.DocumentID != documentID {
+			return Decision{Reason: "guest for another document"}
+		}
+		doc, err := s.policies.GetDocument(documentID)
+		if err != nil || doc.EditorFormat != policydocs.EditorStudio {
+			return Decision{Reason: "no such document"}
+		}
+		writable := g.Role == RoleEditor && doc.Status == policydocs.StatusDraft && !s.transitioning(documentID)
+		return Decision{Allow: true, ReadOnly: !writable}
 	}
 	if !id.CanReadPolicies {
 		return Decision{Reason: "no access to policies"}

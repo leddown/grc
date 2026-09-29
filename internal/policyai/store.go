@@ -103,16 +103,22 @@ type Placement struct {
 }
 
 // RecordPlacements records where the editor placed a proposal's edits, and
-// starts the rationale thread of each comment edit it placed.
-func (e *Engine) RecordPlacements(documentID, proposalID int64, list []Placement, actor string) error {
-	var model string
+// starts the rationale thread of each comment edit it placed. A guest records
+// placements only for a proposal they asked for, and their rationale threads
+// are shared, since an internal thread is one they could never see.
+func (e *Engine) RecordPlacements(documentID, proposalID int64, list []Placement, actor string, guest bool) error {
+	var model, requestedBy string
 	var docID int64
-	err := e.cfg.Conn.QueryRow(`SELECT document_id, model FROM policy_ai_proposals WHERE id = ?`, proposalID).Scan(&docID, &model)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && docID != documentID) {
+	err := e.cfg.Conn.QueryRow(`SELECT document_id, model, requested_by FROM policy_ai_proposals WHERE id = ?`, proposalID).Scan(&docID, &model, &requestedBy)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && (docID != documentID || guest && requestedBy != actor)) {
 		return policydocs.ErrNotFound
 	}
 	if err != nil {
 		return err
+	}
+	visibility := policystudio.VisibilityInternal
+	if guest {
+		visibility = policystudio.VisibilityShared
 	}
 	for _, pl := range list {
 		if !placements[pl.Status] {
@@ -139,7 +145,7 @@ func (e *Engine) RecordPlacements(documentID, proposalID int64, list []Placement
 		if op == OpComment && pl.Status == PlacementPlaced && current != PlacementPlaced {
 			if _, err := e.cfg.Studio.CreateAIThread(documentID, policystudio.NewThread{
 				SectionUID: pl.SectionUID, AnchorStart: pl.AnchorStart, AnchorEnd: pl.AnchorEnd, Quote: pl.Quote,
-				Visibility: policystudio.VisibilityInternal, Body: rationale,
+				Visibility: visibility, Body: rationale,
 			}, pl.SUID, "AI · "+firstNonEmpty(model, "model"), actor); err != nil {
 				return err
 			}

@@ -73,6 +73,44 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.GET("/api/settings/ai-providers/agents", h.listAgents)
 	r.GET("/api/settings/ai-providers/catalog", h.listCatalog)
 	r.GET("/api/settings/ai-providers/claude-models", h.listClaudeModels)
+
+	r.GET("/api/settings/policy-studio", h.studioSettings)
+	r.PUT("/api/settings/policy-studio", h.setStudioSettings)
+}
+
+// studioSettings are the Policy Studio's own settings: guest links and the
+// default length of an invitation.
+func (h *Handler) studioSettings(c *gin.Context) {
+	prefs := h.service.Preferences()
+	c.JSON(http.StatusOK, gin.H{"guest_links": prefs[PrefStudioGuestLinks] == "true", "invite_hours": prefs[PrefStudioInviteHours]})
+}
+
+func (h *Handler) setStudioSettings(c *gin.Context) {
+	var req struct {
+		GuestLinks  *bool   `json:"guest_links"`
+		InviteHours *string `json:"invite_hours"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "expected a JSON body"})
+		return
+	}
+	if req.GuestLinks != nil {
+		value := ""
+		if *req.GuestLinks {
+			value = "true"
+		}
+		if err := h.service.SetPreference(PrefStudioGuestLinks, value); err != nil {
+			c.JSON(statusForError(err), gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if req.InviteHours != nil {
+		if err := h.service.SetPreference(PrefStudioInviteHours, strings.TrimSpace(*req.InviteHours)); err != nil {
+			c.JSON(statusForError(err), gin.H{"error": err.Error()})
+			return
+		}
+	}
+	h.studioSettings(c)
 }
 
 // providerResponse describes provider routing for the Settings page.

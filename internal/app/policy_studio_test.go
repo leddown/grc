@@ -21,6 +21,7 @@ import (
 	"grc/internal/knowledge"
 	"grc/internal/policydocs"
 	"grc/internal/policystudio"
+	"grc/internal/settings"
 )
 
 type studioApp struct {
@@ -31,6 +32,7 @@ type studioApp struct {
 	clients  *clientprofile.Service
 	know     *knowledge.Service
 	conn     *db.Conn
+	settings *settings.Service
 	doc      policydocs.Document
 	admin    string // session tokens
 	admin2   string // a second administrator, "bob"
@@ -79,14 +81,15 @@ func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp, ai ...*aiprovi
 		aiRouter = ai[0]
 		registerAIAuxRoutes(router)
 	}
-	studio, err := registerPolicyStudioRoutes(router, conn, policies, auth, know, aiRouter, nil, adminGate, Options{})
+	settingsService := settings.NewService(settings.NewSQLRepository(conn), nil).WithPreferences(settings.NewSQLPreferenceRepository(conn))
+	studio, err := registerPolicyStudioRoutes(router, conn, policies, auth, know, aiRouter, settingsService, adminGate, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = studio.Shutdown(context.Background()) })
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	app := &studioApp{router: router, server: srv, studio: studio, policies: policies, clients: clientprofile.NewService(conn), know: know, conn: conn}
+	app := &studioApp{router: router, server: srv, studio: studio, policies: policies, clients: clientprofile.NewService(conn), know: know, conn: conn, settings: settingsService}
 	if prev != nil {
 		app.doc, app.admin, app.admin2, app.reader, app.outside = prev.doc, prev.admin, prev.admin2, prev.reader, prev.outside
 		return app

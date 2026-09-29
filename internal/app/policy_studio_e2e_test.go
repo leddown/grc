@@ -27,6 +27,7 @@ import (
 	"grc/internal/authn"
 	"grc/internal/clientprofile"
 	"grc/internal/policydocs"
+	"grc/internal/settings"
 )
 
 // These drive the real Studio -- the embedded bundle, the theme middleware,
@@ -712,4 +713,151 @@ func TestStudioAIInlineActionsInTheBrowser(t *testing.T) {
 	waitJS(t, bob, "Bob's drafting indicator clears", `document.querySelectorAll('.ps-presence-ai').length === 0`)
 	evalJS[bool](t, alice, `(Array.from(document.querySelectorAll('.ps-tabpanel .ps-ai-proposal button')).find((b) => b.textContent === 'Suggest to everyone').click(), true)`)
 	waitJS(t, bob, "Bob sees the AI's suggestion", `GRCPolicyStudio.suggestions().length === 1 && GRCPolicyStudio.suggestions()[0].authorKind === 'ai'`)
+}
+
+// Phase 4 in the browser. An administrator invites a guest from the Sharing
+// panel; the guest joins by the link and suggests and comments live, and never
+// sees an internal comment. The administrator presents and the guest follows
+// until they opt out; the customer-safe view hides the internal comment and
+// the lint; withdrawing the link ends the guest's access within seconds.
+func TestStudioGuestsInTheBrowser(t *testing.T) {
+	browser := headlessBrowser(t)
+	a := newStudioApp(t)
+	if err := a.settings.SetPreference(settings.PrefStudioGuestLinks, "true"); err != nil {
+		t.Fatal(err)
+	}
+	send := func(method, path, body string) (int, string) {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: a.admin})
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	code, body := send(http.MethodPost, "/policies/from-template", `{"template_id":"ict-infosec-policy"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("from template: %d %s", code, body)
+	}
+	var created struct {
+		Document struct {
+			ID int64 `json:"id"`
+		} `json:"document"`
+	}
+	_ = json.Unmarshal([]byte(body), &created)
+	a.doc.ID = created.Document.ID
+	id := strconv.FormatInt(a.doc.ID, 10)
+	var uids []string
+	rows, _ := a.conn.Query(`SELECT uid FROM policy_sections WHERE document_id = ? ORDER BY ordinal`, a.doc.ID)
+	for rows.Next() {
+		var u string
+		_ = rows.Scan(&u)
+		uids = append(uids, u)
+	}
+	rows.Close()
+	for _, c := range []struct{ vis, body string }{{"internal", "INTERNAL-5c1d: they will resist the annual review"}, {"shared", "SHARED-7e2f: does this match your org chart?"}} {
+		if code, body := send(http.MethodPost, "/policies/"+id+"/studio/comments", `{"section_uid":"`+uids[0]+`","anchor_start":"AQID","anchor_end":"AQIE","visibility":"`+c.vis+`","body":"`+c.body+`"}`); code != http.StatusCreated {
+			t.Fatalf("comment: %d %s", code, body)
+		}
+	}
+
+	alice := studioTab(t, browser, a, a.admin)
+	if err := chromedp.Run(alice, page.BringToFront(), chromedp.Click(`#ps-tab-sharing`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "the Sharing panel loads", `!!document.querySelector('.ps-tabpanel select[aria-label="Role"]')`)
+	evalJS[bool](t, alice, `(() => { const p = document.querySelector('.ps-tabpanel');
+		p.querySelector('input[aria-label="Label"]').value = 'CISO workshop';
+		p.querySelector('select[aria-label="Role"]').value = 'editor';
+		Array.from(p.querySelectorAll('button')).find((b) => b.textContent === 'Create link').click(); return true })()`)
+	waitJS(t, alice, "the link is shown once", `!!document.querySelector('.ps-share-url')`)
+	link := evalJS[string](t, alice, `document.querySelector('.ps-share-url').value`)
+	if !strings.Contains(link, "/shared/p/") {
+		t.Fatalf("link %q", link)
+	}
+
+	guest, cancel := chromedp.NewContext(browser, chromedp.WithNewBrowserContext())
+	t.Cleanup(cancel)
+	if err := chromedp.Run(guest, chromedp.Navigate(link), chromedp.WaitVisible(`#guest-name`, chromedp.ByQuery),
+		chromedp.SendKeys(`#guest-name`, "Carla", chromedp.ByQuery), chromedp.Click(`button[type="submit"]`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, guest, "the guest's editor mounts", `!!(window.GRCPolicyStudio && window.GRCPolicyStudio.editor) && location.pathname === '/shared/studio'`)
+	if !evalJS[bool](t, guest, `GRCPolicyStudio.editor.isEditable && document.querySelector('.ps-suggest-toggle').getAttribute('aria-pressed') === 'true'`) {
+		t.Fatal("an editor guest starts editable, in suggest mode")
+	}
+	if evalJS[bool](t, guest, `!!document.getElementById('ps-tab-readiness') || !!document.getElementById('ps-tab-sharing') || !!document.querySelector('.ps-chip')`) {
+		t.Fatal("the guest sees internal panels or control chips")
+	}
+
+	// The guest suggests, with real keys.
+	evalJS[bool](t, guest, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text.includes('This policy sets out how')) at = p + 8 });
+		e.chain().focus().setTextSelection(at).run(); return true })()`)
+	waitJS(t, guest, "the guest's editor has focus", `document.activeElement.classList.contains('ProseMirror')`)
+	if err := chromedp.Run(guest, page.BringToFront(), chromedp.KeyEvent("formally ")); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(alice, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "Alice sees the guest's suggestion", `GRCPolicyStudio.suggestions().some((s) => s.authorKind === 'guest' && s.authorName === 'Carla (guest)' && s.inserted.includes('formally'))`)
+
+	// The guest sees the shared comment and never the internal one.
+	if err := chromedp.Run(guest, page.BringToFront(), chromedp.Click(`#ps-tab-comments`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, guest, "the shared comment is listed", `document.querySelector('.ps-tabpanel').textContent.includes('SHARED-7e2f')`)
+	if evalJS[bool](t, guest, `document.documentElement.innerHTML.includes('INTERNAL-5c1d')`) {
+		t.Fatal("an internal comment reached the guest's page")
+	}
+
+	// Alice presents; the guest follows her to the fifth section.
+	if err := chromedp.Run(alice, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	evalJS[bool](t, alice, `(() => { const d = document.querySelector('.ps-workshop'); d.open = true;
+		const box = d.querySelector('input[data-workshop="presenting"]'); box.checked = true; box.dispatchEvent(new Event('change')); return true })()`)
+	moveTo := func(uid string) {
+		evalJS[bool](t, alice, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+			e.state.doc.forEach((n, off) => { if (n.attrs.uid === '`+uid+`') at = off + 2 });
+			e.chain().focus().setTextSelection(at).run(); return true })()`)
+	}
+	moveTo(uids[4])
+	if err := chromedp.Run(guest, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	inView := func(uid string) string {
+		return `(() => { const r = document.querySelector('section[data-uid="` + uid + `"]').getBoundingClientRect(); return r.top > -80 && r.top < 320 })()`
+	}
+	waitJS(t, guest, "the guest follows Alice to §5", inView(uids[4])+` && document.querySelector('.ps-following') !== null`)
+	evalJS[bool](t, guest, `(Array.from(document.querySelectorAll('.ps-following button')).find((b) => b.textContent === 'Stop following').click(), true)`)
+	if err := chromedp.Run(alice, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	moveTo(uids[8])
+	time.Sleep(1500 * time.Millisecond)
+	if !evalJS[bool](t, guest, inView(uids[4])) {
+		t.Fatal("a guest who stopped following was moved anyway")
+	}
+
+	// The customer-safe view hides the internal comment and the lint.
+	evalJS[bool](t, alice, `(() => { const d = document.querySelector('.ps-workshop'); d.open = true;
+		const box = d.querySelector('input[data-workshop="safe"]'); box.checked = true; box.dispatchEvent(new Event('change')); return true })()`)
+	waitJS(t, alice, "the customer-safe view drops the internal panels", `!document.getElementById('ps-tab-readiness') && !document.getElementById('ps-tab-ai') && !!document.getElementById('ps-tab-comments')`)
+	evalJS[bool](t, alice, `(document.getElementById('ps-tab-comments').click(), true)`)
+	waitJS(t, alice, "only the shared comment is listed", `(() => { const p = document.querySelector('.ps-tabpanel').textContent; return p.includes('SHARED-7e2f') && !p.includes('INTERNAL-5c1d') })()`)
+	evalJS[bool](t, alice, `(() => { const box = document.querySelector('input[data-workshop="safe"]'); box.checked = false; box.dispatchEvent(new Event('change')); return true })()`)
+
+	// Withdrawing the link ends the guest's access within seconds.
+	evalJS[bool](t, alice, `(document.getElementById('ps-tab-sharing').click(), true)`)
+	waitJS(t, alice, "the link is listed", `!!Array.from(document.querySelectorAll('.ps-tabpanel button')).find((b) => b.textContent === 'Withdraw')`)
+	evalJS[bool](t, alice, `(window.confirm = () => true, Array.from(document.querySelectorAll('.ps-tabpanel button')).find((b) => b.textContent === 'Withdraw').click(), true)`)
+	if err := chromedp.Run(guest, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	waitJS(t, guest, "the guest is told their access has ended", `document.body.textContent.includes('Your access has ended')`)
+	if took := time.Since(start); took > 10*time.Second {
+		t.Fatalf("revocation took %v to reach the guest", took)
+	}
 }

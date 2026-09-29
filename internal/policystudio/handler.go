@@ -17,6 +17,7 @@ import (
 type Handler struct {
 	service *Service
 	actor   func(c *gin.Context) string
+	guest   GuestPage
 }
 
 func NewHandler(service *Service, actor func(c *gin.Context) string) *Handler {

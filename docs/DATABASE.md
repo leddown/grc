@@ -141,6 +141,10 @@ row count and exits non-zero on the first error.
   anchors are Yjs relative positions into that state, so they are backed up but
   not synced. So do the AI proposals (`policy_ai_proposals`, `policy_ai_edits`):
   an edit's suid is a suggestion id inside that state.
+- **Guest access is in neither.** `policy_share_links` and
+  `policy_guest_sessions` are live credentials for people outside the
+  installation: a restored link or session would let someone back into a
+  document on a server that never invited them.
 - **The derived link table is rebuilt.** `security_nfr_control_links` has no
   stable key (it is regenerated from the catalogs + overrides), so it is
   replaced wholesale on the destination to stay consistent with the rows just

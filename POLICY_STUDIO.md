@@ -5,7 +5,7 @@ policy authoring on top of `internal/policydocs`, live co-editing with the
 customer, tracked suggestions, and an Ask AI agent that proposes changes as
 suggestions a person accepts or rejects.
 
-**Status: Phases 1–3 built.**
+**Status: Phases 1–4 built.**
 
 - **1a:** the collaborative editor, persistence, projection, section integrity,
   control chips, live lint, and migration from the section editor.
@@ -19,9 +19,12 @@ suggestions a person accepts or rejects.
 - **3:** AI proposals: the `internal/policyai` engine, inline actions, the
   Ask AI dock on Studio pages, private preview and shared placement as
   suggestions attributed to the AI, `ai_policy`, and the Policy Studio agent.
+- **4:** guests (share links, guest sessions, the chromeless guest Studio with
+  an enforced CSP, the Sharing panel) and workshop mode (larger type, focus,
+  present and follow, the customer-safe view).
 
 The owner accepted the recommendations for Q1–Q10 on 2026-09-28
-([§11](#11-open-questions-for-the-owner)). Phase 4 (guest access and workshop mode) is next. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
+([§11](#11-open-questions-for-the-owner)). Phase 5 (extras) is next, to be prioritised with the owner. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
 the throwaway branch `spike/policy-studio`.
 
 It follows the `*_FRAMEWORK.md` convention. [`POLICY_MODULE_FRAMEWORK.md`](POLICY_MODULE_FRAMEWORK.md)
@@ -274,8 +277,9 @@ policy_ai_edits       id, proposal_id, suid UNIQUE, op, block_id, section_uid, q
                       rationale, citations_json, validation, placement, decision, decided_by,
                       decided_at                                                                  (3)
 policy_share_links    id, document_id, token_sha256 UNIQUE, label, role, allow_ai, max_uses, uses,
-                      created_by, created_at, expires_at, revoked_at
-policy_guest_sessions id, link_id, session_sha256 UNIQUE, display_name, created_at, last_seen_at, expires_at
+                      created_by, created_at, expires_at, revoked_at                               (4)
+policy_guest_sessions id, link_id, session_sha256 UNIQUE, display_name, created_at, last_seen_at,
+                      expires_at, ended_at, end_reason                                              (4)
 policy_studio_audit   id, document_id, actor, actor_kind, event, detail_json, created_at        (2)
 client_profile_facts  client_ref, key, value, value_type, source, updated_by, updated_at  (PK client_ref, key)
 ```
@@ -336,9 +340,11 @@ client_profile_facts  client_ref, key, value, value_type, source, updated_by, up
 | `GET /policies/:id/studio/ai/status`, `…/ai/edits` | ✓ | ✓ | — | — | 401 |
 | `POST /ai-chat/ask` from a Studio page | proposal engine | answered as on any page | — | — | 401 |
 | `/policies/:id/studio/migrate` | ✓ | 403 | — | — | 401 |
-| `/policies/:id/share-links` | ✓ | 403 | — | — | 401 |
-| `GET /collab/policies/:id` (WebSocket) | rw if draft or in review (suggest mode in review), else ro | ro | rw if draft and link doc = :id | ro | 401 |
-| `GET /shared/p/:token` → `/shared/…` | — | — | its one document | its one document | link token only |
+| `/policies/:id/share-links` (GET, POST, DELETE `:linkID`), `DELETE /policies/:id/guests/:sessionID` | ✓ (not in local mode; off until `studio.guest_links`) | 403 | — | — | 401 |
+| `GET /collab/policies/:id` (WebSocket) | rw if draft or in review (suggest mode in review), else ro | ro | rw if draft and link doc = :id | ro, link doc only | 401 |
+| `GET`/`POST /shared/p/:token` (join), `GET /shared/studio` | — | — | its one document | its one document | link token only |
+| `/shared/api/state`, `…/comments` (GET, POST, `…/:threadID/replies`), `…/leave` | — | — | shared threads only; posts as shared | commenter posts; viewer reads | 401 |
+| `/shared/api/ai/status`, `…/ai/proposals`, `…/placements` | — | — | only with `allow_ai`; places | only with `allow_ai`; previews | 401 |
 | `GET /assets/policy-studio/<hash>.{js,css}` | public | public | public | public | public (static, no data) |
 
 **LOCAL_MODE** is unchanged. With no identities, everyone is admin and the
@@ -660,6 +666,75 @@ What Phase 1a puts in the hands of a user and an operator.
   `live` build tag: one real Claude call on synthetic text,
   `ANTHROPIC_API_KEY=... go test -tags live -run Live -v ./internal/policyai/`.
 
+### Guests (Phase 4)
+
+- **Switching it on.** Guest links are off until an administrator ticks
+  *Guest links* in Settings → Policy Studio, and they are never available in
+  local mode, which has no accounts to tell a guest from anyone else (Q9).
+  *Invitations last* sets the default length.
+- **Inviting.** The Studio's *Sharing* tab (administrators): a label, a role
+  (*can read*, *can comment*, *can edit*), how long the link lasts (8 hours by
+  default, at most 7 days), how many times it can be used (20 by default), and
+  whether the AI assistant is included (off by default). The link is shown
+  once. Its token is 32 random bytes in base64url, stored only as a SHA-256
+  hash and compared in constant time; the use count is checked and
+  incremented in one statement, so the last use cannot be taken twice.
+- **Joining.** The person opens the link, gives the name the others will see,
+  and lands in the guest Studio for that one document. Their session cookie
+  (`grc_guest`) is HttpOnly and SameSite=Strict, Secure under the sign-in
+  cookie's rule (TLS, or X-Forwarded-Proto under `-trust-proxy`), and valid
+  until the link expires. `/shared/` sends `Referrer-Policy: no-referrer`, so a
+  token in a URL never leaks.
+- **What a guest can do.** Read the document live with everyone else, see
+  presence and pending suggestions; comment and reply (commenter, editor),
+  always shared; edit (editor, drafts only), in suggest mode by default; use
+  the AI assistant when the link includes it (an editor can place its
+  proposals as suggestions, the others only preview them). A guest can never
+  reach another document, the knowledge API, Settings or anything else outside
+  `/shared/` and their room; see an internal comment, lint, control mappings,
+  template guidance or provenance; decide a suggestion; change the status; or
+  approve. Their suggestions are attributed "Name (guest)" with author kind
+  *guest* (the Suggestions panel's *Customers* filter).
+- **No suggester role.** ygo has no per-connection hook that sees an update
+  before it is applied, so the server could not hold a guest to suggestions;
+  a role the server cannot enforce is not offered. An editor guest's suggest
+  mode is a UX default, like a signed-in editor's; the guarantee is the
+  approval block.
+- **Ending access.** *Remove* a guest or *Withdraw* a link in the Sharing tab
+  and their session ends at once: the room is closed, every peer reconnects,
+  and the guest's reconnection and every API call are refused. A session that
+  outlives its link's expiry is ended by a sweep every 5 seconds. Ended
+  sessions are purged 30 days after they expire (Q8).
+- **The guest page** is chromeless (no sidebar, palette or AI dock) with an
+  enforced CSP: `default-src 'self'`; scripts from this origin with the page's
+  nonce, or the theme layer's one constant inline script by hash; style
+  elements from this origin or the theme layer's blocks by hash; style
+  attributes allowed (the editor sets caret colours and decorations with
+  them, and a style attribute cannot run script); `connect-src` this origin
+  and its `ws:`/`wss:`; `frame-ancestors`, `base-uri` and `object-src` none (Q10).
+  The hashes are computed from the same strings the theme layer injects.
+- **Audit.** Link creation and withdrawal, joins, leaves, removals and
+  expiries go into `policy_studio_audit`. Share links and guest sessions are
+  in no backup or sync: they are live credentials.
+- **An external hostname.** `deploy/grc.nginx` has a commented server block
+  that proxies only `/shared/`, `/collab/` and `/assets/policy-studio/`, with
+  TLS and `limit_req`, and answers 404 to everything else. Add the hostname to
+  `-studio-allowed-origins`.
+
+### Workshop mode (Phase 4)
+
+*Workshop* in the Studio bar, for everyone including guests:
+
+- **Larger type** and **Focus on the current section** (the others dim) are
+  this viewer's own, remembered in the browser.
+- **Present** shares the section you are in through awareness. A guest
+  follows a presenter automatically; a staff member chooses *Follow*. Either
+  can *Stop following*. Following moves the view, never the follower's own
+  cursor.
+- **Customer-safe view** (staff), for sharing a screen: only shared comments,
+  no lint underlines, no AI notes or AI panel, no template guidance, no AI or
+  mapping controls, and only the Suggestions and Comments tabs.
+
 ### How it stores a document
 
 - The live document is Yjs binary in `policy_doc_state` (compacted) plus
@@ -868,6 +943,35 @@ regulation text rather than quoting it.
   - Screenshots of the selection toolbar, the AI panel with a private preview,
     and the dock's proposal cards at 1440×900 and 430×860 in all four themes:
     no overlap, no horizontal overflow.
+- **Verified (4):**
+  - Every route of the whole application, enumerated from the router Run
+    builds (over 150), answers a request with a guest cookie exactly as one
+    with no credentials, outside `/shared/` and `/collab/`.
+  - A guest's API reaches only its document; an internal comment appears in
+    no guest response and not on the guest page; a guest's own comment is
+    always shared; a guest cannot reply to an internal thread; and an internal
+    thread does not even change a guest's review version.
+  - The collab decision per role (editor read-write on drafts, viewer
+    read-only), for another document (refused) and cross-origin (refused),
+    in unit tests and through a real WebSocket.
+  - Links: validation, the token stored only as a hash, the atomic use count,
+    revocation, removal, expiry (refused), the sweep ending expired sessions
+    and the 30-day purge; local mode and the off switch refuse links.
+  - The guest page's CSP is enforced in every theme, every inline script and
+    style block on the page is covered by a hash, the bundle script carries
+    the nonce, and no application chrome is injected.
+  - Guest AI follows the link: refused without `allow_ai`, routed to the
+    engine with it, and a viewer cannot place.
+  - In headless Chrome: an administrator creates the link in the Sharing tab;
+    the guest joins, suggests with real keys (seen by the administrator as
+    "Carla (guest)") and sees the shared comment but never the internal one;
+    Present and Follow move the guest to §5, and after *Stop following* the
+    guest stays put; the customer-safe view drops the internal comment and
+    the internal panels; withdrawing the link ends the guest's access within
+    seconds.
+  - Screenshots of the join page, the guest Studio, the Sharing tab and the
+    Workshop menu at 1440×900 and 430×860 in all four themes: no overlap, no
+    horizontal overflow.
 - **Not yet verified:**
   - The live Claude call (Q5): no Anthropic key is configured on this machine.
     `internal/policyai/live_test.go` runs it when one is supplied.

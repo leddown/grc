@@ -53,6 +53,7 @@ func newStudio(t *testing.T) *studioFixture {
 			return Identity{}, false
 		},
 		OnProjected: func(int64) { f.projected.Add(1) },
+		GuestLinks:  func() bool { return true },
 	})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -317,7 +317,7 @@ func TestProposeThroughClaude(t *testing.T) {
 	if err := f.engine.RecordPlacements(f.doc.ID, res.ProposalID, []Placement{
 		{SUID: comment.SUID, Status: PlacementPlaced, SectionUID: f.section(0), AnchorStart: "AQID", AnchorEnd: "AQIE", Quote: "every quarter"},
 		{SUID: replace.SUID, Status: PlacementPlaced},
-	}, "alice"); err != nil {
+	}, "alice", false); err != nil {
 		t.Fatal(err)
 	}
 	threads, _ := f.studio.Threads(f.doc.ID, policystudio.AudienceInternal)
@@ -325,8 +325,11 @@ func TestProposeThroughClaude(t *testing.T) {
 		threads[0].Comments[0].AuthorKind != "ai" || threads[0].Comments[0].Author != "AI · claude-opus-5" {
 		t.Fatalf("rationale thread: %+v", threads)
 	}
-	if err := f.engine.RecordPlacements(f.doc.ID, res.ProposalID, []Placement{{SUID: rejected[0].SUID, Status: PlacementPlaced}}, "alice"); err == nil {
+	if err := f.engine.RecordPlacements(f.doc.ID, res.ProposalID, []Placement{{SUID: rejected[0].SUID, Status: PlacementPlaced}}, "alice", false); err == nil {
 		t.Fatal("an edit validation refused was recorded as placed")
+	}
+	if err := f.engine.RecordPlacements(f.doc.ID, res.ProposalID, []Placement{{SUID: replace.SUID, Status: PlacementPlaced}}, "Carol (guest)", true); !errors.Is(err, policydocs.ErrNotFound) {
+		t.Fatalf("a guest recorded placements on someone else's proposal: %v", err)
 	}
 	placed, err := f.engine.PlacedEdits(f.doc.ID)
 	if err != nil || len(placed) != 2 {

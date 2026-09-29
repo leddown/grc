@@ -114,6 +114,17 @@ func Run(options Options) error {
 		return runDBSync(options, sqliteDB)
 	}
 
+	router, studioService, err := buildRouter(sqliteDB, options)
+	if err != nil {
+		return err
+	}
+	return serve(options.ListenAddr, router, studioService)
+}
+
+// buildRouter wires every route of the application over an open database.
+// Run serves what it returns; the route-enumeration tests build the same
+// router, so what they walk is what is served.
+func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio.Service, error) {
 	configureAIUsageStore(sqliteDB)
 	configureStoredJSONStore(sqliteDB)
 
@@ -124,7 +135,7 @@ func Run(options Options) error {
 
 	userHandler, authService, authHandler, controlHandler, securityNFRHandler, nfrLinkHandler, reportsHandler, riskRegisterHandler, err := buildHandlers(sqliteDB)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if authHandler != nil {
 		authHandler.SetTrustProxyHeaders(options.TrustProxyHeaders)
@@ -179,7 +190,7 @@ func Run(options Options) error {
 	knowledgeService := knowledge.NewService(knowledge.NewStore(sqliteDB))
 	studioService, err := registerPolicyStudioRoutes(router, sqliteDB, policyService, authService, knowledgeService, aiRouter, settingsService, adminMiddleware, options)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	registerNFREnrichmentRoutes(
 		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
@@ -192,7 +203,7 @@ func Run(options Options) error {
 	registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
-	return serve(options.ListenAddr, router, studioService)
+	return router, studioService, nil
 }
 
 // serve runs the HTTP server until SIGINT or SIGTERM, then shuts down the

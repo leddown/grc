@@ -174,6 +174,24 @@ func openAPIJSON(c *gin.Context) {
 			"/policies/{id}/studio/ai/edits": gin.H{
 				"get": gin.H{"summary": "The AI edits placed in a document as suggestions, with rationale, checked citations and the decision"},
 			},
+			"/policies/{id}/share-links": gin.H{
+				"get": gin.H{"summary": "A Studio document's guest links and the guests they let in", "security": []gin.H{{"AdminBearer": []string{}}}},
+				"post": gin.H{
+					"summary":     "Invite someone from outside the installation into one document",
+					"description": "Body: {label, role: viewer|commenter|editor, expires_hours (default 8, at most 168), max_uses (default 20), allow_ai}. Refused in local mode and while Settings → Policy Studio → Guest links is off. The response's path (/shared/p/{token}) is shown once; only its hash is stored. DELETE .../share-links/{linkID} withdraws a link and disconnects its guests; DELETE /policies/{id}/guests/{sessionID} removes one guest.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/shared/p/{token}": gin.H{
+				"get":  gin.H{"summary": "The join page for a guest link (public; refused when guest links are off or in local mode)"},
+				"post": gin.H{"summary": "Join with a display name (form field name); sets the grc_guest session cookie and redirects to /shared/studio"},
+			},
+			"/shared/api/state": gin.H{
+				"get": gin.H{
+					"summary":     "The guest's document state, reduced to what a guest may see",
+					"description": "Requires the grc_guest cookie. The document comes from the session only. Also under /shared/api: comments (GET shared threads, POST as a shared thread), comments/{threadID}/replies, leave, and ai/status, ai/proposals, ai/proposals/{proposalID}/placements when the link allows AI.",
+				},
+			},
 			"/policies/{id}/studio/provenance": gin.H{
 				"get": gin.H{"summary": "Where each section came from, and who suggested, accepted or rejected each decided suggestion, and when"},
 			},
