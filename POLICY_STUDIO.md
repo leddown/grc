@@ -5,17 +5,20 @@ policy authoring on top of `internal/policydocs`, live co-editing with the
 customer, tracked suggestions, and an Ask AI agent that proposes changes as
 suggestions a person accepts or rejects.
 
-**Status: Phase 1 built.**
+**Status: Phases 1 and 2 built.**
 
 - **1a:** the collaborative editor, persistence, projection, section integrity,
   control chips, live lint, and migration from the section editor.
 - **1b:** client profiles and facts, the template registry with the ICT and
   Information Security Policy, rich content in every renderer, the hashed
   approval snapshot, and paper view.
+- **2:** the review layer: presence, suggest mode, the Suggestions panel with
+  keyboard review, the decision audit, comments anchored on the live text,
+  provenance, the blocking `pending_suggestions` rule, and suggesting in
+  review.
 
 The owner accepted the recommendations for Q1–Q10 on 2026-09-28
-([§11](#11-open-questions-for-the-owner)). Phase 2 (presence, suggestions,
-comments, provenance) is next. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
+([§11](#11-open-questions-for-the-owner)). Phase 3 (AI proposals) is next. [§13](#13-operator-guide) is the operator guide. The Phase 0 spike code lives on
 the throwaway branch `spike/policy-studio`.
 
 It follows the `*_FRAMEWORK.md` convention. [`POLICY_MODULE_FRAMEWORK.md`](POLICY_MODULE_FRAMEWORK.md)
@@ -259,8 +262,8 @@ policy_doc_snapshots  id, document_id, reason, format (yjs|legacy_json), state B
                       created_by, created_at                                                     (1a)
 policy_comment_threads id, document_id, section_uid, anchor_start TEXT, anchor_end TEXT,  -- base64 Yjs relative positions
                       quote, visibility (internal|shared), kind (comment|ai_rationale), suggestion_suid,
-                      status, created_by, created_at, resolved_by, resolved_at
-policy_comments       id, thread_id, author, author_kind, body, created_at
+                      status, created_by, created_at, updated_at, resolved_by, resolved_at         (2)
+policy_comments       id, thread_id, author, author_kind, body, created_at                      (2)
 policy_ai_proposals   id, document_id, requested_by, action, scope, instruction, provider, model, served_by,
                       agent, prompt_sha256, context_fingerprint, status, input_tokens, output_tokens, created_at
 policy_ai_edits       id, proposal_id, suid UNIQUE, op, block_id, quote, fragment_json, rationale,
@@ -268,7 +271,7 @@ policy_ai_edits       id, proposal_id, suid UNIQUE, op, block_id, quote, fragmen
 policy_share_links    id, document_id, token_sha256 UNIQUE, label, role, allow_ai, max_uses, uses,
                       created_by, created_at, expires_at, revoked_at
 policy_guest_sessions id, link_id, session_sha256 UNIQUE, display_name, created_at, last_seen_at, expires_at
-policy_studio_audit   id, document_id, actor, actor_kind, event, detail_json, created_at
+policy_studio_audit   id, document_id, actor, actor_kind, event, detail_json, created_at        (2)
 client_profile_facts  client_ref, key, value, value_type, source, updated_by, updated_at  (PK client_ref, key)
 ```
 
@@ -321,11 +324,13 @@ client_profile_facts  client_ref, key, value, value_type, source, updated_by, up
 | `GET /policies/:id/studio/state` (ETag) | ✓ | ✓ | via `/shared/api` | via `/shared/api` | 401 |
 | `POST /policies/from-template` | ✓ | 403 | — | — | 401 |
 | `/policies/:id/studio/sections` (add, delete, reorder, kind) | draft only | 403 | 403 | 403 | 401 |
-| `/policies/:id/studio/comments` | all threads | read internal+shared | shared only | shared only (commenter posts) | 401 |
+| `/policies/:id/studio/comments` | all threads; post, reply, resolve (draft or in review) | read internal+shared | shared only | shared only (commenter posts) | 401 |
+| `POST /policies/:id/studio/decisions` | draft or in review | 403 | 403 | 403 | 401 |
+| `GET /policies/:id/studio/provenance` | ✓ | ✓ | — | — | 401 |
 | `/policies/:id/studio/ai/proposals`, `…/ai/edits/:uid/decision` | ✓ (decision: admin only) | 403 | proposals only if `allow_ai`; never decisions | 403 | 401 |
 | `/policies/:id/studio/migrate` | ✓ | 403 | — | — | 401 |
 | `/policies/:id/share-links` | ✓ | 403 | — | — | 401 |
-| `GET /collab/policies/:id` (WebSocket) | rw if draft, else ro | ro | rw if draft and link doc = :id | ro | 401 |
+| `GET /collab/policies/:id` (WebSocket) | rw if draft or in review (suggest mode in review), else ro | ro | rw if draft and link doc = :id | ro | 401 |
 | `GET /shared/p/:token` → `/shared/…` | — | — | its one document | its one document | link token only |
 | `GET /assets/policy-studio/<hash>.{js,css}` | public | public | public | public | public (static, no data) |
 
@@ -513,9 +518,10 @@ What Phase 1a puts in the hands of a user and an operator.
   classification, cadence) stays editable, in the Studio's *Document control*
   panel and through the existing API.
 - **Who can do what.** Anyone with the `/policies` grant can open a Studio
-  document and read it live. Only admins write, and only while the document is
-  a draft. Submitting for review, approving or retiring turns every open
-  editor read-only at the socket, not just in the page.
+  document and read it live, with its comments and provenance. Only admins
+  write, comment and decide suggestions, and only while the document is a
+  draft or in review. Approving or retiring turns every open editor read-only
+  at the socket, not just in the page.
 - **Sections are commands, not keystrokes.** Add, remove, reorder and retype
   sections from the Outline. Typing and pasting cannot add, remove, merge or
   split a section; the editor refuses such a transaction and says so. A
@@ -529,6 +535,53 @@ What Phase 1a puts in the hands of a user and an operator.
   and projected a second or two after typing stops, so it trails the editor
   by that much. A section whose content the server refused (content outside
   the schema) keeps its last good text and blocks approval until it is fixed.
+
+### Reviewing (Phase 2)
+
+- **Presence.** The bar lists who has the document open; carets carry names
+  and colours.
+- **Suggest mode.** *Editing* / *Suggesting* in the bar. In suggest mode an
+  insertion is underlined, a deletion struck through, and a new or removed
+  block (a list item, a table row) marked in the margin, each attributed to
+  its author. While a document is **in review**, every admin's editor is in
+  suggest mode and cannot leave it.
+- **Be clear about what that guarantees.** The server cannot tell a
+  suggestion from a direct edit inside a Yjs update, so suggest mode for
+  signed-in editors is a UX control. What the server guarantees is the
+  approval block: the `pending_suggestions` rule refuses approval while any
+  suggestion is open, and approval snapshots a projection taken after the
+  room is flushed, so what is approved is exactly the decided text. Because
+  review is where suggestions are decided, a document in review is projected
+  as a draft is; an approved or retired one never is.
+- **The Suggestions panel** groups suggestions by section and filters them by
+  author (consultants, customers, AI). Admins accept or reject one, a section,
+  or all. From the keyboard, whenever the caret is not in the text or a form
+  field: **J** and **K** move, **A** accepts, **R** rejects. The bar counts open
+  suggestions and comments, and new suggestions from others are announced to
+  screen readers.
+- **Every decision is recorded** in `policy_studio_audit`, before the editor
+  changes the text. The actor comes from the session. The server checks that
+  every id is still pending in its own copy of the document (a `409` if
+  someone else decided it first) and records the suggestion's text, author and
+  blocks from that copy, not from the request. A suggestion that would add or
+  remove a whole section cannot be accepted (sections change through the
+  outline); it can be rejected.
+- **Comments.** Select text and choose *Comment*. A thread is anchored on Yjs
+  relative positions stored in SQL, never as marks in the shared text, so it
+  follows the text as others edit and never travels to a peer. It is
+  *internal* (the team only) or *shared* (a client guest will see it, from
+  Phase 4). Internal threads are filtered out in the query itself for the
+  shared audience. Threads take replies and can be resolved and reopened; a
+  thread whose text was deleted stays listed with its quote.
+- **Provenance** shows, per section, where it came from (the template and its
+  version, written by hand, migrated) and every decided suggestion: who
+  suggested it, whether it was accepted or rejected, by whom and when. *Show
+  authors* colours open suggestions by author and marks accepted text in the
+  margin, with the same detail on hover.
+- **Enter in automated tests.** chromedp's `KeyEvent` for Enter also sends a
+  separate character event, which a real keyboard does not once the editor
+  has handled the keydown; in suggest mode that splits a list item twice. The
+  browser tests send Enter as a DOM keydown for that reason.
 
 ### How it stores a document
 
@@ -660,7 +713,7 @@ regulation text rather than quoting it.
   It uses the template defaults, not the brand stored in Templates → Brand;
   that is a follow-up.
 
-### Verified for Phase 1, and not
+### Verified, and not
 
 - **Verified (1a):**
   - Go reads what the editor writes, and the editor reads what Go seeds, on 9
@@ -691,6 +744,25 @@ regulation text rather than quoting it.
     chips, filling one resolves every chip for it, and paper view.
   - Screenshots of the editor, the Facts panel and paper view at 1440×900 and
     430×860 in all four themes: no overlap, no horizontal overflow.
+- **Verified (2):**
+  - Two administrators suggest at the same moment (one with real key events):
+    distinct ids, each attributed to its author, both visible to both.
+  - Approval is refused while a suggestion is pending, with the
+    `pending_suggestions` finding, and succeeds once each is decided, with
+    the accepted text in the approved rows.
+  - Keyboard review (J, A, J, R) in the browser; the decisions propagate to
+    the other editor, and provenance names who accepted and who rejected.
+  - Whole-block suggestions: a new list item, a new table row and a deleted
+    list item, each decided from the panel, with the projection following
+    only the decisions.
+  - A comment on one editor highlights the text on the other.
+  - An internal comment appears in no other `/policies` read route (all of
+    them, enumerated from the router) and not in the knowledge export; the
+    shared audience never receives one.
+  - Decision records come from the server's copy; a stale id is refused.
+  - Screenshots of the Suggestions, Comments and Provenance panels at
+    1440×900 and 430×860 in all four themes: no overlap, no horizontal
+    overflow.
 - **Not yet verified:**
   - PostgreSQL (the adapter tests run when `GRC_TEST_POSTGRES_URL` is set).
   - iOS Safari.

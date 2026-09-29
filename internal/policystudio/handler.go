@@ -30,6 +30,8 @@ func (h *Handler) RegisterReadRoutes(r gin.IRouter) {
 	r.GET("/policies/:id/studio", h.Page)
 	r.GET("/policies/:id/studio/state", h.State)
 	r.GET("/policies/templates", h.ListTemplates)
+	r.GET("/policies/:id/studio/comments", h.ListThreads)
+	r.GET("/policies/:id/studio/provenance", h.Provenance)
 }
 
 // RegisterAdminRoutes attaches the structure commands and migration, behind
@@ -42,6 +44,10 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.PATCH("/policies/:id/studio/sections/:uid", h.SetKind)
 	r.DELETE("/policies/:id/studio/sections/:uid", h.DeleteSection)
 	r.POST("/policies/:id/studio/sections/:uid/restore", h.Restore)
+	r.POST("/policies/:id/studio/decisions", h.Decide)
+	r.POST("/policies/:id/studio/comments", h.CreateThread)
+	r.POST("/policies/:id/studio/comments/:threadID/replies", h.Reply)
+	r.PATCH("/policies/:id/studio/comments/:threadID", h.SetThreadStatus)
 }
 
 // RegisterPublicRoutes attaches the two routes that are not behind the page
@@ -64,7 +70,10 @@ func documentID(c *gin.Context) (int64, bool) {
 
 func (h *Handler) fail(c *gin.Context, err error) {
 	var approval policydocs.ApprovalError
+	var conflict ErrConflict
 	switch {
+	case errors.As(err, &conflict):
+		c.JSON(http.StatusConflict, gin.H{"error": conflict.Msg})
 	case errors.Is(err, policydocs.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "document or section not found"})
 	case policydocs.IsValidation(err):
@@ -111,6 +120,142 @@ func (h *Handler) State(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, st)
+}
+
+// ListThreads returns the document's comment threads. Everyone who reaches
+// this route is internal staff; the guest API (Phase 4) asks for
+// AudienceShared.
+func (h *Handler) ListThreads(c *gin.Context) {
+	id, ok := documentID(c)
+	if !ok {
+		return
+	}
+	if _, err := h.service.policies.GetDocument(id); err != nil {
+		h.fail(c, err)
+		return
+	}
+	threads, err := h.service.Threads(id, AudienceInternal)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, threads)
+}
+
+// Provenance returns who wrote and who decided what, per section.
+func (h *Handler) Provenance(c *gin.Context) {
+	id, ok := documentID(c)
+	if !ok {
+		return
+	}
+	if _, err := h.service.policies.GetDocument(id); err != nil {
+		h.fail(c, err)
+		return
+	}
+	out, err := h.service.Provenance(id)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// Decide records who accepted or rejected which suggestions.
+func (h *Handler) Decide(c *gin.Context) {
+	id, ok := documentID(c)
+	if !ok {
+		return
+	}
+	var req DecisionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	out, err := h.service.Decide(id, req, h.actor(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"decided": out})
+}
+
+func threadID(c *gin.Context) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param("threadID"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid thread id"})
+		return 0, false
+	}
+	return id, true
+}
+
+// CreateThread starts a comment thread.
+func (h *Handler) CreateThread(c *gin.Context) {
+	id, ok := documentID(c)
+	if !ok {
+		return
+	}
+	var in NewThread
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	t, err := h.service.CreateThread(id, in, h.actor(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, t)
+}
+
+// Reply adds a comment to a thread.
+func (h *Handler) Reply(c *gin.Context) {
+	id, ok := documentID(c)
+	if !ok {
+		return
+	}
+	tid, ok := threadID(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		Body string `json:"body"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	t, err := h.service.Reply(id, tid, in.Body, h.actor(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, t)
+}
+
+// SetThreadStatus resolves or reopens a thread.
+func (h *Handler) SetThreadStatus(c *gin.Context) {
+	id, ok := documentID(c)
+	if !ok {
+		return
+	}
+	tid, ok := threadID(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	t, err := h.service.SetThreadStatus(id, tid, in.Status, h.actor(c))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, t)
 }
 
 // ListTemplates describes the templates a document can start from.

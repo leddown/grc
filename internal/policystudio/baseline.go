@@ -64,22 +64,3 @@ func Resolve(n *Node, v View) *Node {
 	}
 	return out
 }
-
-// PendingSuggestions counts the distinct pending suggestions in n.
-func PendingSuggestions(n *Node) int {
-	ids := map[string]bool{}
-	var walk func(*Node)
-	walk = func(x *Node) {
-		for _, m := range x.Marks {
-			if suggestionMarkTypes[m.Type] {
-				id, _ := m.Attrs["id"].(string)
-				ids[id] = true
-			}
-		}
-		for _, c := range x.Content {
-			walk(c)
-		}
-	}
-	walk(n)
-	return len(ids)
-}

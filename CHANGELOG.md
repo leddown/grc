@@ -3,6 +3,131 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-29 (Policy Studio, Phase 2: the review layer)
+
+The Studio can now be used to review a policy. Edits can be made as tracked
+suggestions that an administrator accepts or rejects, from the panel or the
+keyboard. Text can be commented on, internally or for the client. Provenance
+shows where each section came from and who accepted which change. A document
+cannot be approved while any suggestion is still open. POLICY_STUDIO.md
+("Reviewing") is the operator guide.
+
+- `web/policy-studio`:
+  - **Suggest mode** uses `@handlewithcare/prosemirror-suggest-changes` 0.1.8
+    (MIT; pinned since Phase 0, bundled from now on):
+    - Ids are UUIDs, so two clients suggesting at once cannot collide.
+    - The Studio attributes only the suggestions this client created, never
+      a mark that arrived from a peer.
+    - In review, every admin's editor is in suggest mode and cannot leave it.
+  - **Suggestions panel:**
+    - Grouped by section and filtered by author (consultants, customers, AI).
+    - Accept or reject one suggestion, a section or all.
+    - Keyboard review: J/K move, A accepts, R rejects, whenever the caret is
+      not in the text or a form field.
+    - Counts in the bar, and new suggestions from others are announced to
+      screen readers.
+  - **Presence:** the bar lists who has the document open.
+  - **Comments:** select text, then *Comment*. Threads take replies and can be
+    resolved or reopened. Clicking highlighted text opens its thread.
+  - **Provenance** per section, and *Show authors*, which colours suggestions
+    by author and marks accepted text.
+  - **Readability:** suggestions read in greyscale (insertions underlined,
+    deletions struck through, whole blocks marked in the margin). AI
+    suggestions carry a badge.
+  - **Side panels are tabs** (Suggestions, Comments, Readiness, Facts,
+    Provenance, Document), and the chosen tab is remembered per browser.
+  - The bundle is 611 KB, 39 packages, all MIT.
+- `internal/policystudio`:
+  - **`POST /policies/:id/studio/decisions`** (admin) records who accepted or
+    rejected which suggestion, before the editor changes the text:
+    - The actor is the session.
+    - Every id must still be pending in the server's own copy of the
+      document. Otherwise it answers `409`.
+    - The suggestion's text, author, section and blocks are recorded from
+      that copy, not from the request.
+  - **Comment threads** (`GET` for readers; `POST`, replies and `PATCH` for
+    admins, on drafts and documents in review):
+    - Threads are anchored on Yjs relative positions stored in SQL, so a
+      comment is never a mark in the shared text.
+    - The audience filter is in the query, so an internal thread cannot reach
+      the shared audience that guests will use in Phase 4.
+  - **`GET /policies/:id/studio/provenance`**: each section's origin, and
+    every decided suggestion, who decided it and when.
+  - **Admins stay read-write while a document is in review.** The projection
+    follows the text in review as it does in drafts, so approval snapshots the
+    text as decided. Approved and retired documents are never projected.
+  - `State` gains `suggest_only`, `can_decide`, `can_comment` and
+    `review_version`.
+- `internal/policydocs`: a blocking lint rule, `pending_suggestions`, counts
+  open suggestions in each section's `content_json`. It is how approval
+  refuses a document with anything undecided. `Finding` gains `rule`.
+- New tables on both dialects: `policy_comment_threads`, `policy_comments` and
+  `policy_studio_audit`. `internal/dbsync` backs them up (`SnapshotVersion` 12,
+  and a v11 backup restores with them empty) but does not sync them. The
+  comment anchors point into Yjs state that a sync does not carry.
+- `internal/app`:
+  - In local mode the single user is `local` in suggestions, comments and the
+    audit, instead of no one. The client-fact audit has the same fix.
+  - API docs and help updated.
+- Decisions and trade-offs:
+  - **Suggest mode is a UX control; the approval block is the guarantee.**
+    The server cannot tell a suggestion from a direct edit inside a Yjs
+    update. What it enforces:
+    - Nothing is approved while a suggestion is open.
+    - What is approved is the projection taken after the room is flushed.
+    The docs say so plainly.
+  - **Decisions are recorded before the text changes**, and checked against
+    the server's copy. The editor first checks on a scratch copy that the
+    change can be made. A suggestion that adds or removes a whole section
+    can only be rejected; sections change through the outline.
+  - **Readers can read comments but not post them**, as in the §6 table the
+    owner accepted. Letting signed-in readers comment would be a new write for
+    non-admins, so it waits for the owner's call.
+- Fixes found on the way:
+  - The editor's header actions only appeared after the next state change.
+    They now render when the editor mounts, and a test checks it.
+  - The sticky outline and panels assumed a 58 px bar. The bar now wraps, so
+    they follow its measured height. On a phone the bar scrolls away.
+  - Comments and provenance waited for the first poll. They now load when
+    the page opens.
+- Verified:
+  - `go fmt`, `go vet` and `go test ./...` without `-short` (gosec and
+    govulncheck included) are green. `npm audit --omit=dev` is clean.
+  - Headless Chrome, three consecutive passes of all four browser tests on
+    the final build. Before the last three fixes (loading on open, bar
+    height, local actor), they also passed eight runs out of eight with two
+    test processes running side by side. What they cover:
+    - Two administrators suggest at the same moment: distinct ids, each
+      attributed to its author, both visible to both.
+    - Approval is refused with only the `pending_suggestions` finding.
+    - Keyboard review (J, A, R) propagates to the other editor, and
+      provenance names who accepted and who rejected.
+    - Approval then succeeds with the accepted text in the rows.
+    - A comment on one editor highlights the text on the other.
+    - Whole-block suggestions (a new list item, a new table row, a deleted
+      list item) are decided from the panel, and the projection follows only
+      the decisions.
+  - An internal comment appears in no other `/policies` read route (all of
+    them, enumerated from the router) and not in the knowledge export.
+  - Service tests: decisions, stale ids, provenance, thread validation,
+    audiences, replies reopening a thread, resolve, and cross-document thread
+    access refused.
+  - The collab decision table: admins read-write in review, readers
+    read-only, approved documents read-only.
+  - Screenshots of the three new panels at 1440×900 and 430×860 in all four
+    themes: no overlap, no horizontal overflow.
+- Not verified:
+  - PostgreSQL (the tests run when `GRC_TEST_POSTGRES_URL` names a throwaway
+    database).
+  - iOS Safari.
+  - A real keyboard's Enter in suggest mode. chromedp's Enter also sends a
+    separate character event, which splits a list item twice in suggest mode.
+    A real keyboard does not send that event once the editor has handled the
+    keydown, so the tests send Enter as a DOM keydown. A manual check in a
+    desktop browser is still worth doing.
+  - Customer (guest) and AI authors. The panel filters and badges for them
+    exist, but nothing creates such suggestions until Phases 3 and 4.
+
 ## 2026-09-28 (Policy Studio, Phase 1b: templates, client facts and rich rendering)
 
 A Studio document can now start from a template, is written for a client

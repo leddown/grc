@@ -864,6 +864,61 @@ func OpenSQLite(path string) (*Conn, error) {
 	CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
 		ON policy_doc_snapshots (document_id, id);
 
+	-- Policy Studio review layer. Comment threads anchor on Yjs relative
+	-- positions (base64) into the live document rather than on marks inside
+	-- it, so a comment never travels in the shared text and internal threads
+	-- can be withheld from guests server-side. The audit table records who
+	-- decided which suggestion and every comment action; the actor always
+	-- comes from the session, never from a request body.
+	CREATE TABLE IF NOT EXISTS policy_comment_threads (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		section_uid TEXT NOT NULL DEFAULT '',
+		anchor_start TEXT NOT NULL DEFAULT '',
+		anchor_end TEXT NOT NULL DEFAULT '',
+		quote TEXT NOT NULL DEFAULT '',
+		visibility TEXT NOT NULL DEFAULT 'internal',
+		kind TEXT NOT NULL DEFAULT 'comment',
+		suggestion_suid TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'open',
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		resolved_by TEXT NOT NULL DEFAULT '',
+		resolved_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_comment_threads_document
+		ON policy_comment_threads (document_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		thread_id INTEGER NOT NULL,
+		author TEXT NOT NULL DEFAULT '',
+		author_kind TEXT NOT NULL DEFAULT 'human',
+		body TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(thread_id) REFERENCES policy_comment_threads(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_comments_thread
+		ON policy_comments (thread_id, id);
+
+	CREATE TABLE IF NOT EXISTS policy_studio_audit (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		document_id INTEGER NOT NULL,
+		actor TEXT NOT NULL DEFAULT '',
+		actor_kind TEXT NOT NULL DEFAULT 'human',
+		event TEXT NOT NULL DEFAULT '',
+		detail_json TEXT NOT NULL DEFAULT '{}',
+		created_at TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_policy_studio_audit_document
+		ON policy_studio_audit (document_id, id);
+
 	-- Client profiles (internal/clientprofile): the clients policies are
 	-- written for, and the facts about each that a policy may state but a
 	-- model must never invent. Kept here rather than in the CRM on wintermute

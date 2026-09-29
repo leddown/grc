@@ -139,6 +139,24 @@ func openAPIJSON(c *gin.Context) {
 					"security":    []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
+			"/policies/{id}/studio/decisions": gin.H{
+				"post": gin.H{
+					"summary":     "Record who accepted or rejected suggestions",
+					"description": "Body: {decision: accept|reject, suggestion_ids}. Draft or in-review documents. Every id must still be pending in the server's copy (409 otherwise); the actor is the session, and what is recorded about each suggestion is read from the server's copy. The editor applies the change to the text itself.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/policies/{id}/studio/comments": gin.H{
+				"get": gin.H{"summary": "List a Studio document's comment threads, internal and shared"},
+				"post": gin.H{
+					"summary":     "Start a comment thread on a span of text",
+					"description": "Body: {section_uid, anchor_start, anchor_end, quote, visibility: internal|shared, body}. Anchors are base64 Yjs relative positions. Replies: POST .../comments/{threadID}/replies {body}; resolve or reopen: PATCH .../comments/{threadID} {status: resolved|open}.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/policies/{id}/studio/provenance": gin.H{
+				"get": gin.H{"summary": "Where each section came from, and who suggested, accepted or rejected each decided suggestion, and when"},
+			},
 			"/policies/templates": gin.H{
 				"get": gin.H{"summary": "List the Policy Studio document templates, the default first, with the facts each declares"},
 			},
@@ -164,7 +182,7 @@ func openAPIJSON(c *gin.Context) {
 			"/collab/policies/{id}": gin.H{
 				"get": gin.H{
 					"summary":     "Policy Studio collaboration socket (WebSocket, y-websocket protocol)",
-					"description": "Authorized per upgrade: the session cookie, a /policies page grant and an Origin on the allowlist. Admins get read-write while the document is a draft; everyone else, and every non-draft, is read-only.",
+					"description": "Authorized per upgrade: the session cookie, a /policies page grant and an Origin on the allowlist. Admins get read-write while the document is a draft or in review (in review the editor makes every edit a suggestion); everyone else, and every approved or retired document, is read-only.",
 				},
 			},
 			"/reports/data/unlinked-controls": gin.H{

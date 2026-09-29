@@ -219,8 +219,10 @@ func (s *Service) currentState(documentID int64) ([]byte, error) {
 }
 
 // Project computes the section rows from the server's copy of the document
-// and stores them in one transaction. Only drafts are projected: once a
-// document is submitted, its rows are what review and approval read.
+// and stores them in one transaction. Drafts and documents in review are
+// projected -- review is where suggestions are decided, and approval must
+// snapshot the text as decided -- but nothing after: an approved or retired
+// document's rows never change.
 func (s *Service) Project(documentID int64) error {
 	lock := s.docLock(documentID)
 	lock.Lock()
@@ -230,7 +232,7 @@ func (s *Service) Project(documentID int64) error {
 	if err != nil {
 		return err
 	}
-	if doc.EditorFormat != policydocs.EditorStudio || doc.Status != policydocs.StatusDraft {
+	if doc.EditorFormat != policydocs.EditorStudio || !projected(doc.Status) {
 		return nil
 	}
 	data, err := s.currentState(documentID)
@@ -310,6 +312,11 @@ func (s *Service) Project(documentID int64) error {
 	return nil
 }
 
+// projected reports whether a document in this status follows its live text.
+func projected(status string) bool {
+	return status == policydocs.StatusDraft || status == policydocs.StatusInReview
+}
+
 // factValues is a client's recorded facts, key -> value.
 func (s *Service) factValues(clientID int64) (map[string]string, error) {
 	if s.clients == nil || clientID <= 0 {
@@ -328,7 +335,7 @@ func (s *Service) reprojectClient(clientID int64) {
 		return
 	}
 	for _, d := range docs {
-		if d.ClientProfileID == clientID && d.EditorFormat == policydocs.EditorStudio && d.Status == policydocs.StatusDraft {
+		if d.ClientProfileID == clientID && d.EditorFormat == policydocs.EditorStudio && projected(d.Status) {
 			if err := s.Project(d.ID); err != nil {
 				s.log.Error("policy studio: reproject after a fact change", "document", d.ID, "error", err)
 			}

@@ -35,7 +35,7 @@
 
 .ps-body { flex: 1; display: grid; grid-template-columns: minmax(180px, 230px) minmax(0, 1fr) minmax(230px, 300px); gap: 0; }
 .ps-outline, .ps-side { padding: 16px; background: var(--surface); border-right: 1px solid var(--border); overflow: auto;
-  max-height: calc(100vh - var(--ps-top) - 58px); position: sticky; top: calc(var(--ps-top) + 58px); align-self: start; }
+  max-height: calc(100vh - var(--ps-top) - var(--ps-bar-h, 58px)); position: sticky; top: calc(var(--ps-top) + var(--ps-bar-h, 58px)); align-self: start; }
 .ps-side { border-right: 0; border-left: 1px solid var(--border); }
 .ps-panel { margin-bottom: 20px; }
 .ps-panel-title { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -89,10 +89,25 @@
 .ps-prosemirror td, .ps-prosemirror th { position: relative; }
 .ps-section-has-errors .ps-section-heading { text-decoration: underline wavy var(--error); text-underline-offset: 4px; }
 
-/* Suggestions (Phase 2 turns them on): read in greyscale too -- insertions
-   underlined, deletions struck through. */
-.ps-prosemirror ins { text-decoration: underline; text-decoration-thickness: 2px; background: var(--surface-2); color: var(--gain); }
-.ps-prosemirror del { text-decoration: line-through; background: var(--surface-2); color: var(--error); }
+/* Suggestions read in greyscale too: insertions underlined, deletions struck
+   through, and an AI suggestion carries a badge rather than a colour alone. */
+.ps-prosemirror ins, .ps-prosemirror .ps-sugg-insertion { text-decoration: underline; text-decoration-thickness: 2px; text-decoration-color: var(--gain);
+  background: color-mix(in srgb, var(--gain) 16%, transparent); color: var(--text); }
+.ps-prosemirror del, .ps-prosemirror .ps-sugg-deletion { text-decoration: line-through; text-decoration-color: var(--error);
+  background: color-mix(in srgb, var(--error) 14%, transparent); color: var(--muted); }
+.ps-prosemirror .ps-sugg-modification { outline: 1px dashed var(--accent); outline-offset: 1px; }
+.ps-prosemirror .ps-sugg-block { text-decoration: none; padding-left: 8px; border-left: 3px solid var(--gain); }
+.ps-prosemirror .ps-sugg-block.ps-sugg-deletion { border-left-color: var(--error); }
+.ps-prosemirror .ps-sugg-block.ps-sugg-deletion * { text-decoration: line-through; }
+.ps-prosemirror .ps-sugg-current { box-shadow: 0 0 0 2px var(--accent); border-radius: 2px; }
+.ps-prosemirror .ps-sugg[data-author-kind="ai"]::after { content: "AI"; margin-left: 2px; padding: 0 3px; border-radius: 3px; vertical-align: super;
+  font: 600 9px "Liberation Sans", Arial, sans-serif; background: var(--accent); color: var(--on-accent); }
+/* Show authors: each suggestion underlined in its author's colour, and text
+   whose suggestion was accepted marked in the margin. */
+.ps-prosemirror .ps-sugg[style] { box-shadow: inset 0 -3px 0 var(--ps-author); }
+.ps-prosemirror .ps-prov-block { box-shadow: -6px 0 0 -2px var(--gain); }
+.ps-prosemirror .ps-comment-mark { background: color-mix(in srgb, var(--accent) 18%, transparent); border-bottom: 2px solid var(--accent); cursor: pointer; }
+.ps-prosemirror .ps-comment-current { background: color-mix(in srgb, var(--accent) 34%, transparent); }
 
 .ps-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; font-family: "Liberation Sans", Arial, sans-serif; font-size: 12px; user-select: none; }
 .ps-chips-label { color: var(--muted); }
@@ -135,6 +150,46 @@
 .ps-form label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
 .ps-form input, .ps-form select { font: inherit; font-size: 13px; }
 
+/* The review layer: presence, counts, the panel tabs and the review panels. */
+.ps-bar-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ps-counts { font-size: 12px; color: var(--accent); white-space: nowrap; }
+.ps-presence { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; font-size: 12px; }
+.ps-presence-person { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.ps-presence-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.ps-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ps-app button[aria-pressed="true"] { border-color: var(--accent); }
+.ps-app .ps-suggest-toggle[aria-pressed="true"] { border-color: var(--gain); color: var(--gain); }
+.ps-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.ps-app .ps-tab { padding: 3px 8px; font-size: 12px; border-radius: 6px; background: transparent; color: var(--muted); }
+.ps-app .ps-tab[aria-selected="true"] { background: var(--surface-2); color: var(--text); border-color: var(--accent); }
+.ps-inline-label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.ps-review-all, .ps-sugg-actions, .ps-sugg-group-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.ps-review-all { margin: 0 0 10px; }
+.ps-sugg-group-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px; }
+.ps-app .ps-sugg-group-tools button, .ps-app .ps-sugg-actions button { padding: 2px 8px; font-size: 12px; }
+.ps-sugg-list, .ps-threads, .ps-comments, .ps-prov-list { list-style: none; margin: 0; padding: 0; }
+.ps-sugg-item, .ps-thread { margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: 13px; }
+.ps-sugg-item { cursor: pointer; }
+.ps-sugg-item-current, .ps-thread-current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ps-thread-resolved { opacity: .75; }
+.ps-sugg-meta { margin: 0 0 4px; }
+.ps-kind-badge { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 11px; background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+.ps-kind-badge[data-kind="ai"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.ps-kind-badge[data-kind="guest"], .ps-kind-badge[data-visibility="shared"] { color: var(--accent); border-color: var(--accent); }
+.ps-sugg-excerpt { margin: 0 0 6px; overflow-wrap: anywhere; }
+.ps-sugg-excerpt ins, .ps-prov-list ins { text-decoration: underline; text-decoration-color: var(--gain); background: color-mix(in srgb, var(--gain) 16%, transparent); color: var(--text); }
+.ps-sugg-excerpt del, .ps-prov-list del { text-decoration: line-through; text-decoration-color: var(--error); background: color-mix(in srgb, var(--error) 14%, transparent); color: var(--muted); }
+.ps-composer { display: grid; gap: 8px; margin: 0 0 12px; }
+.ps-composer textarea, .ps-thread textarea { width: 100%; min-height: 4em; font: inherit; font-size: 13px; }
+.ps-thread textarea { margin-top: 6px; min-height: 2.5em; }
+.ps-quote { display: block; margin: 0 0 6px; padding: 4px 8px; border-left: 3px solid var(--accent); color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+.ps-app .ps-quote-link { width: 100%; text-align: left; border: 0; border-left: 3px solid var(--accent); border-radius: 0; background: transparent; color: var(--muted); font-style: italic; }
+.ps-comments li { padding: 4px 0; border-top: 1px solid var(--border); }
+.ps-comment-body { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ps-prov-section { margin: 0 0 12px; padding: 0 0 10px; border-bottom: 1px solid var(--border); }
+.ps-prov-section p { margin: 2px 0; }
+.ps-prov-list li { margin: 4px 0; overflow-wrap: anywhere; }
+
 .ps-toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: min(560px, calc(100vw - 32px)); padding: 10px 14px;
   border-radius: 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20; }
 .ps-toast-visible { opacity: 1; }
@@ -154,6 +209,9 @@
   .ps-outline { order: 2; }
   .ps-side { order: 3; }
 }
+/* On a phone the bar's actions wrap to several rows; it scrolls away rather
+   than holding a quarter of the screen. */
+@media (max-width: 700px) { .ps-bar { position: static; } }
 @media (prefers-reduced-motion: reduce) { .ps-toast { transition: none; } }
 
 /* Paper view: the canvas as the deliverable looks. This is the one deliberate

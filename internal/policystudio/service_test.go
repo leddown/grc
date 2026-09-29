@@ -454,6 +454,10 @@ func TestCollabDecision(t *testing.T) {
 	if _, err := f.policies.SubmitForReview(review.ID); err != nil {
 		t.Fatal(err)
 	}
+	approved := f.studioDoc("w")
+	if _, err := f.conn.Exec(`UPDATE policy_documents SET status = 'approved' WHERE id = ?`, approved.ID); err != nil {
+		t.Fatal(err)
+	}
 	legacy := f.legacyDoc("z")
 	const own = "https://grc.example.com"
 	cases := []struct {
@@ -465,7 +469,11 @@ func TestCollabDecision(t *testing.T) {
 	}{
 		{"admin, draft", req("admin", own), draft.ID, true, false},
 		{"admin, allowlisted external origin", req("admin", "https://policies.example.com"), draft.ID, true, false},
-		{"admin, in review", req("admin", own), review.ID, true, true},
+		// In review admins keep writing, as suggestions (the editor's suggest
+		// mode); the approval block is what the server guarantees.
+		{"admin, in review", req("admin", own), review.ID, true, false},
+		{"reader, in review", req("reader", own), review.ID, true, true},
+		{"admin, approved", req("admin", own), approved.ID, true, true},
 		{"reader, draft", req("reader", own), draft.ID, true, true},
 		{"no page access", req("noaccess", own), draft.ID, false, false},
 		{"not signed in", req("", own), draft.ID, false, false},

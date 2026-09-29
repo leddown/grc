@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"grc/internal/policydocs"
 )
 
 func counter() func() string {
@@ -103,7 +105,7 @@ func TestBaselineAndProposedViews(t *testing.T) {
 			}
 			base := Resolve(root, Baseline).TextContent()
 			prop := Resolve(root, Proposed).TextContent()
-			if PendingSuggestions(root) == 0 {
+			if policydocs.PendingSuggestions(string(f.Expected)) == 0 {
 				t.Fatalf("%s: no pending suggestions counted", f.Name)
 			}
 			switch f.Name {

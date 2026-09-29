@@ -1,21 +1,26 @@
 {
   "entry": {
-    "js": "policy-studio.cc5ff358a4fc.js",
-    "css": "policy-studio.c0855d91910a.css"
+    "js": "policy-studio.10d594bea587.js",
+    "css": "policy-studio.d68058b9509e.css"
   },
   "files": [
     {
-      "file": "policy-studio.cc5ff358a4fc.js",
-      "sha256": "cc5ff358a4fc64adcb1487f4ac1f6eb38b2edd2395f520252e28a96cb37a7002",
-      "bytes": 574348
+      "file": "policy-studio.10d594bea587.js",
+      "sha256": "10d594bea587128fddaaa0cf13619514687968a031a7bf271cf5b1640b765b08",
+      "bytes": 611198
     },
     {
-      "file": "policy-studio.c0855d91910a.css",
-      "sha256": "c0855d91910a3a5938211865b4ba75b923effe2c0dd4a71de33dedd280a8f25e",
-      "bytes": 13009
+      "file": "policy-studio.d68058b9509e.css",
+      "sha256": "d68058b9509e62652aca4f1552ff203f5678d3d76054d5c6a259e50fc243a671",
+      "bytes": 17954
     }
   ],
   "packages": [
+    {
+      "name": "@handlewithcare/prosemirror-suggest-changes",
+      "version": "0.1.8",
+      "license": "MIT"
+    },
     {
       "name": "@tiptap/core",
       "version": "3.31.3",

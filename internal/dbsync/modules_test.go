@@ -71,6 +71,11 @@ func seedModules(t *testing.T, conn *db.Conn) {
 	mustExec(t, conn, `INSERT INTO policy_doc_updates (id, document_id, upd) VALUES (31, 30, ?)`, yjsBytes)
 	mustExec(t, conn, `INSERT INTO policy_doc_snapshots (id, document_id, reason, format, state)
 		VALUES (32, 30, 'pre_migration', 'legacy_json', ?)`, yjsBytes)
+	mustExec(t, conn, `INSERT INTO policy_comment_threads (id, document_id, section_uid, anchor_start, anchor_end, quote)
+		VALUES (33, 30, 'sec-1', 'AQID', 'AQIE', 'Staff must review access')`)
+	mustExec(t, conn, `INSERT INTO policy_comments (id, thread_id, author, body) VALUES (34, 33, 'alice', 'Quarterly?')`)
+	mustExec(t, conn, `INSERT INTO policy_studio_audit (id, document_id, actor, event, detail_json)
+		VALUES (35, 30, 'bob', 'suggestion_accepted', '{"id":"s-1"}')`)
 }
 
 // yjsBytes stands in for a Yjs update: binary, with bytes that are not valid
@@ -92,6 +97,7 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"crisis_ex_chat": 1,
 		"audit_findings": 1, "audit_finding_actions": 1, "audit_finding_history": 1,
 		"policy_doc_state": 1, "policy_doc_updates": 1, "policy_doc_snapshots": 1,
+		"policy_comment_threads": 1, "policy_comments": 1, "policy_studio_audit": 1,
 	} {
 		if got := count(t, dst, table); got != want {
 			t.Errorf("%s count=%d want %d", table, got, want)
@@ -199,10 +205,10 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 26 {
-		t.Errorf("report marks %d tables skipped, want 26", len(skipped))
+	if len(skipped) != 29 {
+		t.Errorf("report marks %d tables skipped, want 29", len(skipped))
 	}
-	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates"} {
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit"} {
 		if !skipped[want] {
 			t.Errorf("%s is not reported as skipped", want)
 		}

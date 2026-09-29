@@ -873,6 +873,56 @@ CREATE TABLE IF NOT EXISTS policy_doc_snapshots (
 CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
 	ON policy_doc_snapshots (document_id, id);
 
+-- Policy Studio review layer: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_comment_threads (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	section_uid TEXT NOT NULL DEFAULT '',
+	anchor_start TEXT NOT NULL DEFAULT '',
+	anchor_end TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	visibility TEXT NOT NULL DEFAULT 'internal',
+	kind TEXT NOT NULL DEFAULT 'comment',
+	suggestion_suid TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'open',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	resolved_by TEXT NOT NULL DEFAULT '',
+	resolved_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_comment_threads_document
+	ON policy_comment_threads (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_comments (
+	id BIGSERIAL PRIMARY KEY,
+	thread_id BIGINT NOT NULL,
+	author TEXT NOT NULL DEFAULT '',
+	author_kind TEXT NOT NULL DEFAULT 'human',
+	body TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(thread_id) REFERENCES policy_comment_threads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_comments_thread
+	ON policy_comments (thread_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_studio_audit (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	actor TEXT NOT NULL DEFAULT '',
+	actor_kind TEXT NOT NULL DEFAULT 'human',
+	event TEXT NOT NULL DEFAULT '',
+	detail_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_studio_audit_document
+	ON policy_studio_audit (document_id, id);
+
 ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS blocks_json TEXT NOT NULL DEFAULT '';
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS client_profile_id BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_id TEXT NOT NULL DEFAULT '';

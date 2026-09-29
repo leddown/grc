@@ -337,11 +337,18 @@ type State struct {
 	ProjectionVersion int                  `json:"projection_version"`
 	PendingTotal      int                  `json:"pending_suggestions"`
 	CanEdit           bool                 `json:"can_edit"`
-	Role              string               `json:"role"`
-	Transitioning     bool                 `json:"transitioning"`
-	Client            *ClientState         `json:"client"`
-	Facts             []FactState          `json:"facts"`
-	Template          *TemplateSummary     `json:"template"`
+	// SuggestOnly is set in review: edits are made as suggestions.
+	SuggestOnly bool `json:"suggest_only"`
+	// CanDecide and CanComment are what the caller may do in the review
+	// layer; ReviewVersion changes when a thread or decision is recorded.
+	CanDecide     bool             `json:"can_decide"`
+	CanComment    bool             `json:"can_comment"`
+	ReviewVersion string           `json:"review_version"`
+	Role          string           `json:"role"`
+	Transitioning bool             `json:"transitioning"`
+	Client        *ClientState     `json:"client"`
+	Facts         []FactState      `json:"facts"`
+	Template      *TemplateSummary `json:"template"`
 }
 
 // TemplateSummary names the template a document came from.
@@ -363,7 +370,14 @@ func (s *Service) State(documentID int64, id Identity) (State, string, error) {
 		st.Role = "admin"
 	}
 	st.Transitioning = s.transitioning(documentID)
-	st.CanEdit = id.Admin && doc.EditorFormat == policydocs.EditorStudio && doc.Status == policydocs.StatusDraft && !st.Transitioning
+	studio := doc.EditorFormat == policydocs.EditorStudio
+	st.CanEdit = id.Admin && studio && projected(doc.Status) && !st.Transitioning
+	st.SuggestOnly = st.CanEdit && doc.Status == policydocs.StatusInReview
+	st.CanDecide = st.CanEdit
+	st.CanComment = id.Admin && studio && projected(doc.Status)
+	if st.ReviewVersion, err = s.reviewVersion(documentID); err != nil {
+		return State{}, "", err
+	}
 
 	rows, err := s.policies.ListAllSections(documentID)
 	if err != nil {
@@ -391,9 +405,9 @@ func (s *Service) State(documentID int64, id Identity) (State, string, error) {
 		if r.ContentJSON != "" {
 			var n Node
 			if json.Unmarshal([]byte(r.ContentJSON), &n) == nil {
-				sec.Pending = PendingSuggestions(&n)
-				st.PendingTotal += sec.Pending
 				if r.DetachedAt == "" {
+					sec.Pending = policydocs.PendingSuggestions(r.ContentJSON)
+					st.PendingTotal += sec.Pending
 					collectFactKeys(&n, usedKeys)
 				}
 			}

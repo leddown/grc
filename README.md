@@ -69,7 +69,8 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
   [AI_AGENT.md](AI_AGENT.md))
 - `internal/policystudio` — the Policy Studio: collaborative WYSIWYG editing of
   policy documents over an in-process Yjs server (ygo), projected into the
-  policy module's section rows (see [POLICY_STUDIO.md](POLICY_STUDIO.md))
+  policy module's section rows, with tracked suggestions, anchored comments and
+  provenance (see [POLICY_STUDIO.md](POLICY_STUDIO.md))
 - `internal/clientprofile` — the clients policies are written for and the facts
   about each, which fill a document's fact tokens (a model or a template never
   supplies them)

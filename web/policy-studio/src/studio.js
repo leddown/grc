@@ -15,6 +15,11 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
+import { ySyncPluginKey, absolutePositionToRelativePosition, relativePositionToAbsolutePosition } from '@tiptap/y-tiptap'
+import {
+  suggestChanges, suggestChangesKey, isSuggestChangesEnabled, transformToSuggestionTransaction,
+  enableSuggestChanges, disableSuggestChanges, applySuggestion, revertSuggestion, selectSuggestion,
+} from '@handlewithcare/prosemirror-suggest-changes'
 import { studioExtensions, FRAGMENT } from './schema.js'
 
 const POLL_MS = 4000
@@ -64,6 +69,17 @@ function colorFor(name) {
 }
 
 const statusLabels = { draft: 'Draft', in_review: 'In review', approved: 'Approved', retired: 'Retired' }
+
+function shortTime(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+function isTyping(target) {
+  if (!target || !target.closest) return false
+  return !!target.closest('[contenteditable="true"], input, textarea, select')
+}
 
 // ---- paste ----
 
@@ -184,6 +200,172 @@ function controlChips(render) {
   })
 }
 
+// ---- suggestions ----
+
+const SUGGESTION_TYPES = ['insertion', 'deletion', 'modification']
+const authorKindLabels = { human: 'Consultant', guest: 'Customer', ai: 'AI' }
+const suggestionTypeLabels = { insertion: 'Insert', deletion: 'Delete', modification: 'Change' }
+const blockLabels = { paragraph: 'a paragraph', heading: 'a heading', listItem: 'a list item', bulletList: 'a list', orderedList: 'a list',
+  table: 'a table', tableRow: 'a table row', tableCell: 'a table cell', tableHeader: 'a table cell', blockquote: 'a quotation', callout: 'a callout' }
+
+// structuralSummary describes a suggestion that adds or removes blocks with no
+// text of its own, such as an empty table row.
+function structuralSummary(x) {
+  const what = Array.from(new Set((x.blocks || []).map((b) => blockLabels[b] || 'a block'))).join(', ')
+  if (!what) return 'A change to the document structure'
+  return (x.types.includes('deletion') ? 'Removes ' : 'Adds ') + what
+}
+
+// Suggest mode: edits become suggestion marks rather than changes. Ids are
+// UUIDs, not the library's max+1 counter, which two clients suggesting at once
+// would both pick. The library only sets `id`; authorship is filled in here
+// for the ids this client created, never for a mark that arrived from a peer.
+function suggestMode(user) {
+  const mine = new Set()
+  const newSuid = () => { const id = crypto.randomUUID(); mine.add(id); return id }
+  return Extension.create({
+    name: 'suggestMode',
+    addProseMirrorPlugins() {
+      return [
+        suggestChanges(),
+        new Plugin({
+          key: new PluginKey('suggestionAttribution'),
+          appendTransaction(trs, _old, state) {
+            if (!mine.size || !trs.some((tr) => tr.docChanged && !tr.getMeta('y-sync$'))) return null
+            const now = new Date().toISOString()
+            let tr = null
+            state.doc.descendants((node, pos) => {
+              for (const mark of node.marks) {
+                if (!SUGGESTION_TYPES.includes(mark.type.name) || mark.attrs.authorId || !mine.has(mark.attrs.id)) continue
+                const attrs = Object.assign({}, mark.attrs, { authorId: user.id, authorKind: 'human', authorName: user.name, createdAt: now })
+                tr = tr || state.tr
+                if (node.isText) tr.removeMark(pos, pos + node.nodeSize, mark).addMark(pos, pos + node.nodeSize, mark.type.create(attrs))
+                else tr.removeNodeMark(pos, mark).addNodeMark(pos, mark.type.create(attrs))
+              }
+            })
+            if (tr) tr.setMeta(suggestChangesKey, { skip: true }).setMeta('addToHistory', false)
+            return tr
+          },
+        }),
+      ]
+    },
+    dispatchTransaction({ transaction, next }) {
+      const ysync = transaction.getMeta('y-sync$') || {}
+      const wrap = isSuggestChangesEnabled(this.editor.state) && transaction.docChanged &&
+        !ysync.isChangeOrigin && !ysync.isUndoRedoOperation &&
+        !('skip' in (transaction.getMeta(suggestChangesKey) || {}))
+      next(wrap ? transformToSuggestionTransaction(transaction, this.editor.state, newSuid) : transaction)
+    },
+  })
+}
+
+// suggestionsIn lists the pending suggestions in document order, one entry
+// per id, with the ranges it covers.
+function suggestionsIn(doc) {
+  const byId = new Map()
+  doc.forEach((section, offset) => {
+    const heading = section.firstChild ? section.firstChild.textContent : ''
+    section.descendants((node, rel) => {
+      const pos = offset + 1 + rel
+      for (const mark of node.marks) {
+        if (!SUGGESTION_TYPES.includes(mark.type.name)) continue
+        const a = mark.attrs
+        let s = byId.get(a.id)
+        if (!s) {
+          s = { id: a.id, types: [], sectionUID: section.attrs.uid, heading, authorName: a.authorName || 'Someone', authorKind: a.authorKind || 'human',
+            authorId: a.authorId || '', createdAt: a.createdAt || '', inserted: '', deleted: '', changed: '', blocks: [], from: pos, to: pos + node.nodeSize }
+          byId.set(a.id, s)
+        }
+        if (!s.types.includes(mark.type.name)) s.types.push(mark.type.name)
+        if (!node.isText && !node.isInline && !s.blocks.includes(node.type.name)) s.blocks.push(node.type.name)
+        s.to = Math.max(s.to, pos + node.nodeSize)
+        const text = node.textContent.replace(/\u200b/g, '')
+        if (mark.type.name === 'insertion') s.inserted += text
+        else if (mark.type.name === 'deletion') s.deleted += text
+        else s.changed = (a.attrName || 'formatting') + ' changed'
+      }
+    })
+  })
+  return Array.from(byId.values())
+}
+
+// ---- review decorations: suggestions, authors, comments, provenance ----
+
+const reviewKey = new PluginKey('studioReview')
+
+function relToAbs(state, b64) {
+  const y = ySyncPluginKey.getState(state)
+  if (!y || !y.binding || !b64) return null
+  try {
+    const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    return relativePositionToAbsolutePosition(y.doc, y.type, Y.decodeRelativePosition(bin), y.binding.mapping)
+  } catch (_) { return null }
+}
+
+function absToRel(state, pos) {
+  const y = ySyncPluginKey.getState(state)
+  if (!y || !y.binding) return ''
+  const rel = absolutePositionToRelativePosition(pos, y.type, y.binding.mapping)
+  let bin = ''
+  for (const b of Y.encodeRelativePosition(rel)) bin += String.fromCharCode(b)
+  return btoa(bin)
+}
+
+// threadRange resolves a thread's anchors against the live document; null
+// when the commented text is gone.
+function threadRange(state, t) {
+  const from = relToAbs(state, t.anchor_start)
+  const to = relToAbs(state, t.anchor_end)
+  if (from === null || to === null || to <= from || to > state.doc.content.size) return null
+  return { from, to }
+}
+
+function reviewDecorations() {
+  return Extension.create({
+    name: 'studioReview',
+    addProseMirrorPlugins() {
+      return [new Plugin({
+        key: reviewKey,
+        state: {
+          init: () => ({ threads: [], showAuthors: false, accepted: {}, currentSuggestion: '', currentThread: 0 }),
+          apply: (tr, value) => {
+            const next = tr.getMeta(reviewKey)
+            return next ? Object.assign({}, value, next) : value
+          },
+        },
+        props: {
+          decorations(state) {
+            const r = reviewKey.getState(state)
+            const decos = []
+            state.doc.descendants((node, pos) => {
+              const mark = node.marks.find((m) => SUGGESTION_TYPES.includes(m.type.name))
+              if (mark) {
+                const a = mark.attrs
+                const cls = ['ps-sugg', 'ps-sugg-' + mark.type.name]
+                if (a.id === r.currentSuggestion) cls.push('ps-sugg-current')
+                const attrs = { class: cls.join(' '), 'data-author-kind': a.authorKind || 'human', title: (suggestionTypeLabels[mark.type.name] || 'Change') + ' suggested by ' + (a.authorName || 'someone') }
+                if (r.showAuthors) attrs.style = '--ps-author: ' + colorFor(a.authorName || a.authorId || '?')
+                if (node.isText) decos.push(Decoration.inline(pos, pos + node.nodeSize, attrs))
+                else if (node.isBlock) decos.push(Decoration.node(pos, pos + node.nodeSize, Object.assign({}, attrs, { class: attrs.class + ' ps-sugg-block' })))
+              }
+              if (r.showAuthors && node.isBlock && node.attrs.bid && r.accepted[node.attrs.bid]) {
+                decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'ps-prov-block', title: r.accepted[node.attrs.bid] }))
+              }
+            })
+            for (const t of r.threads) {
+              if (t.status !== 'open') continue
+              const range = threadRange(state, t)
+              if (!range) continue
+              decos.push(Decoration.inline(range.from, range.to, { class: 'ps-comment-mark' + (t.id === r.currentThread ? ' ps-comment-current' : ''), 'data-thread': String(t.id) }))
+            }
+            return DecorationSet.create(state.doc, decos)
+          },
+        },
+      })]
+    },
+  })
+}
+
 // ---- the application ----
 
 class Studio {
@@ -199,6 +381,19 @@ class Studio {
     this.provider = null
     this.canEdit = false
     this.chipsVersion = 0
+    this.userSuggesting = false
+    this.suggestions = []
+    this.threads = []
+    this.provenance = []
+    this.reviewVersion = null
+    this.currentSuggestion = ''
+    this.currentThread = 0
+    this.showAuthors = false
+    this.showResolved = false
+    this.replyDrafts = {}
+    this.composer = null
+    this.sideTab = 'readiness'
+    try { this.sideTab = localStorage.getItem('grc.policyStudio.tab') || 'readiness' } catch (_) { /* storage may be unavailable */ }
   }
 
   async start() {
@@ -221,12 +416,18 @@ class Studio {
     }
     this.connect()
     this.renderPanels()
+    this.loadReview(true)
     this.poll()
+    document.addEventListener('keydown', (e) => this.reviewKeys(e))
   }
 
   buildShell() {
     this.statusPill = h('span', { class: 'ps-pill' })
     this.connection = h('span', { class: 'ps-connection', role: 'status', text: 'Connecting…' })
+    this.counts = h('span', { class: 'ps-counts' })
+    this.presence = h('ul', { class: 'ps-presence', 'aria-label': 'Here now' })
+    // Announcements for screen readers that do not need a visible toast.
+    this.live = h('div', { class: 'ps-visually-hidden', 'aria-live': 'polite' })
     this.titleEl = h('h1', { class: 'ps-title' })
     this.actions = h('div', { class: 'ps-actions' })
     this.outline = h('nav', { class: 'ps-outline', 'aria-label': 'Outline' })
@@ -235,12 +436,21 @@ class Studio {
     this.toast = h('div', { class: 'ps-toast', role: 'status', 'aria-live': 'polite' })
     this.root.replaceChildren(
       h('header', { class: 'ps-bar' },
-        h('div', { class: 'ps-bar-title' }, h('a', { href: '/policies', class: 'ps-back', text: 'Policies' }), this.titleEl, this.statusPill),
-        h('div', { class: 'ps-bar-meta' }, this.connection),
+        h('div', { class: 'ps-bar-title' }, h('a', { href: '/policies', class: 'ps-back', text: 'Policies' }), this.titleEl, this.statusPill, this.counts),
+        h('div', { class: 'ps-bar-meta' }, this.connection, this.presence),
         this.actions),
       h('div', { class: 'ps-body' }, this.outline, h('section', { class: 'ps-canvas', 'aria-label': 'Document' }, this.canvas), this.side),
-      this.toast)
+      this.toast, this.live)
     this.renderHeader()
+    // The bar wraps to more rows as actions are added; the sticky panels
+    // below it are offset by its real height.
+    const bar = this.root.querySelector('.ps-bar')
+    if (window.ResizeObserver) new ResizeObserver(() => this.root.style.setProperty('--ps-bar-h', bar.offsetHeight + 'px')).observe(bar)
+  }
+
+  announce(message) {
+    this.live.textContent = ''
+    setTimeout(() => { this.live.textContent = message }, 50)
   }
 
   say(message, kind) {
@@ -300,6 +510,25 @@ class Studio {
     // Mount only after the first sync: the editor would otherwise create its
     // own empty content and write it into a document that already exists.
     this.provider.on('sync', (synced) => { if (synced && !this.editor) this.mount(ydoc) })
+    this.provider.awareness.on('change', () => this.renderPresence())
+  }
+
+  // Who has the document open: one entry per name, from the awareness state
+  // the caret extension publishes.
+  renderPresence() {
+    const me = this.provider.awareness.clientID
+    const seen = new Map()
+    for (const [id, st] of this.provider.awareness.getStates()) {
+      if (!st.user || !st.user.name) continue
+      const prev = seen.get(st.user.name)
+      seen.set(st.user.name, { name: st.user.name, color: st.user.color, you: (prev && prev.you) || id === me })
+    }
+    const people = Array.from(seen.values()).sort((a, b) => (b.you - a.you) || a.name.localeCompare(b.name))
+    this.presence.replaceChildren(...people.map((p) => {
+      const dot = h('span', { class: 'ps-presence-dot', 'aria-hidden': 'true' })
+      dot.style.background = p.color || 'var(--accent)'
+      return h('li', { class: 'ps-presence-person', title: p.you ? p.name + ' (you)' : p.name }, dot, p.you ? p.name + ' (you)' : p.name)
+    }))
   }
 
   mount(ydoc) {
@@ -316,15 +545,34 @@ class Studio {
           CollaborationCaret.configure({ provider: this.provider, user: { name: this.user, color: colorFor(this.user) } }),
           sectionIntegrity(() => this.say("Sections can't be added, removed, merged or split by typing. Use the outline on the left.", 'warn')),
           controlChips((info) => this.chipRow(info)),
+          suggestMode({ id: this.user, name: this.user }),
+          reviewDecorations(),
         ],
       }),
+      // Lets suggestMode rewrite local transactions into suggestions.
+      enableExtensionDispatchTransaction: true,
       editorProps: {
         attributes: { 'aria-label': 'Policy text', class: 'ps-prosemirror' },
         transformPastedHTML: sanitizePastedHTML,
       },
     })
     this.pushChips()
+    this.syncSuggestMode()
+    this.pushReview()
+    // The header's editor actions (suggest mode, comment, authors) need the
+    // editor, which the first render did not have yet.
+    this.renderActions()
+    this.editor.on('update', () => this.scheduleSuggestionRefresh())
+    host.addEventListener('click', (e) => {
+      const mark = e.target.closest && e.target.closest('.ps-comment-mark')
+      const t = mark && this.threads.find((x) => String(x.id) === mark.dataset.thread)
+      if (!t) return
+      if (this.sideTab !== 'comments') this.setTab('comments')
+      this.focusThread(t)
+    })
+    this.refreshSuggestions(true)
     window.GRCPolicyStudio.editor = this.editor
+    window.GRCPolicyStudio.suggestions = () => suggestionsIn(this.editor.state.doc)
     let paper = false
     try { paper = localStorage.getItem('grc.policyStudio.paper') === '1' } catch (_) { /* storage may be unavailable */ }
     if (paper) this.togglePaper()
@@ -342,6 +590,7 @@ class Studio {
             this.etag = res.etag
             this.renderPanels()
           }
+          await this.loadReview()
         } catch (_) { /* the connection indicator already says the server is unreachable */ }
       }
       this.pollTimer = setTimeout(tick, POLL_MS)
@@ -355,6 +604,24 @@ class Studio {
     this.state = res.data
     this.etag = res.etag
     this.renderPanels()
+    await this.loadReview()
+  }
+
+  // Comments and provenance are fetched when the state says they changed.
+  async loadReview(force) {
+    if (!force && this.reviewVersion === this.state.review_version) return
+    this.reviewVersion = this.state.review_version
+    try {
+      const [{ data: threads }, { data: prov }] = await Promise.all([
+        api('GET', '/policies/' + this.docId + '/studio/comments'),
+        api('GET', '/policies/' + this.docId + '/studio/provenance'),
+      ])
+      this.threads = threads || []
+      this.provenance = prov || []
+      this.pushReview()
+      if (this.sideTab === 'comments' || this.sideTab === 'provenance') this.renderSide()
+      this.renderCounts()
+    } catch (_) { this.reviewVersion = null }
   }
 
   renderPanels() {
@@ -370,9 +637,11 @@ class Studio {
       this.provider.connect()
       this.say(editable ? 'The document is a draft again; you can edit it.' : 'The document is ' + (statusLabels[this.state.document.status] || this.state.document.status).toLowerCase() + ' and read-only now.', 'info')
     }
+    this.syncSuggestMode()
     this.renderActions()
     this.renderOutline()
     this.renderSide()
+    this.renderCounts()
     this.pushChips()
   }
 
@@ -399,9 +668,24 @@ class Studio {
     const link = (href, text) => h('a', { class: 'ps-button', href, text })
     const btn = (text, fn, cls) => h('button', { type: 'button', class: cls || '', text, onclick: fn })
     const paper = this.canvas.classList.contains('ps-paper-on')
-    const items = [
+    const items = []
+    if (this.editor && this.state.can_edit) {
+      const forced = !!this.state.suggest_only
+      items.push(h('button', {
+        type: 'button', class: 'ps-suggest-toggle', 'aria-pressed': this.suggesting() ? 'true' : 'false', disabled: forced,
+        title: forced ? 'In review, every edit is a suggestion' : 'Make your edits suggestions that someone accepts or rejects',
+        text: forced ? 'Suggesting (in review)' : (this.suggesting() ? 'Suggesting' : 'Editing'),
+        onclick: () => { this.userSuggesting = !this.userSuggesting; this.syncSuggestMode(); this.renderActions() },
+      }))
+    }
+    if (this.editor && this.state.can_comment) items.push(btn('Comment', () => this.openComposer()))
+    if (this.editor) {
+      items.push(h('button', { type: 'button', 'aria-pressed': this.showAuthors ? 'true' : 'false', text: 'Show authors',
+        title: 'Colour suggestions by author and mark accepted text', onclick: () => { this.showAuthors = !this.showAuthors; this.pushReview(); this.renderActions() } }))
+    }
+    items.push(
       h('button', { type: 'button', 'aria-pressed': paper ? 'true' : 'false', text: paper ? 'Screen view' : 'Paper view', onclick: () => this.togglePaper() }),
-      link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF')]
+      link('/policies/' + d.id + '/view', 'Preview'), link('/templates/render?doc=' + d.id, 'Render PDF'))
     if (this.canManage) {
       if (d.status === 'draft') items.push(btn('Submit for review', () => this.transition('submit', 'Submitted for review.')))
       if (d.status === 'in_review') {
@@ -415,6 +699,74 @@ class Studio {
       if (d.status === 'retired') items.push(btn('Reinstate as draft', () => this.transition('reopen', 'Reinstated as a draft.')))
     }
     this.actions.replaceChildren(...items)
+  }
+
+  // ---- suggest mode and review state ----
+
+  suggesting() { return !!(this.state.suggest_only || this.userSuggesting) }
+
+  syncSuggestMode() {
+    if (!this.editor) return
+    const want = !!(this.state.can_edit && this.suggesting())
+    if (want === isSuggestChangesEnabled(this.editor.state)) return
+    ;(want ? enableSuggestChanges : disableSuggestChanges)(this.editor.state, this.editor.view.dispatch)
+    this.canvas.classList.toggle('ps-suggesting', want)
+  }
+
+  pushReview() {
+    if (!this.editor) return
+    const accepted = {}
+    for (const sec of this.provenance) {
+      for (const d of sec.decisions) {
+        if (d.decision !== 'accepted') continue
+        for (const bid of d.block_ids || []) {
+          const line = (d.author_name || 'Someone') + ' (' + (authorKindLabels[d.author_kind] || 'consultant').toLowerCase() + ') suggested this; ' + d.decided_by + ' accepted it ' + shortTime(d.decided_at)
+          accepted[bid] = accepted[bid] ? accepted[bid] + '\n' + line : line
+        }
+      }
+    }
+    this.editor.view.dispatch(this.editor.state.tr.setMeta(reviewKey, {
+      threads: this.threads, showAuthors: this.showAuthors, accepted, currentSuggestion: this.currentSuggestion, currentThread: this.currentThread,
+    }).setMeta('addToHistory', false))
+  }
+
+  scheduleSuggestionRefresh() {
+    clearTimeout(this.suggestionTimer)
+    this.suggestionTimer = setTimeout(() => this.refreshSuggestions(false), 250)
+  }
+
+  // refreshSuggestions re-reads the pending suggestions from the editor and
+  // re-renders the panel only when the list changed.
+  refreshSuggestions(initial) {
+    if (!this.editor) return
+    const list = suggestionsIn(this.editor.state.doc)
+    const sig = list.map((x) => x.id + ':' + x.types.join('') + ':' + x.inserted.length + ':' + x.deleted.length).join('|')
+    if (sig === this.suggestionSig) return
+    const before = new Set(this.suggestions.map((x) => x.id))
+    const fresh = list.filter((x) => !before.has(x.id) && x.authorId !== this.user)
+    this.suggestionSig = sig
+    this.suggestions = list
+    if (!initial && fresh.length) {
+      const names = Array.from(new Set(fresh.map((x) => x.authorName))).join(', ')
+      this.announce(fresh.length + ' new suggestion' + (fresh.length === 1 ? '' : 's') + ' from ' + names + '.')
+    }
+    if (this.currentSuggestion && !list.some((x) => x.id === this.currentSuggestion)) this.currentSuggestion = ''
+    this.renderCounts()
+    if (this.sideTab === 'suggestions' || this.sideTab === 'provenance') this.renderSide()
+  }
+
+  renderCounts() {
+    const n = this.suggestions.length
+    const open = this.threads.filter((t) => t.status === 'open').length
+    const parts = []
+    if (n) parts.push(n + ' suggestion' + (n === 1 ? '' : 's'))
+    if (open) parts.push(open + ' comment' + (open === 1 ? '' : 's'))
+    this.counts.textContent = parts.join(' · ')
+    this.counts.hidden = !parts.length
+    if (this.tabButtons) {
+      this.tabButtons.suggestions.textContent = 'Suggestions' + (n ? ' (' + n + ')' : '')
+      this.tabButtons.comments.textContent = 'Comments' + (open ? ' (' + open + ')' : '')
+    }
   }
 
   // Paper view: the canvas as the deliverable will look -- light page, the
@@ -614,21 +966,372 @@ class Studio {
     input.focus()
   }
 
-  // ---- side panel: readiness and document control ----
+  // ---- side panels ----
+
+  setTab(key) {
+    this.sideTab = key
+    try { localStorage.setItem('grc.policyStudio.tab', key) } catch (_) { /* storage may be unavailable */ }
+    this.renderSide()
+  }
 
   renderSide() {
+    const tabs = [['suggestions', 'Suggestions'], ['comments', 'Comments'], ['readiness', 'Readiness'], ['facts', 'Facts'],
+      ['provenance', 'Provenance'], ['document', 'Document']]
+    if (!tabs.some(([k]) => k === this.sideTab)) this.sideTab = 'readiness'
+    const focusedId = this.side.contains(document.activeElement) && document.activeElement.dataset ? document.activeElement.dataset.focusKey : ''
+    this.tabButtons = {}
+    const bar = h('div', { class: 'ps-tabs', role: 'tablist', 'aria-label': 'Panels' })
+    tabs.forEach(([key, label], i) => {
+      const b = h('button', {
+        type: 'button', role: 'tab', id: 'ps-tab-' + key, class: 'ps-tab', 'aria-selected': key === this.sideTab ? 'true' : 'false',
+        'aria-controls': 'ps-tabpanel', tabindex: key === this.sideTab ? '0' : '-1', 'data-focus-key': 'tab-' + key, text: label,
+        onclick: () => this.setTab(key),
+        onkeydown: (e) => {
+          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+          e.preventDefault()
+          const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length][0]
+          this.setTab(next)
+          this.tabButtons[next].focus()
+        },
+      })
+      this.tabButtons[key] = b
+      bar.appendChild(b)
+    })
+    const body = { suggestions: () => this.suggestionsPanel(), comments: () => this.commentsPanel(), readiness: () => this.readinessPanel(),
+      facts: () => this.factsPanel(), provenance: () => this.provenancePanel(), document: () => this.documentControl() }[this.sideTab]()
+    this.side.replaceChildren(bar, h('div', { class: 'ps-tabpanel', role: 'tabpanel', id: 'ps-tabpanel', 'aria-labelledby': 'ps-tab-' + this.sideTab }, body))
+    this.renderCounts()
+    if (focusedId) {
+      const again = this.side.querySelector('[data-focus-key="' + CSS.escape(focusedId) + '"]')
+      if (again) again.focus()
+    }
+  }
+
+  readinessPanel() {
     const s = this.state
     const errors = s.findings.filter((f) => f.severity === 'error')
     const warnings = s.findings.filter((f) => f.severity !== 'error')
     const finding = (f) => h('li', { class: 'ps-finding ps-finding-' + f.severity },
       h('span', { class: 'ps-finding-kind', text: f.severity === 'error' ? 'Blocks approval' : 'Advisory' }),
       f.heading ? h('strong', { text: f.heading }) : null, ' ', f.message)
-    const readiness = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-readiness' },
+    return h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-readiness' },
       h('h2', { class: 'ps-panel-title', id: 'ps-readiness', text: 'Readiness' }),
       h('p', { class: 'ps-muted', text: errors.length ? errors.length + ' issue(s) block approval.' : 'Nothing blocks approval.' }),
       h('ul', { class: 'ps-findings' }, errors.map(finding), warnings.map(finding)),
       h('p', { class: 'ps-muted ps-small', text: 'Checked against the saved text, which trails what you type by a few seconds.' }))
-    this.side.replaceChildren(readiness, this.factsPanel(), this.documentControl())
+  }
+
+  // ---- suggestions panel ----
+
+  visibleSuggestions() {
+    const f = this.suggestionFilter || 'all'
+    return this.suggestions.filter((x) => f === 'all' || x.authorKind === f)
+  }
+
+  suggestionsPanel() {
+    const canDecide = !!this.state.can_decide && !!this.editor
+    const list = this.visibleSuggestions()
+    const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-suggestions' },
+      h('h2', { class: 'ps-panel-title', id: 'ps-suggestions', text: 'Suggestions' }),
+      h('p', { class: 'ps-muted ps-small', text: canDecide
+        ? 'J and K move between suggestions; A accepts and R rejects. Approval waits until every suggestion is decided.'
+        : 'J and K move between suggestions. Administrators accept or reject them; approval waits until every one is decided.' }))
+    const filter = h('select', { 'aria-label': 'Show suggestions from', 'data-focus-key': 'sugg-filter',
+      onchange: (e) => { this.suggestionFilter = e.target.value; this.renderSide() } })
+    for (const [v, label] of [['all', 'Everyone'], ['human', 'Consultants'], ['guest', 'Customers'], ['ai', 'AI']]) {
+      filter.appendChild(h('option', { value: v, selected: v === (this.suggestionFilter || 'all'), text: label }))
+    }
+    panel.appendChild(h('label', { class: 'ps-inline-label' }, 'Show suggestions from ', filter))
+    if (!list.length) {
+      panel.appendChild(h('p', { class: 'ps-muted', text: this.suggestions.length ? 'None from these authors.' : 'No open suggestions.' }))
+      return panel
+    }
+    if (canDecide) {
+      panel.appendChild(h('div', { class: 'ps-review-all' },
+        h('button', { type: 'button', text: 'Accept all (' + list.length + ')', onclick: () => this.decide(list.map((x) => x.id), 'accept', true) }),
+        h('button', { type: 'button', class: 'ps-danger', text: 'Reject all', onclick: () => this.decide(list.map((x) => x.id), 'reject', true) })))
+    }
+    const groups = []
+    for (const x of list) {
+      let g = groups.find((y) => y.uid === x.sectionUID)
+      if (!g) { g = { uid: x.sectionUID, heading: x.heading, items: [] }; groups.push(g) }
+      g.items.push(x)
+    }
+    for (const g of groups) {
+      const head = h('div', { class: 'ps-sugg-group-head' }, h('h3', { class: 'ps-panel-subtitle', text: g.heading || 'Untitled section' }))
+      if (canDecide) {
+        head.appendChild(h('span', { class: 'ps-sugg-group-tools' },
+          h('button', { type: 'button', text: 'Accept section', onclick: () => this.decide(g.items.map((x) => x.id), 'accept') }),
+          h('button', { type: 'button', class: 'ps-danger', text: 'Reject section', onclick: () => this.decide(g.items.map((x) => x.id), 'reject') })))
+      }
+      const ul = h('ul', { class: 'ps-sugg-list' })
+      for (const x of g.items) ul.appendChild(this.suggestionItem(x, canDecide))
+      panel.appendChild(head)
+      panel.appendChild(ul)
+    }
+    return panel
+  }
+
+  suggestionItem(x, canDecide) {
+    const kind = authorKindLabels[x.authorKind] || 'Consultant'
+    const what = x.types.map((t) => suggestionTypeLabels[t] || t).join(' and ')
+    const li = h('li', {
+      class: 'ps-sugg-item' + (x.id === this.currentSuggestion ? ' ps-sugg-item-current' : ''), tabindex: '0', 'data-focus-key': 'sugg-' + x.id,
+      'aria-label': what + ' suggested by ' + x.authorName, onclick: (e) => { if (!e.target.closest('button')) this.focusSuggestion(x.id) },
+    },
+    h('div', { class: 'ps-sugg-meta' }, h('strong', { text: x.authorName }), ' ',
+      h('span', { class: 'ps-kind-badge', 'data-kind': x.authorKind, text: kind }), ' ', h('span', { class: 'ps-muted', text: what })))
+    const ex = h('p', { class: 'ps-sugg-excerpt' })
+    if (x.deleted) ex.appendChild(h('del', { text: x.deleted.length > 160 ? x.deleted.slice(0, 160) + '…' : x.deleted }))
+    if (x.deleted && x.inserted) ex.appendChild(document.createTextNode(' → '))
+    if (x.inserted) ex.appendChild(h('ins', { text: x.inserted.length > 160 ? x.inserted.slice(0, 160) + '…' : x.inserted }))
+    if (x.changed) ex.appendChild(h('span', { class: 'ps-muted', text: x.changed }))
+    if (!x.inserted && !x.deleted && !x.changed) ex.appendChild(h('span', { class: 'ps-muted', text: structuralSummary(x) }))
+    li.appendChild(ex)
+    if (canDecide) {
+      li.appendChild(h('div', { class: 'ps-sugg-actions' },
+        h('button', { type: 'button', class: 'ps-primary', text: 'Accept', onclick: () => this.decide([x.id], 'accept') }),
+        h('button', { type: 'button', text: 'Reject', onclick: () => this.decide([x.id], 'reject') })))
+    }
+    return li
+  }
+
+  focusSuggestion(id, focusItem) {
+    this.currentSuggestion = id
+    if (this.editor) {
+      selectSuggestion(id)(this.editor.state, this.editor.view.dispatch)
+      const s = this.suggestions.find((x) => x.id === id)
+      if (s) {
+        const dom = this.editor.view.domAtPos(s.from)
+        const el = dom && (dom.node.nodeType === 1 ? dom.node : dom.node.parentElement)
+        if (el) el.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+      }
+    }
+    this.pushReview()
+    if (this.sideTab !== 'suggestions') this.setTab('suggestions')
+    this.side.querySelectorAll('.ps-sugg-item').forEach((el) => el.classList.toggle('ps-sugg-item-current', el.dataset.focusKey === 'sugg-' + id))
+    if (focusItem) {
+      const item = this.side.querySelector('[data-focus-key="' + CSS.escape('sugg-' + id) + '"]')
+      if (item) item.focus()
+    }
+  }
+
+  // Keyboard review: J and K move, A accepts, R rejects -- whenever the caret
+  // is not in the text or a form field, so typing a J is never a command.
+  reviewKeys(e) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return
+    const key = e.key.toLowerCase()
+    if (!['j', 'k', 'a', 'r'].includes(key) || !this.editor) return
+    const list = this.visibleSuggestions()
+    if (!list.length) return
+    e.preventDefault()
+    const i = list.findIndex((x) => x.id === this.currentSuggestion)
+    if (key === 'j' || key === 'k') {
+      const next = i < 0 ? (key === 'j' ? 0 : list.length - 1) : (i + (key === 'j' ? 1 : list.length - 1)) % list.length
+      this.focusSuggestion(list[next].id, true)
+      return
+    }
+    if (i < 0) { this.say('Press J to choose a suggestion first.', 'info'); return }
+    if (!this.state.can_decide) { this.say('Only administrators accept or reject suggestions.', 'warn'); return }
+    const after = list[i + 1] || list[i - 1]
+    this.decide([list[i].id], key === 'a' ? 'accept' : 'reject').then((ok) => { if (ok && after) this.focusSuggestion(after.id, true) })
+  }
+
+  // decide accepts or rejects suggestions. It first checks, on a scratch
+  // copy of the editor state, that the change can be made (the section
+  // integrity filter refuses one that would add or remove a whole section),
+  // then records the decision with the server -- which checks every id is
+  // still pending and takes the actor from the session -- and only then
+  // changes the shared text.
+  async decide(ids, decision, confirmAll) {
+    if (!this.editor || !ids.length) return false
+    const verb = decision === 'accept' ? 'Accept' : 'Reject'
+    if (confirmAll && !window.confirm(verb + ' all ' + ids.length + ' suggestion(s)?')) return false
+    const cmd = decision === 'accept' ? applySuggestion : revertSuggestion
+    let scratch = this.editor.state
+    for (const id of ids) cmd(id)(scratch, (tr) => { scratch = scratch.apply(tr) })
+    const left = new Set(suggestionsIn(scratch.doc).map((x) => x.id))
+    if (ids.some((id) => left.has(id))) {
+      this.say(decision === 'accept'
+        ? "This suggestion adds or removes a whole section, which the text can't do. Change sections from the outline, then reject the suggestion."
+        : "This suggestion couldn't be rejected here. Reload the page and try again.", 'error')
+      return false
+    }
+    try {
+      await api('POST', '/policies/' + this.docId + '/studio/decisions', { decision, suggestion_ids: ids })
+    } catch (err) {
+      this.say(err.message, 'error')
+      this.refreshSuggestions(false)
+      return false
+    }
+    for (const id of ids) cmd(id)(this.editor.state, this.editor.view.dispatch)
+    const done = ids.length + ' suggestion' + (ids.length === 1 ? '' : 's') + (decision === 'accept' ? ' accepted.' : ' rejected.')
+    this.say(done, 'info')
+    this.announce(done)
+    this.refreshSuggestions(false)
+    this.loadReview(true)
+    return true
+  }
+
+  // ---- comments ----
+
+  openComposer() {
+    if (!this.editor) return
+    const st = this.editor.state
+    const { from, to, empty } = st.selection
+    if (empty) { this.say('Select the text you want to comment on first.', 'warn'); return }
+    const section = st.doc.resolve(from).node(1)
+    if (!section || !section.attrs.uid) { this.say('Select text inside a section.', 'warn'); return }
+    this.composer = {
+      uid: section.attrs.uid, start: absToRel(st, from), end: absToRel(st, to),
+      quote: st.doc.textBetween(from, to, ' ').slice(0, 1000), body: '', visibility: 'internal',
+    }
+    this.setTab('comments')
+    const box = this.side.querySelector('[data-focus-key="composer-body"]')
+    if (box) box.focus()
+  }
+
+  async postComment() {
+    const c = this.composer
+    if (!c.body.trim()) { this.say('Write something first.', 'warn'); return }
+    try {
+      await api('POST', '/policies/' + this.docId + '/studio/comments', {
+        section_uid: c.uid, anchor_start: c.start, anchor_end: c.end, quote: c.quote, visibility: c.visibility, body: c.body,
+      })
+      this.composer = null
+      await this.loadReview(true)
+      this.renderSide()
+      this.say('Comment posted.', 'info')
+    } catch (err) { this.say("The comment wasn't posted: " + err.message, 'error') }
+  }
+
+  async threadAction(t, method, path, body, done) {
+    try {
+      await api(method, '/policies/' + this.docId + '/studio/comments/' + t.id + path, body)
+      delete this.replyDrafts[t.id]
+      await this.loadReview(true)
+      this.renderSide()
+      this.say(done, 'info')
+    } catch (err) { this.say(err.message, 'error') }
+  }
+
+  focusThread(t) {
+    this.currentThread = t.id
+    const range = this.editor ? threadRange(this.editor.state, t) : null
+    if (range) {
+      this.editor.commands.setTextSelection(range)
+      const dom = this.editor.view.domAtPos(range.from)
+      const el = dom && (dom.node.nodeType === 1 ? dom.node : dom.node.parentElement)
+      if (el) el.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    }
+    this.pushReview()
+    this.side.querySelectorAll('.ps-thread').forEach((el) => el.classList.toggle('ps-thread-current', el.dataset.thread === String(t.id)))
+  }
+
+  commentsPanel() {
+    const can = !!this.state.can_comment
+    const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-comments' }, h('h2', { class: 'ps-panel-title', id: 'ps-comments', text: 'Comments' }))
+    if (this.composer) {
+      const c = this.composer
+      const body = h('textarea', { 'aria-label': 'Comment', 'data-focus-key': 'composer-body', placeholder: 'Your comment', oninput: (e) => { c.body = e.target.value } })
+      body.value = c.body
+      const vis = h('select', { 'aria-label': 'Who can see it', onchange: (e) => { c.visibility = e.target.value } },
+        h('option', { value: 'internal', selected: c.visibility === 'internal', text: 'Internal: your team only' }),
+        h('option', { value: 'shared', selected: c.visibility === 'shared', text: 'Shared: the client sees it when they join' }))
+      panel.appendChild(h('div', { class: 'ps-composer' },
+        h('blockquote', { class: 'ps-quote', text: c.quote }), body, vis,
+        h('div', { class: 'ps-fact-actions' },
+          h('button', { type: 'button', class: 'ps-primary', text: 'Post comment', onclick: () => this.postComment() }),
+          h('button', { type: 'button', text: 'Cancel', onclick: () => { this.composer = null; this.renderSide() } }))))
+    } else if (can) {
+      panel.appendChild(h('p', { class: 'ps-muted ps-small', text: 'Select text in the document and choose Comment.' }))
+    }
+    const resolved = this.threads.filter((t) => t.status !== 'open').length
+    if (resolved) {
+      const box = h('input', { type: 'checkbox', 'data-focus-key': 'show-resolved', onchange: (e) => { this.showResolved = e.target.checked; this.renderSide() } })
+      box.checked = this.showResolved
+      panel.appendChild(h('label', { class: 'ps-inline-label' }, box, ' Show resolved (' + resolved + ')'))
+    }
+    const shown = this.threads.filter((t) => this.showResolved || t.status === 'open')
+    if (!shown.length && !this.composer) panel.appendChild(h('p', { class: 'ps-muted', text: 'No open comments.' }))
+    const st = this.editor ? this.editor.state : null
+    const pos = (t) => { const r = st && threadRange(st, t); return r ? r.from : Infinity }
+    shown.sort((a, b) => pos(a) - pos(b))
+    const ul = h('ul', { class: 'ps-threads' })
+    for (const t of shown) ul.appendChild(this.threadItem(t, can, st))
+    panel.appendChild(ul)
+    return panel
+  }
+
+  threadItem(t, can, st) {
+    const range = st ? threadRange(st, t) : null
+    const li = h('li', { class: 'ps-thread' + (t.id === this.currentThread ? ' ps-thread-current' : '') + (t.status !== 'open' ? ' ps-thread-resolved' : ''), 'data-thread': String(t.id) },
+      h('div', { class: 'ps-sugg-meta' },
+        h('span', { class: 'ps-kind-badge', 'data-visibility': t.visibility, text: t.visibility === 'shared' ? 'Shared' : 'Internal' }), ' ',
+        t.status === 'open' ? null : h('span', { class: 'ps-muted', text: 'Resolved by ' + t.resolved_by + ' ' })))
+    if (range) {
+      li.appendChild(h('button', { type: 'button', class: 'ps-quote ps-quote-link', 'data-focus-key': 'thread-' + t.id, text: t.quote, onclick: () => this.focusThread(t) }))
+    } else {
+      li.appendChild(h('blockquote', { class: 'ps-quote', text: t.quote }))
+      li.appendChild(h('p', { class: 'ps-muted ps-small', text: 'The text this comment was on has been removed or rewritten.' }))
+    }
+    const ol = h('ol', { class: 'ps-comments' })
+    for (const c of t.comments) {
+      ol.appendChild(h('li', {}, h('div', { class: 'ps-small ps-muted' }, h('strong', { text: c.author || 'Someone' }), ' · ' + shortTime(c.created_at)),
+        h('p', { class: 'ps-comment-body', text: c.body })))
+    }
+    li.appendChild(ol)
+    if (can) {
+      const reply = h('textarea', { 'aria-label': 'Reply', placeholder: 'Reply', 'data-focus-key': 'reply-' + t.id, oninput: (e) => { this.replyDrafts[t.id] = e.target.value } })
+      reply.value = this.replyDrafts[t.id] || ''
+      li.appendChild(reply)
+      li.appendChild(h('div', { class: 'ps-fact-actions' },
+        h('button', { type: 'button', text: 'Reply', onclick: () => {
+          if (!(this.replyDrafts[t.id] || '').trim()) { this.say('Write a reply first.', 'warn'); return }
+          this.threadAction(t, 'POST', '/replies', { body: this.replyDrafts[t.id] }, 'Reply posted.')
+        } }),
+        t.status === 'open'
+          ? h('button', { type: 'button', text: 'Resolve', onclick: () => this.threadAction(t, 'PATCH', '', { status: 'resolved' }, 'Comment resolved.') })
+          : h('button', { type: 'button', text: 'Reopen', onclick: () => this.threadAction(t, 'PATCH', '', { status: 'open' }, 'Comment reopened.') })))
+    }
+    return li
+  }
+
+  // ---- provenance ----
+
+  provenancePanel() {
+    const panel = h('section', { class: 'ps-panel', 'aria-labelledby': 'ps-provenance' },
+      h('h2', { class: 'ps-panel-title', id: 'ps-provenance', text: 'Provenance' }),
+      h('p', { class: 'ps-muted ps-small', text: 'Where each section came from, and who suggested, accepted or rejected each change. Show authors marks the accepted text in the document.' }))
+    const byUID = {}
+    for (const p of this.provenance) byUID[p.uid] = p
+    for (const sec of this.state.sections.filter((x) => !x.detached)) {
+      const p = byUID[sec.uid]
+      const box = h('div', { class: 'ps-prov-section' },
+        h('h3', { class: 'ps-panel-subtitle', text: sec.heading || 'Untitled section' }),
+        h('p', { class: 'ps-small', text: 'Origin: ' + (p ? p.origin_label : '—') }))
+      const pending = this.suggestions.filter((x) => x.sectionUID === sec.uid)
+      if (pending.length) {
+        const names = Array.from(new Set(pending.map((x) => x.authorName + ' (' + (authorKindLabels[x.authorKind] || 'Consultant').toLowerCase() + ')')))
+        box.appendChild(h('p', { class: 'ps-small', text: pending.length + ' open suggestion(s) from ' + names.join(', ') }))
+      }
+      const decisions = p ? p.decisions : []
+      if (decisions.length) {
+        const ul = h('ul', { class: 'ps-prov-list' })
+        for (const d of decisions) {
+          const text = d.inserted || d.deleted || d.changed || structuralSummary(d).toLowerCase()
+          ul.appendChild(h('li', { class: 'ps-small' },
+            h('strong', { text: d.author_name || 'Someone' }), ' (' + (authorKindLabels[d.author_kind] || 'Consultant').toLowerCase() + ') suggested ',
+            h(d.inserted ? 'ins' : (d.deleted ? 'del' : 'span'), { text: text.length > 120 ? text.slice(0, 120) + '…' : text }),
+            ' — ' + d.decision + ' by ', h('strong', { text: d.decided_by || 'someone' }), ', ' + shortTime(d.decided_at)))
+        }
+        box.appendChild(ul)
+      } else if (!pending.length) {
+        box.appendChild(h('p', { class: 'ps-muted ps-small', text: 'No suggestions decided here yet.' }))
+      }
+      panel.appendChild(box)
+    }
+    return panel
   }
 
   // ---- facts ----

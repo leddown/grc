@@ -41,13 +41,18 @@ func parseStudioOrigins(raw string) ([]string, error) {
 	return out, nil
 }
 
+// localStudioUser is who local mode's single user is in the Studio's
+// suggestions, comments and decision audit, which would otherwise record no
+// one.
+const localStudioUser = "local"
+
 // studioIdentity resolves a collaboration request's identity from the session
 // cookie. Local mode has no identities: its single user is an admin, as
 // everywhere else in local mode.
 func studioIdentity(authService *authn.Service, localMode bool) policystudio.IdentityFunc {
 	return func(r *http.Request) (policystudio.Identity, bool) {
 		if localMode || authService == nil {
-			return policystudio.Identity{Admin: true, CanReadPolicies: true}, true
+			return policystudio.Identity{Username: localStudioUser, Admin: true, CanReadPolicies: true}, true
 		}
 		cookie, err := r.Cookie(authn.AuthSessionCookie)
 		if err != nil || strings.TrimSpace(cookie.Value) == "" {
@@ -97,10 +102,14 @@ func registerPolicyStudioRoutes(
 	})
 	knowledgeService.WithLivePolicies(service.Live)
 
-	handler := policystudio.NewHandler(service, sessionUsername)
+	actor := sessionUsername
+	if options.LocalMode {
+		actor = func(*gin.Context) string { return localStudioUser }
+	}
+	handler := policystudio.NewHandler(service, actor)
 	handler.RegisterReadRoutes(r)
 	handler.RegisterPublicRoutes(r)
-	clientHandler := clientprofile.NewHandler(clients, sessionUsername)
+	clientHandler := clientprofile.NewHandler(clients, actor)
 	clientHandler.RegisterReadRoutes(r)
 	admin := r.Group("/")
 	if !options.LocalMode {

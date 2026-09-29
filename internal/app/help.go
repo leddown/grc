@@ -296,6 +296,12 @@ func helpPage(c *gin.Context) {
               skeleton, written for a client. What the policy says about the client — names, roles,
               review triggers — comes from that client's facts; anything not yet recorded shows as
               a missing fact and blocks approval until someone fills it in.</li>
+            <li>Review it in the Studio: turn on <em>Suggesting</em> and your edits become
+              suggestions that an administrator accepts or rejects (J and K move between them, A
+              accepts, R rejects). While a document is in review every edit is a suggestion, and it
+              can't be approved until each one is decided. Select text and choose <em>Comment</em>
+              to discuss it, internally or shared with the client. <em>Provenance</em> shows where
+              each section came from and who accepted which change.</li>
             <li>Move it through the workflow — draft → submitted for review → approved, with
               reopen and retire — and keep the version history behind it.</li>
             <li>Check what the corpus actually covers at

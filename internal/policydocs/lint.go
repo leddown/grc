@@ -1,6 +1,7 @@
 package policydocs
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -19,6 +20,51 @@ type Finding struct {
 	SectionID int64  `json:"section_id"` // 0 = document-level
 	Heading   string `json:"heading"`
 	Message   string `json:"message"`
+	// Rule names the check, for the rules a client acts on by name.
+	Rule string `json:"rule,omitempty"`
+}
+
+// RulePendingSuggestions blocks approval while a Studio section still has
+// suggestions nobody has accepted or rejected.
+const RulePendingSuggestions = "pending_suggestions"
+
+var suggestionMarks = map[string]bool{"insertion": true, "deletion": true, "modification": true}
+
+// PendingSuggestions counts the distinct suggestions in a section's
+// content_json (the Studio's ProseMirror JSON). The approved text is the
+// baseline -- what the document says with every pending suggestion left
+// undecided -- so approving with suggestions open would approve something
+// nobody chose.
+func PendingSuggestions(contentJSON string) int {
+	if strings.TrimSpace(contentJSON) == "" {
+		return 0
+	}
+	type node struct {
+		Marks []struct {
+			Type  string         `json:"type"`
+			Attrs map[string]any `json:"attrs"`
+		} `json:"marks"`
+		Content []node `json:"content"`
+	}
+	var root node
+	if json.Unmarshal([]byte(contentJSON), &root) != nil {
+		return 0
+	}
+	ids := map[string]bool{}
+	var walk func(n node)
+	walk = func(n node) {
+		for _, m := range n.Marks {
+			if suggestionMarks[m.Type] {
+				id, _ := m.Attrs["id"].(string)
+				ids[id] = true
+			}
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(root)
+	return len(ids)
 }
 
 // unresolvedPattern matches the placeholder an unfilled client fact leaves
@@ -106,6 +152,16 @@ func Lint(doc Document, sections []Section, refs []ControlRef) []Finding {
 		label := strings.TrimSpace(s.Heading)
 		if label == "" {
 			label = SectionKindLabels[s.SectionKind]
+		}
+
+		if n := PendingSuggestions(s.ContentJSON); n > 0 {
+			findings = append(findings, Finding{
+				Severity:  SeverityError,
+				SectionID: s.ID,
+				Heading:   label,
+				Rule:      RulePendingSuggestions,
+				Message:   fmt.Sprintf("%d suggestion(s) are still open — accept or reject each before approval", n),
+			})
 		}
 
 		for _, match := range unresolvedPattern.FindAllString(s.Body, -1) {

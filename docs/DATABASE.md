@@ -136,7 +136,10 @@ row count and exits non-zero on the first error.
   means something only next to the state it was written against. The section
   rows travel with their `content_json`, and the destination rebuilds a
   changed Studio document from them the first time it is opened (see
-  POLICY_STUDIO.md).
+  POLICY_STUDIO.md). The review layer (`policy_comment_threads`,
+  `policy_comments`, `policy_studio_audit`) follows the same rule: comment
+  anchors are Yjs relative positions into that state, so they are backed up but
+  not synced.
 - **The derived link table is rebuilt.** `security_nfr_control_links` has no
   stable key (it is regenerated from the catalogs + overrides), so it is
   replaced wholesale on the destination to stay consistent with the rows just

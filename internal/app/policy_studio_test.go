@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -27,8 +28,10 @@ type studioApp struct {
 	studio   *policystudio.Service
 	policies *policydocs.Service
 	clients  *clientprofile.Service
+	know     *knowledge.Service
 	doc      policydocs.Document
 	admin    string // session tokens
+	admin2   string // a second administrator, "bob"
 	reader   string
 	outside  string
 }
@@ -68,20 +71,25 @@ func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp) *studioApp {
 	adminGate := adminTokenMiddleware(auth, "")
 	registerPublicPageRoutes(router, false)
 	policies := registerPolicyDocRoutes(router, conn, auth, adminGate, false)
-	studio, err := registerPolicyStudioRoutes(router, conn, policies, auth, knowledge.NewService(knowledge.NewStore(conn)), adminGate, Options{})
+	know := knowledge.NewService(knowledge.NewStore(conn))
+	studio, err := registerPolicyStudioRoutes(router, conn, policies, auth, know, adminGate, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = studio.Shutdown(context.Background()) })
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	app := &studioApp{router: router, server: srv, studio: studio, policies: policies, clients: clientprofile.NewService(conn)}
+	app := &studioApp{router: router, server: srv, studio: studio, policies: policies, clients: clientprofile.NewService(conn), know: know}
 	if prev != nil {
-		app.doc, app.admin, app.reader, app.outside = prev.doc, prev.admin, prev.reader, prev.outside
+		app.doc, app.admin, app.admin2, app.reader, app.outside = prev.doc, prev.admin, prev.admin2, prev.reader, prev.outside
 		return app
 	}
 
 	admin, err := auth.BootstrapAdmin("admin", "very-strong-pass-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin2, err := auth.CreateUserWithAccess("bob", "very-strong-pass-4", true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +117,7 @@ func newStudioAppAt(t *testing.T, dbPath string, prev *studioApp) *studioApp {
 	if _, err := studio.Migrate(doc.ID, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	app.doc, app.admin, app.reader, app.outside = doc, session(admin.ID), session(reader.ID), session(outside.ID)
+	app.doc, app.admin, app.admin2, app.reader, app.outside = doc, session(admin.ID), session(admin2.ID), session(reader.ID), session(outside.ID)
 	return app
 }
 
@@ -210,6 +218,16 @@ func TestStudioPagesFollowThePolicyGrants(t *testing.T) {
 		{http.MethodPost, "/policies/clients", a.reader, http.StatusForbidden},
 		{http.MethodPost, "/policies/from-template", a.reader, http.StatusForbidden},
 		{http.MethodPut, "/policies/clients/1/facts/legal_entity_name", a.reader, http.StatusForbidden},
+		{http.MethodGet, "/policies/" + id + "/studio/comments", a.reader, http.StatusOK},
+		{http.MethodGet, "/policies/" + id + "/studio/comments", a.outside, http.StatusForbidden},
+		{http.MethodGet, "/policies/" + id + "/studio/comments", "", http.StatusUnauthorized},
+		{http.MethodGet, "/policies/" + id + "/studio/provenance", a.reader, http.StatusOK},
+		{http.MethodGet, "/policies/" + id + "/studio/provenance", a.outside, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/comments", a.reader, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/comments/1/replies", a.reader, http.StatusForbidden},
+		{http.MethodPatch, "/policies/" + id + "/studio/comments/1", a.reader, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/decisions", a.reader, http.StatusForbidden},
+		{http.MethodPost, "/policies/" + id + "/studio/decisions", "", http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
 		if got := do(tc.method, tc.path, tc.token); got != tc.want {
@@ -276,5 +294,69 @@ func TestParseStudioOrigins(t *testing.T) {
 		if _, err := parseStudioOrigins(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// An internal comment appears in the internal comment listing and nowhere
+// else: no other policy read route, and not the knowledge API an external
+// agent reads.
+func TestInternalCommentsStayInternal(t *testing.T) {
+	a := newStudioApp(t)
+	id := strconv.FormatInt(a.doc.ID, 10)
+	get := func(path, token string) (int, string) {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: token})
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	send := func(method, path, body string) (int, string) {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: a.admin})
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	sections, err := a.policies.ListSections(a.doc.ID)
+	if err != nil || len(sections) == 0 {
+		t.Fatalf("sections: %v", err)
+	}
+	const marker = "INTERNAL-7f3c: the client's auditor is not to see this"
+	body, _ := json.Marshal(map[string]string{"section_uid": sections[0].UID, "anchor_start": "AQID", "anchor_end": "AQIE",
+		"quote": "Why this policy exists.", "visibility": "internal", "body": marker})
+	if code, out := send(http.MethodPost, "/policies/"+id+"/studio/comments", string(body)); code != http.StatusCreated {
+		t.Fatalf("create comment: %d %s", code, out)
+	}
+	if code, out := get("/policies/"+id+"/studio/comments", a.reader); code != http.StatusOK || !strings.Contains(out, "INTERNAL-7f3c") {
+		t.Fatalf("the internal listing shows it: %d %s", code, out)
+	}
+
+	checked := 0
+	for _, r := range a.router.Routes() {
+		if r.Method != http.MethodGet || !strings.HasPrefix(r.Path, "/policies") || r.Path == "/policies/:id/studio/comments" {
+			continue
+		}
+		path := strings.NewReplacer(":id", id, ":sectionID", strconv.FormatInt(sections[0].ID, 10), ":clientID", "1").Replace(r.Path)
+		if strings.Contains(path, ":") || strings.Contains(path, "*") {
+			t.Errorf("route %s has a parameter this test does not fill in", r.Path)
+			continue
+		}
+		_, out := get(path, a.admin)
+		if strings.Contains(out, "INTERNAL-7f3c") {
+			t.Errorf("GET %s carries an internal comment", r.Path)
+		}
+		checked++
+	}
+	if checked < 20 {
+		t.Fatalf("only %d policy read routes checked", checked)
+	}
+	bundle, err := a.know.Bundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(bundle)
+	if strings.Contains(string(raw), "INTERNAL-7f3c") {
+		t.Fatal("the knowledge export carries an internal comment")
 	}
 }

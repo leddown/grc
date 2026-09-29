@@ -41,7 +41,10 @@ type Decision struct {
 // host, plus the configured external origins) -- ygo alone would admit an
 // upgrade with no Origin, and the session cookie would make that a cross-site
 // WebSocket hijack. Read-write goes only to admins, and only while the
-// document is a draft and no status change is in progress.
+// document is a draft or in review and no status change is in progress. In
+// review the editor switches to suggest mode; the server cannot tell a
+// suggestion from a direct edit in a Yjs update, so what it guarantees is the
+// approval block: nothing is approved while a suggestion is pending.
 func (s *Service) decide(r *http.Request, documentID int64) Decision {
 	if !s.originAllowed(r) {
 		return Decision{Reason: "origin not allowed"}
@@ -60,7 +63,7 @@ func (s *Service) decide(r *http.Request, documentID int64) Decision {
 	if doc.EditorFormat != policydocs.EditorStudio {
 		return Decision{Reason: "document is not in the Studio"}
 	}
-	writable := id.Admin && doc.Status == policydocs.StatusDraft && !s.transitioning(documentID)
+	writable := id.Admin && projected(doc.Status) && !s.transitioning(documentID)
 	return Decision{Allow: true, ReadOnly: !writable}
 }
 

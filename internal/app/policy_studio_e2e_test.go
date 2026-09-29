@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
 	"net/url"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +21,7 @@ import (
 
 	"grc/internal/authn"
 	"grc/internal/clientprofile"
+	"grc/internal/policydocs"
 )
 
 // These drive the real Studio -- the embedded bundle, the theme middleware,
@@ -153,28 +157,30 @@ func TestStudioInTheBrowser(t *testing.T) {
 		}
 	})
 
-	t.Run("submitting for review turns every editor read-only", func(t *testing.T) {
+	t.Run("in review admins suggest and readers stay read-only", func(t *testing.T) {
 		if err := chromedp.Run(alice, page.BringToFront(), chromedp.Click(`//button[normalize-space()='Submit for review']`, chromedp.BySearch)); err != nil {
 			t.Fatal(err)
 		}
 		waitJS(t, alice, "the status changes", `document.querySelector('.ps-pill').textContent === 'In review'`)
-		waitJS(t, alice, "Alice's editor turns read-only", `GRCPolicyStudio.editor.isEditable === false`)
-		// A hidden tab does not poll; the server has already made its socket
-		// read-only, and the editor follows when the tab is looked at.
-		if err := chromedp.Run(bob, page.BringToFront()); err != nil {
+		waitJS(t, alice, "Alice's editor switches to suggest mode", `document.querySelector('.ps-suggest-toggle') && document.querySelector('.ps-suggest-toggle').textContent === 'Suggesting (in review)' && GRCPolicyStudio.editor.isEditable`)
+		// A hidden tab does not poll; the editor follows when it is looked at.
+		if err := chromedp.Run(rita, page.BringToFront()); err != nil {
 			t.Fatal(err)
 		}
-		waitJS(t, bob, "Bob's editor turns read-only", `GRCPolicyStudio.editor.isEditable === false`)
-		// Even forced editable, the server drops the write.
-		evalJS[bool](t, bob, `(() => { const e = GRCPolicyStudio.editor; e.setEditable(true); e.commands.insertContentAt(3, 'SNEAKED IN'); return true })()`)
+		waitJS(t, rita, "the reader's status updates", `document.querySelector('.ps-pill').textContent === 'In review'`)
+		if evalJS[bool](t, rita, `GRCPolicyStudio.editor.isEditable`) {
+			t.Fatal("a reader's editor is editable in review")
+		}
+		// Even forced editable, the server drops a reader's write.
+		evalJS[bool](t, rita, `(() => { const e = GRCPolicyStudio.editor; e.setEditable(true); e.commands.insertContentAt(3, 'SNEAKED IN'); return true })()`)
 		time.Sleep(2 * time.Second)
 		if evalJS[bool](t, alice, editorText+`.includes('SNEAKED IN')`) {
-			t.Fatal("a write reached another peer while the document was in review")
+			t.Fatal("a reader's write reached another peer")
 		}
 		if err := chromedp.Run(alice, page.BringToFront(), chromedp.Click(`//button[normalize-space()='Return to draft']`, chromedp.BySearch)); err != nil {
 			t.Fatal(err)
 		}
-		waitJS(t, alice, "Alice can edit again", `GRCPolicyStudio.editor.isEditable === true`)
+		waitJS(t, alice, "Alice edits directly again", `document.querySelector('.ps-suggest-toggle') && document.querySelector('.ps-suggest-toggle').textContent === 'Editing'`)
 	})
 
 	t.Run("a restart mid-edit loses nothing", func(t *testing.T) {
@@ -231,6 +237,8 @@ func TestStudioTemplatesAndFactsInTheBrowser(t *testing.T) {
 	}
 
 	// Fill legal_entity_name from the Facts panel.
+	evalJS[bool](t, tab, `(document.getElementById('ps-tab-facts').click(), true)`)
+	waitJS(t, tab, "the Facts tab lists the template's facts", `document.querySelectorAll('.ps-fact-row').length > 0`)
 	evalJS[bool](t, tab, `(() => { const row = Array.from(document.querySelectorAll('.ps-fact-row')).find(r => r.querySelector('code').textContent === 'legal_entity_name');
 		row.querySelector('input, textarea').value = 'Example Bank AG'; row.querySelector('button').click(); return true })()`)
 	waitJS(t, tab, "every legal_entity_name chip resolves", `(() => { const chips = document.querySelectorAll('.ps-fact[data-fact="legal_entity_name"]');
@@ -252,4 +260,269 @@ func createClient(t *testing.T, a *studioApp, name string) int64 {
 		t.Fatal(err)
 	}
 	return c.ID
+}
+
+// Phase 2 in the browser: two administrators suggest at once, approval waits
+// for every suggestion, the review is done from the keyboard, a comment
+// reaches the other editor, and provenance names who accepted what.
+func TestStudioReviewInTheBrowser(t *testing.T) {
+	browser := headlessBrowser(t)
+	a := newStudioApp(t)
+	d, err := a.policies.GetDocument(a.doc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A guideline needs only the purpose and scope the fixture has, so the
+	// pending suggestions are the only thing between it and approval.
+	d.EffectiveDate, d.DocType = "2026-10-01", policydocs.TypeGuideline
+	if _, err := a.policies.UpdateDocument(d.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	id := strconv.FormatInt(a.doc.ID, 10)
+	alice := studioTab(t, browser, a, a.admin)
+	bob := studioTab(t, browser, a, a.admin2)
+
+	suggestions := `GRCPolicyStudio.suggestions()`
+	// The editor's header actions are there as soon as it mounts, not only
+	// after the next state change.
+	if !evalJS[bool](t, alice, `!!document.querySelector('.ps-suggest-toggle') && [...document.querySelectorAll('.ps-actions button')].some((b) => b.textContent === 'Comment')`) {
+		t.Fatal("the suggest and comment actions are missing after the editor mounted")
+	}
+	// Both turn suggest mode on and type at the same moment, Bob with real
+	// key events.
+	for _, tab := range []context.Context{alice, bob} {
+		if err := chromedp.Run(tab, page.BringToFront(), chromedp.Click(`.ps-suggest-toggle`, chromedp.ByQuery)); err != nil {
+			t.Fatal(err)
+		}
+		waitJS(t, tab, "suggest mode is on", `document.querySelector('.ps-suggest-toggle').getAttribute('aria-pressed') === 'true'`)
+	}
+	// Bob's caret is placed by position: a click lands wherever the layout
+	// has just moved to. His keys are real.
+	evalJS[bool](t, bob, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text === 'all staff') at = p + n.nodeSize });
+		e.chain().focus().setTextSelection(at).run(); return true })()`)
+	waitJS(t, bob, "Bob's editor has focus", `document.activeElement.classList.contains('ProseMirror')`)
+	done := make(chan error, 1)
+	go func() {
+		done <- chromedp.Run(bob, page.BringToFront(), chromedp.KeyEvent(" and visitors"))
+	}()
+	evalJS[bool](t, alice, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text.includes('Why this policy exists.')) at = p + n.nodeSize });
+		e.commands.insertContentAt(at, ' It binds every employee.'); return true })()`)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	for _, tab := range []context.Context{alice, bob} {
+		waitJS(t, tab, "both suggestions reach both editors", suggestions+`.length === 2`)
+	}
+	got := evalJS[string](t, alice, suggestions+`.map((s) => s.authorName + ':' + s.inserted).sort().join('|')`)
+	if got != "admin: It binds every employee.|bob: and visitors" || !evalJS[bool](t, alice, editorText+`.includes('all staff and visitors')`) {
+		t.Fatalf("suggestions as Alice sees them: %q", got)
+	}
+	if ids := evalJS[int](t, bob, `new Set(`+suggestions+`.map((s) => s.id)).size`); ids != 2 {
+		t.Fatalf("suggestion ids collide: %d distinct", ids)
+	}
+	if rows, _ := a.policies.ListSections(a.doc.ID); strings.Contains(rows[0].Body, "binds every employee") {
+		t.Fatal("a pending suggestion reached the baseline")
+	}
+
+	// A comment on Alice's side reaches Bob as a highlight.
+	evalJS[bool](t, alice, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text.includes('all staff')) at = p + n.text.indexOf('all staff') });
+		e.commands.setTextSelection({ from: at, to: at + 9 }); return true })()`)
+	if err := chromedp.Run(alice, page.BringToFront(), chromedp.Click(`//button[normalize-space()='Comment']`, chromedp.BySearch)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "the composer opens with the quote", `document.querySelector('.ps-composer .ps-quote').textContent === 'all staff'`)
+	if err := chromedp.Run(alice,
+		chromedp.SendKeys(`.ps-composer textarea`, "Does this include contractors?", chromedp.ByQuery),
+		chromedp.Click(`//button[normalize-space()='Post comment']`, chromedp.BySearch)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "the thread is listed", `document.querySelectorAll('.ps-thread').length === 1`)
+	if err := chromedp.Run(bob, page.BringToFront()); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, bob, "Bob sees the commented text highlighted", `document.querySelector('.ps-comment-mark') && document.querySelector('.ps-comment-mark').textContent === 'all staff'`)
+
+	// Submitted for review, approval is refused while anything is pending.
+	if err := chromedp.Run(alice, page.BringToFront(), chromedp.Click(`//button[normalize-space()='Submit for review']`, chromedp.BySearch)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "the document is in review", `document.querySelector('.ps-pill').textContent === 'In review'`)
+	_, err = a.policies.Approve(a.doc.ID, "rev", "")
+	var refused policydocs.ApprovalError
+	if !errors.As(err, &refused) {
+		t.Fatalf("approval with pending suggestions: %v", err)
+	}
+	for _, f := range refused.Findings {
+		if f.Rule != policydocs.RulePendingSuggestions {
+			t.Fatalf("approval refused for something else: %+v", f)
+		}
+	}
+	if code, body := getAs(t, a, "/policies/"+id+"/studio/state", a.admin); code != 200 || !strings.Contains(body, `"rule":"pending_suggestions"`) {
+		t.Fatalf("the pending_suggestions finding: %d", code)
+	}
+
+	// Keyboard review in the Suggestions panel: J, A, then J, R.
+	if err := chromedp.Run(alice, page.BringToFront(), chromedp.Click(`#ps-tab-suggestions`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "the panel lists both", `document.querySelectorAll('.ps-sugg-item').length === 2`)
+	if err := chromedp.Run(alice, chromedp.KeyEvent("j")); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "J selects the first", `document.querySelectorAll('.ps-sugg-item-current').length === 1`)
+	first := evalJS[string](t, alice, `document.querySelector('.ps-sugg-item-current strong').textContent`)
+	if err := chromedp.Run(alice, chromedp.KeyEvent("a")); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "A accepts it", suggestions+`.length === 1`)
+	if err := chromedp.Run(alice, chromedp.KeyEvent("r")); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "R rejects the other", suggestions+`.length === 0`)
+	waitJS(t, bob, "the decisions reach Bob", suggestions+`.length === 0`)
+	text := evalJS[string](t, bob, editorText)
+	accepted, rejected := "It binds every employee.", "and visitors"
+	if first == "bob" {
+		accepted, rejected = rejected, accepted
+	}
+	if !strings.Contains(text, accepted) || strings.Contains(text, rejected) {
+		t.Fatalf("after accepting %s's suggestion Bob reads %q", first, text)
+	}
+
+	// Provenance names who accepted and rejected which suggestion.
+	code, prov := getAs(t, a, "/policies/"+id+"/studio/provenance", a.reader)
+	if code != 200 || !strings.Contains(prov, `"decision":"accepted","decided_by":"admin"`) || !strings.Contains(prov, `"decision":"rejected","decided_by":"admin"`) {
+		t.Fatalf("provenance: %d %s", code, prov)
+	}
+	if err := chromedp.Run(alice, chromedp.Click(`#ps-tab-provenance`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, alice, "the Provenance panel says who accepted it", `document.querySelector('.ps-tabpanel').textContent.includes('accepted by admin')`)
+
+	// With every suggestion decided, approval goes through and takes the
+	// accepted text.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		rows, _ := a.policies.ListSections(a.doc.ID)
+		joined := rows[0].Body + rows[1].Body
+		if strings.Contains(joined, accepted) && !strings.Contains(joined, rejected) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the rows never followed the decisions: %q", joined)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if _, err := a.policies.Approve(a.doc.ID, "rev", ""); err != nil {
+		t.Fatalf("approval after every suggestion was decided: %v", err)
+	}
+}
+
+func getAs(t *testing.T, a *studioApp, path, token string) (int, string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, a.server.URL+path, nil)
+	req.AddCookie(&http.Cookie{Name: authn.AuthSessionCookie, Value: token})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
+}
+
+// Whole-block suggestions, where suggest-changes 0.1.x is least proven: a new
+// list item, a deleted list item and a new table row, each suggested, then
+// decided, and the projection following only the decisions.
+func TestStudioBlockSuggestionsInTheBrowser(t *testing.T) {
+	browser := headlessBrowser(t)
+	a := newStudioApp(t)
+	tab := studioTab(t, browser, a, a.admin)
+	suggestions := `GRCPolicyStudio.suggestions()`
+	rows := func() string {
+		r, _ := a.policies.ListSections(a.doc.ID)
+		return r[1].Body + "\n" + r[1].BlocksJSON
+	}
+	waitRows := func(what string, ok func(string) bool) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for !ok(rows()) {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s; the scope section reads %q", what, rows())
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+
+	// A table, added directly (not as a suggestion) at the end of the scope.
+	evalJS[bool](t, tab, `(() => { const e = GRCPolicyStudio.editor; const scope = e.state.doc.child(1);
+		let end = 0; e.state.doc.forEach((n, off, i) => { if (i === 1) end = off + n.nodeSize - 1 });
+		e.chain().insertContentAt(end, { type: 'table', content: [
+			{ type: 'tableRow', content: [{ type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'System' }] }] }] },
+			{ type: 'tableRow', content: [{ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Payments' }] }] }] }] }).run(); return true })()`)
+	waitRows("the table is projected", func(s string) bool { return strings.Contains(s, "Payments") })
+
+	if err := chromedp.Run(tab, page.BringToFront(), chromedp.Click(`.ps-suggest-toggle`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	// A new list item: Enter at the end of "all systems", then type. The caret
+	// is placed by position (a click lands wherever the layout has moved to).
+	// Enter is a DOM keydown: chromedp's KeyEvent for Enter also sends a
+	// separate character event, which a real keyboard does not once the
+	// editor has handled the keydown, and which would split the item twice.
+	evalJS[bool](t, tab, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text === 'all systems') at = p + n.nodeSize });
+		e.chain().focus().setTextSelection(at).run(); return true })()`)
+	waitJS(t, tab, "the editor has focus", `document.activeElement.classList.contains('ProseMirror')`)
+	evalJS[bool](t, tab, `(document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })), true)`)
+	if err := chromedp.Run(tab, chromedp.KeyEvent("all contractors")); err != nil {
+		t.Fatal(err)
+	}
+	waitJS(t, tab, "the new list item is one suggestion", suggestions+`.length === 1 && `+suggestions+`[0].inserted.includes('all contractors')`)
+	// A new table row after "Payments".
+	evalJS[bool](t, tab, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text === 'Payments') at = p + 1 });
+		e.chain().setTextSelection(at).addRowAfter().run(); return true })()`)
+	waitJS(t, tab, "the new row is a second suggestion", suggestions+`.length === 2`)
+	// Delete the first list item's text: a suggested deletion.
+	evalJS[bool](t, tab, `(() => { const e = GRCPolicyStudio.editor; let at = -1;
+		e.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text === 'all staff') at = p });
+		e.chain().setTextSelection({ from: at, to: at + 9 }).deleteSelection().run(); return true })()`)
+	waitJS(t, tab, "the deletion is a third suggestion", suggestions+`.length === 3`)
+	if !evalJS[bool](t, tab, editorText+`.includes('all staff')`) {
+		t.Fatal("a suggested deletion removed the text")
+	}
+	waitRows("the baseline leaves every pending block out", func(s string) bool {
+		return !strings.Contains(s, "contractors") && strings.Contains(s, "all staff") && strings.Count(s, `"cells"`) == 2
+	})
+
+	decide := func(match, button string) {
+		t.Helper()
+		if err := chromedp.Run(tab, chromedp.Click(`#ps-tab-suggestions`, chromedp.ByQuery)); err != nil {
+			t.Fatal(err)
+		}
+		// The panel follows the text a moment later (it is debounced).
+		waitJS(t, tab, "the panel lists the suggestion", `Array.from(document.querySelectorAll('.ps-sugg-item')).some((li) => `+match+`)`)
+		ok := evalJS[bool](t, tab, `(() => { const item = Array.from(document.querySelectorAll('.ps-sugg-item')).find((li) => `+match+`);
+			if (!item) return false; Array.from(item.querySelectorAll('button')).find((b) => b.textContent === '`+button+`').click(); return true })()`)
+		if !ok {
+			t.Fatalf("no suggestion item matching %s", match)
+		}
+	}
+	decide(`li.textContent.includes('all contractors')`, "Accept")
+	waitJS(t, tab, "the list item is accepted", suggestions+`.length === 2`)
+	decide(`li.textContent.includes('all staff')`, "Reject")
+	waitJS(t, tab, "the deletion is rejected", suggestions+`.length === 1`)
+	decide(`li.textContent.includes('Adds a table row')`, "Accept")
+	waitJS(t, tab, "the table row is accepted", suggestions+`.length === 0`)
+	waitRows("the projection follows the decisions", func(s string) bool {
+		md, _, _ := strings.Cut(s, "\n|")
+		return strings.Contains(md, "- all staff\n- all systems\n- all contractors") && strings.Count(md, "- ") == 3 && strings.Count(s, `"cells"`) == 3
+	})
+	if n := evalJS[int](t, tab, `document.querySelectorAll('.ps-prosemirror section:nth-of-type(2) tr').length`); n != 3 {
+		t.Fatalf("the table has %d rows, want 3", n)
+	}
 }

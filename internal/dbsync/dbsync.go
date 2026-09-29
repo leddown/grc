@@ -518,6 +518,32 @@ var syncOrder = []tableSpec{
 		blobCols:     []string{"state"},
 		strat:        skipInSync,
 	},
+	// Comment anchors are Yjs relative positions into the state above, so the
+	// threads, and the audit that refers to their suggestions, stay out of a
+	// sync for the same reason: the destination rebuilds its document from the
+	// rows, and these would point into a document it does not have.
+	{
+		table: "policy_comment_threads",
+		cols: []string{"id", "document_id", "section_uid", "anchor_start", "anchor_end", "quote", "visibility", "kind",
+			"suggestion_suid", "status", "created_by", "created_at", "updated_at", "resolved_by", "resolved_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_comments",
+		cols:         []string{"id", "thread_id", "author", "author_kind", "body", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_studio_audit",
+		cols:         []string{"id", "document_id", "actor", "actor_kind", "event", "detail_json", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
 
 	{
 		// Derived from the catalogs + overrides; no stable key, so replace it
