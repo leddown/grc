@@ -5,7 +5,6 @@ go 1.25.0
 toolchain go1.25.13
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.46.0
 	github.com/chromedp/cdproto v0.0.0-20250120090109-d38428e4d9c8
 	github.com/chromedp/chromedp v0.12.1
 	github.com/gin-gonic/gin v1.12.0
@@ -19,6 +18,7 @@ require (
 )
 
 require (
+	github.com/anthropics/anthropic-sdk-go v1.46.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

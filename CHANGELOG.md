@@ -43,6 +43,8 @@ where they used to apply only when Wintermute was the selected provider.
   - **The Studio's browser test** checks the whole answer: Wintermute answers
     a turn whole, so there is no partial preview to see. Answers used to
     stream as Claude wrote them; they now arrive in one piece.
+- **`go.mod`:** `anthropic-sdk-go` is no longer a direct dependency. It stays
+  as an indirect one, because gosec's autofix needs it.
 - **Docs:** `AI_AGENT.md`, `POLICY_STUDIO.md`, `CRISIS_EXERCISE.md`,
   `REGULATION_COVERAGE.md`, `RUNTIME_ARGS.md` and `Agents.md`, where they
   described Claude as a provider of its own. The design records of the spikes
