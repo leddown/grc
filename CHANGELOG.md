@@ -3,6 +3,14 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-01 (Crisis Exercise docs: read the agent's library as crisis documents)
+
+- **`CRISIS_EXERCISE.md`:** the Crisis Exercise agent should read its library
+  in wintermute's new `crisis` domain (wintermute decision note 0005, step 5).
+  That domain cuts this module's report PDF at its phases, injects and
+  findings, and names each MSEL row by its inject code and title. Docs only;
+  no code changed.
+
 ## 2026-09-30 (Claude is reached through Wintermute; the direct provider is retired)
 
 Every AI question in this application is now a turn on the Wintermute server,
