@@ -550,6 +550,11 @@ What Phase 1a puts in the hands of a user and an operator.
   section that nevertheless disappears from the live document (an old or
   modified client) is *detached*: its row and its control mappings stay, and
   it can be restored or deleted from the Outline.
+- **Lists.** The toolbar above the document has *Bulleted list*, *Numbered
+  list*, *Decrease indent* and *Increase indent*, as in Word. Typing `- ` or
+  `1. ` at the start of a line, Ctrl/⌘+Shift+8 and Ctrl/⌘+Shift+7, and Tab /
+  Shift+Tab in a list do the same. List markers follow Word's levels (• ◦ ▪,
+  1. a. i.). A section heading cannot become a list item.
 - **Controls** show as chips under each section heading, like the
   *Satisfies:* line in the rendered document. *+ Control* searches the
   catalog; mapping stays a draft-only edit, as before.

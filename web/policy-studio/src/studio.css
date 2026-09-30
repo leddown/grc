@@ -55,6 +55,14 @@
 .ps-canvas { min-width: 0; padding: 20px clamp(8px, 2.5vw, 32px) 80px; }
 /* The document is a sheet in the theme's surface colour, so the Matrix and
    Chaos backdrops never run behind the text. */
+/* Sticks under the header bar while the document scrolls. */
+.ps-format { position: sticky; top: calc(var(--ps-top) + var(--ps-bar-h, 58px)); z-index: 4; display: flex; align-items: center; gap: 4px;
+  max-width: 48rem; margin: 0 auto 8px; padding: 4px 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.ps-format[hidden] { display: none; }
+.ps-app .ps-format-btn { padding: 4px 6px; line-height: 0; }
+.ps-app .ps-format-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.ps-format-btn svg { width: 20px; height: 20px; }
+.ps-format-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); }
 .ps-canvas-inner { max-width: 48rem; margin: 0 auto; padding: 8px clamp(16px, 4vw, 56px) 32px;
   background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; }
 .ps-migrate { padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
@@ -69,6 +77,18 @@
 .ps-prosemirror h2 { font-family: "Liberation Sans", Arial, sans-serif; font-size: 18px; margin: 16px 0 4px; }
 .ps-prosemirror h3 { font-family: "Liberation Sans", Arial, sans-serif; font-size: 16px; margin: 14px 0 4px; }
 .ps-prosemirror p { margin: 0 0 10px; }
+/* Word's default list levels: • ◦ ▪ and 1. a. i., by depth whatever the
+   outer list is. */
+.ps-prosemirror ul, .ps-prosemirror ol { margin: 0 0 10px; padding-left: 1.6em; }
+.ps-prosemirror li { display: list-item; }
+.ps-prosemirror li > p { margin: 0 0 4px; }
+.ps-prosemirror li > ul, .ps-prosemirror li > ol { margin: 0 0 4px; }
+.ps-prosemirror ul { list-style: disc; }
+.ps-prosemirror :is(ul, ol) ul { list-style: circle; }
+.ps-prosemirror :is(ul, ol) :is(ul, ol) ul { list-style: square; }
+.ps-prosemirror ol { list-style: decimal; }
+.ps-prosemirror :is(ul, ol) ol { list-style: lower-alpha; }
+.ps-prosemirror :is(ul, ol) :is(ul, ol) ol { list-style: lower-roman; }
 .ps-prosemirror a { color: var(--accent); }
 .ps-prosemirror code { font-size: .9em; padding: 0 3px; border-radius: 4px; background: var(--surface-2); color: var(--text); }
 .ps-prosemirror blockquote { margin: 10px 0; padding-left: 14px; border-left: 3px solid var(--border); color: var(--muted); }

@@ -120,6 +120,31 @@ function colorFor(name) {
 
 const statusLabels = { draft: 'Draft', in_review: 'In review', approved: 'Approved', retired: 'Retired' }
 
+// Toolbar icons, 20×20 line drawings in the button's text colour, built node
+// by node like the rest of the page.
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const stroke = (d, width) => ['path', { d, stroke: 'currentColor', 'stroke-width': width || 1.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', fill: 'none' }]
+const dot = (cy) => ['circle', { cx: 4, cy, r: 1.4, fill: 'currentColor' }]
+const arrow = (d) => ['path', { d, fill: 'currentColor' }]
+const formatIcons = {
+  bullets: [stroke('M8 5h9M8 10h9M8 15h9'), dot(5), dot(10), dot(15)],
+  numbering: [stroke('M8 5h9M8 10h9M8 15h9'), stroke('M3 3.2l1.2-.7V7M3.1 8.6c.4-.5 1.9-.6 1.9.4 0 .8-1.9 1.6-1.9 2.5H5M3.1 13.3h1.8l-.9 1.2c.9 0 1.1.6 1 1s-.6.8-1.1.8-.8-.2-.9-.4', 1)],
+  outdent: [stroke('M3 4h14M10 8h7M10 12h7M3 16h14'), arrow('M7 7.5L4 10l3 2.5z')],
+  indent: [stroke('M3 4h14M10 8h7M10 12h7M3 16h14'), arrow('M4 7.5L7 10l-3 2.5z')],
+}
+
+function formatIcon(name) {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 20 20')
+  svg.setAttribute('aria-hidden', 'true')
+  for (const [tag, attrs] of formatIcons[name]) {
+    const el = document.createElementNS(SVG_NS, tag)
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v))
+    svg.appendChild(el)
+  }
+  return svg
+}
+
 function shortTime(iso) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
@@ -521,6 +546,7 @@ class Studio {
     this.actions = h('div', { class: 'ps-actions' })
     this.outline = h('nav', { class: 'ps-outline', 'aria-label': 'Outline' })
     this.canvas = h('div', { class: 'ps-canvas-inner' })
+    this.formatBar = h('div', { class: 'ps-format', role: 'toolbar', 'aria-label': 'Formatting', hidden: true })
     this.side = h('aside', { class: 'ps-side', 'aria-label': 'Readiness and document control' })
     this.toast = h('div', { class: 'ps-toast', role: 'status', 'aria-live': 'polite' })
     this.root.replaceChildren(
@@ -530,7 +556,7 @@ class Studio {
           this.titleEl, this.statusPill, this.counts),
         h('div', { class: 'ps-bar-meta' }, this.connection, this.presence),
         this.actions),
-      h('div', { class: 'ps-body' }, this.outline, h('section', { class: 'ps-canvas', 'aria-label': 'Document' }, this.canvas), this.side),
+      h('div', { class: 'ps-body' }, this.outline, h('section', { class: 'ps-canvas', 'aria-label': 'Document' }, this.formatBar, this.canvas), this.side),
       this.toast, this.live)
     this.renderHeader()
     // The bar wraps to more rows as actions are added; the sticky panels
@@ -678,6 +704,8 @@ class Studio {
     this.applyWorkshop()
     this.mapLibraryDocument()
     this.editor.on('update', () => this.scheduleSuggestionRefresh())
+    this.buildFormatBar()
+    this.editor.on('transaction', () => this.updateFormatBar())
     host.addEventListener('click', (e) => {
       const mark = e.target.closest && e.target.closest('.ps-comment-mark')
       const t = mark && this.threads.find((x) => String(x.id) === mark.dataset.thread)
@@ -775,6 +803,7 @@ class Studio {
     if (this.editor && editable !== this.canEdit) {
       this.canEdit = editable
       this.editor.setEditable(editable)
+      this.updateFormatBar()
       // The server decides read-only per connection, at connect time:
       // reconnect so it decides again with the new status.
       this.provider.disconnect()
@@ -803,6 +832,50 @@ class Studio {
     for (const f of this.state.facts || []) facts[f.key] = f
     this.chipsVersion++
     this.editor.view.dispatch(this.editor.state.tr.setMeta(chipsKey, { bySection, facts, version: this.chipsVersion }).setMeta('addToHistory', false))
+  }
+
+  // ---- formatting toolbar ----
+
+  // The buttons keep the editor's focus and selection: mousedown would
+  // otherwise move focus to the button before the command runs.
+  buildFormatBar() {
+    const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
+    const tool = (name, label, keys, run) => h('button', {
+      type: 'button', class: 'ps-format-btn', 'data-tool': name, 'aria-label': label, title: label + ' (' + keys + ')',
+      onmousedown: (e) => e.preventDefault(),
+      onclick: () => { if (this.canEdit) run(this.editor.chain().focus()).run() },
+    }, formatIcon(name))
+    this.formatTools = {
+      bullets: tool('bullets', 'Bulleted list', mod + '+Shift+8', (c) => c.toggleBulletList()),
+      numbering: tool('numbering', 'Numbered list', mod + '+Shift+7', (c) => c.toggleOrderedList()),
+      outdent: tool('outdent', 'Decrease indent', 'Shift+Tab', (c) => c.liftListItem('listItem')),
+      indent: tool('indent', 'Increase indent', 'Tab', (c) => c.sinkListItem('listItem')),
+    }
+    const t = this.formatTools
+    this.formatBar.replaceChildren(t.bullets, t.numbering, h('span', { class: 'ps-format-sep', 'aria-hidden': 'true' }), t.outdent, t.indent)
+    this.updateFormatBar()
+  }
+
+  updateFormatBar() {
+    if (!this.formatTools) return
+    this.formatBar.hidden = !this.canEdit
+    if (!this.canEdit) return
+    const { $from, $to } = this.editor.state.selection
+    // A section heading is the section's title row, never a list item.
+    const heading = $from.parent.type.name === 'sectionHeading' || $to.parent.type.name === 'sectionHeading'
+    let list = ''
+    for (let d = $from.depth; d > 0 && !list; d--) {
+      const name = $from.node(d).type.name
+      if (name === 'bulletList' || name === 'orderedList') list = name
+    }
+    const can = this.editor.can()
+    const t = this.formatTools
+    t.bullets.setAttribute('aria-pressed', String(list === 'bulletList'))
+    t.numbering.setAttribute('aria-pressed', String(list === 'orderedList'))
+    t.bullets.disabled = heading || !can.toggleBulletList()
+    t.numbering.disabled = heading || !can.toggleOrderedList()
+    t.outdent.disabled = heading || !can.liftListItem('listItem')
+    t.indent.disabled = heading || !can.sinkListItem('listItem')
   }
 
   // ---- header actions ----
