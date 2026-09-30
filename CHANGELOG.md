@@ -20,7 +20,8 @@ where they used to apply only when Wintermute was the selected provider.
 - **`internal/policyai`:** *local only* used to mean "not Claude". It now asks
   `CloudBackends` and refuses while any backend is a cloud one, or while the
   server can't say (`keepLocal`). This covers both proposals and template
-  drafts.
+  drafts. The server retries its fallback whatever backend is pinned, so the
+  refusal says that a cloud fallback has to go too.
 - **`internal/settings`:**
   - **Removed:**
     - the provider choice (`ai.provider`) and the Claude model (`ai.claude.model`);

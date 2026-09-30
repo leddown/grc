@@ -175,8 +175,12 @@ func keepLocal(ctx context.Context, provider aiprovider.Provider, agent, what st
 		return refuse(http.StatusBadGateway, "%s, and whether the Wintermute server would answer it locally couldn't be checked: %v", what, err)
 	}
 	if len(cloud) > 0 {
+		// The server's fallback is retried whatever backend is pinned, so
+		// pinning a local one is only half the remedy when the fallback is the
+		// cloud one.
 		return refuse(http.StatusForbidden, "%s, and the Wintermute server could answer it on a cloud backend (%s). "+
-			"Pin a local backend in Settings → AI providers, or change the document's AI setting.", what, strings.Join(cloud, ", "))
+			"Pin a local backend in Settings → AI providers and give that server a local fallback or none, or change the document's AI setting.",
+			what, strings.Join(cloud, ", "))
 	}
 	return nil
 }
