@@ -3,6 +3,51 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-30 (Policy Studio: bullets and numbering toolbar)
+
+The Studio editor already supported bulleted and numbered lists, but they could
+only be made by typing `- ` or `1. `, or with a keyboard shortcut nobody could
+see. A formatting toolbar above the document now has **Bulleted list**,
+**Numbered list**, **Decrease indent** and **Increase indent** buttons, like
+Word and Google Docs.
+
+- **`web/policy-studio/src/studio.js`:**
+  - **The toolbar** (`buildFormatBar`, `updateFormatBar`) shows only to people
+    who can edit (an admin on a draft or in review, or a guest editor). It
+    hides when the document turns read-only.
+  - **The list buttons** are pressed when the caret is in that kind of list
+    (the innermost one when lists are nested). Clicking the other one converts
+    the list; clicking the pressed one takes the current item out of the list.
+  - **The indent buttons** nest the item under the one above it (Tab), or bring
+    it back out (Shift+Tab).
+  - **When the buttons are disabled.** A button is disabled where its command
+    cannot run, and all four are disabled in a section heading.
+  - **Focus.** Buttons keep the editor's focus and selection (mousedown is
+    suppressed).
+  - **Suggest mode.** In suggest mode a list change is recorded as a
+    suggestion, like any other edit.
+  - **Icons** are inline SVG built node by node; no `innerHTML`, no new
+    dependency.
+- **`web/policy-studio/src/studio.css`:**
+  - List markers follow Word's default levels by depth: • ◦ ▪ for bullets and
+    1. a. i. for numbering. Before this, the editor had no list styles of its
+    own.
+  - The toolbar sticks under the header bar while the document scrolls.
+- **No schema, server or renderer change.** `bulletList`, `orderedList` and
+  `listItem` were already in the schema, the Go validator, the projection and
+  every renderer. `schema.snapshot.json` and the fixtures are unchanged.
+- **Bundle** rebuilt with Node 24.21.0 (`policy-studio.32457f73b04f.js`,
+  `policy-studio.c85b7322aecd.css`).
+- **Tests:** `TestStudioListToolbarInTheBrowser` (headless Chrome, real clicks)
+  covers:
+  - toolbar visibility for an admin and a reader;
+  - toggling and converting lists, and the pressed state;
+  - caret retention;
+  - indent and outdent, with the nested list styled `lower-alpha`;
+  - the projected Markdown (`1. …` / `   1. Second item`);
+  - the buttons disabled in a section heading;
+  - a list change becoming a suggestion in suggest mode.
+
 ## 2026-09-29 (Policy Studio: templates made in the app, drafted from library documents)
 
 Administrators can now make the templates *New document* offers without a
