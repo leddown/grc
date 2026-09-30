@@ -352,10 +352,9 @@ type Library interface {
 
 // Library returns the configured agent's document library.
 //
-// It is deliberately not routed the way a question is: there is no Claude
-// equivalent to fall back to, because the library is a thing that exists on one
-// server rather than a capability two providers both have. A module that
-// imports documents is unavailable when Wintermute is, and says so.
+// The library is a thing that exists on one server rather than a capability of
+// whichever model answers, so a module that imports documents is unavailable
+// when Wintermute is, and says so.
 func (r *Router) Library() (Library, error) {
 	if r.wintermute == nil || !r.wintermute.Available() {
 		return nil, fmt.Errorf("%w: set a Wintermute server and token in Settings — "+

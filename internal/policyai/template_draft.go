@@ -341,8 +341,14 @@ func (e *Engine) templateRoute(ctx context.Context, localOnly bool) (aiprovider.
 	if err != nil {
 		return nil, "", err
 	}
-	if _, cloud := provider.(*aiprovider.Claude); cloud && localOnly {
-		return nil, "", refuse(http.StatusForbidden, "Local only is ticked, and AI requests go to Claude (cloud). Select Wintermute in Settings → AI providers, or untick Local only.")
+	if localOnly {
+		agent := ""
+		if e.cfg.Agent != nil {
+			agent = strings.TrimSpace(e.cfg.Agent())
+		}
+		if err := keepLocal(ctx, provider, agent, "Local only is ticked"); err != nil {
+			return nil, "", err
+		}
 	}
 	return provider, dest, nil
 }

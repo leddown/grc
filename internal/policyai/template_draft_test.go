@@ -41,7 +41,7 @@ func draftedAnswer(t *testing.T) string {
 // checked (passages, controls, coverage, facts) with a note for each change,
 // and the result is stored as a working copy with its source.
 func TestDraftTemplateFromTheLibrary(t *testing.T) {
-	f := newFixture(t, "wintermute")
+	f := newFixture(t)
 	f.replies = []string{draftedAnswer(t)}
 	var progress int
 	tpl, err := f.engine.DraftTemplate(context.Background(), TemplateDraftRequest{LibraryDocumentID: 7, DocType: "standard"}, "alice", func(n int) { progress = n })
@@ -83,45 +83,34 @@ func TestDraftTemplateFromTheLibrary(t *testing.T) {
 	}
 }
 
-// Through Claude: the template contract goes out as the output schema, and
-// Local only refuses the cloud before anything is read or sent.
-func TestDraftTemplateThroughClaude(t *testing.T) {
-	f := newFixture(t, "claude")
+// Local only refuses a server that could answer on a cloud backend before
+// anything is read or sent, and allows one that answers locally.
+func TestDraftTemplateLocalOnly(t *testing.T) {
+	f := newFixture(t)
+	f.cloud = true
 	if _, err := f.engine.DraftTemplate(context.Background(), TemplateDraftRequest{LibraryDocumentID: 7, LocalOnly: true}, "alice", nil); err == nil ||
 		!strings.Contains(err.Error(), "Local only") || len(f.prompts) != 0 {
-		t.Fatalf("local only through Claude: %v, %d prompts", err, len(f.prompts))
+		t.Fatalf("local only with a cloud backend: %v, %d prompts", err, len(f.prompts))
 	}
 	if st := f.engine.TemplateDraftStatus(context.Background(), true); st.Available {
-		t.Fatal("status says a local-only draft can go to Claude")
+		t.Fatal("status says a local-only draft can go to a cloud backend")
 	}
-	if st := f.engine.TemplateDraftStatus(context.Background(), false); !st.Available || !strings.Contains(st.Destination, "Claude (cloud)") {
+	if st := f.engine.TemplateDraftStatus(context.Background(), false); !st.Available || !strings.Contains(st.Destination, "Wintermute") {
 		t.Fatalf("status: %+v", st)
+	}
+	f.cloud = false
+	if st := f.engine.TemplateDraftStatus(context.Background(), true); !st.Available {
+		t.Fatalf("status refuses a local-only draft on a local backend: %+v", st)
 	}
 	if _, err := f.engine.DraftTemplate(context.Background(), TemplateDraftRequest{LibraryDocumentID: 7, DocType: "memo"}, "alice", nil); err == nil {
 		t.Fatal("an unknown document type was accepted")
 	}
 }
 
-func TestDraftTemplateThroughClaudeStreams(t *testing.T) {
-	f := newFixture(t, "claude-library")
-	f.replies = []string{draftedAnswer(t)}
-	chars := 0
-	tpl, err := f.engine.DraftTemplate(context.Background(), TemplateDraftRequest{LibraryDocumentID: 7, Title: "Access reviews"}, "alice", func(n int) { chars = n })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if f.schemas != 1 || f.streams != 1 || chars == 0 || !strings.HasPrefix(f.systems[0], "You write reusable templates") {
-		t.Fatalf("schemas %d, streams %d, chars %d", f.schemas, f.streams, chars)
-	}
-	if tpl.Draft.Title != "Access reviews" || tpl.AIProvider != "claude" || tpl.AIModel != "claude-opus-5" || tpl.InputTokens != 1000 {
-		t.Fatalf("stored: %+v", tpl)
-	}
-}
-
 // Asked for a stream, the route reports progress and then the stored draft;
 // a second malformed answer is an error event, after the one repair.
 func TestDraftTemplateRouteStreams(t *testing.T) {
-	f := newFixture(t, "wintermute")
+	f := newFixture(t)
 	f.replies = []string{"Here is your template!", draftedAnswer(t)}
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

@@ -595,13 +595,10 @@ func settingsStorage(options Options) string {
 }
 
 // newAIRouter builds the provider harness every AI field asks questions
-// through. Both providers resolve their configuration per request, so a change
-// in the Settings page takes effect without a restart.
+// through: the Wintermute server, which reaches Claude as one of its backends.
+// It resolves its configuration per request, so a change in the Settings page
+// takes effect without a restart.
 func newAIRouter(settingsService *settings.Service) *aiprovider.Router {
-	claude := aiprovider.NewClaude(
-		func() string { return settingsService.Get(settings.AnthropicAPIKey) },
-		"",
-	).WithModelFunc(func() string { return settingsService.Preference(settings.PrefClaudeModel) })
 	wintermute := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
 		return aiprovider.WintermuteConfig{
 			URL:     settingsService.Preference(settings.PrefWintermuteURL),
@@ -612,8 +609,7 @@ func newAIRouter(settingsService *settings.Service) *aiprovider.Router {
 		}
 	})
 	return aiprovider.NewRouter(
-		claude, wintermute,
-		func() string { return settingsService.Preference(settings.PrefAIProvider) },
+		wintermute,
 		// The app's usage log counts in int64; the harness keeps its own API
 		// free of that detail.
 		func(provider, model string, inputTokens, outputTokens int) {
@@ -762,8 +758,8 @@ func registerCrisisExerciseRoutes(
 			return settingsService.Preference(settings.PrefCrisisSendExercise) == "true"
 		},
 		Grounded: func() bool {
-			provider, err := aiRouter.Selected()
-			return err == nil && provider.Name() == aiprovider.NameWintermute
+			_, err := aiRouter.Selected()
+			return err == nil
 		},
 	})
 	configureCrisisDock(service)

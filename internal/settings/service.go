@@ -26,8 +26,8 @@ var ErrNoKeyring = errors.New("credential storage is unavailable: no master key"
 // Service resolves credentials for the whole app and manages the stored ones.
 //
 // Resolution prefers a stored credential and falls back to the environment, so
-// an install that has always used ANTHROPIC_API_KEY keeps working untouched
-// while the Settings page takes over the moment a key is saved there.
+// an install that has always used WINTERMUTE_TOKEN keeps working untouched
+// while the Settings page takes over the moment a token is saved there.
 type Service struct {
 	repo Repository
 	// prefs holds the non-secret, operator-visible settings. It may be nil in

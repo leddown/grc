@@ -123,7 +123,7 @@ func homePage(c *gin.Context) {
 	          <li><a href="/controls/family-visibility">/controls/family-visibility</a> (toggle family visibility in filters)</li>
 	          <li><a href="/controls/hierarchy">/controls/hierarchy</a> (family → control → enhancement)</li>
 	          <li><a href="/exceptions">/exceptions</a> (select multiple Security NFRs for exception sets)</li>
-	          <li><a href="/ai-chat">/ai-chat</a> (chat with the Anthropic Claude API or a self-hosted Wintermute server)</li>
+	          <li><a href="/ai-chat">/ai-chat</a> (chat with your Wintermute server)</li>
 	          <li><a href="/wiz-rules">/wiz-rules</a> (Wiz-style rule creation interface)</li>
 	          <li><a href="/docs">/docs</a> (OpenAPI JSON and in-app API reference)</li>
 	          <li><a href="/utilities">/utilities</a> (export full data set / import to overwrite database)</li>

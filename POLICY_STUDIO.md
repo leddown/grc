@@ -621,12 +621,15 @@ What Phase 1a puts in the hands of a user and an operator.
   on drafts and documents in review, like every feature that spends model
   calls.
 - **Where it goes.** The document's *AI* setting (Document control) decides:
-  wherever Settings routes AI, *local only* (a Wintermute server, never
-  Claude), or *off*. It is enforced when the request is built. The AI panel
-  and each proposal say where requests go ("AI · Claude (cloud) · model" or
-  "AI · Wintermute · agent"). On Claude, the engine asks the Models API
-  whether the configured model supports structured outputs and refuses with
-  a clear message if it does not (Q6); there is no silent fallback.
+  wherever Settings routes AI, *local only*, or *off*. It is enforced when the
+  request is built. Every request goes to the Wintermute server, which can
+  reach Claude as one of its backends, so *local only* asks that server which
+  backends could answer — the one pinned in Settings or on the agent, else the
+  server's default, and its fallback — and refuses while any is a cloud one,
+  or while it cannot tell. The AI panel and each proposal say where requests
+  go ("AI · Wintermute · agent"). (Before wintermute decision note 0005 the
+  app could also call Claude directly, with structured outputs; it no longer
+  does.)
 - **The Policy Studio agent** (Settings → AI providers) is the Wintermute
   agent Studio requests go to. Every request carries the live text it is
   about, since the knowledge API trails live editing. An Ask AI conversation
@@ -641,8 +644,7 @@ What Phase 1a puts in the hands of a user and an operator.
   clauses (the NFR module's scorer), with hard caps and truncation markers.
   The document, its comments and anything a customer wrote are data.
 - **What the server checks** before anything is shown:
-  - the answer is exactly the contract (strictly parsed; Claude is also held
-    to it by structured outputs). A malformed answer gets one repair turn with
+  - the answer is exactly the contract (strictly parsed). A malformed answer gets one repair turn with
     the parser's error, then a clear error. A refusal or an answer cut off at
     the token limit is never parsed ("ask about a smaller part");
   - every edit's block is in the request's scope and not itself a pending
@@ -677,8 +679,8 @@ What Phase 1a puts in the hands of a user and an operator.
   time out after 150 s, and are cancelled when the requester navigates away.
   Usage is logged once per model call through the router.
 - **The live check (Q5)** is `internal/policyai/live_test.go`, behind the
-  `live` build tag: one real Claude call on synthetic text,
-  `ANTHROPIC_API_KEY=... go test -tags live -run Live -v ./internal/policyai/`.
+  `live` build tag: one real call through a Wintermute server on synthetic
+  text, `WINTERMUTE_URL=... WINTERMUTE_TOKEN=... go test -tags live -run Live -v ./internal/policyai/`.
 
 ### Guests (Phase 4)
 
@@ -789,8 +791,8 @@ What Phase 1a puts in the hands of a user and an operator.
   The validated result follows as `event: result`, the same object the JSON
   response carries. Only `answer_markdown` is previewed. Edits are never shown
   before they have been checked, and the preview is replaced by the recorded
-  answer. Claude streams. Wintermute answers a turn whole, so its answer
-  arrives in one piece. A request refused before the model is asked is still
+  answer. Wintermute answers a turn whole, so the answer arrives in one
+  piece; the stream is kept so a provider that writes as it goes can use it. A request refused before the model is asked is still
   an ordinary JSON error. Usage is logged once per model call, as before. The
   theme layer, which buffers pages to inject its chrome, passes an event
   stream straight through.
@@ -917,7 +919,7 @@ the built-in ones once published.
   has finished reading, optionally a document type, a title and an instruction.
   The AI reads the sample's passages (numbered `[S1]`… and delimited as data,
   as for the Studio's library route) and writes a template in its own contract
-  (structured outputs on Claude, one repair turn on Wintermute). It is told to
+  (one repair turn on a malformed answer). It is told to
   replace everything specific to the sample's organisation with fact tokens.
   What comes back is checked before it is stored:
   - a passage it cites that the sample does not have is dropped;

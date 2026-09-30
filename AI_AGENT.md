@@ -28,11 +28,9 @@ publishes its data and routes its questions through that server.
                                         the agent's own library ◀────┘
 ```
 
-The consequence to be deliberate about: **grc's AI must be pointed at
-Wintermute** for any of this to apply. Wintermute can forward the turn to
-Claude, so you keep whichever model you want and gain the tools. Pointed
-straight at Claude, grc's AI has no access to this data and will answer as it
-did before.
+grc's AI goes nowhere else: it no longer calls Claude directly. Wintermute
+can forward the turn to Claude as one of its backends, so you keep whichever
+model you want and gain the tools either way.
 
 ## Setting it up
 
@@ -67,7 +65,8 @@ did before.
    document when it starts and whenever it changes, or with every question when
    **Send the document with every question** is ticked. The agent answers in
    JSON (Wintermute has no structured outputs, so a malformed answer gets one
-   repair turn); a document marked *local only* never goes to Claude. See
+   repair turn); a document marked *local only* is refused while the server could answer it
+   on a cloud backend. See
    [POLICY_STUDIO.md](POLICY_STUDIO.md).
 
 The Settings page and the AI Chat page then link to that agent's page on

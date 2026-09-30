@@ -13,11 +13,6 @@ import (
 // Preference keys. These are install-wide, non-secret configuration: unlike a
 // credential they are shown and edited in the Settings page.
 const (
-	// PrefAIProvider selects which provider answers AI questions.
-	PrefAIProvider = "ai.provider"
-	// PrefClaudeModel names the model every Claude question from this app is
-	// asked on. Empty means aiprovider.DefaultClaudeModel.
-	PrefClaudeModel = "ai.claude.model"
 	// PrefWintermuteURL is the base URL of the Wintermute server that fronts
 	// the local models on the network.
 	PrefWintermuteURL = "ai.wintermute.url"
@@ -57,25 +52,10 @@ const (
 	PrefStudioInviteHours = "studio.invite_hours"
 )
 
-// Provider choices for PrefAIProvider.
-const (
-	// ProviderAuto prefers Wintermute when it is configured and falls back to
-	// Claude, so a local model is used when one is available without the
-	// cloud path disappearing when it is not.
-	ProviderAuto = "auto"
-	// ProviderClaude sends every question to api.anthropic.com.
-	ProviderClaude = "claude"
-	// ProviderWintermute sends every question to the Wintermute server, with
-	// no cloud fallback. Choose this when questions must not leave the network.
-	ProviderWintermute = "wintermute"
-)
-
-// prefDefaults are the values used when nothing has been stored. The default
-// provider is Claude rather than auto so that adding this feature changes no
-// existing install's behaviour until someone opts in.
+// prefDefaults are the values used when nothing has been stored. There is no
+// provider choice: every AI question goes to the Wintermute server, which
+// reaches Claude as one of its backends (wintermute decision note 0005).
 var prefDefaults = map[string]string{
-	PrefAIProvider:         ProviderClaude,
-	PrefClaudeModel:        "",
 	PrefWintermuteURL:      "",
 	PrefWintermuteBackend:  "",
 	PrefWintermuteModel:    "",
@@ -96,15 +76,6 @@ var prefEnvFallback = map[string]string{
 	PrefWintermuteBackend: "WINTERMUTE_BACKEND",
 	PrefWintermuteAgent:   "WINTERMUTE_AGENT",
 	PrefWintermuteModel:   "WINTERMUTE_MODEL",
-}
-
-// ValidProvider reports whether v names a provider.
-func ValidProvider(v string) bool {
-	switch v {
-	case ProviderAuto, ProviderClaude, ProviderWintermute:
-		return true
-	}
-	return false
 }
 
 // PreferenceRepository reads and writes non-secret settings.
@@ -187,9 +158,6 @@ func (s *Service) SetPreference(key, value string) error {
 		return errors.New("preferences are unavailable: no database")
 	}
 	value = strings.TrimSpace(value)
-	if key == PrefAIProvider && value != "" && !ValidProvider(value) {
-		return fmt.Errorf("unknown AI provider %q (want auto, claude or wintermute)", value)
-	}
 	// Stored as "true" or nothing, so a value that merely looks like a yes
 	// cannot be read as on by one reader and off by another.
 	if key == PrefStudioInviteHours && value != "" {

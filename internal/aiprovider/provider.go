@@ -3,10 +3,10 @@
 // network as readily as by the cloud, without each feature growing its own
 // client, its own credential handling and its own idea of what a model is.
 //
-// Two providers ship: Claude, which talks to api.anthropic.com, and Wintermute,
-// which talks to a wintermuted server on the network that in turn routes to
-// self-hosted models (llama.cpp, Ollama, vLLM) or on to Claude. A Router picks
-// between them per the operator's Settings choice.
+// One provider ships: Wintermute, which talks to a wintermuted server on the
+// network that in turn routes to self-hosted models (llama.cpp, Ollama, vLLM) or
+// on to Claude. The app used to call Claude directly as well; it reaches Claude
+// through that server now (wintermute decision note 0005).
 package aiprovider
 
 import (
@@ -15,11 +15,8 @@ import (
 	"fmt"
 )
 
-// Provider names, matching the values stored in settings.PrefAIProvider.
-const (
-	NameClaude     = "claude"
-	NameWintermute = "wintermute"
-)
+// NameWintermute is the provider's name, as usage is logged under it.
+const NameWintermute = "wintermute"
 
 // ErrNotConfigured reports that a provider has no usable configuration — no
 // credential, or no server URL. It is not a failure of the request.
@@ -57,8 +54,8 @@ type Request struct {
 	// Prompt is the question itself.
 	Prompt string
 	// SessionID continues a conversation a provider is itself holding, as
-	// returned by a previous Response. It is opaque and provider-specific;
-	// Claude has no such thing and ignores it. When it is set, the provider
+	// returned by a previous Response. It is opaque and provider-specific.
+	// When it is set, the provider
 	// already has the transcript and History is not resent.
 	SessionID string
 	// Model optionally overrides the provider's configured model.
@@ -67,14 +64,13 @@ type Request struct {
 	// configured one, so a module can have its own library and sources while
 	// every other AI field keeps the installation's agent. Empty keeps the
 	// configured agent. It applies when a session is opened: a resumed session
-	// stays with the agent it was opened on. Claude has no agents and ignores it.
+	// stays with the agent it was opened on.
 	Agent string
 	// MaxTokens bounds the answer. Zero means the provider's default.
 	MaxTokens int
-	// OutputSchema, when set, is a JSON Schema the answer must match. Claude
-	// enforces it with structured outputs (output_config.format); Wintermute
-	// has no equivalent, so a caller that sets it must still validate the
-	// answer and say what it wants in the prompt.
+	// OutputSchema, when set, is a JSON Schema the answer must match.
+	// Wintermute does not enforce it, so a caller that sets it must still
+	// validate the answer and say what it wants in the prompt.
 	OutputSchema map[string]any
 }
 
@@ -167,9 +163,7 @@ type Probe struct {
 }
 
 // Prober is implemented by providers that can be reached for a liveness and
-// capability check. Claude does not implement it: a credential check would be
-// a billable request, and the useful discovery here is which local models
-// exist.
+// capability check: the useful discovery here is which local models exist.
 type Prober interface {
 	Probe(ctx context.Context) Probe
 }

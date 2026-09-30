@@ -3,6 +3,51 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-30 (Claude is reached through Wintermute; the direct provider is retired)
+
+Every AI question in this application is now a turn on the Wintermute server,
+which reaches Claude as one of its backends (wintermute decision note 0005,
+step 4). Its routing, audit, approvals and recall now apply to everything,
+where they used to apply only when Wintermute was the selected provider.
+
+- **`internal/aiprovider`:**
+  - **`claude.go` is gone**, along with its tests. **`NewRouter`** takes just
+    the Wintermute provider and a usage logger. Its `Status` has no Claude
+    fields.
+  - **New `Wintermute.CloudBackends`** names the cloud backends that could
+    answer for an agent: the pinned backend, or the agent's, or the server's
+    default, plus its fallback. It errors on a backend the server doesn't list.
+- **`internal/policyai`:** *local only* used to mean "not Claude". It now asks
+  `CloudBackends` and refuses while any backend is a cloud one, or while the
+  server can't say (`keepLocal`). This covers both proposals and template
+  drafts.
+- **`internal/settings`:**
+  - **Removed:**
+    - the provider choice (`ai.provider`) and the Claude model (`ai.claude.model`);
+    - the Anthropic key credential;
+    - the `/settings/claude-models` route.
+  - **Unchanged:** A key already stored stays encrypted in the settings table
+    and is no longer read. It was not deleted.
+- **Pages:**
+  - **Settings** has no provider select or Anthropic key.
+  - **AI Chat** no longer has an Anthropic key chip, and always names Wintermute.
+  - **The AI dock** labels answers "Wintermute · agent".
+  - **Asking for `provider: "claude"`** gets an error saying where Claude is now.
+- **Environment:** `ANTHROPIC_API_KEY` is no longer read. An installation that
+  only set it now needs `WINTERMUTE_URL` and `WINTERMUTE_TOKEN` (or the same in
+  Settings) before any AI feature answers.
+- **Tests:**
+  - **The policy AI fixture** is a Wintermute stand-in that can report a cloud
+    or a local default backend. That is how *local only* is tested now.
+  - **The live test** (`-tags live`) calls a Wintermute server.
+  - **The Studio's browser test** checks the whole answer: Wintermute answers
+    a turn whole, so there is no partial preview to see. Answers used to
+    stream as Claude wrote them; they now arrive in one piece.
+- **Docs:** `AI_AGENT.md`, `POLICY_STUDIO.md`, `CRISIS_EXERCISE.md`,
+  `REGULATION_COVERAGE.md`, `RUNTIME_ARGS.md` and `Agents.md`, where they
+  described Claude as a provider of its own. The design records of the spikes
+  are left as they were.
+
 ## 2026-09-30 (Regulation coverage reads the requirements Wintermute cut)
 
 The Wintermute server became the one place documents are read: this application

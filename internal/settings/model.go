@@ -14,8 +14,6 @@ package settings
 // "Token". The values are row names, not credentials — the credentials
 // themselves only ever exist encrypted in the database or in the environment.
 const (
-	// AnthropicAPIKey authenticates directly against api.anthropic.com.
-	AnthropicAPIKey = "anthropic_api_key" // #nosec G101 -- a row name, not a credential
 	// WintermuteToken authenticates against a Wintermute server, which routes
 	// questions to self-hosted models or on to Claude.
 	WintermuteToken = "wintermute_token" // #nosec G101 -- a row name, not a credential
@@ -75,7 +73,6 @@ type definition struct {
 // definitions is the full set of credentials the Settings page manages, in
 // display order.
 var definitions = []definition{
-	{name: AnthropicAPIKey, envVar: "ANTHROPIC_API_KEY"},
 	{name: WintermuteToken, envVar: "WINTERMUTE_TOKEN"},
 }
 

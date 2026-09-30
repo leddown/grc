@@ -2,7 +2,6 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,64 +21,53 @@ import (
 	"grc/internal/policydocs"
 )
 
-// slowClaude stands in for api.anthropic.com and streams its answer in pieces
-// with a pause between them, so a test can see the answer arrive.
-type slowClaude struct {
-	mu     sync.Mutex
-	calls  int
-	usage  int
-	pieces []string
-	pause  time.Duration
+// slowWintermute stands in for wintermuted and takes a while to answer, so a
+// test can see the page wait for it.
+type slowWintermute struct {
+	mu    sync.Mutex
+	calls int
+	usage int
+	reply string
+	pause time.Duration
 }
 
-func (s *slowClaude) router(t *testing.T) *aiprovider.Router {
+func (s *slowWintermute) router(t *testing.T) *aiprovider.Router {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/v1/models/") {
-			id := strings.TrimPrefix(r.URL.Path, "/v1/models/")
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "type": "model", "display_name": id, "created_at": "2026-01-01T00:00:00Z",
-				"max_input_tokens": 1000000, "max_tokens": 128000, "capabilities": map[string]any{"structured_outputs": map[string]any{"supported": true}}})
-			return
-		}
-		s.mu.Lock()
-		s.calls++
-		s.mu.Unlock()
-		w.Header().Set("Content-Type", "text/event-stream")
-		event := func(name string, v map[string]any) {
-			v["type"] = name
-			raw, _ := json.Marshal(v)
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", name, raw)
-			w.(http.Flusher).Flush()
-		}
-		event("message_start", map[string]any{"message": map[string]any{"id": "m", "type": "message", "role": "assistant", "model": "claude-opus-5",
-			"content": []any{}, "stop_reason": nil, "usage": map[string]any{"input_tokens": 900, "output_tokens": 0}}})
-		event("content_block_start", map[string]any{"index": 0, "content_block": map[string]any{"type": "text", "text": ""}})
-		for _, p := range s.pieces {
-			event("content_block_delta", map[string]any{"index": 0, "delta": map[string]any{"type": "text_delta", "text": p}})
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v1/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sess-1"})
+		case strings.HasSuffix(r.URL.Path, "/messages"):
+			s.mu.Lock()
+			s.calls++
+			s.mu.Unlock()
 			time.Sleep(s.pause)
+			_ = json.NewEncoder(w).Encode(map[string]any{"reply": s.reply, "status": "complete", "backend": "local-llm", "model": "qwen-policy",
+				"usage": map[string]any{"input_tokens": 900, "output_tokens": 120}})
+		default:
+			http.NotFound(w, r)
 		}
-		event("content_block_stop", map[string]any{"index": 0})
-		event("message_delta", map[string]any{"delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil}, "usage": map[string]any{"output_tokens": 120}})
-		event("message_stop", map[string]any{})
 	}))
 	t.Cleanup(srv.Close)
-	claude := aiprovider.NewClaude(func() string { return "sk-test" }, "claude-opus-5").WithBaseURL(srv.URL)
-	return aiprovider.NewRouter(claude, nil, func() string { return "claude" }, func(string, string, int, int) {
+	wm := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
+		return aiprovider.WintermuteConfig{URL: srv.URL, Token: "t"}
+	})
+	return aiprovider.NewRouter(wm, func(string, string, int, int) {
 		s.mu.Lock()
 		s.usage++
 		s.mu.Unlock()
 	})
 }
 
-// An answer streamed by Claude is shown while it is written, in the Studio's
-// AI panel and in the dock, and replaced by the checked result when it is
-// complete; each request is one model call, logged once.
-func TestStudioStreamsAIAnswersInTheBrowser(t *testing.T) {
+// An answer is shown in the Studio's AI panel and in the dock once it is
+// checked; each request is one model call, logged once. Wintermute answers
+// whole, so the preview the panel shows while an answer is written arrives
+// with it rather than before it.
+func TestStudioShowsAIAnswersInTheBrowser(t *testing.T) {
 	browser := headlessBrowser(t)
-	stub := &slowClaude{pause: 300 * time.Millisecond, pieces: []string{
-		`{"answer_markdown":"The purpose `, `states why `, `the policy exists, `, `but not what `, `anyone must do.`, `","proposal":null}`,
-	}}
+	stub := &slowWintermute{pause: 300 * time.Millisecond,
+		reply: `{"answer_markdown":"The purpose states why the policy exists, but not what anyone must do.","proposal":null}`}
 	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "studio-stream.db"), nil, stub.router(t))
 	alice := studioTab(t, browser, a, a.admin)
 	if err := chromedp.Run(alice, page.BringToFront()); err != nil {
@@ -93,9 +81,7 @@ func TestStudioStreamsAIAnswersInTheBrowser(t *testing.T) {
 	if !evalJS[bool](t, alice, `(() => { const b = Array.from(document.querySelectorAll('.ps-bubble button')).find((x) => x.textContent === 'Tighten'); if (!b) return false; b.click(); return true })()`) {
 		t.Fatal("no Tighten button")
 	}
-	waitJS(t, alice, "part of the answer shows while it is written",
-		`(() => { const d = document.querySelector('.ps-ai-draft'); return !!d && !d.hidden && d.textContent.startsWith('The purpose') && !d.textContent.includes('must do') })()`)
-	waitJS(t, alice, "the checked answer replaces it",
+	waitJS(t, alice, "the checked answer is shown",
 		`!document.querySelector('.ps-ai-draft') && document.querySelector('.ps-tabpanel').textContent.includes('but not what anyone must do.')`)
 
 	if err := chromedp.Run(alice, chromedp.Click(`#global-ai-dock-toggle`, chromedp.ByQuery),
@@ -103,10 +89,8 @@ func TestStudioStreamsAIAnswersInTheBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	evalJS[bool](t, alice, `(document.getElementById('global-ai-dock-form').requestSubmit(), true)`)
-	waitJS(t, alice, "the dock shows the answer as it is written",
-		`Array.from(document.querySelectorAll('#global-ai-dock .global-ai-dock-msg.ai')).some((m) => m.textContent.includes('The purpose') && !m.textContent.includes('must do'))`)
-	waitJS(t, alice, "and then the whole answer",
-		`Array.from(document.querySelectorAll('#global-ai-dock .global-ai-dock-msg.ai')).some((m) => m.textContent.includes('AI · claude-opus-5') && m.textContent.includes('anyone must do.'))`)
+	waitJS(t, alice, "the dock shows the whole answer",
+		`Array.from(document.querySelectorAll('#global-ai-dock .global-ai-dock-msg.ai')).some((m) => m.textContent.includes('AI · qwen-policy') && m.textContent.includes('anyone must do.'))`)
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	if stub.calls != 2 || stub.usage != 2 {
@@ -203,7 +187,7 @@ func TestStudioStartsFromALibraryDocumentInTheBrowser(t *testing.T) {
 	wm := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
 		return aiprovider.WintermuteConfig{URL: srv.URL, Token: "t", Agent: "general"}
 	})
-	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "studio-library.db"), nil, aiprovider.NewRouter(nil, wm, func() string { return "wintermute" }, nil))
+	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "studio-library.db"), nil, aiprovider.NewRouter(wm, nil))
 
 	if code, body := getAs(t, a, "/policies/library", a.admin); code != http.StatusOK || !strings.Contains(body, `"title":"Old access policy.pdf"`) {
 		t.Fatalf("the library list: %d %s", code, body)

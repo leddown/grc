@@ -25,15 +25,15 @@ func newSQLiteRepo(t *testing.T) *SQLRepository {
 func TestSQLRepositoryRoundTrip(t *testing.T) {
 	repo := newSQLiteRepo(t)
 
-	if _, err := repo.Get(AnthropicAPIKey); !errors.Is(err, ErrNotFound) {
+	if _, err := repo.Get(WintermuteToken); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get on an empty table = %v, want ErrNotFound", err)
 	}
 
-	first := Record{Name: AnthropicAPIKey, Ciphertext: "ciphertext-one", UpdatedAt: "2026-08-13T00:00:00Z", UpdatedBy: "alice"}
+	first := Record{Name: WintermuteToken, Ciphertext: "ciphertext-one", UpdatedAt: "2026-08-13T00:00:00Z", UpdatedBy: "alice"}
 	if err := repo.Put(first); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	got, err := repo.Get(AnthropicAPIKey)
+	got, err := repo.Get(WintermuteToken)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -43,11 +43,11 @@ func TestSQLRepositoryRoundTrip(t *testing.T) {
 
 	// Upsert: a second Put under the same name must replace, not duplicate or
 	// fail on the primary key.
-	second := Record{Name: AnthropicAPIKey, Ciphertext: "ciphertext-two", UpdatedAt: "2026-08-14T00:00:00Z", UpdatedBy: "bob"}
+	second := Record{Name: WintermuteToken, Ciphertext: "ciphertext-two", UpdatedAt: "2026-08-14T00:00:00Z", UpdatedBy: "bob"}
 	if err := repo.Put(second); err != nil {
 		t.Fatalf("second Put: %v", err)
 	}
-	got, err = repo.Get(AnthropicAPIKey)
+	got, err = repo.Get(WintermuteToken)
 	if err != nil {
 		t.Fatalf("Get after replace: %v", err)
 	}
@@ -62,15 +62,15 @@ func TestSQLRepositoryRoundTrip(t *testing.T) {
 		t.Errorf("List returned %d rows after an upsert, want 1", len(rows))
 	}
 
-	if err := repo.Delete(AnthropicAPIKey); err != nil {
+	if err := repo.Delete(WintermuteToken); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := repo.Get(AnthropicAPIKey); !errors.Is(err, ErrNotFound) {
+	if _, err := repo.Get(WintermuteToken); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Get after delete = %v, want ErrNotFound", err)
 	}
 	// Deleting something absent is not an error: the Settings page offers
 	// "clear" whether or not a value is stored.
-	if err := repo.Delete(AnthropicAPIKey); err != nil {
+	if err := repo.Delete(WintermuteToken); err != nil {
 		t.Errorf("Delete on a missing row = %v, want nil", err)
 	}
 }
@@ -83,16 +83,16 @@ func TestServiceOverSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKeyForTesting: %v", err)
 	}
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("WINTERMUTE_TOKEN", "")
 
 	svc := NewService(repo, ring)
-	if err := svc.Set(AnthropicAPIKey, "sk-ant-persisted-value", "alice"); err != nil {
+	if err := svc.Set(WintermuteToken, "sk-ant-persisted-value", "alice"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
 	// A separate service over the same rows stands in for a process restart.
 	reloaded := NewService(repo, ring)
-	value, origin := reloaded.Resolve(AnthropicAPIKey)
+	value, origin := reloaded.Resolve(WintermuteToken)
 	if value != "sk-ant-persisted-value" || origin != OriginSettings {
 		t.Errorf("after reload = (%q, %q), want the stored value", value, origin)
 	}

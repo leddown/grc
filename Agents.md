@@ -72,8 +72,8 @@ all backed by SQLite and served via Gin.
   publish templates in the app, stored in `policy_templates` — see
   `POLICY_STUDIO.md`
 - `internal/policyai` — the Policy Studio's AI proposal engine: context,
-  standing rules, strict parsing of the EditProposal contract (structured
-  outputs on Claude, one repair turn on Wintermute), server-side validation and
+  standing rules, strict parsing of the EditProposal contract (one repair
+  turn on a malformed answer), server-side validation and
   anchoring of every edit, `ai_policy` routing, limits, and the record of each
   proposal and decision. The AI never writes the document: edits become
   suggestions a person decides

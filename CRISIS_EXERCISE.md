@@ -228,8 +228,9 @@ How the agent learns about the exercise depends on where it runs:
   reach this server, for example after this application moves to a host
   Wintermute cannot call. A continuing conversation is sent the record again
   only when the exercise has changed.
-- **Questions that go to Claude always carry the record.** Claude has no agent
-  and nothing to fetch it with.
+- **Without a configured Wintermute server nothing can fetch the record**, so
+  the module reports itself ungrounded and would send the record with every
+  question.
 
 The agent is created on Wintermute the same way as the general one (see
 [AI_AGENT.md](AI_AGENT.md)): give it the `grc` source so it can fetch records,

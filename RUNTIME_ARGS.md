@@ -112,9 +112,10 @@ The API binary accepts command-line flags for runtime behavior.
 ### Assistant, tasks and Google Calendar — moved
 
 The assistant, the task module and its Google Calendar sync now live in
-wintermute. `ANTHROPIC_API_KEY` is still read here, but only by the AI Chat
-gateway (`/ai-chat`) and the NFR enrichment module; see wintermute's
-`docs/tasks.md` for the moved features.
+wintermute; see wintermute's `docs/tasks.md` for the moved features.
+`ANTHROPIC_API_KEY` is no longer read at all: every AI feature asks the
+Wintermute server set by `WINTERMUTE_URL` and `WINTERMUTE_TOKEN` (or in
+Settings), which reaches Claude as one of its backends.
 
 ### Typesetting engines
 

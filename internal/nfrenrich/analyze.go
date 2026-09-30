@@ -14,10 +14,6 @@ import (
 	"grc/internal/securitynfr"
 )
 
-// DefaultModel is retained for callers that reference it. The model actually
-// used is chosen by the provider harness, or by NFR_ENRICHMENT_MODEL.
-const DefaultModel = "claude-opus-5"
-
 // maxTokens bounds one analysis reply. Adaptive thinking is on and max_tokens
 // caps thinking plus response text together, so this is sized well above the
 // JSON a proposal needs.
@@ -120,10 +116,9 @@ type Asker interface {
 
 // RoutedAnalyzer implements Analyzer over the provider harness.
 //
-// It replaces a direct Anthropic client: the credential, the model choice and
-// the provider all resolve per request inside the harness, so a change in the
-// Settings page applies without a restart and this module no longer needs to
-// know that Claude exists.
+// The credential, the model choice and the provider all resolve per request
+// inside the harness, so a change in the Settings page applies without a
+// restart.
 type RoutedAnalyzer struct {
 	asker Asker
 	// model optionally overrides the provider's own model choice, preserving

@@ -13,9 +13,9 @@ import (
 	"strings"
 )
 
-// schemaJSON is the answer contract (the brief's Appendix A). Claude is held
-// to it with structured outputs; every answer is validated against it here
-// whichever provider wrote it.
+// schemaJSON is the answer contract (the brief's Appendix A). It is sent with
+// the request, and every answer is validated against it here, since no
+// provider is trusted to have kept to it.
 const schemaJSON = `{
   "type": "object", "additionalProperties": false, "required": ["answer_markdown", "proposal"],
   "properties": {

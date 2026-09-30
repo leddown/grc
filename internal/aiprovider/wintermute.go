@@ -316,6 +316,8 @@ type Agent struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Sources     []string `json:"sources"`
+	// Backend is the backend the agent pins for itself, where it pins one.
+	Backend string `json:"backend,omitempty"`
 }
 
 // Agents lists the agent profiles the server has, so an agent is chosen from
@@ -396,6 +398,56 @@ type Catalog struct {
 	// fatal: the backends are still a usable choice, and a backend with no
 	// listed models still answers on its own default.
 	ModelsError string `json:"models_error,omitempty"`
+}
+
+// CloudBackends names every cloud backend that could answer a question for the
+// agent: the backend Settings pins, or the agent's own pin, or — when neither
+// pins one — the server's default; and the fallback the server retries on
+// after a failure. Empty means none could.
+//
+// It is how "local only" is kept now that Claude is reached through this
+// server rather than beside it: a Wintermute answer is not local merely
+// because it came from Wintermute. A backend the catalog does not know is an
+// error rather than a guess, because a privacy rule that assumes the best of
+// what it cannot see is not one.
+func (w *Wintermute) CloudBackends(ctx context.Context, agent string) ([]string, error) {
+	cat, err := w.Catalog(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list the server's backends: %w", err)
+	}
+	cloud := map[string]bool{}
+	for _, b := range cat.Backends {
+		cloud[b.Name] = b.Cloud
+	}
+	serving := w.resolve().Backend
+	if serving == "" && strings.TrimSpace(agent) != "" {
+		agents, err := w.Agents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read the agent's backend: %w", err)
+		}
+		for _, a := range agents {
+			if a.ID == strings.TrimSpace(agent) {
+				serving = strings.TrimSpace(a.Backend)
+			}
+		}
+	}
+	if serving == "" {
+		serving = cat.DefaultBackend
+	}
+	var out []string
+	for _, name := range []string{serving, cat.Fallback} {
+		if name == "" {
+			continue
+		}
+		isCloud, known := cloud[name]
+		if !known {
+			return nil, fmt.Errorf("the server has no backend named %q, so whether it is local cannot be told", name)
+		}
+		if isCloud && !contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	return out, nil
 }
 
 // Catalog lists the backends the server has and the models they reported.

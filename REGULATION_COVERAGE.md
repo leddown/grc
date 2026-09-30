@@ -142,9 +142,9 @@ revision. A hundred-article regulation is about a hundred calls — the analysis
 button confirms before it starts, and the run continues past a section that
 fails rather than losing the other ninety-nine.
 
-The provider is whatever Settings selects (Claude, or a Wintermute server
-routing to a self-hosted model), through the same `aiprovider` router the rest
-of the app uses. Spend lands in the same `ai_usage_log`. Section analysis and
+The provider is the Wintermute server Settings configures, routing to a
+self-hosted model or on to Claude, through the same `aiprovider` router the
+rest of the app uses. Spend lands in the same `ai_usage_log`. Section analysis and
 retrieval are exactly the bulk work worth pointing at a local model; keep the
 frontier model for the summary if you are watching cost.
 

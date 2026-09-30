@@ -139,32 +139,46 @@ func (e *Engine) route(ctx context.Context, doc policydocs.Document) (aiprovider
 	if err != nil {
 		return nil, "", refuse(http.StatusServiceUnavailable, "No AI provider is available: %v", err)
 	}
-	switch p := provider.(type) {
-	case *aiprovider.Claude:
-		if doc.AIPolicy == policydocs.AIPolicyLocalOnly {
-			return nil, "", refuse(http.StatusForbidden, "This document is local only, and AI requests go to Claude (cloud). Select Wintermute in Settings → AI providers, or change the document's AI setting.")
-		}
-		model := p.ResolvedModel()
-		ok, err := p.SupportsStructuredOutputs(ctx, model)
-		if err != nil {
-			return nil, "", refuse(http.StatusBadGateway, "Couldn't confirm that %s supports structured outputs, which proposals need: %v", model, err)
-		}
-		if !ok {
-			return nil, "", refuse(http.StatusUnprocessableEntity, "%s does not support structured outputs, which proposals need. Choose another Claude model in Settings.", model)
-		}
-		return provider, "AI · Claude (cloud) · " + model, nil
-	default:
-		agent := ""
-		if e.cfg.Agent != nil {
-			agent = strings.TrimSpace(e.cfg.Agent())
-		}
-		if agent == "" {
-			// The server's configured agent answers; which one is Settings'
-			// business, not something to guess at here.
-			return provider, "AI · Wintermute", nil
-		}
-		return provider, "AI · Wintermute · " + agent, nil
+	agent := ""
+	if e.cfg.Agent != nil {
+		agent = strings.TrimSpace(e.cfg.Agent())
 	}
+	if doc.AIPolicy == policydocs.AIPolicyLocalOnly {
+		if err := keepLocal(ctx, provider, agent, "This document is local only"); err != nil {
+			return nil, "", err
+		}
+	}
+	if agent == "" {
+		// The server's configured agent answers; which one is Settings'
+		// business, not something to guess at here.
+		return provider, "AI · Wintermute", nil
+	}
+	return provider, "AI · Wintermute · " + agent, nil
+}
+
+// cloudChecker is a provider that can say which cloud backends could answer.
+type cloudChecker interface {
+	CloudBackends(ctx context.Context, agent string) ([]string, error)
+}
+
+// keepLocal refuses a request that must stay on the network when the Wintermute
+// server could answer it on a cloud backend — Claude is reached through it now,
+// so "Wintermute" no longer means "local". A provider that cannot say is
+// refused too: this is a privacy rule, and it does not assume the best.
+func keepLocal(ctx context.Context, provider aiprovider.Provider, agent, what string) error {
+	checker, ok := provider.(cloudChecker)
+	if !ok {
+		return refuse(http.StatusForbidden, "%s, and the AI provider cannot say whether it answers locally.", what)
+	}
+	cloud, err := checker.CloudBackends(ctx, agent)
+	if err != nil {
+		return refuse(http.StatusBadGateway, "%s, and whether the Wintermute server would answer it locally couldn't be checked: %v", what, err)
+	}
+	if len(cloud) > 0 {
+		return refuse(http.StatusForbidden, "%s, and the Wintermute server could answer it on a cloud backend (%s). "+
+			"Pin a local backend in Settings → AI providers, or change the document's AI setting.", what, strings.Join(cloud, ", "))
+	}
+	return nil
 }
 
 // Status reports availability for a document without asking a model.
