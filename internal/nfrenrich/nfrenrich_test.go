@@ -23,6 +23,16 @@ func (f *fakeLibrary) provide() (aiprovider.Library, error) { return f, f.err }
 
 func (f *fakeLibrary) LibraryURL() string { return "https://wintermute.example/agents/acme" }
 
+// NFR enrichment reads passages as the server cut them and names no framework;
+// these are here only because the library interface has them.
+func (f *fakeLibrary) CutAs(context.Context, int64, string) (aiprovider.LibraryDocument, error) {
+	return aiprovider.LibraryDocument{}, nil
+}
+
+func (f *fakeLibrary) ReadLibraryPassages(context.Context, int64) ([]aiprovider.LibraryPassage, error) {
+	return nil, nil
+}
+
 func (f *fakeLibrary) LibraryDocuments(context.Context) ([]aiprovider.LibraryDocument, error) {
 	out := []aiprovider.LibraryDocument{}
 	for _, content := range f.docs {

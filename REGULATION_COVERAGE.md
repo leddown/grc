@@ -40,8 +40,9 @@ import + segment  →  analyse  →  report v1
    links there. That server extracts the text, OCR'ing a scan and converting an
    office document if it has to.
 1. **Import** (`POST /regulation-coverage/regulations`, JSON naming a
-   `library_doc_id`). Reads that text back, identifies the framework, segments
-   into articles and annexes. Nothing is sent to a model at this stage, so a
+   `library_doc_id`). Settles the framework: the one named, else the one the
+   Wintermute server detected, else `eu-generic`. It has that server cut the
+   document as that framework, and reads back the articles and annexes it cut. Nothing is sent to a model at this stage, so a
    document that segmented badly can be deleted before any spend. The original
    is not copied here; the report links to it in the library.
 2. **Analyse** (`POST /regulation-coverage/:id/analyze`). One model call per
@@ -88,20 +89,27 @@ a re-wrapped quote still passes; an invented one does not.
 
 ## Framework profiles
 
-Segmentation comes from the `regmap` framework profiles in `regmap/profiles/`,
-embedded into the binary (`regmap/profiles/embed.go`) so no directory has to
-ship beside it. The CLI still reads them from disk via `--profiles-dir`; they
-are the same files.
+Each framework has a profile in `regmap/profiles/`, embedded into the binary
+(`regmap/profiles/embed.go`) so no directory has to ship beside it. The CLI
+still reads them from disk via `--profiles-dir`; they are the same files. What
+this application uses from a profile is its own business: requirement id
+prefixes, categories and the seed crosswalk to controls.
 
-Detection runs against the filename and the first 20k characters. Anything not
-recognised falls back to **`eu-generic`** — article and annex segmentation with
+**Cutting a regulation into requirements, and recognising which regulation it
+is, are reading, and the Wintermute server does both.** Its grc domain carries
+the same profiles' detection and segmentation rules (its
+`internal/knowledge/frameworks/`), and its tests pin its segmenter to this
+application's fixtures. It detects a framework only when two signals agree: a
+filename and a content pattern, or two content patterns. Anything it doesn't
+recognise falls back here to **`eu-generic`** — article and annex segmentation with
 no classification rules and no crosswalk, which is what EU legislative drafting
 gives you for free. The report says which happened: an upload segmented by the
 generic profile is labelled *"generic segmentation (no framework profile
 matched this document)"*, because it means no curated knowledge went into it.
 
-To add a framework, add a YAML profile under `regmap/profiles/` and rebuild. No
-code changes.
+To add a framework, add its YAML profile here (ids, categories, crosswalk) and
+its reading profile on the Wintermute server (detection, segmentation), then
+rebuild both. No code changes on either side.
 
 ## Extraction happens elsewhere
 
@@ -116,10 +124,12 @@ refused here; now it is OCR'd there and imports like anything else, once the
 reading has finished. A document still in that server's queue cannot be
 imported, and the picker says so rather than importing it half-read.
 
-What remains here is segmentation: cutting the text into articles and annexes
-with a framework profile. Sections with almost no body are skipped rather than
-analysed. These are usually artifacts: an inline cross-reference ("…designated
-pursuant to Article 20") reads as a heading to the segmenter. They appear in the
+Segmentation happens there too. This application reads the requirements the
+server cut, each with its label, key and title, and turns them into requirement
+records: ids, categories and review flags. Sections with almost no body are
+skipped rather than analysed. These are usually artifacts: an inline
+cross-reference ("…designated pursuant to Article 20") reads as a heading to the
+segmenter. They appear in the
 report as unanalysed instead of costing a model call each.
 
 Which formats can be read is that server's question, not this one's — see its

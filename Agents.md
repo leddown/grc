@@ -44,7 +44,9 @@ all backed by SQLite and served via Gin.
 - `internal/regcoverage` — Regulation Coverage: imports an EU regulation from
   the AI agent's library on the Wintermute server, maps every article to
   Security NFRs and 800-53 with AI, and keeps a versioned report that can be
-  questioned and revised. Uses `internal/regmap`'s segmentation and framework
+  questioned and revised. The Wintermute server cuts the regulation into
+  requirements (its grc domain's framework profiles); `internal/regmap` turns
+  them into requirement ids and categories with this application's framework
   profiles — see `REGULATION_COVERAGE.md`
 - `internal/nfrenrich` — NFR Enrichment: imports a security document from the
   same library and proposes enrichments to the NFR catalog, which a human

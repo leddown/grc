@@ -3,6 +3,48 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-09-30 (Regulation coverage reads the requirements Wintermute cut)
+
+The Wintermute server became the one place documents are read: this application
+uses its agents and does not parse documents itself (the operator's direction;
+wintermute decision note 0005). Regulation coverage still cut the text it read
+back into articles and annexes, and detected the framework itself. Both are
+reading, and both now happen there.
+
+- **`internal/regcoverage`:**
+  - **`Service.Import`** settles the framework: the one named, else the one
+    the Wintermute server detected, else `eu-generic`. It has that server cut
+    the document as that framework (`CutAs`), then reads back the requirements
+    it cut (`ReadLibraryPassages`).
+  - **`Import`** builds sections from those passages. Requirement ids,
+    categories and review flags are unchanged: they're this module's.
+- **`internal/regmap/ingest`:**
+  - **`SegmentText`** and its title splitting are gone. `SegmentsFrom` turns
+    the server's pieces into segments, rejoining a long article the server cut
+    into parts.
+  - **`BuildRequirements`** takes pieces instead of text.
+- **`internal/regmap/profile`:** `Registry.Detect` is gone, because the server
+  detects. It needs two signals agreeing, which is stricter than the old rule,
+  so a document named only in its filename falls back to `eu-generic` unless
+  someone names its framework. The profiles keep their `detect` sections so
+  they still parse and can be compared with the server's.
+- **`internal/aiprovider/library.go`:**
+  - **Library documents** now carry the server's `framework`.
+  - **Two new calls:** `CutAs` names a document's instrument
+    (`PUT …/documents/{id}/framework`, synchronous), and `ReadLibraryPassages`
+    reads its passages with their segments (`GET …/passages`, paged under the
+    same bounds as the text).
+- **Tests:**
+  - **The segmentation tests** start from the pieces the server returns for
+    the same fixtures. Wintermute's own test pins its segmenter to these
+    fixtures, so the two can't drift apart.
+  - **Regulation coverage's tests** pass passages.
+  - **A new test** checks the instrument handed to the server.
+- **Docs:** `REGULATION_COVERAGE.md` and `Agents.md`.
+
+Needs a Wintermute server with the framework endpoints (its note 0005, steps
+3 and 4).
+
 ## 2026-09-30 (Policy Studio: bullets and numbering toolbar)
 
 The Studio editor already supported bulleted and numbered lists, but they could

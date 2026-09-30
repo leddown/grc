@@ -27,111 +27,83 @@ type Segment struct {
 	Flags      []string
 }
 
-// boundary is a candidate split point found by one strategy.
-type boundary struct {
-	start    int
-	end      int
-	key      string
-	strategy *profile.Strategy
-	order    int // strategy declaration order, for deterministic tie-breaks
-}
-
 // Result reports what a segmentation run produced.
 type Result struct {
 	Requirements requirement.Set
 	Log          []string
 }
 
-// SegmentText splits text using every strategy declared by the profile and
-// merges the boundaries in document order. Text preceding the first boundary is
-// kept as a flagged preamble segment — content is never dropped silently.
-func SegmentText(text string, prof *profile.Profile) ([]Segment, error) {
-	var bounds []boundary
-	for i := range prof.Segmentation {
-		strat := &prof.Segmentation[i]
-		re, err := strat.Regexp()
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
-			if len(m) < 4 || m[2] < 0 {
+// Piece is one passage of a regulation as the Wintermute server cut it: which
+// strategy found it, the label and key the instrument numbers it by, its title,
+// its text, and — when the server cut a long requirement into several passages
+// — which part it is, from 1.
+//
+// Segmenting is reading, and reading is that server's (see AI_AGENT.md): it
+// holds the framework profiles' boundary rules and cuts the document once.
+// What stays here is this module's own — requirement ids, categories, the seed
+// crosswalk and the review flags — applied to the requirements it cut.
+type Piece struct {
+	Strategy string
+	Label    string
+	Key      string
+	Title    string
+	Body     string
+	Part     int
+}
+
+// SegmentsFrom turns the server's passages into segments, joining the parts of
+// a requirement it cut into several, in document order. The preamble — text
+// before the first requirement — is kept, never dropped, as it always was.
+func SegmentsFrom(pieces []Piece, prof *profile.Profile) []Segment {
+	var segments []Segment
+	for _, p := range pieces {
+		if p.Part > 1 && len(segments) > 0 {
+			last := &segments[len(segments)-1]
+			if last.Key == p.Key && last.Strategy == p.Strategy {
+				last.Body = strings.TrimSpace(last.Body + "\n\n" + p.Body)
 				continue
 			}
-			bounds = append(bounds, boundary{
-				start:    m[0],
-				end:      m[1],
-				key:      strings.TrimSpace(text[m[2]:m[3]]),
-				strategy: strat,
-				order:    i,
-			})
 		}
+		seg := Segment{Key: p.Key, Title: p.Title, Body: strings.TrimSpace(p.Body), Strategy: p.Strategy}
+		if p.Strategy == "preamble" {
+			seg.Key, seg.Section = "preamble", "Preamble / front matter"
+			seg.IDPrefix = strings.ToUpper(prof.ID)
+			seg.AddFlag("no-boundary-rule-matched")
+		} else {
+			strat := strategyFor(prof, p)
+			seg.Section, seg.IDPrefix = p.Label, prof.IDPrefix
+			if strat != nil {
+				seg.Section, seg.IDPrefix = strat.SectionLabel(p.Key), prof.PrefixFor(*strat)
+			}
+			if seg.Title == "" {
+				seg.AddFlag("no-title-detected")
+			}
+		}
+		segments = append(segments, seg)
 	}
+	assessConfidence(segments, prof)
+	return segments
+}
 
-	sort.SliceStable(bounds, func(i, j int) bool {
-		if bounds[i].start != bounds[j].start {
-			return bounds[i].start < bounds[j].start
-		}
-		return bounds[i].order < bounds[j].order
-	})
-
-	// Drop boundaries that start inside a previous boundary's own match, which
-	// happens when two strategies fire on the same heading.
-	var merged []boundary
-	prevEnd := -1
-	for _, b := range bounds {
-		if b.start < prevEnd {
+// strategyFor is the profile's strategy that produced a piece: the same type
+// and, for a pattern of the profile's own, the label the server wrote in front
+// of the key — which is what tells "Requirement 8" from "8.3.1" in PCI DSS, and
+// gives each its id prefix.
+func strategyFor(prof *profile.Profile, p Piece) *profile.Strategy {
+	var fallback *profile.Strategy
+	for i := range prof.Segmentation {
+		s := &prof.Segmentation[i]
+		if s.Type != p.Strategy {
 			continue
 		}
-		merged = append(merged, b)
-		prevEnd = b.end
-	}
-
-	var segments []Segment
-
-	// Anything before the first boundary is real content that no rule claimed.
-	firstStart := len(text)
-	if len(merged) > 0 {
-		firstStart = merged[0].start
-	}
-	if pre := strings.TrimSpace(text[:firstStart]); pre != "" {
-		seg := Segment{
-			Key:      "preamble",
-			Section:  "Preamble / front matter",
-			Title:    firstLine(pre),
-			Body:     pre,
-			Strategy: "preamble",
-			IDPrefix: strings.ToUpper(prof.ID),
-			Offset:   0,
+		if s.Label != "" && strings.HasPrefix(p.Label, s.Label+" ") {
+			return s
 		}
-		seg.Flags = append(seg.Flags, "no-boundary-rule-matched")
-		segments = append(segments, seg)
+		if fallback == nil {
+			fallback = s
+		}
 	}
-
-	for i, b := range merged {
-		end := len(text)
-		if i+1 < len(merged) {
-			end = merged[i+1].start
-		}
-		rest := text[b.end:end]
-		title, body := splitTitleBody(rest)
-
-		seg := Segment{
-			Key:      b.key,
-			Section:  b.strategy.SectionLabel(b.key),
-			Title:    title,
-			Body:     strings.TrimSpace(body),
-			Strategy: b.strategy.Type,
-			IDPrefix: prof.PrefixFor(*b.strategy),
-			Offset:   b.start,
-		}
-		if seg.Title == "" {
-			seg.AddFlag("no-title-detected")
-		}
-		segments = append(segments, seg)
-	}
-
-	assessConfidence(segments, prof)
-	return segments, nil
+	return fallback
 }
 
 // AddFlag records a segmentation concern once.
@@ -202,63 +174,11 @@ func hasAny(flags []string, want ...string) bool {
 	return false
 }
 
-// splitTitleBody takes the text following a heading marker and separates a
-// plausible title from the body.
-func splitTitleBody(rest string) (title, body string) {
-	rest = strings.TrimLeft(rest, " \t")
-	line, remainder, _ := strings.Cut(rest, "\n")
-	line = strings.TrimSpace(line)
-
-	// Heading number alone on its line: the title is the next non-empty line.
-	if line == "" {
-		next, after := nextNonEmptyLine(remainder)
-		if next != "" && len(next) <= 160 {
-			return cleanTitle(next), after
-		}
-		return "", remainder
-	}
-	// A long first line is body prose, not a title.
-	if len(line) > 160 {
-		return "", rest
-	}
-	return cleanTitle(line), remainder
-}
-
-func nextNonEmptyLine(s string) (line, rest string) {
-	for {
-		l, r, ok := strings.Cut(s, "\n")
-		if strings.TrimSpace(l) != "" {
-			return strings.TrimSpace(l), r
-		}
-		if !ok {
-			return "", ""
-		}
-		s = r
-	}
-}
-
-func firstLine(s string) string {
-	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
-	return cleanTitle(line)
-}
-
-func cleanTitle(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.Trim(s, "-–—:.\t ")
-	if len(s) > 160 {
-		s = s[:157] + "..."
-	}
-	return strings.TrimSpace(s)
-}
-
-// BuildRequirements segments text and mints requirement records: IDs from the
-// profile's prefixes, categories from its classification rules. Everything
-// starts at status=draft.
-func BuildRequirements(text string, prof *profile.Profile) (*Result, error) {
-	segments, err := SegmentText(text, prof)
-	if err != nil {
-		return nil, err
-	}
+// BuildRequirements mints requirement records from the requirements the
+// Wintermute server cut a regulation into: IDs from the profile's prefixes,
+// categories from its classification rules. Everything starts at status=draft.
+func BuildRequirements(pieces []Piece, prof *profile.Profile) (*Result, error) {
+	segments := SegmentsFrom(pieces, prof)
 
 	res := &Result{}
 	used := map[string]int{}

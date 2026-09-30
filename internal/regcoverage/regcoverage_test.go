@@ -108,15 +108,55 @@ func libraryContent(id int64, filename, text string) aiprovider.LibraryContent {
 	}
 }
 
+// passagesFor is what the Wintermute server hands back for a test document cut
+// as a framework: the sample regulation's articles and annex, a DORA article,
+// or — for text with no requirement in it — the preamble alone. The server's
+// own tests pin its segmenter; these stand in for its answer.
+func passagesFor(text string) []aiprovider.LibraryPassage {
+	piece := func(strategy, label, key, title, body string) aiprovider.LibraryPassage {
+		return aiprovider.LibraryPassage{Heading: strings.TrimSpace(label + " " + title), Body: body,
+			Segment: &aiprovider.LibrarySegment{Strategy: strategy, Label: label, Key: key, Title: title}}
+	}
+	switch {
+	case text == sampleRegulation:
+		return []aiprovider.LibraryPassage{
+			piece("preamble", "Preamble", "preamble", "REGULATION (EU) 2099/1234 OF THE EUROPEAN PARLIAMENT",
+				"REGULATION (EU) 2099/1234 OF THE EUROPEAN PARLIAMENT"),
+			piece("article", "Article 1", "1", "Subject matter",
+				"This Regulation lays down uniform requirements for the resilience of critical digital infrastructure."),
+			piece("article", "Article 2", "2", "Definitions",
+				"For the purposes of this Regulation, the following definitions apply: 'incident' means any event compromising availability."),
+			piece("article", "Article 17", "17", "Incident reporting",
+				"Entities shall report any major incident to the competent authority without undue delay and in any event "+
+					"within 24 hours of becoming aware of it. The report shall describe the impact and the mitigating measures applied."),
+			piece("annex", "Annex I", "I", "Technical measures",
+				"Entities shall encrypt personal data in transit using state of the art cryptography."),
+		}
+	case strings.Contains(text, "Article 5\nICT risk management framework"):
+		return []aiprovider.LibraryPassage{
+			piece("preamble", "Preamble", "preamble", "Regulation (EU) 2022/2554 on digital operational resilience",
+				"Regulation (EU) 2022/2554 on digital operational resilience"),
+			piece("article", "Article 5", "5", "ICT risk management framework",
+				"Financial entities shall have an internal governance and control framework that ensures an effective "+
+					"and prudent management of ICT risk."),
+		}
+	case strings.TrimSpace(text) != "":
+		return []aiprovider.LibraryPassage{piece("preamble", "Preamble", "preamble", "", text)}
+	}
+	return nil
+}
+
 // fakeLibrary stands in for the agent's document library, counting reads so a
-// test can assert that one did not happen.
+// test can assert that one did not happen, and recording which instrument it
+// was asked to cut each document as.
 type fakeLibrary struct {
 	docs  map[int64]aiprovider.LibraryContent
 	reads int
+	cut   map[int64]string
 }
 
 func newFakeLibrary(contents ...aiprovider.LibraryContent) *fakeLibrary {
-	lib := &fakeLibrary{docs: map[int64]aiprovider.LibraryContent{}}
+	lib := &fakeLibrary{docs: map[int64]aiprovider.LibraryContent{}, cut: map[int64]string{}}
 	for _, c := range contents {
 		lib.docs[c.Document.ID] = c
 	}
@@ -144,9 +184,28 @@ func (f *fakeLibrary) ReadLibraryDocument(_ context.Context, id int64) (aiprovid
 	return content, nil
 }
 
+func (f *fakeLibrary) CutAs(_ context.Context, id int64, framework string) (aiprovider.LibraryDocument, error) {
+	content, ok := f.docs[id]
+	if !ok {
+		return aiprovider.LibraryDocument{}, notFound("document")
+	}
+	f.cut[id] = framework
+	content.Document.Framework, content.Document.FrameworkPinned = framework, framework != ""
+	f.docs[id] = content
+	return content.Document, nil
+}
+
+func (f *fakeLibrary) ReadLibraryPassages(_ context.Context, id int64) ([]aiprovider.LibraryPassage, error) {
+	content, ok := f.docs[id]
+	if !ok {
+		return nil, notFound("document")
+	}
+	return passagesFor(content.Text), nil
+}
+
 func TestImportSegmentsAndIdentifies(t *testing.T) {
 	got, err := Import(ImportInput{
-		Content: libraryContent(1, "eu-2099-1234.txt", sampleRegulation)})
+		Content: libraryContent(1, "eu-2099-1234.txt", sampleRegulation), Passages: passagesFor(sampleRegulation)})
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
@@ -201,10 +260,11 @@ func TestImportRejectsWhatItCannotSegment(t *testing.T) {
 		{"no filename or title", ImportInput{
 			Content: aiprovider.LibraryContent{Text: "Article 1\n\nSomething."}}, "neither a filename nor a title"},
 		{"no articles", ImportInput{
-			Content: libraryContent(1, "reg.txt", "just some prose with no structure at all")},
+			Content:  libraryContent(1, "reg.txt", "just some prose with no structure at all"),
+			Passages: passagesFor("just some prose with no structure at all")},
 			"no articles or sections"},
 		{"unknown framework", ImportInput{
-			Content: libraryContent(1, "reg.txt", sampleRegulation), Framework: "nope"},
+			Content: libraryContent(1, "reg.txt", sampleRegulation), Passages: passagesFor(sampleRegulation), Framework: "nope"},
 			"unknown framework"},
 	}
 	for _, tc := range tests {
@@ -217,14 +277,17 @@ func TestImportRejectsWhatItCannotSegment(t *testing.T) {
 	}
 }
 
-// A known framework must be recognised from the document, because that is what
-// brings its curated crosswalk into the analysis.
+// A known framework must be recognised, because that is what brings its curated
+// crosswalk into the analysis. The Wintermute server recognises it — detection
+// is reading — and this takes its word.
 func TestImportDetectsAKnownFramework(t *testing.T) {
 	text := "Regulation (EU) 2022/2554 on digital operational resilience\n\n" +
 		"Article 5\nICT risk management framework\n\n" +
 		"Financial entities shall have an internal governance and control framework that ensures " +
 		"an effective and prudent management of ICT risk.\n"
-	got, err := Import(ImportInput{Content: libraryContent(2, "dora.txt", text)})
+	content := libraryContent(2, "dora.txt", text)
+	content.Document.Framework = "dora"
+	got, err := Import(ImportInput{Content: content, Passages: passagesFor(text)})
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
@@ -870,4 +933,32 @@ func reportMaps(report *Report, sectionRef, mappingRef string) bool {
 		}
 	}
 	return false
+}
+
+// The service has the Wintermute server cut the document as the instrument it
+// resolved, and builds the report from what the server cut: segmenting is
+// reading, and reading is that server's.
+func TestImportHasWintermuteCutTheInstrument(t *testing.T) {
+	repo := newMemRepo()
+	lib := newFakeLibrary(libraryContent(7, "eu.txt", sampleRegulation))
+	svc := NewService(repo, testNFRs(), nil, lib.provide)
+	reg, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 7})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if lib.cut[7] != GenericProfileID {
+		t.Errorf("wintermute was asked to cut it as %q, want %q", lib.cut[7], GenericProfileID)
+	}
+	if reg.SectionCount != 5 {
+		t.Errorf("section count %d, want the five requirements the server cut", reg.SectionCount)
+	}
+
+	lib = newFakeLibrary(libraryContent(8, "reg.txt", sampleRegulation))
+	svc = NewService(newMemRepo(), testNFRs(), nil, lib.provide)
+	if _, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 8, Framework: "nis2"}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if lib.cut[8] != "nis2" {
+		t.Errorf("a named framework was not passed on: %q", lib.cut[8])
+	}
 }

@@ -139,10 +139,31 @@ func (s *Service) Import(ctx context.Context, in ImportRequest) (Regulation, err
 			content.Document.Title)
 	}
 
+	// The instrument: the one named, or the one the server detected, or the
+	// generic EU profile. The server cuts the document as that instrument —
+	// pinning it there too, so its passages and this report agree on which
+	// instrument this is — and the requirements are read from what it cut.
+	registry, err := LoadProfiles()
+	if err != nil {
+		return Regulation{}, err
+	}
+	prof, _, err := resolveProfile(registry, in.Framework, content.Document.Framework)
+	if err != nil {
+		return Regulation{}, err
+	}
+	if _, err := lib.CutAs(ctx, in.LibraryDocID, prof.ID); err != nil {
+		return Regulation{}, fmt.Errorf("have wintermute cut the document as %s: %w", prof.ID, err)
+	}
+	passages, err := lib.ReadLibraryPassages(ctx, in.LibraryDocID)
+	if err != nil {
+		return Regulation{}, fmt.Errorf("read the document's requirements from wintermute: %w", err)
+	}
+
 	imported, err := Import(ImportInput{
 		Title:      in.Title,
 		Framework:  in.Framework,
 		Content:    content,
+		Passages:   passages,
 		ImportedBy: in.ImportedBy,
 	})
 	if err != nil {

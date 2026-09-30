@@ -72,6 +72,12 @@ type LibraryDocument struct {
 	ExtractVia string    `json:"extract_via"`
 	ChunkCount int       `json:"chunk_count"`
 	UploadedAt time.Time `json:"uploaded_at"`
+	// Framework is the instrument the Wintermute server cut the document as
+	// (dora, nis2, pci-dss …), and FrameworkPinned whether somebody named it
+	// rather than the server detecting it. Empty when no framework profile
+	// cut it.
+	Framework       string `json:"framework,omitempty"`
+	FrameworkPinned bool   `json:"framework_pinned,omitempty"`
 	// Processing is set while the server is still reading the document, or
 	// after it gave up. A document imported mid-processing would be imported
 	// half-read, so this is checked rather than displayed only.
@@ -95,6 +101,31 @@ type LibraryChunk struct {
 	Ordinal int    `json:"ordinal"`
 	Heading string `json:"heading"`
 	Body    string `json:"body"`
+}
+
+// LibrarySegment is where a passage sits in its instrument, as the Wintermute
+// server cut it: the strategy that found it, its label ("Article 17"), key
+// ("17") and title, and — when a long requirement was cut into several passages
+// — which part this is, from 1.
+type LibrarySegment struct {
+	Framework string `json:"framework"`
+	Strategy  string `json:"strategy"`
+	Label     string `json:"label"`
+	Key       string `json:"key"`
+	Title     string `json:"title,omitempty"`
+	Part      int    `json:"part,omitempty"`
+}
+
+// LibraryPassage is one passage with what the server knows of it.
+type LibraryPassage struct {
+	Ordinal    int             `json:"ordinal"`
+	Key        string          `json:"key"`
+	Heading    string          `json:"heading"`
+	Body       string          `json:"body"`
+	Breadcrumb string          `json:"breadcrumb,omitempty"`
+	PageFirst  int             `json:"page_first,omitempty"`
+	PageLast   int             `json:"page_last,omitempty"`
+	Segment    *LibrarySegment `json:"segment,omitempty"`
 }
 
 // LibraryContent is one document read in full: its metadata, its passages, and
@@ -201,6 +232,67 @@ func (w *Wintermute) ReadLibraryDocument(ctx context.Context, documentID int64) 
 		content.Document.Title, maxLibraryPages, libraryPageChunks)
 }
 
+// CutAs has the server cut a library document as the named instrument, at once.
+// Segmenting a regulation is reading it, and reading is that server's: this
+// application names the instrument and reads the requirements it was cut into.
+func (w *Wintermute) CutAs(ctx context.Context, documentID int64, framework string) (LibraryDocument, error) {
+	base, cfg, err := w.libraryTarget()
+	if err != nil {
+		return LibraryDocument{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, libraryTimeout)
+	defer cancel()
+	endpoint := base + "/api/v1/agents/" + neturl.PathEscape(cfg.Agent) +
+		"/documents/" + strconv.FormatInt(documentID, 10) + "/framework"
+	var doc LibraryDocument
+	if err := w.requestInto(ctx, http.MethodPut, endpoint, cfg.Token, map[string]any{"framework": framework}, &doc); err != nil {
+		return LibraryDocument{}, libraryError(err)
+	}
+	return doc, nil
+}
+
+// ReadLibraryPassages reads a document as passages, page by page, with the same
+// bounds as ReadLibraryDocument.
+func (w *Wintermute) ReadLibraryPassages(ctx context.Context, documentID int64) ([]LibraryPassage, error) {
+	base, cfg, err := w.libraryTarget()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, libraryTimeout*time.Duration(4))
+	defer cancel()
+	endpoint := base + "/api/v1/agents/" + neturl.PathEscape(cfg.Agent) +
+		"/documents/" + strconv.FormatInt(documentID, 10) + "/passages"
+	var out []LibraryPassage
+	from, chars := 0, 0
+	for page := 0; page < maxLibraryPages; page++ {
+		var payload struct {
+			Document LibraryDocument  `json:"document"`
+			Passages []LibraryPassage `json:"passages"`
+			NextFrom *int             `json:"next_from"`
+		}
+		url := fmt.Sprintf("%s?from=%d&count=%d", endpoint, from, libraryPageChunks)
+		if err := w.requestInto(ctx, http.MethodGet, url, cfg.Token, nil, &payload); err != nil {
+			return nil, libraryError(err)
+		}
+		for _, p := range payload.Passages {
+			chars += len(p.Body)
+		}
+		if chars > maxLibraryChars {
+			return nil, fmt.Errorf("%q is larger than this application will read in one piece (%d MiB); "+
+				"split it and import the parts separately", payload.Document.Title, maxLibraryChars>>20)
+		}
+		out = append(out, payload.Passages...)
+		if payload.NextFrom == nil {
+			return out, nil
+		}
+		if *payload.NextFrom <= from {
+			return nil, fmt.Errorf("wintermute did not advance past passage %d of %q", from, payload.Document.Title)
+		}
+		from = *payload.NextFrom
+	}
+	return nil, fmt.Errorf("document %d has more passages than this application will read", documentID)
+}
+
 // LibraryURL is the page on the Wintermute server where this agent's library is
 // managed, for a link out. Empty when there is nothing to link to.
 func (w *Wintermute) LibraryURL() string {
@@ -249,6 +341,12 @@ func libraryError(err error) error {
 type Library interface {
 	LibraryDocuments(ctx context.Context) ([]LibraryDocument, error)
 	ReadLibraryDocument(ctx context.Context, documentID int64) (LibraryContent, error)
+	// CutAs has the server cut a document as the named instrument, now, and
+	// keep that choice; "" hands it back to the server's detection.
+	CutAs(ctx context.Context, documentID int64, framework string) (LibraryDocument, error)
+	// ReadLibraryPassages reads a document as passages, each with its segment
+	// when a framework cut it.
+	ReadLibraryPassages(ctx context.Context, documentID int64) ([]LibraryPassage, error)
 	LibraryURL() string
 }
 
