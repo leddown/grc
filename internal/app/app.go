@@ -812,6 +812,7 @@ func registerPublicPageRoutes(r gin.IRouter, localMode bool) {
 
 func registerAIAuxRoutes(r gin.IRouter) {
 	r.POST("/ai-chat/ask", aiChatAsk)
+	r.POST("/ai-chat/stop", aiChatStop)
 	r.GET("/ai-chat/usage", aiChatUsageHandler)
 	r.GET("/ai-chat/wintermute/status", aiChatWintermuteStatus)
 	r.GET("/ai-chat/wintermute/catalog", aiChatWintermuteCatalog)

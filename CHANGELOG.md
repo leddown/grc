@@ -3,6 +3,67 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-04 (AI Chat: a long turn no longer ends in "Unexpected token '<'", and can be watched and stopped)
+
+A question to the GRC agent came back as `Error: Unexpected token '<',
+"<html> <h"... is not valid JSON`. The page asked `/ai-chat/ask` for one JSON
+reply and waited in silence for the whole turn, and an agent turn that looks
+things up takes minutes. The proxy in front of the application closes a
+connection that is silent for that long and answers with its own HTML error
+page (`deploy/grc.nginx` allows 300 s), and the page parsed that page as JSON.
+The turn itself carried on at the Wintermute server, unseen.
+
+- **`/ai-chat/ask`, streamed (`Accept: text/event-stream`):** now sends
+  `event: session {session_id}` once the conversation is open, then
+  `event: progress {live}` every two seconds until the answer: what the
+  Wintermute server says the turn is doing (its `/sessions/{id}/progress`).
+  The connection is never silent, so a proxy's read timeout no longer applies
+  to it. The AI dock asks the same way and gets the same keep-alive; it
+  ignores the two new events. The JSON form is unchanged.
+- **`/ai-chat/ask` returns `usage` (`input_tokens`, `output_tokens`) and
+  `elapsed_ms`**, and `fell_back_from` / `fallback_reason` when the server
+  answered on its fallback backend.
+- **`POST /ai-chat/stop {session_id}`** stops the turn a question is waiting
+  on (the server's `/sessions/{id}/stop`). `stopping` is false when nothing
+  was running. Covered by the `/ai-chat` page grant, like `/ai-chat/ask`.
+- **A turn nobody is waiting for is stopped.** Hanging up does not stop a turn
+  on the Wintermute server: it runs on, and its session refuses the next
+  question until it ends. When the asker's connection closes mid-turn, or the
+  ten-minute wait for the turn runs out, the application now stops the turn
+  there. Nothing in this application can read such an answer afterwards.
+- **`internal/aiprovider`:** `Request.Opened` is called with the session id
+  before the question is posted; `Wintermute.Progress` and `Wintermute.Stop`
+  (the `Watcher` interface) read and stop a running turn; `Live` is the
+  server's account of one; `Response.FellBackFrom` / `FallbackReason`.
+- **AI Chat page:**
+  - **Asks as a stream** and shows the turn while it runs: a status light,
+    the time so far, and what the turn is doing ("running search_documents",
+    "qwen on core is writing · 120 tokens of thinking, 40 tokens of reply"),
+    amber when it has gone quiet for longer than it should. The wording and
+    thresholds are the Wintermute chat's.
+  - **Stop.** Ask becomes Stop while a turn runs; so does Esc, and the
+    waiting line has its own Stop. The stopped question goes back in the box.
+  - **Token use.** Under each answer: backend, model, tokens in and out, and
+    how long it took, with Copy (https and localhost only). The header shows
+    the conversation's running total. The window measure is now a bar above
+    the composer (kept, earlier reads, and the mark where lookups stop) with
+    "Clear earlier reads" beside it. The Usage panel refreshes after an answer.
+  - **One question at a time.** Enter while a question was pending sent a
+    second one into a second session; it is refused now, and the backend and
+    agent are locked until the answer arrives.
+  - **A reply that is not JSON is reported as what it is**: "HTTP 504 from the
+    server in front of this application, not from the application itself: it
+    gave up waiting for the answer."
+  - **Smaller chrome.** Backend and agent are two small selects in the
+    conversation's own header, with a one-line note under it (whole on hover),
+    in place of a panel above the conversation. The title is the size of a
+    heading rather than a banner, and the paragraph under it is gone. The
+    conversation takes the height that frees.
+  - A message when the server answered on its fallback backend, and why.
+- **Tests:** `TestWintermuteWatchesAndStopsATurn`,
+  `TestAIChatAskStreamsTheTurnWhileItRuns`,
+  `TestAIChatAskStopsATurnNobodyIsWaitingFor`, `TestAIChatStop`.
+
 ## 2026-10-04 (AI Chat shows how full the model's window is, and can clear earlier reads)
 
 A second question in the same Wintermute conversation could come back with the

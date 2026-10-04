@@ -156,6 +156,7 @@ func homePage(c *gin.Context) {
 	          <li><a href="%[1]s/wiz-rules">%[1]s/wiz-rules</a></li>
 	          <li><a href="%[1]s/openapi.json">%[1]s/openapi.json</a></li>
 	          <li><code>POST %[1]s/ai-chat/ask</code> (proxy question/response request)</li>
+	          <li><code>POST %[1]s/ai-chat/stop</code> (stop the turn a question is waiting on)</li>
 	          <li><a href="%[1]s/controls/family-json/data?family=AC">%[1]s/controls/family-json/data?family=AC</a></li>
 	          <li><a href="%[1]s/controls/data">%[1]s/controls/data</a> with <code>?search=AC&baseline=High&cia=c</code></li>
           <li><code>PUT %[1]s/controls/:controlID</code> (update SQLite row)</li>

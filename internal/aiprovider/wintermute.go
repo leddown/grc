@@ -145,6 +145,9 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 			return Response{}, fmt.Errorf("wintermute did not return a session id")
 		}
 	}
+	if req.Opened != nil {
+		req.Opened(sessionID)
+	}
 
 	// wintermuted derives its own system prompt from its configuration and
 	// takes only message text, so the instruction is prepended to the question.
@@ -198,6 +201,9 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		Model:     stringField(turn, "model"),
 		SessionID: sessionID,
 		Usage:     extractUsage(turn),
+		// The server retries a failed backend on its fallback and says so.
+		FellBackFrom:   stringField(turn, "fell_back_from"),
+		FallbackReason: stringField(turn, "fallback_reason"),
 		// Passed through when the server reports it; empty otherwise, which a
 		// caller must treat as "not known", not as a complete answer.
 		StopReason: stringField(turn, "stop_reason"),
@@ -221,6 +227,64 @@ func extractRoom(turn map[string]any) *Room {
 			Budget: intField(room, "budget"), Reads: intField(room, "reads")}
 	}
 	return nil
+}
+
+// watchTimeout bounds a look at a running turn, or the request to stop one.
+// Neither waits on a model.
+const watchTimeout = 10 * time.Second
+
+// Progress reads what the turn running in a session is doing. The server
+// keeps that beside the turn, so it is nil for a server that predates it and
+// for a session no turn has run in.
+func (w *Wintermute) Progress(ctx context.Context, sessionID string) (*Live, error) {
+	cfg := w.resolve()
+	if cfg.URL == "" || cfg.Token == "" {
+		return nil, ErrNotConfigured
+	}
+	base, err := ValidateEndpoint(cfg.URL)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, watchTimeout)
+	defer cancel()
+
+	var progress struct {
+		Live *Live `json:"live"`
+	}
+	if err := w.requestInto(ctx, http.MethodGet,
+		base+"/api/v1/sessions/"+neturl.PathEscape(sessionID)+"/progress",
+		cfg.Token, nil, &progress); err != nil {
+		return nil, missingEndpoint(err, "turn progress")
+	}
+	return progress.Live, nil
+}
+
+// Stop stops the turn running in a session. A turn on this server outlives
+// the request that asked for it, so hanging up does not stop one: the model
+// carries on, and the session refuses the next question until it is done.
+func (w *Wintermute) Stop(ctx context.Context, sessionID string) (bool, error) {
+	cfg := w.resolve()
+	if cfg.URL == "" || cfg.Token == "" {
+		return false, ErrNotConfigured
+	}
+	base, err := ValidateEndpoint(cfg.URL)
+	if err != nil {
+		return false, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, watchTimeout)
+	defer cancel()
+
+	_, err = w.postJSON(ctx,
+		base+"/api/v1/sessions/"+neturl.PathEscape(sessionID)+"/stop", cfg.Token, map[string]any{})
+	var status *statusError
+	if errors.As(err, &status) && status.code == http.StatusConflict {
+		// Nothing running: it ended as it was being stopped.
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("wintermute stop: %w", missingEndpoint(err, "stop"))
+	}
+	return true, nil
 }
 
 // refusePendingCalls tells the server that the calls it is waiting on will not

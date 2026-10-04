@@ -80,6 +80,10 @@ type Request struct {
 	// Wintermute does not enforce it, so a caller that sets it must still
 	// validate the answer and say what it wants in the prompt.
 	OutputSchema map[string]any
+	// Opened, when set, is called with the conversation's id once it is known
+	// and before the question is asked. An answer can be minutes away, and the
+	// id is what a turn is watched and stopped by in the meantime (Watcher).
+	Opened func(sessionID string)
 }
 
 // Usage is the token accounting for one answer, for the shared ai_usage_log.
@@ -100,6 +104,10 @@ type Response struct {
 	Backend string
 	// Model is the model that produced the answer.
 	Model string
+	// FellBackFrom names the backend the turn was meant for when another one
+	// answered it, and FallbackReason why it was left.
+	FellBackFrom   string
+	FallbackReason string
 	// SessionID identifies the conversation this turn belongs to, for providers
 	// that keep the transcript themselves. Passing it back on the next Request
 	// continues that conversation. Empty for providers that do not.
@@ -180,6 +188,43 @@ func AskStream(ctx context.Context, p Provider, req Request, onText func(string)
 		onText(resp.Text)
 	}
 	return resp, err
+}
+
+// Live is what a turn is doing while it runs, as a wintermuted server reports
+// it. The *MS fields are ages at the moment it was read.
+type Live struct {
+	Running bool   `json:"running"`
+	Phase   string `json:"phase"`
+	Backend string `json:"backend,omitempty"`
+	Model   string `json:"model,omitempty"`
+	// Tool is the tool running, in the tool phase.
+	Tool string `json:"tool,omitempty"`
+	// Calls is how many model calls the turn has made, this one included.
+	Calls int `json:"calls"`
+	// Connected says the model call in progress has started answering.
+	// Unstreamed says the backend reports nothing until its answer is whole.
+	Connected  bool `json:"connected"`
+	Unstreamed bool `json:"unstreamed,omitempty"`
+	// Thinking, Writing and ToolInput count what has arrived of the current
+	// model call, about a token each.
+	Thinking  int    `json:"thinking_tokens"`
+	Writing   int    `json:"writing_tokens"`
+	ToolInput int    `json:"tool_tokens"`
+	Error     string `json:"error,omitempty"`
+	ElapsedMS int64  `json:"elapsed_ms"`
+	PhaseMS   int64  `json:"phase_ms"`
+	QuietMS   int64  `json:"quiet_ms"`
+}
+
+// Watcher is implemented by providers that keep a turn running on their own
+// side, where it can be watched and stopped by its conversation's id.
+type Watcher interface {
+	// Progress reports the turn running in a conversation. Nil is a provider
+	// that has nothing to say about it.
+	Progress(ctx context.Context, sessionID string) (*Live, error)
+	// Stop stops the turn running in a conversation, and reports whether
+	// there was one. What the turn already did is kept.
+	Stop(ctx context.Context, sessionID string) (bool, error)
 }
 
 // Probe is what a connection test reports back.

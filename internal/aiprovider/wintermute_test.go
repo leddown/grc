@@ -542,3 +542,73 @@ func TestWintermuteErrorIsTheServersOwnWords(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// An answer can be minutes away, so Ask says which session the turn runs in
+// before it asks the question, and the turn can be watched and stopped by
+// that id in the meantime. What answered when the server left the intended
+// backend is passed on.
+func TestWintermuteWatchesAndStopsATurn(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/sessions":
+			writeJSON(w, map[string]any{"id": "sess-7"})
+		case "/api/v1/sessions/sess-7/messages":
+			writeJSON(w, map[string]any{"status": "complete", "reply": "done", "backend": "claude",
+				"fell_back_from": "core", "fallback_reason": "connection refused"})
+		case "/api/v1/sessions/sess-7/progress":
+			writeJSON(w, map[string]any{"count": 2, "live": map[string]any{
+				"running": true, "phase": "model", "backend": "core", "model": "qwen", "calls": 2,
+				"connected": true, "thinking_tokens": 120, "writing_tokens": 40, "elapsed_ms": 5000}})
+		case "/api/v1/sessions/sess-7/stop":
+			w.WriteHeader(http.StatusAccepted)
+			writeJSON(w, map[string]any{"stopping": true})
+		case "/api/v1/sessions/idle/progress":
+			writeJSON(w, map[string]any{"count": 0})
+		case "/api/v1/sessions/idle/stop":
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]any{"error": "no turn is running in this conversation"})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "t"})
+	ctx := context.Background()
+
+	var opened string
+	var before int
+	resp, err := w.Ask(ctx, Request{Prompt: "q", Opened: func(id string) { opened, before = id, len(seen) }})
+	if err != nil {
+		t.Fatalf("Ask: %v", err)
+	}
+	if opened != "sess-7" || before != 1 {
+		t.Errorf("Opened(%q) after %d request(s), want the session id once it is opened and before the question", opened, before)
+	}
+	if resp.FellBackFrom != "core" || resp.FallbackReason != "connection refused" {
+		t.Errorf("fallback = %q, %q", resp.FellBackFrom, resp.FallbackReason)
+	}
+
+	live, err := w.Progress(ctx, "sess-7")
+	if err != nil || live == nil {
+		t.Fatalf("Progress: %v, %v", live, err)
+	}
+	if !live.Running || live.Phase != "model" || live.Model != "qwen" || live.Calls != 2 ||
+		live.Thinking != 120 || live.Writing != 40 || live.ElapsedMS != 5000 {
+		t.Errorf("live = %+v", live)
+	}
+	if live, err := w.Progress(ctx, "idle"); err != nil || live != nil {
+		t.Errorf("a session no turn ran in: %v, %v, want nil", live, err)
+	}
+
+	if stopped, err := w.Stop(ctx, "sess-7"); err != nil || !stopped {
+		t.Errorf("Stop = %v, %v", stopped, err)
+	}
+	if stopped, err := w.Stop(ctx, "idle"); err != nil || stopped {
+		t.Errorf("Stop with nothing running = %v, %v, want false and no error", stopped, err)
+	}
+	if _, err := w.Stop(ctx, "gone"); err == nil {
+		t.Errorf("Stop on a server without the endpoint did not fail")
+	}
+}

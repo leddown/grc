@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	neturl "net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -125,16 +128,15 @@ func aiChatPage(c *gin.Context) {
       text-transform: uppercase;
     }
     .tab.active { background: #e1d0b7; border-color: #b89d78; }
-    h1 { margin: 0 0 8px; font-size: clamp(2rem, 4vw, 3.2rem); line-height: 0.95; letter-spacing: -0.03em; }
+    h1 { margin: 0; font-size: 1.25rem; line-height: 1.2; letter-spacing: -0.01em; }
     p { color: var(--muted); }
     .page-head {
       display: flex;
-      gap: 16px 24px;
+      gap: 8px 24px;
       flex-wrap: wrap;
-      align-items: flex-end;
+      align-items: center;
       justify-content: space-between;
     }
-    .page-head p { margin: 6px 0 0; max-width: 78ch; font-size: 15px; }
     .creds {
       display: flex;
       gap: 8px;
@@ -161,13 +163,12 @@ func aiChatPage(c *gin.Context) {
        background the page is painted with. */
     a.chip { text-decoration: none; background: transparent; }
     .layout {
-      margin-top: 16px;
+      margin-top: 12px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
       /* Chat is the work; the page fills the viewport so the conversation gets
          the leftover height rather than stopping at a fixed box. */
-      height: clamp(460px, calc(100dvh - 250px), 1400px);
+      height: clamp(460px, calc(100dvh - 140px), 1400px);
     }
     .panel {
       border: 1px solid rgba(215,206,191,0.9);
@@ -200,29 +201,41 @@ func aiChatPage(c *gin.Context) {
       text-transform: uppercase;
       font-family: Arial, sans-serif;
     }
-    .panel-header-actions { display: flex; align-items: center; gap: 10px; }
+    .panel-header { flex-wrap: wrap; padding: 8px 12px; }
+    .panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     /* The transcript is resent with every question, so what it is costing is
        worth stating rather than leaving to be inferred from the bill. */
     .context-note { font-size: 11px; letter-spacing: 0.06em; }
-    .panel-body { padding: 16px; overflow: auto; flex: 1; min-height: 0; }
     .panel.chat { flex: 1 1 auto; }
-    .routing { flex: 0 0 auto; }
-    .routing .panel-body { flex: 0 0 auto; padding-bottom: 10px; }
-    .routing-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
-    .routing-row .field { flex: 1 1 240px; }
-    .routing-row button { flex: 0 0 auto; }
-    .routing.off .routing-row { opacity: 0.55; }
-    .routing .hint { margin: 8px 0 0; }
-    .field label {
-      display: block;
-      margin-bottom: 6px;
+    /* Which backend and agent answer is a choice made once and then left
+       alone, so it sits in the conversation's own header at the size of a
+       label rather than in a panel above it. */
+    .routing { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+    .routing.off { opacity: 0.55; }
+    .routing label { font-size: 10px; letter-spacing: 0.08em; font-weight: 700; }
+    .routing select {
+      width: auto;
+      max-width: 210px;
+      padding: 3px 6px;
+      margin-right: 6px;
+      border-radius: 8px;
       font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      font-family: Arial, sans-serif;
-      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: none;
     }
+    .panel-header .routing button { padding: 3px 9px; font-size: 13px; line-height: 1.2; }
+    .routing-detail {
+      flex: 0 0 auto;
+      margin: 0;
+      padding: 4px 12px;
+      border-bottom: 1px solid rgba(215,206,191,0.9);
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .routing-detail span:not(:empty) { margin-right: 12px; }
     input, select, textarea {
       width: 100%;
       padding: 11px 12px;
@@ -248,7 +261,7 @@ func aiChatPage(c *gin.Context) {
       background: var(--surface-strong);
       border: 1px solid var(--line);
     }
-    button:disabled, select:disabled { cursor: not-allowed; }
+    button:disabled, select:disabled { cursor: not-allowed; opacity: 0.6; }
     .chat-box {
       flex: 1;
       min-height: 0;
@@ -269,6 +282,77 @@ func aiChatPage(c *gin.Context) {
     }
     .msg.user { align-self: flex-end; border-left: 4px solid #8b3d2e; }
     .msg.ai { align-self: flex-start; border-left: 4px solid #0b5d3b; }
+    .msg.note { align-self: flex-start; color: var(--muted); font-family: Arial, sans-serif; font-size: 13px; }
+    /* What an answer cost and what served it, under the answer. */
+    .msg-foot {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: baseline;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      white-space: normal;
+    }
+    .msg-foot button {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--accent);
+      font-size: 11px;
+      text-decoration: underline;
+    }
+    /* The answer being waited for: a light that says whether all is well,
+       how long it has been and what the turn is doing, and a way to stop it. */
+    .msg.pending { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; white-space: normal; color: var(--muted); }
+    .msg.pending .meta { margin: 0; }
+    .pending-status { font-family: Arial, sans-serif; font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .msg.pending button { padding: 3px 12px; font-family: Arial, sans-serif; font-size: 12px; }
+    .turn-light { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--good, #3fb950); }
+    .turn-light.ok { animation: light-breathe 2s ease-in-out infinite; }
+    .turn-light.warn { background: #d29922; }
+    .turn-light.bad { background: var(--danger, #b3261e); }
+    .turn-light.lost, .turn-light.done { background: var(--muted); }
+    @keyframes light-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    @media (prefers-reduced-motion: reduce) { .turn-light.ok { animation: none; } }
+    /* How full the model's window is, above the composer. One bar the width
+       of the window: what the conversation keeps, then what its lookups
+       returned and could be cleared, and a mark where a turn stops reading. */
+    .room {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 16px;
+      font-family: Arial, sans-serif;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .room[hidden] { display: none; }
+    .room-bar {
+      position: relative;
+      flex: 0 0 140px;
+      height: 6px;
+      display: flex;
+      background: var(--line);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .room-bar i { display: block; height: 100%; background: var(--accent); }
+    #roomReads { opacity: 0.45; }
+    .room-bar b { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ink); opacity: 0.7; }
+    .room.tight .room-bar i { background: var(--danger, #b3261e); }
+    .room.tight .room-text { color: var(--warn); }
+    /* Armed, the reads are on their way out: drawn as already gone. */
+    .room.clearing #roomReads { opacity: 0.15; }
+    .room-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .room button { padding: 2px 10px; font-size: 11.5px; white-space: nowrap; }
+    .room button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
     .composer {
       flex: 0 0 auto;
       border-top: 1px solid rgba(215,206,191,0.9);
@@ -335,10 +419,7 @@ func aiChatPage(c *gin.Context) {
   <main>
     ` + pageui.Nav("/ai-chat") + `
     <header class="page-head">
-      <div>
-        <h1>AI Chat Gateway</h1>
-        <p>Ask the Wintermute server configured in Settings. It routes the question to a self-hosted model on your network, or on to Claude when a Claude backend is chosen there.</p>
-      </div>
+      <h1>AI Chat Gateway</h1>
       <div class="creds">
         <span id="wintermuteChip" class="chip">Wintermute token: checking&hellip;</span>
         <a class="chip" href="/settings">Keys &amp; tokens &rarr; Settings</a>
@@ -347,49 +428,36 @@ func aiChatPage(c *gin.Context) {
     </header>
 
     <div class="layout">
-      <section id="routing" class="panel routing">
-        <div class="panel-header">
-          <span>Backend &amp; agent</span>
-          <span id="answeringWith" class="context-note">checking&hellip;</span>
-        </div>
-        <div class="panel-body">
-          <div class="routing-row">
-            <div class="field">
-              <label for="wintermuteBackend">Backend</label>
-              <select id="wintermuteBackend">
-                <option value="">Server default</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="wintermuteAgent">Agent</label>
-              <select id="wintermuteAgent">
-                <option value="">No agent &mdash; general assistant</option>
-              </select>
-            </div>
-            <button id="loadCatalog" class="secondary" type="button">Refresh backends &amp; agents</button>
-          </div>
-          <p id="routingNote" class="hint" hidden></p>
-          <p class="hint"><span id="agentDetail"></span> <span id="catalogDetail"></span></p>
-        </div>
-      </section>
-
       <section class="panel chat">
         <div class="panel-header">
-          <span>Conversation</span>
+          <div id="routing" class="routing">
+            <label for="wintermuteBackend">Backend</label>
+            <select id="wintermuteBackend">
+              <option value="">Server default</option>
+            </select>
+            <label for="wintermuteAgent">Agent</label>
+            <select id="wintermuteAgent">
+              <option value="">No agent &mdash; general assistant</option>
+            </select>
+            <button id="loadCatalog" class="secondary" type="button" title="Refresh backends and agents" aria-label="Refresh backends and agents">&#8635;</button>
+          </div>
           <span class="panel-header-actions">
             <span id="contextNote" class="context-note"></span>
-            <span id="roomNote" class="context-note"></span>
-            <button id="clearReadsBtn" class="secondary" type="button" aria-pressed="false" hidden>Clear earlier reads</button>
             <button id="usageBtn" class="secondary" type="button">Usage &#9656;</button>
             <button id="clearBtn" class="secondary" type="button">Clear</button>
           </span>
         </div>
+        <p id="routingDetail" class="routing-detail hint"><span id="answeringWith">checking&hellip;</span><span id="routingNote" hidden></span><span id="agentDetail"></span><span id="catalogDetail"></span></p>
         <div id="usagePanel" class="usage-panel" style="display:none;"></div>
         <div id="chatBox" class="chat-box">
-          <div class="msg">
-            <div class="meta">System</div>
-            Responses will appear here after you submit a question.
+          <div class="msg note"><div class="meta">System</div>Responses will appear here after you submit a question.</div>
+        </div>
+        <div id="room" class="room" hidden>
+          <div id="roomBar" class="room-bar" role="meter" aria-valuemin="0" aria-label="Context window in use">
+            <i id="roomKept"></i><i id="roomReads"></i><b id="roomMark" hidden></b>
           </div>
+          <span id="roomNote" class="room-text"></span>
+          <button id="clearReadsBtn" class="secondary" type="button" aria-pressed="false" hidden>Clear earlier reads</button>
         </div>
         <form id="chatForm" class="composer">
           <textarea id="question" required placeholder="Ask your question here" aria-label="Question"></textarea>
@@ -404,6 +472,7 @@ func aiChatPage(c *gin.Context) {
 
   <script>
     const routing = document.getElementById('routing');
+    const routingDetail = document.getElementById('routingDetail');
     const answeringWith = document.getElementById('answeringWith');
     const routingNote = document.getElementById('routingNote');
     const wintermuteBackend = document.getElementById('wintermuteBackend');
@@ -420,6 +489,11 @@ func aiChatPage(c *gin.Context) {
     const statusEl = document.getElementById('status');
     const chatBox = document.getElementById('chatBox');
     const contextNote = document.getElementById('contextNote');
+    const roomBox = document.getElementById('room');
+    const roomBar = document.getElementById('roomBar');
+    const roomKept = document.getElementById('roomKept');
+    const roomReads = document.getElementById('roomReads');
+    const roomMark = document.getElementById('roomMark');
     const roomNote = document.getElementById('roomNote');
     const clearReadsBtn = document.getElementById('clearReadsBtn');
     const COMPOSER_HINT = 'Enter sends · Shift+Enter for a new line';
@@ -430,6 +504,17 @@ func aiChatPage(c *gin.Context) {
     // The server bounds both.
     let history = [];
     let sessionID = '';
+
+    // What this conversation's answers have cost, summed. Every question sends
+    // the conversation so far again, so the tokens sent grow faster than the
+    // transcript does.
+    let spent = { input: 0, output: 0 };
+
+    // The question being answered, while one is: what stops it, the session
+    // its turn runs in once the server has said, and what that turn was last
+    // reported doing. One at a time — a second question into the same session
+    // is refused by the server, and into a new one answers without the first.
+    let asking = null;
 
     // How full the answering model's context window is with this session in
     // it, as the Wintermute server measured it on the last answer. Every
@@ -445,29 +530,51 @@ func aiChatPage(c *gin.Context) {
       return n < 1000 ? String(n) : (n / 1000).toFixed(1) + 'k';
     }
 
+    function elapsedLabel(ms) {
+      const s = Math.round(ms / 1000);
+      if (s < 60) return s + 's';
+      return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    }
+
+    // The bar is the window. Its solid part is what the conversation keeps,
+    // its pale part what lookups returned and could be cleared, and the mark
+    // is where a turn stops reading to leave room for the answer.
     function renderRoom() {
-      if (!room || !room.used) {
-        roomNote.textContent = '';
-        clearReadsBtn.hidden = true;
+      const used = room && room.used;
+      roomBox.hidden = !used;
+      if (!used) {
         clearReads = false;
         return;
       }
       const reads = Math.min(room.reads || 0, room.used);
+      if (!reads || !sessionID) clearReads = false;
       const full = Boolean(room.budget && room.used >= room.budget);
+
+      roomBar.hidden = !room.window;
+      if (room.window) {
+        const share = (n) => Math.min(100, (100 * n) / room.window).toFixed(1) + '%';
+        roomKept.style.width = share(room.used - reads);
+        roomReads.style.width = share(reads);
+        roomMark.hidden = !room.budget;
+        roomMark.style.left = share(room.budget || 0);
+        roomBar.setAttribute('aria-valuemax', room.window);
+        roomBar.setAttribute('aria-valuenow', Math.min(room.used, room.window));
+      }
+      roomBox.classList.toggle('tight', full && !clearReads);
+      roomBox.classList.toggle('clearing', clearReads);
+
       let text = room.window
         ? tokens(room.used) + ' of ' + tokens(room.window) + ' tokens'
-        : tokens(room.used) + ' tokens';
+        : tokens(room.used) + ' tokens in this conversation';
       if (clearReads) text += ' · about ' + tokens(reads) + ' cleared with your next question';
       else if (full) text += reads ? ' · no room left to look things up' : ' · no room left to look things up — Clear starts again';
       else if (reads) text += ' · ' + tokens(reads) + ' is earlier reading';
       roomNote.textContent = text;
-      roomNote.style.color = full && !clearReads ? 'var(--warn)' : '';
       roomNote.title = room.window
         ? 'The model can hold ' + room.window + ' tokens and this conversation takes about ' + room.used + '.'
           + (room.budget ? ' The agent stops looking things up at ' + room.budget + ', to leave room for its answer.' : '')
         : '';
       clearReadsBtn.hidden = !reads || !sessionID;
-      if (clearReadsBtn.hidden) clearReads = false;
       clearReadsBtn.setAttribute('aria-pressed', String(clearReads));
       clearReadsBtn.textContent = clearReads ? 'Clearing earlier reads ✓' : 'Clear earlier reads';
       clearReadsBtn.title = clearReads
@@ -508,15 +615,84 @@ func aiChatPage(c *gin.Context) {
         .replaceAll("'", '&#39;');
     }
 
-    function appendMessage(role, content) {
-      const kind = role === 'User' ? 'user' : (role === 'Assistant' ? 'ai' : '');
+    // Reads a reply that should be JSON. When it is not, it did not come from
+    // this application: a proxy in front of it answered with its own error
+    // page, most often because it gave up waiting. Parsing that as JSON says
+    // "Unexpected token '<'", which tells the reader nothing, so the status
+    // is reported in words instead.
+    async function readJSON(resp) {
+      const text = await resp.text();
+      if (!text) return {};
+      try {
+        return JSON.parse(text);
+      } catch (_) {
+        const why = {
+          413: 'the request is larger than it accepts',
+          502: 'it could not reach this application',
+          503: 'this application is not available',
+          504: 'it gave up waiting for the answer',
+        }[resp.status];
+        throw new Error(resp.ok
+          ? 'The reply was a web page, not an answer. Reload this page; you may have been signed out.'
+          : 'HTTP ' + resp.status + ' from the server in front of this application, not from the application itself'
+            + (why ? ': ' + why : '') + '.');
+      }
+    }
+
+    function appendMessage(role, content, foot) {
+      const kind = role === 'User' ? 'user' : (role === 'Assistant' ? 'ai' : 'note');
       const row = document.createElement('div');
       row.className = 'msg ' + kind;
-      row.innerHTML =
-        '<div class="meta">' + esc(role) + '</div>' +
-        esc(content || '').replaceAll('\n', '<br>');
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = role;
+      row.append(meta, document.createTextNode(content || ''));
+      if (foot) row.appendChild(foot);
       chatBox.appendChild(row);
       chatBox.scrollTop = chatBox.scrollHeight;
+      return row;
+    }
+
+    // What served an answer, what it cost and how long it took. None of it
+    // can be read off the text, and the backend is not always the one asked
+    // for.
+    function answerFoot(data, answer) {
+      const foot = document.createElement('div');
+      foot.className = 'msg-foot';
+      const usage = data.usage || {};
+      const input = Number(usage.input_tokens) || 0;
+      const output = Number(usage.output_tokens) || 0;
+      const parts = [];
+      if (data.backend) parts.push(data.backend);
+      if (data.model) parts.push(data.model);
+      parts.push(input || output
+        ? tokens(input) + ' in → ' + tokens(output) + ' out tokens'
+        : 'no token count reported');
+      if (data.elapsed_ms) parts.push(elapsedLabel(data.elapsed_ms));
+      const text = document.createElement('span');
+      text.textContent = parts.join(' · ');
+      if (input || output) {
+        text.title = input + ' tokens sent to the model and ' + output
+          + ' written by it for this answer, as the Wintermute server counted them.';
+      }
+      foot.appendChild(text);
+      // The clipboard is only there on https and localhost.
+      if (navigator.clipboard) {
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.textContent = 'Copy';
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(answer);
+            copy.textContent = 'Copied';
+          } catch (_) {
+            copy.textContent = 'Could not copy';
+          }
+          setTimeout(() => { copy.textContent = 'Copy'; }, 1500);
+        });
+        foot.appendChild(copy);
+      }
+      return foot;
     }
 
     // Names what will answer, since the page no longer has a field that says so.
@@ -532,19 +708,21 @@ func aiChatPage(c *gin.Context) {
       } else {
         model = backend ? 'default model for ' + backend : 'backend default model';
       }
-      answeringWith.textContent = 'Answering with Wintermute · ' + model;
+      answeringWith.textContent = 'Answering with ' + model + '.';
     }
 
     // Until a Wintermute server is configured the backend and agent stay in
     // view, so the reader can see what is set, but cannot be changed: a choice
-    // that silently does nothing is worse than none.
+    // that silently does nothing is worse than none. Nor while a question is
+    // being answered: its session is pinned to the pair it was asked with.
     function renderRouting() {
-      if (!configured.loaded) return;
       const wm = configured.wintermute;
+      const locked = Boolean(asking) || (configured.loaded && !wm);
+      wintermuteBackend.disabled = locked;
+      wintermuteAgent.disabled = locked;
+      loadCatalogBtn.disabled = locked;
+      if (!configured.loaded) return;
       routing.classList.toggle('off', !wm);
-      wintermuteBackend.disabled = !wm;
-      wintermuteAgent.disabled = !wm;
-      loadCatalogBtn.disabled = !wm;
       routingNote.hidden = wm;
       if (!wm) {
         routingNote.textContent =
@@ -553,6 +731,15 @@ func aiChatPage(c *gin.Context) {
       }
       renderAnsweringWith();
     }
+
+    // The line under the header is cut to its width; the whole of it is there
+    // on hover.
+    routingDetail.addEventListener('mouseenter', () => {
+      routingDetail.title = Array.from(routingDetail.children)
+        .filter((part) => !part.hidden && part.textContent)
+        .map((part) => part.textContent)
+        .join(' ');
+    });
 
     // The backend comes from the server rather than being typed in. A name that
     // is one character out is not an error anyone sees here: the question fails
@@ -604,7 +791,7 @@ func aiChatPage(c *gin.Context) {
       catalogDetail.textContent = 'Loading backends…';
       try {
         const resp = await fetch('/ai-chat/wintermute/catalog');
-        const data = await resp.json().catch(() => ({}));
+        const data = await readJSON(resp);
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
 
         catalog = {
@@ -705,7 +892,7 @@ func aiChatPage(c *gin.Context) {
       renderAgentDetail('Loading agents…');
       try {
         const resp = await fetch('/ai-chat/wintermute/agents');
-        const data = await resp.json().catch(() => ({}));
+        const data = await readJSON(resp);
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         agents = data.agents || [];
         renderAgents(selected);
@@ -719,7 +906,16 @@ func aiChatPage(c *gin.Context) {
 
     function renderContextNote() {
       const turns = history.length / 2;
-      contextNote.textContent = turns ? turns + (turns === 1 ? ' turn of context' : ' turns of context') : '';
+      const parts = [];
+      if (turns) parts.push(turns + (turns === 1 ? ' turn' : ' turns'));
+      if (spent.input || spent.output) {
+        parts.push(tokens(spent.input) + ' in → ' + tokens(spent.output) + ' out tokens');
+      }
+      contextNote.textContent = parts.join(' · ');
+      contextNote.title = spent.input || spent.output
+        ? 'What this conversation has cost so far: ' + spent.input + ' tokens sent to the model and '
+          + spent.output + ' written by it, over all its answers. Every question sends the conversation so far again.'
+        : '';
     }
 
     // A Wintermute session is pinned to the backend and agent it was opened
@@ -743,7 +939,7 @@ func aiChatPage(c *gin.Context) {
     async function refreshStatus() {
       try {
         const resp = await fetch('/ai-chat/wintermute/status');
-        const data = await resp.json();
+        const data = await readJSON(resp);
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         configured.wintermute = Boolean(data.configured) && Boolean(data.token_configured);
         configured.wintermuteModel = String(data.default_model || '');
@@ -807,24 +1003,254 @@ func aiChatPage(c *gin.Context) {
 
     clearBtn.addEventListener('click', () => {
       chatBox.innerHTML =
-        '<div class="msg"><div class="meta">System</div>Responses will appear here after you submit a question.</div>';
+        '<div class="msg note"><div class="meta">System</div>Responses will appear here after you submit a question.</div>';
       history = [];
+      spent = { input: 0, output: 0 };
       dropSession();
       renderContextNote();
       setStatus('');
     });
 
+    /* ---------- the turn being waited for ---------- */
+    //
+    // A question is one request that answers once, sometimes minutes later:
+    // the agent may run the model several times with lookups in between. So
+    // the server streams what the turn is doing every couple of seconds, as
+    // the Wintermute server reports it, and that is put into words here with
+    // a light: green while something is visibly happening, amber when it has
+    // gone quiet for longer than it should, red when it failed, grey when
+    // nothing is arriving at all.
+
+    // How long a model that has started answering may go without sending
+    // anything, and one that has not may take to start, before the light turns
+    // amber. Loading a large model from disk takes a minute; reading a long
+    // conversation can take as long on a small card.
+    const TURN_QUIET_MS = 45000;
+    const TURN_UNANSWERED_MS = 90000;
+    // How long a tool may run before it is called slow.
+    const TURN_TOOL_MS = 120000;
+    // How long the stream may say nothing before that is said. A report
+    // arrives every two seconds.
+    const TURN_SILENT_MS = 12000;
+
+    function plural(n, one, many) {
+      return n + ' ' + (n === 1 ? one : many);
+    }
+
+    // liveStatus says what a turn is doing and whether that is all right:
+    // { level: 'ok' | 'warn' | 'bad' | 'done', text }.
+    function liveStatus(live) {
+      const who = live.model
+        ? live.model + (live.backend ? ' on ' + live.backend : '')
+        : (live.backend || 'the model');
+      const step = live.calls > 1 ? 'step ' + live.calls + ' · ' : '';
+      const phase = live.phase_ms || 0;
+      switch (live.phase) {
+        case 'starting':
+          return { level: 'ok', text: 'starting' };
+        case 'recalling':
+          return { level: 'ok', text: 'looking through earlier conversations' };
+        case 'checking':
+          return { level: 'ok', text: 'checking the reply against the library' };
+        case 'tool':
+          return phase > TURN_TOOL_MS
+            ? { level: 'warn', text: step + live.tool + ' has been running for ' + elapsedLabel(phase) + ' — longer than lookups usually take' }
+            : { level: 'ok', text: step + 'running ' + live.tool + ' · ' + elapsedLabel(phase) };
+        case 'model': {
+          if (live.unstreamed) {
+            return { level: 'ok', text: step + 'waiting for ' + who + ' · ' + elapsedLabel(phase) + ' — this backend says nothing until its answer is complete' };
+          }
+          if (!live.connected) {
+            const base = step + 'waiting for ' + who + ' · no answer yet after ' + elapsedLabel(phase);
+            if (phase > TURN_UNANSWERED_MS) {
+              return { level: 'warn', text: base + ' — it may be loading a large model, busy with another request, or down' };
+            }
+            return { level: 'ok', text: phase > 8000 ? base + ' — loading the model or reading the conversation' : base };
+          }
+          const counts = [];
+          if (live.thinking_tokens) counts.push(plural(live.thinking_tokens, 'token', 'tokens') + ' of thinking');
+          if (live.writing_tokens) counts.push(plural(live.writing_tokens, 'token', 'tokens') + ' of reply');
+          const doing = live.tool_tokens ? 'preparing a lookup'
+            : live.writing_tokens ? 'writing' : live.thinking_tokens ? 'thinking' : 'answering';
+          const text = step + who + ' is ' + doing + (counts.length ? ' · ' + counts.join(', ') : '');
+          const quiet = live.quiet_ms || 0;
+          if (quiet > TURN_QUIET_MS) {
+            return { level: 'warn', text: text + ' — nothing more for ' + elapsedLabel(quiet) + '; it may have stalled' };
+          }
+          return { level: 'ok', text: text };
+        }
+        case 'done':
+          return { level: 'done', text: 'finished' };
+        case 'paused':
+          return { level: 'done', text: 'waiting on the server' };
+        case 'stopped':
+          return { level: 'done', text: 'stopped' };
+        case 'failed':
+          return { level: 'bad', text: 'failed: ' + (live.error || 'no reason given') };
+        default:
+          return { level: 'ok', text: live.phase || 'working' };
+      }
+    }
+
+    function paintPending(turn) {
+      const now = Date.now();
+      let status;
+      if (turn.stopping) status = { level: 'done', text: 'stopping…' };
+      else if (now - turn.heardAt > TURN_SILENT_MS) {
+        status = { level: 'lost', text: 'nothing heard for ' + elapsedLabel(now - turn.heardAt) + ' — still waiting' };
+      } else if (turn.live) status = liveStatus(turn.live);
+      else status = { level: 'ok', text: turn.sessionID ? 'waiting for the Wintermute server' : 'sent — opening the conversation' };
+      // The server's own count where it gives one, carried forward between
+      // its reports.
+      const ms = turn.live && turn.live.elapsed_ms
+        ? turn.live.elapsed_ms + (now - turn.liveAt)
+        : now - turn.startedAt;
+      turn.label.textContent = elapsedLabel(ms) + ' · ' + status.text;
+      turn.light.className = 'turn-light ' + status.level;
+      turn.light.title = {
+        ok: 'all is well', warn: 'taking longer than it should', bad: 'failed',
+        lost: 'nothing is arriving', done: 'ended'
+      }[status.level] || '';
+    }
+
+    function appendPending(turn) {
+      const row = document.createElement('div');
+      row.className = 'msg ai pending';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = 'Assistant';
+      turn.light = document.createElement('span');
+      turn.label = document.createElement('span');
+      turn.label.className = 'pending-status';
+      const stop = document.createElement('button');
+      stop.type = 'button';
+      stop.className = 'secondary';
+      stop.textContent = 'Stop';
+      stop.title = 'Stop this turn (Esc). What it has already done stays.';
+      stop.addEventListener('click', stopTurn);
+      turn.stopBtn = stop;
+      row.append(meta, turn.light, turn.label, stop);
+      chatBox.appendChild(row);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      turn.node = row;
+      paintPending(turn);
+      turn.tick = setInterval(() => paintPending(turn), 1000);
+    }
+
+    function clearPending(turn) {
+      clearInterval(turn.tick);
+      if (turn.node) turn.node.remove();
+    }
+
+    function setBusy(busy) {
+      sendBtn.textContent = busy ? 'Stop' : 'Ask';
+      // While a turn runs, Ask stops it; the theme paints .danger.
+      sendBtn.classList.toggle('danger', busy);
+      sendBtn.title = busy ? 'Stop this turn (Esc)' : '';
+      clearBtn.disabled = busy;
+      renderRouting();
+    }
+
+    // Stopping is said to the server, by the session the turn runs in: a turn
+    // on the Wintermute server outlives the request that asked for it, so
+    // hanging up alone would leave the model working on an answer nobody is
+    // waiting for. The question then ends by itself, with the server's word
+    // that it was stopped. Before the session is known there is only the
+    // request to hang up on, and the server stops whatever that had begun.
+    async function stopTurn() {
+      const turn = asking;
+      if (!turn || turn.stopping) return;
+      turn.stopping = true;
+      turn.stopBtn.disabled = true;
+      sendBtn.disabled = true;
+      paintPending(turn);
+      if (!turn.sessionID) {
+        turn.controller.abort();
+        return;
+      }
+      try {
+        const resp = await fetch('/ai-chat/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: 'wintermute', session_id: turn.sessionID })
+        });
+        const data = await readJSON(resp);
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        // Nothing was running: the turn ended as the button was pressed, and
+        // its answer is on its way.
+        if (!data.stopping) turn.stopping = false;
+        // A turn that will not stop is not waited on for ever.
+        else setTimeout(() => { if (asking === turn) turn.controller.abort(); }, 15000);
+      } catch (_) {
+        turn.controller.abort();
+      }
+    }
+
+    sendBtn.addEventListener('click', (event) => {
+      if (!asking) return;
+      event.preventDefault();
+      stopTurn();
+    });
+
     // Enter sends, so the composer behaves like a chat box rather than a form
-    // field; Shift+Enter still writes a multi-line question.
+    // field; Shift+Enter still writes a multi-line question. Escape stops the
+    // turn being waited for.
     question.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && asking) {
+        event.preventDefault();
+        stopTurn();
+        return;
+      }
       if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
         event.preventDefault();
         chatForm.requestSubmit();
       }
     });
 
+    // readEvents reads a question's stream and resolves with its result
+    // event, noting on the way which session the turn runs in and what it is
+    // doing.
+    async function readEvents(body, turn) {
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.value) buf += decoder.decode(chunk.value, { stream: true });
+        let end;
+        while ((end = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, end);
+          buf = buf.slice(end + 2);
+          let name = 'message';
+          let raw = '';
+          block.split('\n').forEach((line) => {
+            if (line.indexOf('event: ') === 0) name = line.slice(7);
+            else if (line.indexOf('data: ') === 0) raw += line.slice(6);
+          });
+          let data = {};
+          try { data = JSON.parse(raw); } catch (_) { /* skipped */ }
+          turn.heardAt = Date.now();
+          if (name === 'result') { reader.cancel().catch(() => {}); return data; }
+          if (name === 'error') { reader.cancel().catch(() => {}); throw new Error(data.error || 'request failed'); }
+          if (name === 'session') turn.sessionID = String(data.session_id || '');
+          if (name === 'progress') {
+            turn.live = data.live || null;
+            turn.liveAt = Date.now();
+          }
+          paintPending(turn);
+        }
+        if (chunk.done) {
+          throw new Error('The connection closed before the answer arrived. Ask again.');
+        }
+      }
+    }
+
     chatForm.addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (asking) {
+        setStatus('Still answering. Stop (Esc) to ask something else.', true);
+        return;
+      }
       const text = question.value.trim();
       if (!text) {
         setStatus('Question is required.', true);
@@ -857,39 +1283,85 @@ func aiChatPage(c *gin.Context) {
       // clears before it asks the model.
       clearReads = false;
       appendMessage('User', text);
-      setStatus('Waiting for model response...');
-      sendBtn.disabled = true;
+      question.value = '';
+      const turn = {
+        controller: new AbortController(),
+        sessionID: '',
+        stopping: false,
+        live: null,
+        liveAt: 0,
+        startedAt: Date.now(),
+        heardAt: Date.now(),
+      };
+      asking = turn;
+      appendPending(turn);
+      setBusy(true);
+      setStatus('Waiting for the answer…');
 
       try {
+        // Asked for as a stream: a request that is silent for the minutes a
+        // turn can take is cut off by a proxy on the way.
         const resp = await fetch('/ai-chat/ask', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+          body: JSON.stringify(payload),
+          signal: turn.controller.signal
         });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        let data;
+        if ((resp.headers.get('Content-Type') || '').indexOf('text/event-stream') === 0 && resp.body) {
+          data = await readEvents(resp.body, turn);
+        } else {
+          data = await readJSON(resp);
+          if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        }
         const answer = data.answer || '(empty answer)';
-        appendMessage('Assistant', answer);
+        clearPending(turn);
+        appendMessage('Assistant', answer, answerFoot(data, answer));
         // Recorded only on success: a question that never got an answer would
         // otherwise sit in the transcript as context for every later turn.
         history.push({ role: 'user', content: text });
         history.push({ role: 'assistant', content: answer });
         sessionID = data.session_id || '';
+        const usage = data.usage || {};
+        spent.input += Number(usage.input_tokens) || 0;
+        spent.output += Number(usage.output_tokens) || 0;
         renderContextNote();
         if (data.cut_off) appendMessage('System', data.cut_off);
+        // The server retries a failed backend on its fallback, so what
+        // answered is not always what was chosen above.
+        if (data.fell_back_from) {
+          appendMessage('System', 'Answered by ' + (data.backend || 'the fallback backend') + ' because '
+            + data.fell_back_from + ' could not' + (data.fallback_reason ? ': ' + data.fallback_reason : '.'));
+        }
         room = data.room || null;
-        renderRoom();
-        question.value = '';
         let served = data.provider || 'the AI provider';
         if (data.backend) served += ' / ' + data.backend;
         if (data.model) served += ' (' + data.model + ')';
         setStatus('Response received from ' + served + '.');
+        if (usageOpen) loadUsage();
       } catch (err) {
-        appendMessage('Assistant', 'Error: ' + (err.message || 'request failed'));
-        setStatus('Request failed.', true);
-        renderRoom();
+        clearPending(turn);
+        if (turn.stopping || (err && err.name === 'AbortError')) {
+          // The stopped turn's question is in its session, so the next one
+          // carries on from it.
+          if (turn.sessionID) sessionID = turn.sessionID;
+          appendMessage('System', turn.sessionID
+            ? 'Stopped. What the turn had already done is kept in this conversation.'
+            : 'Stopped.');
+          setStatus('Stopped.');
+        } else {
+          appendMessage('Error', (err && err.message) || 'request failed');
+          setStatus('Request failed.', true);
+        }
+        // Back in the box, to be asked again or reworded.
+        if (!question.value.trim()) question.value = text;
       } finally {
+        asking = null;
         sendBtn.disabled = false;
+        setBusy(false);
+        renderRoom();
+        // The measure above the composer takes a line from the transcript.
+        chatBox.scrollTop = chatBox.scrollHeight;
         question.focus();
       }
     });
@@ -926,20 +1398,26 @@ func aiChatPage(c *gin.Context) {
       usagePanel.innerHTML = html;
     }
 
-    async function toggleUsage() {
-      usageOpen = !usageOpen;
-      usageBtn.innerHTML = usageOpen ? 'Usage &#9662;' : 'Usage &#9656;';
-      if (!usageOpen) { usagePanel.style.display = 'none'; return; }
-      usagePanel.style.display = '';
-      usagePanel.innerHTML = '<div class="usage-row"><span>Loading…</span><span></span></div>';
+    // Read again after each answer while the panel is open, so the figures
+    // in it are not the ones from before the question.
+    async function loadUsage() {
       try {
         const resp = await fetch('/ai-chat/usage');
-        const data = await resp.json();
+        const data = await readJSON(resp);
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         renderUsage(data);
       } catch (err) {
         usagePanel.innerHTML = '<div class="usage-row"><span>Error: ' + esc(err.message) + '</span><span></span></div>';
       }
+    }
+
+    function toggleUsage() {
+      usageOpen = !usageOpen;
+      usageBtn.innerHTML = usageOpen ? 'Usage &#9662;' : 'Usage &#9656;';
+      if (!usageOpen) { usagePanel.style.display = 'none'; return; }
+      usagePanel.style.display = '';
+      usagePanel.innerHTML = '<div class="usage-row"><span>Loading…</span><span></span></div>';
+      loadUsage();
     }
 
     usageBtn.addEventListener('click', toggleUsage);
@@ -1278,14 +1756,62 @@ func aiChatAsk(c *gin.Context) {
 		Agent:      dock.Agent,
 		MaxTokens:  aiChatMaxTokens,
 	}
-	var resp aiprovider.Response
 	streaming := policyai.WantsStream(c)
+
+	// A turn on the Wintermute server can take minutes and says nothing until
+	// it is whole. A proxy closes a connection that is silent for that long
+	// (nginx after proxy_read_timeout) and answers with its own error page,
+	// which is what the browser then gets in place of an answer. So a streamed
+	// question says which conversation it is in, and then every few seconds
+	// what its turn is doing: that is what the page shows while it waits and
+	// stops the turn by, and it keeps the connection in use.
+	watcher, _ := provider.(aiprovider.Watcher)
+	watchCtx, stopWatching := context.WithCancel(c.Request.Context())
+	defer stopWatching()
+	var (
+		opened string
+		watch  sync.WaitGroup
+	)
+	ask.Opened = func(id string) {
+		opened = id
+		if !streaming {
+			return
+		}
+		sse.Event("session", gin.H{"session_id": id})
+		watch.Add(1)
+		go func() {
+			defer watch.Done()
+			tick := time.NewTicker(aiChatProgressEvery)
+			defer tick.Stop()
+			for {
+				select {
+				case <-watchCtx.Done():
+					return
+				case <-tick.C:
+					sse.Event("progress", gin.H{"live": turnLive(watchCtx, watcher, id)})
+				}
+			}
+		}()
+	}
+
+	started := time.Now()
+	var resp aiprovider.Response
 	if streaming {
 		resp, err = aiprovider.AskStream(c.Request.Context(), provider, ask, sse.Answer)
 	} else {
 		resp, err = provider.Ask(c.Request.Context(), ask)
 	}
+	// The response must not be written once this handler has returned.
+	stopWatching()
+	watch.Wait()
 	if err != nil {
+		// Hanging up does not stop a turn on the Wintermute server: it carries
+		// on, and its conversation refuses the next question until it is done.
+		// Nothing here can read an answer nobody is waiting for, so the turn
+		// is stopped when the asker has left or the wait for it has run out.
+		if opened != "" && watcher != nil && abandoned(c.Request.Context(), err) {
+			_, _ = watcher.Stop(context.WithoutCancel(c.Request.Context()), opened)
+		}
 		fail(err.Error())
 		return
 	}
@@ -1306,6 +1832,16 @@ func aiChatAsk(c *gin.Context) {
 		"backend":    resp.Backend,
 		"model":      resp.Model,
 		"session_id": resp.SessionID,
+		// What the answer cost and how long it took, to be shown beside it.
+		"usage": gin.H{
+			"input_tokens":  resp.Usage.InputTokens,
+			"output_tokens": resp.Usage.OutputTokens,
+		},
+		"elapsed_ms": time.Since(started).Milliseconds(),
+	}
+	if resp.FellBackFrom != "" {
+		out["fell_back_from"] = resp.FellBackFrom
+		out["fallback_reason"] = resp.FallbackReason
 	}
 	// How full the model's window is, and an answer the server stopped short:
 	// neither can be seen in the text, so both go to the page to be shown.
@@ -1324,6 +1860,74 @@ func aiChatAsk(c *gin.Context) {
 
 // aiChatMaxTokens bounds one chat answer.
 const aiChatMaxTokens = 4096
+
+// aiChatProgressEvery is how often a streamed question reports on its turn.
+// A variable so a test need not wait for it.
+var aiChatProgressEvery = 2 * time.Second
+
+// turnLive reads what a turn is doing, or nil when that is not known: a
+// provider that keeps no such state, a server that predates it, or a read
+// that failed. The event is sent either way, since it also keeps the stream
+// from going quiet.
+func turnLive(ctx context.Context, watcher aiprovider.Watcher, sessionID string) *aiprovider.Live {
+	if watcher == nil {
+		return nil
+	}
+	live, err := watcher.Progress(ctx, sessionID)
+	if err != nil {
+		return nil
+	}
+	return live
+}
+
+// abandoned reports whether a question failed because nobody is waiting for
+// its answer any more: the asker hung up, or the wait for the turn timed out.
+func abandoned(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	var timeout net.Error
+	return errors.As(err, &timeout) && timeout.Timeout()
+}
+
+// aiChatStop stops the turn a question is waiting on, by the session id the
+// question's stream announced. The question itself then ends with the
+// server's word that it was stopped; what the turn had already done is kept
+// in its conversation.
+func aiChatStop(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, aiChatMaxBodyBytes)
+
+	var req aiChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	req.Provider = strings.TrimSpace(strings.ToLower(req.Provider))
+	req.Endpoint = strings.TrimSpace(req.Endpoint)
+	req.Backend = strings.TrimSpace(req.Backend)
+	req.SessionID = strings.TrimSpace(req.SessionID)
+	if req.SessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id is required"})
+		return
+	}
+
+	provider, err := aiChatProvider(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	watcher, ok := provider.(aiprovider.Watcher)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this provider cannot stop a turn"})
+		return
+	}
+	stopped, err := watcher.Stop(c.Request.Context(), req.SessionID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"stopping": stopped})
+}
 
 // The transcript a client may send back is bounded on both axes: a long
 // conversation would otherwise grow every request until the model rejects it,

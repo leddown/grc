@@ -1,12 +1,15 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -418,5 +421,145 @@ func TestAIChatAskCarriesTheWindowAndClearsReads(t *testing.T) {
 	}
 	if messages[1]["clear_reads"] != true {
 		t.Errorf("the question that asked to clear was sent as %v", messages[1])
+	}
+}
+
+// turnStub is a Wintermute server whose turn takes as long as the test says:
+// it answers when released, or gives up when the request is hung up on.
+type turnStub struct {
+	asked   chan struct{}
+	release chan struct{}
+	stopped chan string
+}
+
+func newTurnStub(t *testing.T) (*turnStub, *httptest.Server) {
+	t.Helper()
+	stub := &turnStub{asked: make(chan struct{}, 1), release: make(chan struct{}), stopped: make(chan string, 4)}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/progress"):
+			_, _ = w.Write([]byte(`{"count":1,"live":{"running":true,"phase":"tool","tool":"search_documents","calls":1,"elapsed_ms":1200}}`))
+		case strings.HasSuffix(r.URL.Path, "/stop"):
+			stub.stopped <- r.URL.Path
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"stopping":true}`))
+		case strings.HasSuffix(r.URL.Path, "/messages"):
+			// A hang-up is only noticed once the request has been read.
+			_, _ = io.Copy(io.Discard, r.Body)
+			stub.asked <- struct{}{}
+			select {
+			case <-stub.release:
+			case <-r.Context().Done():
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"complete","reply":"SC-13.","backend":"core","model":"qwen",
+				"usage":{"prompt_tokens":6165,"completion_tokens":2979}}`))
+		default:
+			_, _ = w.Write([]byte(`{"id":"sess-9"}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	original := activeSettings
+	t.Cleanup(func() { activeSettings = original })
+	svc := newTestSettings(t)
+	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
+		t.Fatalf("Set token: %v", err)
+	}
+	configureAICredentials(svc)
+	return stub, srv
+}
+
+// A turn says nothing until it is whole, and a proxy closes a connection that
+// is silent for minutes and answers with its own error page. A streamed
+// question therefore names its session and then keeps reporting what the turn
+// is doing, and its result says what the answer cost.
+func TestAIChatAskStreamsTheTurnWhileItRuns(t *testing.T) {
+	every := aiChatProgressEvery
+	aiChatProgressEvery = 5 * time.Millisecond
+	t.Cleanup(func() { aiChatProgressEvery = every })
+	stub, srv := newTurnStub(t)
+
+	go func() {
+		<-stub.asked
+		time.Sleep(60 * time.Millisecond)
+		close(stub.release)
+	}()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/ai-chat/ask",
+		strings.NewReader(`{"provider":"wintermute","endpoint":"`+srv.URL+`","question":"which control?"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Accept", "text/event-stream")
+	aiChatAsk(c)
+
+	body := rec.Body.String()
+	session := strings.Index(body, "event: session\ndata: {\"session_id\":\"sess-9\"}")
+	progress := strings.Index(body, "event: progress\ndata: {\"live\":{\"running\":true,\"phase\":\"tool\",\"tool\":\"search_documents\"")
+	result := strings.Index(body, "event: result")
+	if session != 0 || progress < session || result < progress {
+		t.Fatalf("stream is not session, progress, result:\n%s", body)
+	}
+	for _, want := range []string{`"usage":{"input_tokens":6165,"output_tokens":2979}`, `"elapsed_ms":`, `"answer":"SC-13."`} {
+		if !strings.Contains(body[result:], want) {
+			t.Errorf("result lacks %s:\n%s", want, body[result:])
+		}
+	}
+	select {
+	case path := <-stub.stopped:
+		t.Errorf("an answered turn was stopped: %s", path)
+	default:
+	}
+}
+
+// Hanging up does not stop a turn on the Wintermute server, and nothing here
+// can read an answer nobody is waiting for: a question whose asker has left is
+// stopped there.
+func TestAIChatAskStopsATurnNobodyIsWaitingFor(t *testing.T) {
+	stub, srv := newTurnStub(t)
+
+	ctx, hangUp := context.WithCancel(context.Background())
+	go func() {
+		<-stub.asked
+		hangUp()
+	}()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/ai-chat/ask",
+		strings.NewReader(`{"provider":"wintermute","endpoint":"`+srv.URL+`","question":"which control?"}`)).WithContext(ctx)
+	c.Request.Header.Set("Content-Type", "application/json")
+	aiChatAsk(c)
+
+	select {
+	case path := <-stub.stopped:
+		if path != "/api/v1/sessions/sess-9/stop" {
+			t.Errorf("stopped %s", path)
+		}
+	default:
+		t.Errorf("the turn was left running on the server")
+	}
+}
+
+func TestAIChatStop(t *testing.T) {
+	stub, srv := newTurnStub(t)
+
+	post := func(body string) (int, string) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/ai-chat/stop", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		aiChatStop(c)
+		return rec.Code, rec.Body.String()
+	}
+
+	if code, body := post(`{"provider":"wintermute","endpoint":"` + srv.URL + `","session_id":"sess-9"}`); code != http.StatusOK || !strings.Contains(body, `"stopping":true`) {
+		t.Errorf("stop: %d %s", code, body)
+	}
+	if path := <-stub.stopped; path != "/api/v1/sessions/sess-9/stop" {
+		t.Errorf("stopped %s", path)
+	}
+	if code, body := post(`{"provider":"wintermute","endpoint":"` + srv.URL + `"}`); code != http.StatusBadRequest {
+		t.Errorf("stop without a session: %d %s", code, body)
 	}
 }
