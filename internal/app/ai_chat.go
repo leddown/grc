@@ -54,6 +54,10 @@ type aiChatRequest struct {
 	// previous answer's session_id. Wintermute keeps transcripts server-side;
 	// when this is set, History is not resent.
 	SessionID string `json:"session_id"`
+	// ClearReads asks this question without what the agent's tools returned
+	// earlier in the session, to give the model's context window back to it
+	// (aiprovider.Request.ClearReads).
+	ClearReads bool `json:"clear_reads"`
 	// Page is the path the AI dock was asked from. On a Crisis Exercises page
 	// the question goes to that module's agent, about the exercise on screen
 	// (see crisisDockTurn). On a Policy Studio page it goes to the proposal
@@ -374,6 +378,8 @@ func aiChatPage(c *gin.Context) {
           <span>Conversation</span>
           <span class="panel-header-actions">
             <span id="contextNote" class="context-note"></span>
+            <span id="roomNote" class="context-note"></span>
+            <button id="clearReadsBtn" class="secondary" type="button" aria-pressed="false" hidden>Clear earlier reads</button>
             <button id="usageBtn" class="secondary" type="button">Usage &#9656;</button>
             <button id="clearBtn" class="secondary" type="button">Clear</button>
           </span>
@@ -414,6 +420,8 @@ func aiChatPage(c *gin.Context) {
     const statusEl = document.getElementById('status');
     const chatBox = document.getElementById('chatBox');
     const contextNote = document.getElementById('contextNote');
+    const roomNote = document.getElementById('roomNote');
+    const clearReadsBtn = document.getElementById('clearReadsBtn');
     const COMPOSER_HINT = 'Enter sends · Shift+Enter for a new line';
 
     // The conversation is carried, so a follow-up question means what it says.
@@ -422,6 +430,57 @@ func aiChatPage(c *gin.Context) {
     // The server bounds both.
     let history = [];
     let sessionID = '';
+
+    // How full the answering model's context window is with this session in
+    // it, as the Wintermute server measured it on the last answer. Every
+    // question sends the whole session again, so what one question's lookups
+    // returned is still there for the next; past the budget the agent can no
+    // longer look anything up. "Clear earlier reads" asks the next question
+    // without those results: the questions and answers stay, and it is the
+    // asker's choice because the agent must look a passage up again to quote it.
+    let room = null;
+    let clearReads = false;
+
+    function tokens(n) {
+      return n < 1000 ? String(n) : (n / 1000).toFixed(1) + 'k';
+    }
+
+    function renderRoom() {
+      if (!room || !room.used) {
+        roomNote.textContent = '';
+        clearReadsBtn.hidden = true;
+        clearReads = false;
+        return;
+      }
+      const reads = Math.min(room.reads || 0, room.used);
+      const full = Boolean(room.budget && room.used >= room.budget);
+      let text = room.window
+        ? tokens(room.used) + ' of ' + tokens(room.window) + ' tokens'
+        : tokens(room.used) + ' tokens';
+      if (clearReads) text += ' · about ' + tokens(reads) + ' cleared with your next question';
+      else if (full) text += reads ? ' · no room left to look things up' : ' · no room left to look things up — Clear starts again';
+      else if (reads) text += ' · ' + tokens(reads) + ' is earlier reading';
+      roomNote.textContent = text;
+      roomNote.style.color = full && !clearReads ? 'var(--warn)' : '';
+      roomNote.title = room.window
+        ? 'The model can hold ' + room.window + ' tokens and this conversation takes about ' + room.used + '.'
+          + (room.budget ? ' The agent stops looking things up at ' + room.budget + ', to leave room for its answer.' : '')
+        : '';
+      clearReadsBtn.hidden = !reads || !sessionID;
+      if (clearReadsBtn.hidden) clearReads = false;
+      clearReadsBtn.setAttribute('aria-pressed', String(clearReads));
+      clearReadsBtn.textContent = clearReads ? 'Clearing earlier reads ✓' : 'Clear earlier reads';
+      clearReadsBtn.title = clearReads
+        ? 'Your next question will be asked without what the agent looked up earlier. Click to keep it after all.'
+        : 'Ask your next question without what the agent looked up earlier in this conversation. '
+          + 'Your questions and its answers stay; it looks a passage up again if it needs it.';
+    }
+
+    clearReadsBtn.addEventListener('click', () => {
+      clearReads = !clearReads;
+      renderRoom();
+      question.focus();
+    });
 
     // What Settings configures, from the status call. The model is not chosen
     // on this page: a question goes to the model Settings pins for every other
@@ -669,6 +728,8 @@ func aiChatPage(c *gin.Context) {
     // new session.
     function dropSession() {
       sessionID = '';
+      room = null;
+      renderRoom();
     }
 
     // The credentials live in Settings, so this page only reports whether each
@@ -782,6 +843,7 @@ func aiChatPage(c *gin.Context) {
         // again would replay every earlier turn into the same session.
         history: sessionID ? [] : history,
         session_id: sessionID,
+        clear_reads: clearReads && Boolean(sessionID),
         // The provider is named, unlike the AI dock's request, because the
         // backend and agent chosen above ride with it. The agent is sent even
         // when empty: asking without one is not the same instruction as saying
@@ -791,6 +853,9 @@ func aiChatPage(c *gin.Context) {
         agent: wintermuteAgent.value.trim()
       };
 
+      // Spent on this question whether or not it is answered: the server
+      // clears before it asks the model.
+      clearReads = false;
       appendMessage('User', text);
       setStatus('Waiting for model response...');
       sendBtn.disabled = true;
@@ -811,6 +876,9 @@ func aiChatPage(c *gin.Context) {
         history.push({ role: 'assistant', content: answer });
         sessionID = data.session_id || '';
         renderContextNote();
+        if (data.cut_off) appendMessage('System', data.cut_off);
+        room = data.room || null;
+        renderRoom();
         question.value = '';
         let served = data.provider || 'the AI provider';
         if (data.backend) served += ' / ' + data.backend;
@@ -819,6 +887,7 @@ func aiChatPage(c *gin.Context) {
       } catch (err) {
         appendMessage('Assistant', 'Error: ' + (err.message || 'request failed'));
         setStatus('Request failed.', true);
+        renderRoom();
       } finally {
         sendBtn.disabled = false;
         question.focus();
@@ -1201,12 +1270,13 @@ func aiChatAsk(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": msg})
 	}
 	ask := aiprovider.Request{
-		System:    req.System,
-		History:   boundedHistory(req.History),
-		Prompt:    dock.Prompt,
-		SessionID: req.SessionID,
-		Agent:     dock.Agent,
-		MaxTokens: aiChatMaxTokens,
+		System:     req.System,
+		History:    boundedHistory(req.History),
+		Prompt:     dock.Prompt,
+		SessionID:  req.SessionID,
+		ClearReads: req.ClearReads,
+		Agent:      dock.Agent,
+		MaxTokens:  aiChatMaxTokens,
 	}
 	var resp aiprovider.Response
 	streaming := policyai.WantsStream(c)
@@ -1236,6 +1306,14 @@ func aiChatAsk(c *gin.Context) {
 		"backend":    resp.Backend,
 		"model":      resp.Model,
 		"session_id": resp.SessionID,
+	}
+	// How full the model's window is, and an answer the server stopped short:
+	// neither can be seen in the text, so both go to the page to be shown.
+	if resp.Room != nil {
+		out["room"] = resp.Room
+	}
+	if resp.CutOff != "" {
+		out["cut_off"] = resp.CutOff
 	}
 	if streaming {
 		sse.Event("result", out)

@@ -1,9 +1,14 @@
 package app
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"grc/internal/aiprovider"
 	"grc/internal/settings"
@@ -348,5 +353,70 @@ func TestAIChatRequestAgent(t *testing.T) {
 	chosen := "  incident-response  "
 	if got := aiChatRequestAgent(aiChatRequest{Agent: &chosen}); got != "incident-response" {
 		t.Errorf("chosen agent = %q, want it trimmed", got)
+	}
+}
+
+// The chat endpoint carries what the answer's text cannot show: how full the
+// model's window is and that the server stopped an answer short. And it passes
+// on a request to clear what the agent read earlier, on a resumed session.
+func TestAIChatAskCarriesTheWindowAndClearsReads(t *testing.T) {
+	original := activeSettings
+	t.Cleanup(func() { activeSettings = original })
+
+	var messages []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !strings.HasSuffix(r.URL.Path, "/messages") {
+			_, _ = w.Write([]byte(`{"id":"sess-9"}`))
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		messages = append(messages, body)
+		_, _ = w.Write([]byte(`{"status":"complete","reply":"AC-3 maps to RTS Article 21(d).","backend":"core","model":"qwen",
+			"usage":{"prompt_tokens":6165,"completion_tokens":2979},
+			"room":{"used":9343,"window":32768,"budget":21846,"reads":2574},
+			"cut_off":"This answer was cut off: qwen on core was stopped at its limit."}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	svc := newTestSettings(t)
+	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
+		t.Fatalf("Set token: %v", err)
+	}
+	configureAICredentials(svc)
+
+	ask := func(body string) map[string]any {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/ai-chat/ask", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		aiChatAsk(c)
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("ask: %d %s", rec.Code, rec.Body)
+		}
+		return out
+	}
+
+	first := ask(`{"provider":"wintermute","endpoint":"` + srv.URL + `","question":"map AC-2 to DORA"}`)
+	room, _ := first["room"].(map[string]any)
+	if room["used"] != float64(9343) || room["budget"] != float64(21846) || room["reads"] != float64(2574) {
+		t.Errorf("room = %v", first["room"])
+	}
+	if cut, _ := first["cut_off"].(string); !strings.Contains(cut, "cut off") {
+		t.Errorf("cut_off = %v", first["cut_off"])
+	}
+
+	ask(`{"provider":"wintermute","endpoint":"` + srv.URL + `","question":"and AC-3?","session_id":"sess-9","clear_reads":true}`)
+	if len(messages) != 2 {
+		t.Fatalf("%d messages reached the server", len(messages))
+	}
+	if _, named := messages[0]["clear_reads"]; named {
+		t.Errorf("a question that did not ask to clear names clear_reads")
+	}
+	if messages[1]["clear_reads"] != true {
+		t.Errorf("the question that asked to clear was sent as %v", messages[1])
 	}
 }

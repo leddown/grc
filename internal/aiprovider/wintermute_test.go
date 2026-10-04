@@ -32,6 +32,10 @@ type stubWintermute struct {
 	// records what was posted back to close them out.
 	pending     []any
 	seenResults []any
+	// seenMessages records every message posted, whole, and turn, when set,
+	// is returned in place of the turn built from the fields above.
+	seenMessages []map[string]any
+	turn         map[string]any
 }
 
 func (s *stubWintermute) server(t *testing.T) *httptest.Server {
@@ -74,6 +78,11 @@ func (s *stubWintermute) server(t *testing.T) *httptest.Server {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		s.seenText, _ = body["text"].(string)
+		s.seenMessages = append(s.seenMessages, body)
+		if s.turn != nil {
+			writeJSON(w, s.turn)
+			return
+		}
 		status := s.status
 		if status == "" {
 			status = "complete"
@@ -455,5 +464,81 @@ func TestWintermuteEmptyReplyPostsNothing(t *testing.T) {
 	}
 	if stub.seenResults != nil {
 		t.Errorf("posted results for a turn with no pending calls: %+v", stub.seenResults)
+	}
+}
+
+// The server measures the model's context window and says when it stopped an
+// answer short; both are carried to the caller, and the turn's cost is read in
+// the spelling the server uses. ClearReads is named on a resumed session only,
+// and only when asked: a server that predates the field refuses one carrying it.
+func TestWintermuteWindowMeasureAndClearReads(t *testing.T) {
+	stub := &stubWintermute{token: "tok", turn: map[string]any{
+		"status": "complete", "reply": "AC-2 lands mostly on Art.", "backend": "core", "model": "qwen",
+		"usage":   map[string]any{"prompt_tokens": float64(6478), "completion_tokens": float64(1714)},
+		"room":    map[string]any{"used": float64(9343), "window": float64(32768), "budget": float64(21846), "reads": float64(2574)},
+		"cut_off": "This answer was cut off: qwen on core was sent 6478 tokens and was stopped after writing 1714 more.",
+	}}
+	srv := stub.server(t)
+	w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "tok"})
+
+	first, err := w.Ask(context.Background(), Request{Prompt: "map AC-2 to DORA", ClearReads: true})
+	if err != nil {
+		t.Fatalf("first Ask: %v", err)
+	}
+	if first.Room == nil || *first.Room != (Room{Used: 9343, Window: 32768, Budget: 21846, Reads: 2574}) {
+		t.Errorf("Room = %+v", first.Room)
+	}
+	if first.Room.Full() {
+		t.Errorf("a conversation under its budget reads as full")
+	}
+	if first.StopReason != StopMaxTokens || !strings.Contains(first.CutOff, "cut off") {
+		t.Errorf("a cut-off answer came back as stop %q, cut off %q", first.StopReason, first.CutOff)
+	}
+	if first.Usage != (Usage{InputTokens: 6478, OutputTokens: 1714}) {
+		t.Errorf("Usage = %+v, want the server's prompt and completion counts", first.Usage)
+	}
+
+	if _, err := w.Ask(context.Background(), Request{Prompt: "and AC-3?", SessionID: first.SessionID, ClearReads: true}); err != nil {
+		t.Fatalf("second Ask: %v", err)
+	}
+	if _, err := w.Ask(context.Background(), Request{Prompt: "and AC-4?", SessionID: first.SessionID}); err != nil {
+		t.Fatalf("third Ask: %v", err)
+	}
+	if len(stub.seenMessages) != 3 {
+		t.Fatalf("%d messages posted, want 3", len(stub.seenMessages))
+	}
+	for i, want := range []bool{false, true, false} {
+		if _, named := stub.seenMessages[i]["clear_reads"]; named != want {
+			t.Errorf("message %d names clear_reads: %v, want %v", i+1, named, want)
+		}
+	}
+
+	full := Room{Used: 22000, Window: 32768, Budget: 21846}
+	if !full.Full() {
+		t.Errorf("a conversation past its budget does not read as full")
+	}
+}
+
+// A turn the server could not answer comes back as a sentence saying which
+// limit was reached. It is shown whole and as words, not as JSON cut at the
+// point where it says what to change.
+func TestWintermuteErrorIsTheServersOwnWords(t *testing.T) {
+	said := "The model ran out of room before it answered: qwen3.8-27b-q8_0 on core was sent 32618 tokens and was " +
+		"stopped after writing 150 more, reasoning included: its context window was full. Nothing of an answer had " +
+		"been written. Nearly all of that room went to the request: what the turn had read left none to answer in. " +
+		"Raise the context size where the model is served, ask a narrower question, or start a new conversation if " +
+		"this one has grown long."
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/messages") {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+		}
+		writeJSON(w, map[string]any{"id": "sess-123", "error": said})
+	}))
+	t.Cleanup(srv.Close)
+	w := newWintermute(WintermuteConfig{URL: srv.URL, Token: "tok"})
+
+	_, err := w.Ask(context.Background(), Request{Prompt: "map AC-2 to DORA"})
+	if err == nil || !strings.Contains(err.Error(), "HTTP 422: "+said) {
+		t.Errorf("err = %v", err)
 	}
 }

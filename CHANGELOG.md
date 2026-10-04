@@ -3,6 +3,51 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-04 (AI Chat shows how full the model's window is, and can clear earlier reads)
+
+A second question in the same Wintermute conversation could come back with the
+agent saying it was blocked from looking anything up. Every question sends the
+whole conversation again, so the passages the first question read were still
+filling the model's context window. The Wintermute server now measures that and
+can stop sending those results; this is the application's half.
+
+- **`internal/aiprovider`:**
+  - **`Request.ClearReads`** asks a question without what the agent's tools
+    returned earlier in the session. It is sent as `clear_reads` on a resumed
+    session only, and only when set: a server that predates the field refuses
+    a message carrying it.
+  - **`Response.Room`** is the server's measure of the model's window (`Used`,
+    `Window`, `Budget`, `Reads`, in tokens); `Room.Full` says the agent can no
+    longer look things up. Nil when the server sends none.
+  - **`Response.CutOff`** is the server's sentence for an answer the backend
+    stopped short, and `StopReason` is `StopMaxTokens` when it is set. The
+    Policy Studio's engine already treats that stop reason as a cut answer.
+  - **Usage was read with the wrong field names.** The server reports
+    `prompt_tokens` and `completion_tokens`; only `input_tokens` and
+    `output_tokens` were read, so every Wintermute answer was logged in
+    `ai_usage_log` as zero tokens. Both spellings are read now. The test
+    fixtures used the spelling the server never sends, which is why no test
+    caught it.
+  - **A server error is shown as the sentence it is.** A refused turn used to
+    appear as the raw JSON body cut at 300 characters, which is where the
+    server's message says what to change. The `error` field is shown, up to
+    800 characters.
+- **`/ai-chat/ask`** accepts `clear_reads` and returns `room` and `cut_off`.
+- **AI Chat page:** beside the turn count, "9.3k of 32.8k tokens · 2.6k is
+  earlier reading", turning to the warning colour with "no room left to look
+  things up" at the budget. **Clear earlier reads** arms the next question to
+  be asked without those results and disarms after it. A cut-off answer gets a
+  System line saying so.
+- **AI dock:** a note under an answer the server cut short, and one when the
+  conversation has filled the window, pointing at Clear and at the AI Chat
+  page. The dock has no clear-reads control of its own.
+- Not changed: the conversations held by Regulation Coverage, Crisis Exercises
+  and the Policy Studio's dock neither show the measure nor clear reads.
+- Tests: the provider's fields, `clear_reads` on the wire, the usage
+  spelling and the error text (`internal/aiprovider`); the endpoint
+  (`internal/app`). Needs a Wintermute server with the matching change; against
+  an older one nothing new is sent and nothing new comes back.
+
 ## 2026-10-01 (Crisis Exercise docs: read the agent's library as crisis documents)
 
 - **`CRISIS_EXERCISE.md`:** the Crisis Exercise agent should read its library

@@ -66,6 +66,14 @@ type Request struct {
 	// configured agent. It applies when a session is opened: a resumed session
 	// stays with the agent it was opened on.
 	Agent string
+	// ClearReads asks this question without what tools returned earlier in a
+	// conversation the provider is holding. Every Wintermute request sends the
+	// whole conversation, so the passages one question read are still in the
+	// model's window when the next is asked; this gives that room back without
+	// opening a new session. The questions, the answers and the server's
+	// transcript are kept. It applies to a resumed session and holds for the
+	// questions after it.
+	ClearReads bool
 	// MaxTokens bounds the answer. Zero means the provider's default.
 	MaxTokens int
 	// OutputSchema, when set, is a JSON Schema the answer must match.
@@ -102,12 +110,37 @@ type Response struct {
 	// answer that stopped for any reason but StopEndTurn may be cut short, and
 	// a structured answer cut short does not match its schema.
 	StopReason string
+	// CutOff is the provider's own account of an answer it stopped short,
+	// with the counts, when it gives one. StopReason is StopMaxTokens then.
+	CutOff string
+	// Room is how full the answering model's context window is with this
+	// conversation in it, when the provider measures it. Nil is not known.
+	Room *Room
 	// Refused reports that the provider's safety classifiers declined the
 	// request. This is a successful HTTP 200 with empty or partial content, so
 	// a caller that reads Text without checking this misreads a refusal as a
 	// malformed answer.
 	Refused bool
 }
+
+// Room is a provider's measure of a model's context window, in tokens.
+type Room struct {
+	// Used is what the conversation takes now.
+	Used int `json:"used"`
+	// Window is the model's context window and Budget the point in it where a
+	// turn stops looking things up, to leave room for the answer. At or past
+	// Budget the next question is answered from what the conversation already
+	// holds. Both are zero where the window is not known.
+	Window int `json:"window,omitempty"`
+	Budget int `json:"budget,omitempty"`
+	// Reads is roughly how much of Used is what tools returned and could be
+	// cleared (Request.ClearReads).
+	Reads int `json:"reads,omitempty"`
+}
+
+// Full reports whether the conversation has reached the point where the model
+// can no longer look anything up.
+func (r *Room) Full() bool { return r != nil && r.Budget > 0 && r.Used >= r.Budget }
 
 // Stop reasons a caller acts on.
 const (

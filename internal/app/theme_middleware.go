@@ -1677,6 +1677,15 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       history.push({ role: 'assistant', content: answer });
       sessionID = data.session_id || '';
       const row = addMessage(data.model ? 'AI · ' + data.model : 'AI', answer, 'ai');
+      // What the answer's text cannot show: that the server stopped it short,
+      // and that this conversation has filled the model's context window, so
+      // the agent can no longer look anything up in it. Clear starts another.
+      if (data.cut_off) addMessage('Note', data.cut_off, 'note');
+      if (data.room && data.room.budget && data.room.used >= data.room.budget) {
+        addMessage('Note', 'This conversation has filled the model\'s context window ('
+          + data.room.used + ' of ' + data.room.window + ' tokens), so the agent can no longer look things up in it. '
+          + 'Clear starts a fresh one; the AI Chat page can also clear what it read earlier and carry on.', 'note');
+      }
       // A proposal to change the document is shown by the page that owns the
       // document, as cards with its own actions; the dock only makes room.
       if (data.proposal && window.GRCPolicyStudio && typeof window.GRCPolicyStudio.renderProposal === 'function') {
