@@ -44,8 +44,12 @@ type Profile struct {
 	path string `yaml:"-"`
 }
 
-// Detect holds hints used to guess the framework from a filename or the
-// extracted text. Detection is always confirmed by a human at GATE 1.
+// Detect holds hints for recognising the framework from a filename or the
+// extracted text. Recognising a document is reading, and the Wintermute server
+// does it (its grc domain's framework profiles carry these same hints): this
+// application takes the framework the server detected, or the one a person
+// names. The field is kept so the profiles still parse, and so the two sets of
+// hints can be compared.
 type Detect struct {
 	FilenamePatterns []string `yaml:"filenamePatterns"`
 	ContentPatterns  []string `yaml:"contentPatterns"`
@@ -463,58 +467,4 @@ func (r *Registry) Get(id string) (*Profile, error) {
 		ids = append(ids, p.ID)
 	}
 	return nil, fmt.Errorf("unknown framework %q (available: %s)", id, strings.Join(ids, ", "))
-}
-
-// Guess is a scored framework detection result.
-type Guess struct {
-	Profile *Profile
-	Score   int
-	Reasons []string
-}
-
-// Detect scores every profile against a filename and the extracted text and
-// returns the candidates in descending score order. A caller must always let
-// the human confirm or override the top guess.
-func (r *Registry) Detect(filename, text string) []Guess {
-	base := strings.ToLower(filepath.Base(filename))
-	// Only the head of the document is scanned: title pages carry the
-	// identifying references and this keeps detection fast on large PDFs.
-	head := text
-	if len(head) > 20000 {
-		head = head[:20000]
-	}
-	lowerHead := strings.ToLower(head)
-
-	var guesses []Guess
-	for _, p := range r.profiles {
-		g := Guess{Profile: p}
-		for _, pat := range p.Detect.FilenamePatterns {
-			if pat == "" {
-				continue
-			}
-			if strings.Contains(base, strings.ToLower(pat)) {
-				g.Score += 3
-				g.Reasons = append(g.Reasons, fmt.Sprintf("filename contains %q", pat))
-			}
-		}
-		for _, pat := range p.Detect.ContentPatterns {
-			if pat == "" {
-				continue
-			}
-			if strings.Contains(lowerHead, strings.ToLower(pat)) {
-				g.Score += 2
-				g.Reasons = append(g.Reasons, fmt.Sprintf("text contains %q", pat))
-			}
-		}
-		if g.Score > 0 {
-			guesses = append(guesses, g)
-		}
-	}
-	sort.SliceStable(guesses, func(i, j int) bool {
-		if guesses[i].Score != guesses[j].Score {
-			return guesses[i].Score > guesses[j].Score
-		}
-		return guesses[i].Profile.ID < guesses[j].Profile.ID
-	})
-	return guesses
 }

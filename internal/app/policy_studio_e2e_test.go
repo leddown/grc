@@ -585,7 +585,7 @@ func (s *aiStub) router(t *testing.T) *aiprovider.Router {
 	wm := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
 		return aiprovider.WintermuteConfig{URL: srv.URL, Token: "t"}
 	})
-	return aiprovider.NewRouter(nil, wm, func() string { return "wintermute" }, func(string, string, int, int) {
+	return aiprovider.NewRouter(wm, func(string, string, int, int) {
 		s.mu.Lock()
 		s.usage++
 		s.mu.Unlock()

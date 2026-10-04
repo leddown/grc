@@ -1,9 +1,14 @@
 package app
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"grc/internal/aiprovider"
 	"grc/internal/settings"
@@ -11,44 +16,7 @@ import (
 
 // The Wintermute protocol, its endpoint rules and its usage accounting are
 // tested in internal/aiprovider, which now owns that transport. What is left
-// here is what this page adds on top: the per-request/stored precedence, and
-// the Anthropic host allowlist on the endpoint override.
-
-func TestValidatedClaudeBaseURL(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      string
-		want    string
-		wantErr bool
-	}{
-		// Empty means the SDK's own default origin.
-		{name: "empty is the default", in: "", want: ""},
-		{name: "whitespace is the default", in: "   ", want: ""},
-		{name: "official endpoint becomes its origin", in: "https://api.anthropic.com/v1/messages", want: "https://api.anthropic.com"},
-		// The allowlist is the point: this field can retarget the path, not
-		// the server.
-		{name: "another host", in: "https://evil.example.com/v1/messages", wantErr: true},
-		{name: "plaintext", in: "http://api.anthropic.com/v1/messages", wantErr: true},
-		{name: "embedded credentials", in: "https://user:pass@api.anthropic.com/v1/messages", wantErr: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := validatedClaudeBaseURL(tc.in)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("validatedClaudeBaseURL(%q) succeeded, want an error", tc.in)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("validatedClaudeBaseURL(%q): %v", tc.in, err)
-			}
-			if got != tc.want {
-				t.Errorf("= %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
+// here is what this page adds on top: the per-request/stored precedence.
 
 // TestAIChatProviderPrecedence covers what this page adds over the Settings
 // router: an endpoint or backend typed into the form wins for that one
@@ -58,14 +26,10 @@ func TestValidatedClaudeBaseURL(t *testing.T) {
 func TestAIChatProviderPrecedence(t *testing.T) {
 	original := activeSettings
 	t.Cleanup(func() { activeSettings = original })
-	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("WINTERMUTE_TOKEN", "")
 	t.Setenv("WINTERMUTE_URL", "")
 
 	svc := newTestSettings(t)
-	if err := svc.Set(settings.AnthropicAPIKey, "sk-ant-stored", "alice"); err != nil {
-		t.Fatalf("Set anthropic: %v", err)
-	}
 	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
 		t.Fatalf("Set wintermute token: %v", err)
 	}
@@ -81,18 +45,20 @@ func TestAIChatProviderPrecedence(t *testing.T) {
 		wantErr      string
 	}{
 		{
-			name:         "claude with nothing typed uses the stored key",
-			req:          aiChatRequest{Provider: "claude"},
-			wantProvider: aiprovider.NameClaude,
+			// Claude is one of the Wintermute server's backends now, so a
+			// request that still names it is told where it went.
+			name:    "claude is refused",
+			req:     aiChatRequest{Provider: "claude"},
+			wantErr: "through the Wintermute server",
 		},
 		{
 			// With no router wired — the shape these unit tests run in — an
-			// unnamed provider still falls back to Claude. What it must not do
-			// is ignore a wired router: TestUnnamedProviderFollowsTheSetting
+			// unnamed provider has nothing to ask. What it must not do is
+			// ignore a wired router: TestUnnamedProviderFollowsTheSetting
 			// covers that.
-			name:         "an empty provider falls back to claude with no router",
-			req:          aiChatRequest{Provider: ""},
-			wantProvider: aiprovider.NameClaude,
+			name:    "an empty provider with no router",
+			req:     aiChatRequest{Provider: ""},
+			wantErr: "Settings",
 		},
 		{
 			name:         "wintermute with nothing typed uses the stored url and token",
@@ -115,7 +81,7 @@ func TestAIChatProviderPrecedence(t *testing.T) {
 		{
 			name:    "an unknown provider",
 			req:     aiChatRequest{Provider: "gpt"},
-			wantErr: "must be claude or wintermute",
+			wantErr: "must be wintermute",
 		},
 	}
 
@@ -215,7 +181,6 @@ func TestBoundedHistory(t *testing.T) {
 func TestAIChatProviderWithNothingConfigured(t *testing.T) {
 	original := activeSettings
 	t.Cleanup(func() { activeSettings = original })
-	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("WINTERMUTE_TOKEN", "")
 	t.Setenv("WINTERMUTE_URL", "")
 	configureAICredentials(newTestSettings(t))
@@ -225,7 +190,6 @@ func TestAIChatProviderWithNothingConfigured(t *testing.T) {
 		req     aiChatRequest
 		wantErr string
 	}{
-		{"claude", aiChatRequest{Provider: "claude"}, "no Anthropic API key"},
 		{"wintermute url", aiChatRequest{Provider: "wintermute"}, "no Wintermute server URL"},
 		{"wintermute token", aiChatRequest{Provider: "wintermute", Endpoint: "https://w.example.com"}, "no Wintermute client token"},
 	}
@@ -245,57 +209,36 @@ func TestAIChatProviderWithNothingConfigured(t *testing.T) {
 }
 
 // The AI dock names no provider, so an unnamed one has to mean "whatever
-// Settings routes to".
+// Settings routes to": the router every other AI field asks through.
 //
-// It used to mean Claude: the dock asked which credentials existed and picked
-// Claude whenever a key was configured, so an install set to Wintermute sent
-// every docked question to Anthropic and nothing said so. The question looked
-// answered — by the wrong provider, from the wrong data.
+// It used to mean Claude: an install set to Wintermute sent every docked
+// question to Anthropic and nothing said so.
 func TestUnnamedProviderFollowsTheSetting(t *testing.T) {
 	originalSettings := activeSettings
 	originalRouter := activeAIRouter
 	t.Cleanup(func() { activeSettings = originalSettings; activeAIRouter = originalRouter })
-	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("WINTERMUTE_TOKEN", "")
 	t.Setenv("WINTERMUTE_URL", "")
 
 	svc := newTestSettings(t)
-	// Both providers are configured, so the choice can only come from the
-	// preference — which is the case that was broken.
-	if err := svc.Set(settings.AnthropicAPIKey, "sk-ant-stored", "alice"); err != nil {
-		t.Fatalf("Set anthropic: %v", err)
+	configureAICredentials(svc)
+	configureAIRouter(newAIRouter(svc))
+	if _, err := aiChatProvider(aiChatRequest{}); err == nil || !strings.Contains(err.Error(), "Settings") {
+		t.Fatalf("with nothing configured the dock should be pointed at Settings: %v", err)
 	}
+
 	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
 		t.Fatalf("Set wintermute token: %v", err)
 	}
 	if err := svc.SetPreference(settings.PrefWintermuteURL, "https://wintermute.example.com"); err != nil {
 		t.Fatalf("SetPreference url: %v", err)
 	}
-	configureAICredentials(svc)
-	configureAIRouter(newAIRouter(svc))
-
-	for _, tc := range []struct {
-		preference string
-		want       string
-	}{
-		{settings.ProviderWintermute, aiprovider.NameWintermute},
-		{settings.ProviderClaude, aiprovider.NameClaude},
-		// "auto" prefers a configured Wintermute, which is what the router does
-		// for every other AI field in the app.
-		{settings.ProviderAuto, aiprovider.NameWintermute},
-	} {
-		t.Run(tc.preference, func(t *testing.T) {
-			if err := svc.SetPreference(settings.PrefAIProvider, tc.preference); err != nil {
-				t.Fatalf("SetPreference provider: %v", err)
-			}
-			provider, err := aiChatProvider(aiChatRequest{})
-			if err != nil {
-				t.Fatalf("aiChatProvider: %v", err)
-			}
-			if provider.Name() != tc.want {
-				t.Errorf("with ai.provider=%q the dock asked %q, want %q", tc.preference, provider.Name(), tc.want)
-			}
-		})
+	provider, err := aiChatProvider(aiChatRequest{})
+	if err != nil {
+		t.Fatalf("aiChatProvider: %v", err)
+	}
+	if provider.Name() != aiprovider.NameWintermute {
+		t.Errorf("the dock asked %q, want %q", provider.Name(), aiprovider.NameWintermute)
 	}
 }
 
@@ -329,46 +272,6 @@ func TestWintermuteQuestionsCarryTheConfiguredAgent(t *testing.T) {
 	// Describe renders the agent the next question would run against.
 	if got := provider.Describe(); !strings.Contains(got, "as grc") {
 		t.Errorf("Describe() = %q, want the configured agent in it", got)
-	}
-}
-
-// Claude questions are asked on the model Settings configures, from the AI Chat
-// page and through the router every other AI field uses alike; clearing the
-// setting restores the default.
-func TestClaudeQuestionsUseTheConfiguredModel(t *testing.T) {
-	original := activeSettings
-	t.Cleanup(func() { activeSettings = original })
-	t.Setenv("ANTHROPIC_API_KEY", "")
-
-	svc := newTestSettings(t)
-	if err := svc.Set(settings.AnthropicAPIKey, "sk-ant-stored", "alice"); err != nil {
-		t.Fatalf("Set anthropic: %v", err)
-	}
-	if err := svc.SetPreference(settings.PrefClaudeModel, "claude-sonnet-5"); err != nil {
-		t.Fatalf("SetPreference: %v", err)
-	}
-	configureAICredentials(svc)
-	router := newAIRouter(svc)
-
-	page, err := aiChatProvider(aiChatRequest{Provider: "claude"})
-	if err != nil {
-		t.Fatalf("aiChatProvider: %v", err)
-	}
-	if got := page.Describe(); got != "Claude: claude-sonnet-5" {
-		t.Errorf("page Describe() = %q, want the configured model", got)
-	}
-	if got := router.Describe(); got != "Claude: claude-sonnet-5" {
-		t.Errorf("router Describe() = %q, want the configured model", got)
-	}
-
-	if err := svc.SetPreference(settings.PrefClaudeModel, ""); err != nil {
-		t.Fatalf("clear: %v", err)
-	}
-	if got := aiChatClaudeModel(); got != aiprovider.DefaultClaudeModel {
-		t.Errorf("cleared model = %q, want the default", got)
-	}
-	if got := router.Describe(); got != "Claude: "+aiprovider.DefaultClaudeModel {
-		t.Errorf("router Describe() after clearing = %q, want the default", got)
 	}
 }
 
@@ -450,5 +353,70 @@ func TestAIChatRequestAgent(t *testing.T) {
 	chosen := "  incident-response  "
 	if got := aiChatRequestAgent(aiChatRequest{Agent: &chosen}); got != "incident-response" {
 		t.Errorf("chosen agent = %q, want it trimmed", got)
+	}
+}
+
+// The chat endpoint carries what the answer's text cannot show: how full the
+// model's window is and that the server stopped an answer short. And it passes
+// on a request to clear what the agent read earlier, on a resumed session.
+func TestAIChatAskCarriesTheWindowAndClearsReads(t *testing.T) {
+	original := activeSettings
+	t.Cleanup(func() { activeSettings = original })
+
+	var messages []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !strings.HasSuffix(r.URL.Path, "/messages") {
+			_, _ = w.Write([]byte(`{"id":"sess-9"}`))
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		messages = append(messages, body)
+		_, _ = w.Write([]byte(`{"status":"complete","reply":"AC-3 maps to RTS Article 21(d).","backend":"core","model":"qwen",
+			"usage":{"prompt_tokens":6165,"completion_tokens":2979},
+			"room":{"used":9343,"window":32768,"budget":21846,"reads":2574},
+			"cut_off":"This answer was cut off: qwen on core was stopped at its limit."}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	svc := newTestSettings(t)
+	if err := svc.Set(settings.WintermuteToken, "stored-token", "alice"); err != nil {
+		t.Fatalf("Set token: %v", err)
+	}
+	configureAICredentials(svc)
+
+	ask := func(body string) map[string]any {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/ai-chat/ask", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		aiChatAsk(c)
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("ask: %d %s", rec.Code, rec.Body)
+		}
+		return out
+	}
+
+	first := ask(`{"provider":"wintermute","endpoint":"` + srv.URL + `","question":"map AC-2 to DORA"}`)
+	room, _ := first["room"].(map[string]any)
+	if room["used"] != float64(9343) || room["budget"] != float64(21846) || room["reads"] != float64(2574) {
+		t.Errorf("room = %v", first["room"])
+	}
+	if cut, _ := first["cut_off"].(string); !strings.Contains(cut, "cut off") {
+		t.Errorf("cut_off = %v", first["cut_off"])
+	}
+
+	ask(`{"provider":"wintermute","endpoint":"` + srv.URL + `","question":"and AC-3?","session_id":"sess-9","clear_reads":true}`)
+	if len(messages) != 2 {
+		t.Fatalf("%d messages reached the server", len(messages))
+	}
+	if _, named := messages[0]["clear_reads"]; named {
+		t.Errorf("a question that did not ask to clear names clear_reads")
+	}
+	if messages[1]["clear_reads"] != true {
+		t.Errorf("the question that asked to clear was sent as %v", messages[1])
 	}
 }

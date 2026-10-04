@@ -148,6 +148,8 @@ func (s *dbAIUsageStore) GetSummary() (aiUsageSummary, error) {
 }
 
 func buildSummary(byProvider map[string]*aiProviderUsage) aiUsageSummary {
+	// "claude" is kept for usage logged before Claude was reached through
+	// Wintermute; nothing logs under it now.
 	order := []string{"claude", "wintermute"}
 	providers := make([]aiProviderUsage, 0, len(byProvider))
 	seen := map[string]bool{}

@@ -41,8 +41,10 @@ type ImportInput struct {
 	Title string
 	// Framework pins the profile. Empty means detect, falling back to generic.
 	Framework string
-	// Content is the document as the Wintermute server extracted it.
+	// Content is the document as the Wintermute server extracted it, and
+	// Passages the requirements it cut it into, as the chosen framework.
 	Content    aiprovider.LibraryContent
+	Passages   []aiprovider.LibraryPassage
 	ImportedBy string
 }
 
@@ -59,8 +61,10 @@ type Imported struct {
 // The extraction itself is not done here and no longer can be: PDFs, scans and
 // office documents are read on the Wintermute server, which has the OCR and the
 // converters, and this application reads the text back. What remains is the
-// part that is this module's own — deciding which instrument it is, and cutting
-// it into the articles a coverage report is written against.
+// part that is this module's own — the requirement ids, categories and review
+// flags a coverage report is written against. Cutting the text into articles is
+// reading, and that server does it too: Service.Import names the instrument to
+// it and passes the passages it cut here.
 //
 // It performs no I/O, so it is testable without a server or a database.
 func Import(in ImportInput) (*Imported, error) {
@@ -81,12 +85,20 @@ func Import(in ImportInput) (*Imported, error) {
 		return nil, err
 	}
 
-	prof, detected, err := resolveProfile(registry, in.Framework, filename, text)
+	prof, detected, err := resolveProfile(registry, in.Framework, doc.Framework)
 	if err != nil {
 		return nil, err
 	}
 
-	built, err := ingest.BuildRequirements(text, prof)
+	pieces := make([]ingest.Piece, 0, len(in.Passages))
+	for _, p := range in.Passages {
+		if p.Segment == nil {
+			continue
+		}
+		pieces = append(pieces, ingest.Piece{Strategy: p.Segment.Strategy, Label: p.Segment.Label,
+			Key: p.Segment.Key, Title: p.Segment.Title, Body: p.Body, Part: p.Segment.Part})
+	}
+	built, err := ingest.BuildRequirements(pieces, prof)
 	if err != nil {
 		return nil, invalidf("segmenting the document failed: %v", err)
 	}
@@ -139,10 +151,11 @@ func Import(in ImportInput) (*Imported, error) {
 }
 
 // resolveProfile picks the framework profile. An explicit choice always wins;
-// otherwise detection runs, and anything it cannot recognise falls back to the
+// otherwise the instrument the Wintermute server detected, which it does when
+// two signals agree; and anything it did not recognise falls back to the
 // generic EU profile rather than refusing the document — an instrument with no
 // profile is exactly the case this module exists to handle.
-func resolveProfile(registry *profile.Registry, pinned, filename, text string) (*profile.Profile, bool, error) {
+func resolveProfile(registry *profile.Registry, pinned, detected string) (*profile.Profile, bool, error) {
 	if pinned = strings.TrimSpace(pinned); pinned != "" {
 		prof, err := registry.Get(pinned)
 		if err != nil {
@@ -150,16 +163,9 @@ func resolveProfile(registry *profile.Registry, pinned, filename, text string) (
 		}
 		return prof, prof.ID != GenericProfileID, nil
 	}
-
-	// Detection reads the filename and the opening of the text; a long document
-	// contributes nothing extra past that and costs a full scan per profile.
-	head := text
-	if len(head) > 20000 {
-		head = head[:20000]
-	}
-	for _, guess := range registry.Detect(filename, head) {
-		if guess.Profile != nil && guess.Profile.ID != GenericProfileID {
-			return guess.Profile, true, nil
+	if detected = strings.TrimSpace(detected); detected != "" && detected != GenericProfileID {
+		if prof, err := registry.Get(detected); err == nil {
+			return prof, true, nil
 		}
 	}
 

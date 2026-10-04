@@ -44,7 +44,7 @@ func TestAIProviderSettingsSurviveARestart(t *testing.T) {
 	// The environment fallbacks must not be able to satisfy the assertions
 	// below — what is read back has to have come off disk.
 	for _, key := range []string{
-		"GRC_SECRET_KEY", "ANTHROPIC_API_KEY", "WINTERMUTE_TOKEN",
+		"GRC_SECRET_KEY", "WINTERMUTE_TOKEN",
 		"WINTERMUTE_URL", "WINTERMUTE_BACKEND", "WINTERMUTE_MODEL", "WINTERMUTE_AGENT",
 	} {
 		t.Setenv(key, "")
@@ -52,8 +52,6 @@ func TestAIProviderSettingsSurviveARestart(t *testing.T) {
 
 	dir := t.TempDir()
 	want := map[string]string{
-		PrefAIProvider:        ProviderWintermute,
-		PrefClaudeModel:       "claude-sonnet-5",
 		PrefWintermuteURL:     "https://wintermute.example.com",
 		PrefWintermuteBackend: "workshop",
 		PrefWintermuteModel:   "gemma3:12b",
@@ -65,9 +63,6 @@ func TestAIProviderSettingsSurviveARestart(t *testing.T) {
 		if err := first.SetPreference(key, value); err != nil {
 			t.Fatalf("SetPreference(%q): %v", key, err)
 		}
-	}
-	if err := first.Set(AnthropicAPIKey, "sk-ant-stored-value", "alice"); err != nil {
-		t.Fatalf("Set anthropic key: %v", err)
 	}
 	if err := first.Set(WintermuteToken, "wintermute-token-value", "alice"); err != nil {
 		t.Fatalf("Set wintermute token: %v", err)
@@ -89,9 +84,6 @@ func TestAIProviderSettingsSurviveARestart(t *testing.T) {
 
 	// A credential is encrypted under a master key that also has to survive,
 	// so this checks decryption rather than the presence of a row.
-	if got, origin := second.Resolve(AnthropicAPIKey); got != "sk-ant-stored-value" || origin != OriginSettings {
-		t.Errorf("anthropic key after restart = (%q, %q)", got, origin)
-	}
 	if got, origin := second.Resolve(WintermuteToken); got != "wintermute-token-value" || origin != OriginSettings {
 		t.Errorf("wintermute token after restart = (%q, %q)", got, origin)
 	}

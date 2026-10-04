@@ -160,9 +160,16 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		text = system + "\n\n" + text
 	}
 
+	message := map[string]any{"text": text}
+	// Named only when asked for: the server refuses a field it does not know,
+	// and one that predates this would refuse every question otherwise. A new
+	// session has no earlier reads to clear.
+	if req.ClearReads && resumed {
+		message["clear_reads"] = true
+	}
 	turn, err := w.postJSON(ctx,
 		base+"/api/v1/sessions/"+neturl.PathEscape(sessionID)+"/messages",
-		cfg.Token, map[string]any{"text": text})
+		cfg.Token, message)
 	if err != nil {
 		return Response{}, fmt.Errorf("wintermute turn: %w", err)
 	}
@@ -184,7 +191,7 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		return Response{}, errNoAnswer
 	}
 
-	return Response{
+	resp := Response{
 		Text:      answer,
 		Provider:  NameWintermute,
 		Backend:   stringField(turn, "backend"),
@@ -194,7 +201,26 @@ func (w *Wintermute) Ask(ctx context.Context, req Request) (Response, error) {
 		// Passed through when the server reports it; empty otherwise, which a
 		// caller must treat as "not known", not as a complete answer.
 		StopReason: stringField(turn, "stop_reason"),
-	}, nil
+		CutOff:     stringField(turn, "cut_off"),
+		Room:       extractRoom(turn),
+	}
+	// The server says in words that the backend stopped the model at a limit.
+	// That is the one way an answer from there is known to be cut short.
+	if resp.CutOff != "" {
+		resp.StopReason = StopMaxTokens
+	}
+	return resp, nil
+}
+
+// extractRoom reads the server's measure of the model's context window. A
+// server that does not send one, or a backend that counts nothing, is nil.
+func extractRoom(turn map[string]any) *Room {
+	room, _ := turn["room"].(map[string]any)
+	if used := intField(room, "used"); used > 0 {
+		return &Room{Used: used, Window: intField(room, "window"),
+			Budget: intField(room, "budget"), Reads: intField(room, "reads")}
+	}
+	return nil
 }
 
 // refusePendingCalls tells the server that the calls it is waiting on will not
@@ -316,6 +342,8 @@ type Agent struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Sources     []string `json:"sources"`
+	// Backend is the backend the agent pins for itself, where it pins one.
+	Backend string `json:"backend,omitempty"`
 }
 
 // Agents lists the agent profiles the server has, so an agent is chosen from
@@ -396,6 +424,56 @@ type Catalog struct {
 	// fatal: the backends are still a usable choice, and a backend with no
 	// listed models still answers on its own default.
 	ModelsError string `json:"models_error,omitempty"`
+}
+
+// CloudBackends names every cloud backend that could answer a question for the
+// agent: the backend Settings pins, or the agent's own pin, or — when neither
+// pins one — the server's default; and the fallback the server retries on
+// after a failure. Empty means none could.
+//
+// It is how "local only" is kept now that Claude is reached through this
+// server rather than beside it: a Wintermute answer is not local merely
+// because it came from Wintermute. A backend the catalog does not know is an
+// error rather than a guess, because a privacy rule that assumes the best of
+// what it cannot see is not one.
+func (w *Wintermute) CloudBackends(ctx context.Context, agent string) ([]string, error) {
+	cat, err := w.Catalog(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list the server's backends: %w", err)
+	}
+	cloud := map[string]bool{}
+	for _, b := range cat.Backends {
+		cloud[b.Name] = b.Cloud
+	}
+	serving := w.resolve().Backend
+	if serving == "" && strings.TrimSpace(agent) != "" {
+		agents, err := w.Agents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read the agent's backend: %w", err)
+		}
+		for _, a := range agents {
+			if a.ID == strings.TrimSpace(agent) {
+				serving = strings.TrimSpace(a.Backend)
+			}
+		}
+	}
+	if serving == "" {
+		serving = cat.DefaultBackend
+	}
+	var out []string
+	for _, name := range []string{serving, cat.Fallback} {
+		if name == "" {
+			continue
+		}
+		isCloud, known := cloud[name]
+		if !known {
+			return nil, fmt.Errorf("the server has no backend named %q, so whether it is local cannot be told", name)
+		}
+		if isCloud && !contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	return out, nil
 }
 
 // Catalog lists the backends the server has and the models they reported.
@@ -530,8 +608,17 @@ func (w *Wintermute) requestInto(ctx context.Context, method, url, token string,
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		detail := strings.TrimSpace(string(raw))
-		if len(detail) > 300 {
-			detail = detail[:300] + "..."
+		// The server's errors are sentences written for whoever asked: which
+		// limit a turn ran into, and what to change. They are shown as that,
+		// not as the JSON around them, and not cut where the advice begins.
+		var reported struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(raw, &reported) == nil && strings.TrimSpace(reported.Error) != "" {
+			detail = strings.TrimSpace(reported.Error)
+		}
+		if len(detail) > 800 {
+			detail = detail[:800] + "..."
 		}
 		return &statusError{code: resp.StatusCode, detail: detail}
 	}
@@ -610,9 +697,12 @@ func extractUsage(data map[string]any) Usage {
 	if usage == nil {
 		return Usage{}
 	}
+	// wintermuted counts a turn as prompt_tokens and completion_tokens. Only
+	// the other spelling was read here, so every Wintermute answer was logged
+	// as costing nothing.
 	return Usage{
-		InputTokens:  intField(usage, "input_tokens"),
-		OutputTokens: intField(usage, "output_tokens"),
+		InputTokens:  max(intField(usage, "input_tokens"), intField(usage, "prompt_tokens")),
+		OutputTokens: max(intField(usage, "output_tokens"), intField(usage, "completion_tokens")),
 	}
 }
 

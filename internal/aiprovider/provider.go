@@ -3,10 +3,10 @@
 // network as readily as by the cloud, without each feature growing its own
 // client, its own credential handling and its own idea of what a model is.
 //
-// Two providers ship: Claude, which talks to api.anthropic.com, and Wintermute,
-// which talks to a wintermuted server on the network that in turn routes to
-// self-hosted models (llama.cpp, Ollama, vLLM) or on to Claude. A Router picks
-// between them per the operator's Settings choice.
+// One provider ships: Wintermute, which talks to a wintermuted server on the
+// network that in turn routes to self-hosted models (llama.cpp, Ollama, vLLM) or
+// on to Claude. The app used to call Claude directly as well; it reaches Claude
+// through that server now (wintermute decision note 0005).
 package aiprovider
 
 import (
@@ -15,11 +15,8 @@ import (
 	"fmt"
 )
 
-// Provider names, matching the values stored in settings.PrefAIProvider.
-const (
-	NameClaude     = "claude"
-	NameWintermute = "wintermute"
-)
+// NameWintermute is the provider's name, as usage is logged under it.
+const NameWintermute = "wintermute"
 
 // ErrNotConfigured reports that a provider has no usable configuration — no
 // credential, or no server URL. It is not a failure of the request.
@@ -57,8 +54,8 @@ type Request struct {
 	// Prompt is the question itself.
 	Prompt string
 	// SessionID continues a conversation a provider is itself holding, as
-	// returned by a previous Response. It is opaque and provider-specific;
-	// Claude has no such thing and ignores it. When it is set, the provider
+	// returned by a previous Response. It is opaque and provider-specific.
+	// When it is set, the provider
 	// already has the transcript and History is not resent.
 	SessionID string
 	// Model optionally overrides the provider's configured model.
@@ -67,14 +64,21 @@ type Request struct {
 	// configured one, so a module can have its own library and sources while
 	// every other AI field keeps the installation's agent. Empty keeps the
 	// configured agent. It applies when a session is opened: a resumed session
-	// stays with the agent it was opened on. Claude has no agents and ignores it.
+	// stays with the agent it was opened on.
 	Agent string
+	// ClearReads asks this question without what tools returned earlier in a
+	// conversation the provider is holding. Every Wintermute request sends the
+	// whole conversation, so the passages one question read are still in the
+	// model's window when the next is asked; this gives that room back without
+	// opening a new session. The questions, the answers and the server's
+	// transcript are kept. It applies to a resumed session and holds for the
+	// questions after it.
+	ClearReads bool
 	// MaxTokens bounds the answer. Zero means the provider's default.
 	MaxTokens int
-	// OutputSchema, when set, is a JSON Schema the answer must match. Claude
-	// enforces it with structured outputs (output_config.format); Wintermute
-	// has no equivalent, so a caller that sets it must still validate the
-	// answer and say what it wants in the prompt.
+	// OutputSchema, when set, is a JSON Schema the answer must match.
+	// Wintermute does not enforce it, so a caller that sets it must still
+	// validate the answer and say what it wants in the prompt.
 	OutputSchema map[string]any
 }
 
@@ -106,12 +110,37 @@ type Response struct {
 	// answer that stopped for any reason but StopEndTurn may be cut short, and
 	// a structured answer cut short does not match its schema.
 	StopReason string
+	// CutOff is the provider's own account of an answer it stopped short,
+	// with the counts, when it gives one. StopReason is StopMaxTokens then.
+	CutOff string
+	// Room is how full the answering model's context window is with this
+	// conversation in it, when the provider measures it. Nil is not known.
+	Room *Room
 	// Refused reports that the provider's safety classifiers declined the
 	// request. This is a successful HTTP 200 with empty or partial content, so
 	// a caller that reads Text without checking this misreads a refusal as a
 	// malformed answer.
 	Refused bool
 }
+
+// Room is a provider's measure of a model's context window, in tokens.
+type Room struct {
+	// Used is what the conversation takes now.
+	Used int `json:"used"`
+	// Window is the model's context window and Budget the point in it where a
+	// turn stops looking things up, to leave room for the answer. At or past
+	// Budget the next question is answered from what the conversation already
+	// holds. Both are zero where the window is not known.
+	Window int `json:"window,omitempty"`
+	Budget int `json:"budget,omitempty"`
+	// Reads is roughly how much of Used is what tools returned and could be
+	// cleared (Request.ClearReads).
+	Reads int `json:"reads,omitempty"`
+}
+
+// Full reports whether the conversation has reached the point where the model
+// can no longer look anything up.
+func (r *Room) Full() bool { return r != nil && r.Budget > 0 && r.Used >= r.Budget }
 
 // Stop reasons a caller acts on.
 const (
@@ -167,9 +196,7 @@ type Probe struct {
 }
 
 // Prober is implemented by providers that can be reached for a liveness and
-// capability check. Claude does not implement it: a credential check would be
-// a billable request, and the useful discovery here is which local models
-// exist.
+// capability check: the useful discovery here is which local models exist.
 type Prober interface {
 	Probe(ctx context.Context) Probe
 }

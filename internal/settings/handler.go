@@ -72,7 +72,6 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/api/settings/ai-providers/test", h.testProvider)
 	r.GET("/api/settings/ai-providers/agents", h.listAgents)
 	r.GET("/api/settings/ai-providers/catalog", h.listCatalog)
-	r.GET("/api/settings/ai-providers/claude-models", h.listClaudeModels)
 
 	r.GET("/api/settings/policy-studio", h.studioSettings)
 	r.PUT("/api/settings/policy-studio", h.setStudioSettings)
@@ -133,8 +132,6 @@ func (h *Handler) providers(c *gin.Context) {
 // preferenceRequest carries the provider settings. Every field is optional so
 // the page can save one without resending the others.
 type preferenceRequest struct {
-	Provider           *string `json:"provider"`
-	ClaudeModel        *string `json:"claude_model"`
 	WintermuteURL      *string `json:"wintermute_url"`
 	WintermuteBackend  *string `json:"wintermute_backend"`
 	WintermuteModel    *string `json:"wintermute_model"`
@@ -156,8 +153,6 @@ func (h *Handler) setPreferences(c *gin.Context) {
 		key   string
 		value *string
 	}{
-		{PrefAIProvider, req.Provider},
-		{PrefClaudeModel, req.ClaudeModel},
 		{PrefWintermuteURL, req.WintermuteURL},
 		{PrefWintermuteBackend, req.WintermuteBackend},
 		{PrefWintermuteModel, req.WintermuteModel},

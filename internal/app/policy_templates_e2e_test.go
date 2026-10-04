@@ -52,7 +52,7 @@ func TestPolicyTemplatesInTheBrowser(t *testing.T) {
 	wm := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
 		return aiprovider.WintermuteConfig{URL: srv.URL, Token: "t", Agent: "general"}
 	})
-	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "templates-e2e.db"), nil, aiprovider.NewRouter(nil, wm, func() string { return "wintermute" }, nil))
+	a := newStudioAppAt(t, filepath.Join(t.TempDir(), "templates-e2e.db"), nil, aiprovider.NewRouter(wm, nil))
 
 	tab, cancel := chromedp.NewContext(browser, chromedp.WithNewBrowserContext())
 	t.Cleanup(cancel)

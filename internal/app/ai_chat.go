@@ -22,8 +22,8 @@ import (
 	"grc/internal/settings"
 )
 
-// The Claude and Wintermute protocols, their endpoint rules and their session
-// titles live in internal/aiprovider, which this page now asks through.
+// The Wintermute protocol, its endpoint rules and its session titles live in
+// internal/aiprovider, which this page asks through.
 
 var aiProviderHTTPClient = &http.Client{Timeout: 90 * time.Second}
 
@@ -54,6 +54,10 @@ type aiChatRequest struct {
 	// previous answer's session_id. Wintermute keeps transcripts server-side;
 	// when this is set, History is not resent.
 	SessionID string `json:"session_id"`
+	// ClearReads asks this question without what the agent's tools returned
+	// earlier in the session, to give the model's context window back to it
+	// (aiprovider.Request.ClearReads).
+	ClearReads bool `json:"clear_reads"`
 	// Page is the path the AI dock was asked from. On a Crisis Exercises page
 	// the question goes to that module's agent, about the exercise on screen
 	// (see crisisDockTurn). On a Policy Studio page it goes to the proposal
@@ -333,10 +337,9 @@ func aiChatPage(c *gin.Context) {
     <header class="page-head">
       <div>
         <h1>AI Chat Gateway</h1>
-        <p>Ask the AI provider configured in Settings: the Anthropic Claude API, or a Wintermute server that routes the question to a self-hosted model on your network or on to Claude.</p>
+        <p>Ask the Wintermute server configured in Settings. It routes the question to a self-hosted model on your network, or on to Claude when a Claude backend is chosen there.</p>
       </div>
       <div class="creds">
-        <span id="claudeChip" class="chip">Anthropic key: checking&hellip;</span>
         <span id="wintermuteChip" class="chip">Wintermute token: checking&hellip;</span>
         <a class="chip" href="/settings">Keys &amp; tokens &rarr; Settings</a>
         <a class="chip" id="wintermuteDocsLink" href="/settings" hidden>Add documents in Wintermute &#8599;</a>
@@ -375,6 +378,8 @@ func aiChatPage(c *gin.Context) {
           <span>Conversation</span>
           <span class="panel-header-actions">
             <span id="contextNote" class="context-note"></span>
+            <span id="roomNote" class="context-note"></span>
+            <button id="clearReadsBtn" class="secondary" type="button" aria-pressed="false" hidden>Clear earlier reads</button>
             <button id="usageBtn" class="secondary" type="button">Usage &#9656;</button>
             <button id="clearBtn" class="secondary" type="button">Clear</button>
           </span>
@@ -406,7 +411,6 @@ func aiChatPage(c *gin.Context) {
     const agentDetail = document.getElementById('agentDetail');
     const loadCatalogBtn = document.getElementById('loadCatalog');
     const catalogDetail = document.getElementById('catalogDetail');
-    const claudeChip = document.getElementById('claudeChip');
     const wintermuteChip = document.getElementById('wintermuteChip');
     const wintermuteDocsLink = document.getElementById('wintermuteDocsLink');
     const question = document.getElementById('question');
@@ -416,6 +420,8 @@ func aiChatPage(c *gin.Context) {
     const statusEl = document.getElementById('status');
     const chatBox = document.getElementById('chatBox');
     const contextNote = document.getElementById('contextNote');
+    const roomNote = document.getElementById('roomNote');
+    const clearReadsBtn = document.getElementById('clearReadsBtn');
     const COMPOSER_HINT = 'Enter sends · Shift+Enter for a new line';
 
     // The conversation is carried, so a follow-up question means what it says.
@@ -425,16 +431,64 @@ func aiChatPage(c *gin.Context) {
     let history = [];
     let sessionID = '';
 
-    // What Settings configures, from the status call. The provider and model are
-    // not chosen on this page: a question goes wherever Settings routes every
-    // other AI field. Until the status call answers nothing is assumed, so a
-    // failed check reads as unknown rather than as a provider that is not there.
+    // How full the answering model's context window is with this session in
+    // it, as the Wintermute server measured it on the last answer. Every
+    // question sends the whole session again, so what one question's lookups
+    // returned is still there for the next; past the budget the agent can no
+    // longer look anything up. "Clear earlier reads" asks the next question
+    // without those results: the questions and answers stay, and it is the
+    // asker's choice because the agent must look a passage up again to quote it.
+    let room = null;
+    let clearReads = false;
+
+    function tokens(n) {
+      return n < 1000 ? String(n) : (n / 1000).toFixed(1) + 'k';
+    }
+
+    function renderRoom() {
+      if (!room || !room.used) {
+        roomNote.textContent = '';
+        clearReadsBtn.hidden = true;
+        clearReads = false;
+        return;
+      }
+      const reads = Math.min(room.reads || 0, room.used);
+      const full = Boolean(room.budget && room.used >= room.budget);
+      let text = room.window
+        ? tokens(room.used) + ' of ' + tokens(room.window) + ' tokens'
+        : tokens(room.used) + ' tokens';
+      if (clearReads) text += ' · about ' + tokens(reads) + ' cleared with your next question';
+      else if (full) text += reads ? ' · no room left to look things up' : ' · no room left to look things up — Clear starts again';
+      else if (reads) text += ' · ' + tokens(reads) + ' is earlier reading';
+      roomNote.textContent = text;
+      roomNote.style.color = full && !clearReads ? 'var(--warn)' : '';
+      roomNote.title = room.window
+        ? 'The model can hold ' + room.window + ' tokens and this conversation takes about ' + room.used + '.'
+          + (room.budget ? ' The agent stops looking things up at ' + room.budget + ', to leave room for its answer.' : '')
+        : '';
+      clearReadsBtn.hidden = !reads || !sessionID;
+      if (clearReadsBtn.hidden) clearReads = false;
+      clearReadsBtn.setAttribute('aria-pressed', String(clearReads));
+      clearReadsBtn.textContent = clearReads ? 'Clearing earlier reads ✓' : 'Clear earlier reads';
+      clearReadsBtn.title = clearReads
+        ? 'Your next question will be asked without what the agent looked up earlier. Click to keep it after all.'
+        : 'Ask your next question without what the agent looked up earlier in this conversation. '
+          + 'Your questions and its answers stay; it looks a passage up again if it needs it.';
+    }
+
+    clearReadsBtn.addEventListener('click', () => {
+      clearReads = !clearReads;
+      renderRoom();
+      question.focus();
+    });
+
+    // What Settings configures, from the status call. The model is not chosen
+    // on this page: a question goes to the model Settings pins for every other
+    // AI field. Until the status call answers nothing is assumed, so a failed
+    // check reads as unknown rather than as a server that is not there.
     const configured = {
       loaded: false,
-      provider: '',
-      claude: false,
       wintermute: false,
-      claudeModel: '',
       wintermuteModel: '',
       backend: '',
       agent: '',
@@ -465,23 +519,12 @@ func aiChatPage(c *gin.Context) {
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    // "auto" prefers a configured Wintermute, which is what the router does, so
-    // this is the provider a question would actually go to.
-    function usesWintermute() {
-      return configured.provider === 'wintermute'
-        || (configured.provider === 'auto' && configured.wintermute);
-    }
-
     // Names what will answer, since the page no longer has a field that says so.
     // Settings pins its Wintermute model within its own backend, so a different
     // backend picked here gets that backend's default — the rule the server
     // applies.
     function renderAnsweringWith() {
       if (!configured.loaded) return;
-      if (!usesWintermute()) {
-        answeringWith.textContent = 'Answering with Claude · ' + (configured.claudeModel || 'default model');
-        return;
-      }
       const backend = wintermuteBackend.value;
       let model;
       if (backend === configured.backend && configured.wintermuteModel) {
@@ -492,12 +535,12 @@ func aiChatPage(c *gin.Context) {
       answeringWith.textContent = 'Answering with Wintermute · ' + model;
     }
 
-    // A backend and an agent only mean something on Wintermute. On Claude they
-    // stay in view, so the reader can see what is set, but cannot be changed:
-    // a choice that silently does nothing is worse than none.
+    // Until a Wintermute server is configured the backend and agent stay in
+    // view, so the reader can see what is set, but cannot be changed: a choice
+    // that silently does nothing is worse than none.
     function renderRouting() {
       if (!configured.loaded) return;
-      const wm = usesWintermute();
+      const wm = configured.wintermute;
       routing.classList.toggle('off', !wm);
       wintermuteBackend.disabled = !wm;
       wintermuteAgent.disabled = !wm;
@@ -505,8 +548,8 @@ func aiChatPage(c *gin.Context) {
       routingNote.hidden = wm;
       if (!wm) {
         routingNote.textContent =
-          'Questions go to Claude, which has no backends or agents. ' +
-          'Choose Wintermute or Auto under Settings → AI provider to use them.';
+          'Set a Wintermute server URL and client token in Settings ' +
+          'to choose a backend or agent.';
       }
       renderAnsweringWith();
     }
@@ -685,6 +728,8 @@ func aiChatPage(c *gin.Context) {
     // new session.
     function dropSession() {
       sessionID = '';
+      room = null;
+      renderRoom();
     }
 
     // The credentials live in Settings, so this page only reports whether each
@@ -700,15 +745,11 @@ func aiChatPage(c *gin.Context) {
         const resp = await fetch('/ai-chat/wintermute/status');
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-        configured.provider = String(data.provider || '');
-        configured.claude = Boolean(data.claude_configured);
         configured.wintermute = Boolean(data.configured) && Boolean(data.token_configured);
-        configured.claudeModel = String(data.claude_model || '');
         configured.wintermuteModel = String(data.default_model || '');
         configured.backend = String(data.default_backend || '');
         configured.agent = String(data.default_agent || '');
         configured.loaded = true;
-        setChip(claudeChip, 'Anthropic key', configured.claude);
         setChip(wintermuteChip, 'Wintermute token', Boolean(data.token_configured));
         docsBase = String(data.default_endpoint || '');
         // Settings' own backend and agent are this page's starting point, and
@@ -726,14 +767,13 @@ func aiChatPage(c *gin.Context) {
         }
         syncDocsLink();
         renderRouting();
-        // The lists are only fetched when a question would go to Wintermute:
-        // on Claude there is nothing for them to change.
-        if (usesWintermute()) {
+        // The lists are only fetched from a configured server: without one
+        // there is nothing for them to change.
+        if (configured.wintermute) {
           loadCatalog(wintermuteBackend.value).catch(() => { /* reported inline */ });
           loadAgents(wintermuteAgent.value).catch(() => { /* reported inline */ });
         }
       } catch (_) {
-        setChip(claudeChip, 'Anthropic key', false);
         setChip(wintermuteChip, 'Wintermute token', false);
         answeringWith.textContent = 'provider unknown';
       }
@@ -790,14 +830,9 @@ func aiChatPage(c *gin.Context) {
         setStatus('Question is required.', true);
         return;
       }
-      const wm = usesWintermute();
       // Credentials are install-wide, so the only thing this page can check is
-      // whether the server has one for the provider Settings routes to.
-      if (configured.loaded && !wm && !configured.claude) {
-        setStatus('No Anthropic API key is configured. Set one in Settings.', true);
-        return;
-      }
-      if (configured.loaded && wm && !configured.wintermute) {
+      // whether Settings has them.
+      if (configured.loaded && !configured.wintermute) {
         setStatus('Wintermute needs a server URL and client token. Set them in Settings.', true);
         return;
       }
@@ -807,19 +842,20 @@ func aiChatPage(c *gin.Context) {
         // A resumed Wintermute session already holds the transcript; sending it
         // again would replay every earlier turn into the same session.
         history: sessionID ? [] : history,
-        session_id: sessionID
+        session_id: sessionID,
+        clear_reads: clearReads && Boolean(sessionID),
+        // The provider is named, unlike the AI dock's request, because the
+        // backend and agent chosen above ride with it. The agent is sent even
+        // when empty: asking without one is not the same instruction as saying
+        // nothing and getting the Settings agent.
+        provider: 'wintermute',
+        backend: wintermuteBackend.value.trim(),
+        agent: wintermuteAgent.value.trim()
       };
-      // On Claude the provider is left unnamed, so the router every AI field
-      // asks through decides — the same request the AI dock sends. On
-      // Wintermute it is named, because the backend and agent chosen above ride
-      // with it. The agent is sent even when empty: asking without one is not
-      // the same instruction as saying nothing and getting the Settings agent.
-      if (wm) {
-        payload.provider = 'wintermute';
-        payload.backend = wintermuteBackend.value.trim();
-        payload.agent = wintermuteAgent.value.trim();
-      }
 
+      // Spent on this question whether or not it is answered: the server
+      // clears before it asks the model.
+      clearReads = false;
       appendMessage('User', text);
       setStatus('Waiting for model response...');
       sendBtn.disabled = true;
@@ -840,6 +876,9 @@ func aiChatPage(c *gin.Context) {
         history.push({ role: 'assistant', content: answer });
         sessionID = data.session_id || '';
         renderContextNote();
+        if (data.cut_off) appendMessage('System', data.cut_off);
+        room = data.room || null;
+        renderRoom();
         question.value = '';
         let served = data.provider || 'the AI provider';
         if (data.backend) served += ' / ' + data.backend;
@@ -848,6 +887,7 @@ func aiChatPage(c *gin.Context) {
       } catch (err) {
         appendMessage('Assistant', 'Error: ' + (err.message || 'request failed'));
         setStatus('Request failed.', true);
+        renderRoom();
       } finally {
         sendBtn.disabled = false;
         question.focus();
@@ -926,15 +966,8 @@ func aiChatPage(c *gin.Context) {
 func aiChatWintermuteStatus(c *gin.Context) {
 	endpoint := aiChatPreference(settings.PrefWintermuteURL, "WINTERMUTE_URL")
 	c.JSON(http.StatusOK, gin.H{
-		// Which provider Settings routes to. The page asks through it and uses
-		// it to decide whether its backend and agent apply.
-		"provider":          aiChatPreference(settings.PrefAIProvider, ""),
-		"configured":        endpoint != "",
-		"token_configured":  storedAICredential("wintermute") != "",
-		"claude_configured": storedAICredential("claude") != "",
-		// The model Settings configures for Claude. The page shows it; it cannot
-		// change it.
-		"claude_model":     aiChatClaudeModel(),
+		"configured":       endpoint != "",
+		"token_configured": storedAICredential("wintermute") != "",
 		"default_endpoint": endpoint,
 		"default_backend":  aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
 		"default_agent":    aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
@@ -1031,30 +1064,6 @@ func aiChatWintermuteAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"agents": agents})
 }
 
-// aiChatClaudeModel is the model Settings configures for Claude, or the harness
-// default when none is set.
-func aiChatClaudeModel() string {
-	if model := aiChatPreference(settings.PrefClaudeModel, ""); model != "" {
-		return model
-	}
-	return aiprovider.DefaultClaudeModel
-}
-
-// aiChatClaudeProvider builds the Claude provider for one request, on the model
-// Settings configures.
-func aiChatClaudeProvider(req aiChatRequest) (aiprovider.Provider, error) {
-	key := storedAICredential("claude")
-	if key == "" {
-		return nil, fmt.Errorf("no Anthropic API key: set one in Settings")
-	}
-	// The endpoint override stays restricted to Anthropic's own host.
-	endpoint, err := validatedClaudeBaseURL(req.Endpoint)
-	if err != nil {
-		return nil, err
-	}
-	return aiprovider.NewClaude(func() string { return key }, aiChatClaudeModel()).WithBaseURL(endpoint), nil
-}
-
 // aiChatWintermuteModel resolves the model a Wintermute question is asked on:
 // the one Settings configures. Settings pins that model within its own backend,
 // so a question this page sends to a different backend gets that backend's
@@ -1076,7 +1085,7 @@ func aiChatWintermuteModel(backend string) string {
 var activeAIRouter *aiprovider.Router
 
 // configureAIRouter wires the harness the AI dock routes through. A nil router
-// means the dock falls back to Claude, which is what the unit tests exercise.
+// means the dock has nothing to ask, which is what the unit tests exercise.
 func configureAIRouter(router *aiprovider.Router) { activeAIRouter = router }
 
 // crisisDock is the slice of the Crisis Exercise module the AI dock needs.
@@ -1195,12 +1204,10 @@ func storedAICredential(provider string) string {
 	if activeSettings == nil {
 		return ""
 	}
-	switch provider {
-	case "wintermute":
-		return activeSettings.Get(settings.WintermuteToken)
-	default:
-		return activeSettings.Get(settings.AnthropicAPIKey)
+	if provider != "wintermute" {
+		return ""
 	}
+	return activeSettings.Get(settings.WintermuteToken)
 }
 
 // storedWintermuteURL returns the server URL configured in Settings, or "".
@@ -1263,12 +1270,13 @@ func aiChatAsk(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": msg})
 	}
 	ask := aiprovider.Request{
-		System:    req.System,
-		History:   boundedHistory(req.History),
-		Prompt:    dock.Prompt,
-		SessionID: req.SessionID,
-		Agent:     dock.Agent,
-		MaxTokens: aiChatMaxTokens,
+		System:     req.System,
+		History:    boundedHistory(req.History),
+		Prompt:     dock.Prompt,
+		SessionID:  req.SessionID,
+		ClearReads: req.ClearReads,
+		Agent:      dock.Agent,
+		MaxTokens:  aiChatMaxTokens,
 	}
 	var resp aiprovider.Response
 	streaming := policyai.WantsStream(c)
@@ -1298,6 +1306,14 @@ func aiChatAsk(c *gin.Context) {
 		"backend":    resp.Backend,
 		"model":      resp.Model,
 		"session_id": resp.SessionID,
+	}
+	// How full the model's window is, and an answer the server stopped short:
+	// neither can be seen in the text, so both go to the page to be shown.
+	if resp.Room != nil {
+		out["room"] = resp.Room
+	}
+	if resp.CutOff != "" {
+		out["cut_off"] = resp.CutOff
 	}
 	if streaming {
 		sse.Event("result", out)
@@ -1362,33 +1378,33 @@ func boundedHistory(turns []aiChatTurn) []aiprovider.Message {
 // aiChatProvider builds the provider for one request.
 //
 // A request that names no provider goes through the Settings router, as the AI
-// dock's and the AI Chat page's Claude questions do. A request that names one
+// dock's questions do. A request that names one
 // builds it from the request, falling back field by field to the stored
 // configuration — which is how the AI Chat page puts a question to a different
 // Wintermute backend or agent than Settings configures. The transport itself is the shared harness, so there is one
 // implementation of each protocol rather than two.
 //
 // Credentials and the model are the exceptions to "per question": they are
-// never taken from the request. Both keys and the model come from Settings (or
+// never taken from the request. The token and the model come from Settings (or
 // the environment behind it), so there is one place to set them and every AI
 // field in the app answers on the same model.
 func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 	switch req.Provider {
 	case "":
 		// No provider named means "whatever Settings says" — the AI dock, which
-		// has no provider control and should not have one. It used to mean
-		// Claude, so an install set to Wintermute still sent every docked
-		// question to Anthropic and nothing in the UI said so.
-		//
-		// The router is the same one every other AI field asks through, so it
-		// carries the stored backend, model and agent, and honours "auto".
+		// has no provider control and should not have one. The router is the
+		// same one every other AI field asks through, so it carries the stored
+		// backend, model and agent.
 		if activeAIRouter != nil {
 			return activeAIRouter.Selected()
 		}
-		return aiChatClaudeProvider(req)
+		return nil, fmt.Errorf("no AI provider is configured: set a Wintermute server and token in Settings")
 
 	case "claude":
-		return aiChatClaudeProvider(req)
+		// This application no longer calls Claude directly: every question
+		// is an agent turn on the Wintermute server, which reaches Claude as
+		// one of its backends (wintermute decision note 0005).
+		return nil, fmt.Errorf("Claude is reached through the Wintermute server now: choose a Claude backend there")
 
 	case "wintermute":
 		cfg := aiprovider.WintermuteConfig{
@@ -1419,26 +1435,8 @@ func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
 		return aiprovider.NewWintermute(func() aiprovider.WintermuteConfig { return cfg }), nil
 
 	default:
-		return nil, fmt.Errorf("provider must be claude or wintermute")
+		return nil, fmt.Errorf("provider must be wintermute")
 	}
-}
-
-// validatedClaudeBaseURL turns the page's optional endpoint override into an
-// API origin. Empty means the SDK default. The host allowlist is kept from the
-// previous implementation: this field can retarget the path, not the server.
-func validatedClaudeBaseURL(raw string) (string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return "", nil
-	}
-	endpoint, err := validatedEndpoint(raw, []string{"api.anthropic.com"})
-	if err != nil {
-		return "", err
-	}
-	parsed, err := neturl.Parse(endpoint)
-	if err != nil {
-		return "", fmt.Errorf("invalid endpoint")
-	}
-	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func stringField(data map[string]any, key string) string {

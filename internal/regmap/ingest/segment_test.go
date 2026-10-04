@@ -147,11 +147,67 @@ func customRegexProfile() *profile.Profile {
 	}
 }
 
+// The pieces below are what the Wintermute server returns for the samples above
+// under the same profiles: its framework segmenter is a port of the one this
+// package used to run, and wintermute's own tests pin it to these samples. What
+// is tested here is this module's part — ids, titles, categories, flags.
+
+func doraPieces() []Piece {
+	return []Piece{
+		{Strategy: "preamble", Label: "Preamble", Key: "preamble",
+			Title: "REGULATION (EU) 2022/2554 OF THE EUROPEAN PARLIAMENT AND OF THE COUNCIL",
+			Body:  "REGULATION (EU) 2022/2554 OF THE EUROPEAN PARLIAMENT AND OF THE COUNCIL\n\nHaving regard to the Treaty on the Functioning of the European Union,"},
+		{Strategy: "article", Label: "Article 5", Key: "5", Title: "Governance and organisation",
+			Body: "1. Financial entities shall have in place an internal governance and control\nframework that ensures an effective and prudent management of ICT risk, in\norder to achieve a high level of digital operational resilience.\n\n12"},
+		{Strategy: "article", Label: "Article 6", Key: "6", Title: "ICT risk management framework",
+			Body: "Financial entities shall have a sound, comprehensive and well-documented ICT\nrisk management framework as part of their overall risk management system,\nwhich enables them to address ICT risk quickly and efficiently."},
+		{Strategy: "article", Label: "Article 7", Key: "7", Title: "ICT systems, protocols and tools",
+			Body: "In order to address and manage ICT risk, financial entities shall use and\nmaintain updated ICT systems, protocols and tools that are appropriate to the\nmagnitude of operations supporting the conduct of their activities."},
+	}
+}
+
+func pciPieces() []Piece {
+	return []Piece{
+		{Strategy: "regex", Label: "Requirement 3", Key: "3", Title: "Protect Stored Account Data"},
+		{Strategy: "numbered", Label: "3.1", Key: "3.1",
+			Title: "Processes and mechanisms for protecting stored account data are defined and",
+			Body:  "understood, documented, kept up to date, in use and known to all affected parties."},
+		{Strategy: "numbered", Label: "3.4.1", Key: "3.4.1",
+			Title: "PAN is masked when displayed such that only personnel with a legitimate",
+			Body:  "business need can see more than the BIN and the last four digits of the PAN.\n\nPage 42 of 360"},
+		{Strategy: "numbered", Label: "3.5.1", Key: "3.5.1",
+			Title: "PAN is rendered unreadable anywhere it is stored by using one-way hashes,",
+			Body:  "truncation, index tokens or strong cryptography with key management processes."},
+	}
+}
+
+func craPieces() []Piece {
+	return []Piece{
+		{Strategy: "annex", Label: "Annex I", Key: "I", Title: "ESSENTIAL CYBERSECURITY REQUIREMENTS"},
+		{Strategy: "regex", Label: "Annex Part I", Key: "I",
+			Title: "Cybersecurity requirements relating to the properties of products with digital elements",
+			Body:  "(1) Products with digital elements shall be designed, developed and produced in\nsuch a way that they ensure an appropriate level of cybersecurity based on the\nrisks, and shall be made available on the market without any known exploitable\nvulnerabilities."},
+		{Strategy: "regex", Label: "Annex Part II", Key: "II", Title: "Vulnerability handling requirements",
+			Body: "Manufacturers of the products with digital elements shall identify and document\nvulnerabilities and components contained in products, including by drawing up a\nsoftware bill of materials in a commonly used machine-readable format."},
+	}
+}
+
+func customPieces() []Piece {
+	return []Piece{
+		{Strategy: "preamble", Label: "Preamble", Key: "preamble", Title: "Preface material that no rule claims",
+			Body: "Preface material that no rule claims."},
+		{Strategy: "regex", Label: "Section 1", Key: "1", Title: "Scope of the standard",
+			Body: "The standard applies to all operators of essential services within the sector\nand to their designated critical suppliers under the relevant schedule."},
+		{Strategy: "regex", Label: "Section 2", Key: "2", Title: "Continuity obligations",
+			Body: "Operators shall maintain, test and periodically review continuity arrangements\ncovering the loss of any single critical facility or supplier relationship."},
+	}
+}
+
 func TestBuildRequirementsPerStrategy(t *testing.T) {
 	tests := []struct {
-		name string
-		text string
-		prof *profile.Profile
+		name   string
+		pieces []Piece
+		prof   *profile.Profile
 
 		wantIDs        []string
 		wantTitles     map[string]string
@@ -160,8 +216,8 @@ func TestBuildRequirementsPerStrategy(t *testing.T) {
 		wantStrategy   map[string]string
 	}{
 		{
-			name:    "article strategy tolerates inline titles, own-line titles and abbreviations",
-			text:    doraSample,
+			name:    "articles, with the front matter kept as a preamble",
+			pieces:  doraPieces(),
 			prof:    articleProfile(),
 			wantIDs: []string{"DORA-ART-5", "DORA-ART-6", "DORA-ART-7", "DORA-PREAMBLE"},
 			wantTitles: map[string]string{
@@ -180,8 +236,8 @@ func TestBuildRequirementsPerStrategy(t *testing.T) {
 			wantStrategy: map[string]string{"DORA-ART-5": "article", "DORA-PREAMBLE": "preamble"},
 		},
 		{
-			name:    "numbered strategy splits hierarchical requirement numbers and top-level headings",
-			text:    pciSample,
+			name:    "hierarchical numbers and top-level headings take their own prefixes",
+			pieces:  pciPieces(),
 			prof:    numberedProfile(),
 			wantIDs: []string{"PCI-3.1", "PCI-3.4.1", "PCI-3.5.1", "PCI-REQ-3"},
 			wantTitles: map[string]string{
@@ -194,8 +250,8 @@ func TestBuildRequirementsPerStrategy(t *testing.T) {
 			wantStrategy: map[string]string{"PCI-3.4.1": "numbered", "PCI-REQ-3": "regex"},
 		},
 		{
-			name:    "annex strategy combines with a part-level regex",
-			text:    craSample,
+			name:    "an annex and its parts",
+			pieces:  craPieces(),
 			prof:    annexProfile(),
 			wantIDs: []string{"CRA-ANNEX-I", "CRA-ANNEX-PART-I", "CRA-ANNEX-PART-II"},
 			wantCategories: map[string]string{
@@ -207,8 +263,8 @@ func TestBuildRequirementsPerStrategy(t *testing.T) {
 			wantFlags: map[string]string{"CRA-ANNEX-I": "short-body"},
 		},
 		{
-			name:           "custom regex strategy segments an arbitrary framework",
-			text:           customSample,
+			name:           "a profile's own pattern",
+			pieces:         customPieces(),
 			prof:           customRegexProfile(),
 			wantIDs:        []string{"CUSTOM-PREAMBLE", "CUSTOM-SEC-1", "CUSTOM-SEC-2"},
 			wantTitles:     map[string]string{"CUSTOM-SEC-1": "Scope of the standard", "CUSTOM-SEC-2": "Continuity obligations"},
@@ -218,7 +274,7 @@ func TestBuildRequirementsPerStrategy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := BuildRequirements(tc.text, tc.prof)
+			res, err := BuildRequirements(tc.pieces, tc.prof)
 			if err != nil {
 				t.Fatalf("BuildRequirements: %v", err)
 			}
@@ -282,10 +338,11 @@ func TestBuildRequirementsPerStrategy(t *testing.T) {
 	}
 }
 
-// TestSegmentationLosesNoContent guards the "never silently drop content" rule:
-// the concatenated bodies must account for the substantive text of the source.
-func TestSegmentationLosesNoContent(t *testing.T) {
-	res, err := BuildRequirements(doraSample, articleProfile())
+// Nothing the server cut is lost on the way to requirements: every piece's text
+// is in some requirement, including the preamble and page-number noise kept for
+// review.
+func TestNothingTheServerCutIsLost(t *testing.T) {
+	res, err := BuildRequirements(doraPieces(), articleProfile())
 	if err != nil {
 		t.Fatalf("BuildRequirements: %v", err)
 	}
@@ -295,40 +352,34 @@ func TestSegmentationLosesNoContent(t *testing.T) {
 		got.WriteString(r.Text)
 	}
 	joined := squash(got.String())
-
 	for _, fragment := range []string{
-		"Having regard to the Treaty",            // front matter
-		"internal governance and control",        // Article 5 body
-		"sound, comprehensive and well-document", // Article 6 body
-		"maintain updated ICT systems",           // Article 7 body
-		"12",                                     // page-number noise, kept for review
+		"Having regard to the Treaty", "internal governance and control",
+		"sound, comprehensive and well-document", "maintain updated ICT systems", "12",
 	} {
 		if !strings.Contains(joined, squash(fragment)) {
-			t.Errorf("segmentation dropped %q", fragment)
+			t.Errorf("requirements dropped %q", fragment)
 		}
 	}
 }
 
-func squash(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-func TestSplitTitleBody(t *testing.T) {
-	tests := []struct {
-		name      string
-		in        string
-		wantTitle string
-	}{
-		{"inline title", "  Governance and organisation\nbody text here", "Governance and organisation"},
-		{"title on next line", "\nGovernance and organisation\n\nbody", "Governance and organisation"},
-		{"trailing colon stripped", "Scope:\nbody", "Scope"},
-		{"long first line is body not title", strings.Repeat("x", 200) + "\nmore", ""},
-		{"empty", "", ""},
+// A long article the server cut into parts is one requirement again.
+func TestPartsAreOneRequirement(t *testing.T) {
+	pieces := []Piece{
+		{Strategy: "article", Label: "Article 5", Key: "5", Title: "Governance", Body: "First half of a long article.", Part: 1},
+		{Strategy: "article", Label: "Article 5", Key: "5", Title: "Governance", Body: "Second half of it.", Part: 2},
+		{Strategy: "article", Label: "Article 6", Key: "6", Title: "Framework", Body: "Another article entirely."},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, _ := splitTitleBody(tc.in)
-			if got != tc.wantTitle {
-				t.Errorf("splitTitleBody(%q) title = %q, want %q", tc.in, got, tc.wantTitle)
-			}
-		})
+	res, err := BuildRequirements(pieces, articleProfile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Requirements) != 2 {
+		t.Fatalf("requirements %+v", res.Requirements)
+	}
+	if i := res.Requirements.Index("DORA-ART-5"); i < 0 ||
+		res.Requirements[i].Text != "First half of a long article.\n\nSecond half of it." {
+		t.Errorf("article 5 %+v", res.Requirements)
 	}
 }
+
+func squash(s string) string { return strings.Join(strings.Fields(s), " ") }

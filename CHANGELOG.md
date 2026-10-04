@@ -3,6 +3,149 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-04 (AI Chat shows how full the model's window is, and can clear earlier reads)
+
+A second question in the same Wintermute conversation could come back with the
+agent saying it was blocked from looking anything up. Every question sends the
+whole conversation again, so the passages the first question read were still
+filling the model's context window. The Wintermute server now measures that and
+can stop sending those results; this is the application's half.
+
+- **`internal/aiprovider`:**
+  - **`Request.ClearReads`** asks a question without what the agent's tools
+    returned earlier in the session. It is sent as `clear_reads` on a resumed
+    session only, and only when set: a server that predates the field refuses
+    a message carrying it.
+  - **`Response.Room`** is the server's measure of the model's window (`Used`,
+    `Window`, `Budget`, `Reads`, in tokens); `Room.Full` says the agent can no
+    longer look things up. Nil when the server sends none.
+  - **`Response.CutOff`** is the server's sentence for an answer the backend
+    stopped short, and `StopReason` is `StopMaxTokens` when it is set. The
+    Policy Studio's engine already treats that stop reason as a cut answer.
+  - **Usage was read with the wrong field names.** The server reports
+    `prompt_tokens` and `completion_tokens`; only `input_tokens` and
+    `output_tokens` were read, so every Wintermute answer was logged in
+    `ai_usage_log` as zero tokens. Both spellings are read now. The test
+    fixtures used the spelling the server never sends, which is why no test
+    caught it.
+  - **A server error is shown as the sentence it is.** A refused turn used to
+    appear as the raw JSON body cut at 300 characters, which is where the
+    server's message says what to change. The `error` field is shown, up to
+    800 characters.
+- **`/ai-chat/ask`** accepts `clear_reads` and returns `room` and `cut_off`.
+- **AI Chat page:** beside the turn count, "9.3k of 32.8k tokens · 2.6k is
+  earlier reading", turning to the warning colour with "no room left to look
+  things up" at the budget. **Clear earlier reads** arms the next question to
+  be asked without those results and disarms after it. A cut-off answer gets a
+  System line saying so.
+- **AI dock:** a note under an answer the server cut short, and one when the
+  conversation has filled the window, pointing at Clear and at the AI Chat
+  page. The dock has no clear-reads control of its own.
+- Not changed: the conversations held by Regulation Coverage, Crisis Exercises
+  and the Policy Studio's dock neither show the measure nor clear reads.
+- Tests: the provider's fields, `clear_reads` on the wire, the usage
+  spelling and the error text (`internal/aiprovider`); the endpoint
+  (`internal/app`). Needs a Wintermute server with the matching change; against
+  an older one nothing new is sent and nothing new comes back.
+
+## 2026-10-01 (Crisis Exercise docs: read the agent's library as crisis documents)
+
+- **`CRISIS_EXERCISE.md`:** the Crisis Exercise agent should read its library
+  in wintermute's new `crisis` domain (wintermute decision note 0005, step 5).
+  That domain cuts this module's report PDF at its phases, injects and
+  findings, and names each MSEL row by its inject code and title. Docs only;
+  no code changed.
+
+## 2026-09-30 (Claude is reached through Wintermute; the direct provider is retired)
+
+Every AI question in this application is now a turn on the Wintermute server,
+which reaches Claude as one of its backends (wintermute decision note 0005,
+step 4). Its routing, audit, approvals and recall now apply to everything,
+where they used to apply only when Wintermute was the selected provider.
+
+- **`internal/aiprovider`:**
+  - **`claude.go` is gone**, along with its tests. **`NewRouter`** takes just
+    the Wintermute provider and a usage logger. Its `Status` has no Claude
+    fields.
+  - **New `Wintermute.CloudBackends`** names the cloud backends that could
+    answer for an agent: the pinned backend, or the agent's, or the server's
+    default, plus its fallback. It errors on a backend the server doesn't list.
+- **`internal/policyai`:** *local only* used to mean "not Claude". It now asks
+  `CloudBackends` and refuses while any backend is a cloud one, or while the
+  server can't say (`keepLocal`). This covers both proposals and template
+  drafts. The server retries its fallback whatever backend is pinned, so the
+  refusal says that a cloud fallback has to go too.
+- **`internal/settings`:**
+  - **Removed:**
+    - the provider choice (`ai.provider`) and the Claude model (`ai.claude.model`);
+    - the Anthropic key credential;
+    - the `/settings/claude-models` route.
+  - **Unchanged:** A key already stored stays encrypted in the settings table
+    and is no longer read. It was not deleted.
+- **Pages:**
+  - **Settings** has no provider select or Anthropic key.
+  - **AI Chat** no longer has an Anthropic key chip, and always names Wintermute.
+  - **The AI dock** labels answers "Wintermute · agent".
+  - **Asking for `provider: "claude"`** gets an error saying where Claude is now.
+- **Environment:** `ANTHROPIC_API_KEY` is no longer read. An installation that
+  only set it now needs `WINTERMUTE_URL` and `WINTERMUTE_TOKEN` (or the same in
+  Settings) before any AI feature answers.
+- **Tests:**
+  - **The policy AI fixture** is a Wintermute stand-in that can report a cloud
+    or a local default backend. That is how *local only* is tested now.
+  - **The live test** (`-tags live`) calls a Wintermute server.
+  - **The Studio's browser test** checks the whole answer: Wintermute answers
+    a turn whole, so there is no partial preview to see. Answers used to
+    stream as Claude wrote them; they now arrive in one piece.
+- **`go.mod`:** `anthropic-sdk-go` is no longer a direct dependency. It stays
+  as an indirect one, because gosec's autofix needs it.
+- **Docs:** `AI_AGENT.md`, `POLICY_STUDIO.md`, `CRISIS_EXERCISE.md`,
+  `REGULATION_COVERAGE.md`, `RUNTIME_ARGS.md` and `Agents.md`, where they
+  described Claude as a provider of its own. The design records of the spikes
+  are left as they were.
+
+## 2026-09-30 (Regulation coverage reads the requirements Wintermute cut)
+
+The Wintermute server became the one place documents are read: this application
+uses its agents and does not parse documents itself (the operator's direction;
+wintermute decision note 0005). Regulation coverage still cut the text it read
+back into articles and annexes, and detected the framework itself. Both are
+reading, and both now happen there.
+
+- **`internal/regcoverage`:**
+  - **`Service.Import`** settles the framework: the one named, else the one
+    the Wintermute server detected, else `eu-generic`. It has that server cut
+    the document as that framework (`CutAs`), then reads back the requirements
+    it cut (`ReadLibraryPassages`).
+  - **`Import`** builds sections from those passages. Requirement ids,
+    categories and review flags are unchanged: they're this module's.
+- **`internal/regmap/ingest`:**
+  - **`SegmentText`** and its title splitting are gone. `SegmentsFrom` turns
+    the server's pieces into segments, rejoining a long article the server cut
+    into parts.
+  - **`BuildRequirements`** takes pieces instead of text.
+- **`internal/regmap/profile`:** `Registry.Detect` is gone, because the server
+  detects. It needs two signals agreeing, which is stricter than the old rule,
+  so a document named only in its filename falls back to `eu-generic` unless
+  someone names its framework. The profiles keep their `detect` sections so
+  they still parse and can be compared with the server's.
+- **`internal/aiprovider/library.go`:**
+  - **Library documents** now carry the server's `framework`.
+  - **Two new calls:** `CutAs` names a document's instrument
+    (`PUT …/documents/{id}/framework`, synchronous), and `ReadLibraryPassages`
+    reads its passages with their segments (`GET …/passages`, paged under the
+    same bounds as the text).
+- **Tests:**
+  - **The segmentation tests** start from the pieces the server returns for
+    the same fixtures. Wintermute's own test pins its segmenter to these
+    fixtures, so the two can't drift apart.
+  - **Regulation coverage's tests** pass passages.
+  - **A new test** checks the instrument handed to the server.
+- **Docs:** `REGULATION_COVERAGE.md` and `Agents.md`.
+
+Needs a Wintermute server with the framework endpoints (its note 0005, steps
+3 and 4).
+
 ## 2026-09-30 (Policy Studio: bullets and numbering toolbar)
 
 The Studio editor already supported bulleted and numbered lists, but they could

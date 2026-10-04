@@ -5,7 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"grc/internal/aiprovider"
 	"grc/internal/pageui"
 )
 
@@ -79,37 +78,15 @@ func settingsPage(c *gin.Context) {
 
     <h2>Where questions are answered</h2>
     <p>
-      Claude sends questions to Anthropic. Wintermute sends them to a server on
-      your network, which routes each one to a self-hosted model or on to Claude
-      &mdash; so a question can be answered without leaving the network.
+      Every question goes to the Wintermute server on your network, which answers
+      it as a turn of one of its agents &mdash; on a self-hosted model, or on
+      Claude where that server has a Claude backend. The choice of model is made
+      there, and every question is recorded there, whatever answers it.
     </p>
 
     <div class="cred">
-      <h3>AI provider <span id="activePill" class="pill off">unknown</span></h3>
-      <div class="row">
-        <select id="provider" aria-label="AI provider">
-          <option value="auto">Auto &mdash; prefer Wintermute, fall back to Claude</option>
-          <option value="claude">Claude only</option>
-          <option value="wintermute">Wintermute only (never leaves the network)</option>
-        </select>
-      </div>
+      <h3>Wintermute <span id="activePill" class="pill off">unknown</span></h3>
       <p class="meta" id="providerDetail"></p>
-      <p class="meta" id="providerUnused" hidden></p>
-
-      <div id="claudeFields">
-        <div class="row">
-          <select id="claudeModel" aria-label="Claude model">
-            <option value="">Default model &mdash; ` + aiprovider.DefaultClaudeModel + `</option>
-          </select>
-          <button id="loadClaudeModels" class="secondary" type="button">Refresh Claude models</button>
-        </div>
-        <p class="meta">
-          The <em>Claude model</em> answers every question this app sends to Claude &mdash; AI Chat
-          and every other AI field. The list comes from Anthropic for the key above, so a model
-          here is one that key can use. Not used while the provider is Wintermute only.
-          <span id="claudeModelDetail"></span>
-        </p>
-      </div>
 
       <div id="wintermuteFields">
         <div class="row">
@@ -156,8 +133,7 @@ func settingsPage(c *gin.Context) {
           source and it fetches each exercise from this installation&rsquo;s knowledge as it is
           being built. Tick the box if that agent cannot reach this server &mdash; if this
           application moves to a host Wintermute cannot call &mdash; and each question carries the
-          exercise instead. Questions that go to Claude always carry it: Claude has no agent to
-          fetch anything with.
+          exercise instead.
         </p>
         <div class="row">
           <select id="wmPolicyAgent" aria-label="Policy Studio agent">
@@ -171,8 +147,9 @@ func settingsPage(c *gin.Context) {
           Ask AI on a Studio page. Each request carries the live text it is about, since the
           knowledge API trails live editing. An Ask AI conversation is given the document when it
           starts and again whenever the document changes; tick the box to send it with every
-          question. Requests to Claude always carry the document. A document marked
-          <em>local only</em> is never sent to Claude.
+          question. A document marked <em>local only</em> is refused whenever the Wintermute
+          server could answer it on a cloud backend &mdash; the pinned backend, the agent&rsquo;s,
+          the server&rsquo;s default, or its fallback.
         </p>
       </div>
       <div class="row">
@@ -218,11 +195,6 @@ func settingsPage(c *gin.Context) {
   // Labels live here rather than in the API so the server never has to care
   // about presentation; the names themselves are the stable contract.
   const LABELS = {
-    anthropic_api_key: {
-      title: 'Anthropic API key',
-      blurb: 'Used for every Claude request: the AI Chat gateway, and the NFR Enrichment analyzer. This is the only place it is set.',
-      placeholder: 'sk-ant-...',
-    },
     wintermute_token: {
       title: 'Wintermute client token',
       blurb: 'Used to reach a Wintermute server, which routes questions to self-hosted models on your network or on to Claude. This is the only place it is set.',
@@ -343,10 +315,6 @@ func settingsPage(c *gin.Context) {
         return;
       }
       await load();
-      // A different key can address a different set of models.
-      if (name === 'anthropic_api_key') {
-        loadClaudeModels().catch(function () { /* reported inline */ });
-      }
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -354,51 +322,17 @@ func settingsPage(c *gin.Context) {
 
   // --- provider routing -----------------------------------------------------
 
-  const providerEl = document.getElementById('provider');
-  const providerUnused = document.getElementById('providerUnused');
   const wintermuteFields = document.getElementById('wintermuteFields');
   const wmURL = document.getElementById('wmURL');
   const wmBackend = document.getElementById('wmBackend');
   const wmModel = document.getElementById('wmModel');
-  const claudeFields = document.getElementById('claudeFields');
-  const claudeModel = document.getElementById('claudeModel');
-  const claudeModelDetail = document.getElementById('claudeModelDetail');
-  let claudeModelsLoaded = false;
   const activePill = document.getElementById('activePill');
   const providerDetail = document.getElementById('providerDetail');
   const probeDetail = document.getElementById('probeDetail');
   const backendList = document.getElementById('backendList');
 
-  // Everything below the provider select configures Wintermute, and none of it
-  // does anything when questions are going to Claude — which is the default. An
-  // agent chosen in that state is stored, displayed, and never used, and the
-  // page gave no hint of it: the reason "the agent does not reach the Ask AI
-  // box" is usually that nothing is going to Wintermute at all.
-  function renderProviderUse() {
-    const wintermuteInUse = providerEl.value !== 'claude';
-    wintermuteFields.style.opacity = wintermuteInUse ? '' : '0.55';
-    claudeFields.style.opacity = providerEl.value === 'wintermute' ? '0.55' : '';
-    providerUnused.hidden = wintermuteInUse;
-    if (!wintermuteInUse) {
-      providerUnused.textContent =
-        'Not in use: questions are going to Claude, which has no agents. ' +
-        'These settings are kept, and apply as soon as the provider is Auto or Wintermute.';
-    }
-  }
-
   function renderProviders(data) {
     const prefs = data.preferences || {};
-    providerEl.value = prefs['ai.provider'] || 'claude';
-    renderProviderUse();
-    // Shown before Anthropic has been asked for its list, for the same reason
-    // as the Wintermute fields below: a slow or failed lookup must not leave
-    // the select on the default and let the next Save clear the stored model.
-    const claude = prefs['ai.claude.model'] || '';
-    ensureOption(claudeModel, claude, claude);
-    claudeModel.value = claude;
-    if (!claudeModelsLoaded) {
-      loadClaudeModels(claude).catch(function () { /* reported inline */ });
-    }
     wmURL.value = prefs['ai.wintermute.url'] || '';
     // A stored backend or model is shown before the server has been asked for
     // its lists, so the select carries the saved value even when the lookup is
@@ -446,46 +380,6 @@ func settingsPage(c *gin.Context) {
     }
     providerDetail.textContent = st.detail || '';
   }
-
-  // The Claude model list comes from Anthropic for the stored key rather than
-  // being typed in: a model id that was right last quarter answers with a 404
-  // today, and that failure would surface on a question rather than here.
-  async function loadClaudeModels(selected) {
-    const want = selected !== undefined ? selected : claudeModel.value;
-    claudeModelDetail.textContent = 'Loading models...';
-    try {
-      const res = await fetch('/api/settings/ai-providers/claude-models');
-      const data = await res.json().catch(function () { return {}; });
-      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-
-      const models = data.models || [];
-      clearOptions(claudeModel);
-      models.forEach(function (model) {
-        const opt = document.createElement('option');
-        opt.value = model.id;
-        opt.textContent = model.display_name && model.display_name !== model.id
-          ? model.id + ' — ' + model.display_name
-          : model.id;
-        claudeModel.appendChild(opt);
-      });
-      // A stored model this key is not offered is shown as such rather than
-      // dropped: it is what questions are being asked with right now.
-      ensureOption(claudeModel, want, want + ' — not offered to this key');
-      claudeModel.value = want || '';
-      claudeModelsLoaded = true;
-      claudeModelDetail.textContent = models.length
-        ? models.length + ' model(s) available to this key.'
-        : 'This key was offered no models.';
-    } catch (err) {
-      const kept = claudeModel.value;
-      claudeModelDetail.textContent = 'Could not list models: ' + err.message
-        + (kept ? ' Keeping the saved model, ' + kept + '.' : '');
-    }
-  }
-
-  document.getElementById('loadClaudeModels').addEventListener('click', function () {
-    loadClaudeModels().catch(function (err) { claudeModelDetail.textContent = err.message; });
-  });
 
   const wmCatalogDetail = document.getElementById('wmCatalogDetail');
 
@@ -708,7 +602,6 @@ func settingsPage(c *gin.Context) {
     }
   }
 
-  providerEl.addEventListener('change', renderProviderUse);
 
   document.getElementById('saveProvider').addEventListener('click', async function () {
     try {
@@ -716,8 +609,6 @@ func settingsPage(c *gin.Context) {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: providerEl.value,
-          claude_model: claudeModel.value.trim(),
           wintermute_url: wmURL.value.trim(),
           wintermute_backend: wmBackend.value.trim(),
           wintermute_model: wmModel.value.trim(),

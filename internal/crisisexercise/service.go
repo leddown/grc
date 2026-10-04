@@ -26,8 +26,8 @@ type Service struct {
 // advice and after-action drafting all go through it, so provider choice,
 // credentials and the shared ai_usage_log stay in one place — and so that a
 // question can be served by a model on the local network, or by a wintermuted
-// agent with tools over this installation's own catalogs, as readily as by
-// Claude. *aiprovider.Router satisfies it.
+// agent with tools over this installation's own catalogs, or on to Claude
+// through that server. *aiprovider.Router satisfies it.
 type Asker interface {
 	Available() bool
 	Describe() string

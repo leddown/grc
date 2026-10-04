@@ -1470,13 +1470,9 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
   let history = [];
   let sessionID = '';
 
-  // The dock names no provider. Which one answers is an install-wide setting,
-  // and the server reads it per question — including "auto", the stored
-  // backend, model and agent, all of which this box has no way to express.
-  //
-  // It used to ask /ai-chat/wintermute/status and pick Claude whenever a key
-  // existed, which quietly ignored Settings: an install pinned to Wintermute
-  // still sent every docked question to Anthropic.
+  // The dock names no provider. Every question goes to the Wintermute server
+  // Settings configures, and the server reads the stored backend, model and
+  // agent per question — none of which this box has a way to express.
 
   // hidden is removed first and .open set on the next frame, or the panel is
   // laid out already-open and the transform has nothing to animate from.
@@ -1494,9 +1490,7 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       const resp = await fetch('/ai-chat/wintermute/status');
       const data = await resp.json();
       if (!resp.ok) return;
-      const provider = String(data.provider || 'claude');
-      const wintermute = provider === 'wintermute'
-        || (provider === 'auto' && data.configured && data.token_configured);
+      const wintermute = Boolean(data.configured && data.token_configured);
       // Crisis Exercises and Policy Studio pages ask their module's own agent
       // when Settings names one.
       const onCrisisPage = /^\/crisis-exercises(\/|$)/.test(location.pathname);
@@ -1506,7 +1500,7 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
         : '';
       const label = wintermute
         ? 'Wintermute' + (agent ? ' · ' + agent : ' · no agent')
-        : 'Claude';
+        : 'Wintermute not configured';
       whoEl.textContent = label;
       whoEl.title = wintermute && !agent
         ? 'No agent is set, so answers come from the model rather than from this installation\'s catalogs.'
@@ -1683,6 +1677,15 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
       history.push({ role: 'assistant', content: answer });
       sessionID = data.session_id || '';
       const row = addMessage(data.model ? 'AI · ' + data.model : 'AI', answer, 'ai');
+      // What the answer's text cannot show: that the server stopped it short,
+      // and that this conversation has filled the model's context window, so
+      // the agent can no longer look anything up in it. Clear starts another.
+      if (data.cut_off) addMessage('Note', data.cut_off, 'note');
+      if (data.room && data.room.budget && data.room.used >= data.room.budget) {
+        addMessage('Note', 'This conversation has filled the model\'s context window ('
+          + data.room.used + ' of ' + data.room.window + ' tokens), so the agent can no longer look things up in it. '
+          + 'Clear starts a fresh one; the AI Chat page can also clear what it read earlier and carry on.', 'note');
+      }
       // A proposal to change the document is shown by the page that owns the
       // document, as cards with its own actions; the dock only makes room.
       if (data.proposal && window.GRCPolicyStudio && typeof window.GRCPolicyStudio.renderProposal === 'function') {

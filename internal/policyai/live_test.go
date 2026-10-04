@@ -1,13 +1,14 @@
 //go:build live
 
-// The one live call the owner approved (Q5): a real request to Claude through
-// the whole engine -- the capability lookup, structured outputs, parsing and
+// The one live call the owner approved (Q5): a real request through a
+// Wintermute server and the whole engine -- the turn, parsing, repair and
 // validation -- on synthetic policy text only. It is behind the "live" build
-// tag and needs a key, so go test ./... never makes it:
+// tag and needs a server and a client token, so go test ./... never makes it:
 //
-//	ANTHROPIC_API_KEY=... go test -tags live -run Live -v ./internal/policyai/
+//	WINTERMUTE_URL=... WINTERMUTE_TOKEN=... go test -tags live -run Live -v ./internal/policyai/
 //
-// GRC_LIVE_MODEL overrides the model (default: the provider's default).
+// WINTERMUTE_AGENT names the agent, GRC_LIVE_BACKEND and GRC_LIVE_MODEL the
+// backend and model (default: the server's).
 package policyai
 
 import (
@@ -25,10 +26,10 @@ import (
 	"grc/internal/policystudio"
 )
 
-func TestLiveClaudeProposal(t *testing.T) {
-	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
-	if key == "" {
-		t.Skip("ANTHROPIC_API_KEY is not set")
+func TestLiveProposal(t *testing.T) {
+	url, token := strings.TrimSpace(os.Getenv("WINTERMUTE_URL")), strings.TrimSpace(os.Getenv("WINTERMUTE_TOKEN"))
+	if url == "" || token == "" {
+		t.Skip("WINTERMUTE_URL and WINTERMUTE_TOKEN are not set")
 	}
 	conn, err := db.OpenSQLite(filepath.Join(t.TempDir(), "live.db"))
 	if err != nil {
@@ -54,9 +55,12 @@ func TestLiveClaudeProposal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	claude := aiprovider.NewClaude(func() string { return key }, os.Getenv("GRC_LIVE_MODEL"))
+	wm := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
+		return aiprovider.WintermuteConfig{URL: url, Token: token, Agent: os.Getenv("WINTERMUTE_AGENT"),
+			Backend: os.Getenv("GRC_LIVE_BACKEND"), Model: os.Getenv("GRC_LIVE_MODEL")}
+	})
 	calls := 0
-	router := aiprovider.NewRouter(claude, nil, func() string { return "claude" }, func(p, m string, in, out int) {
+	router := aiprovider.NewRouter(wm, func(p, m string, in, out int) {
 		calls++
 		t.Logf("usage: %s %s in=%d out=%d", p, m, in, out)
 	})

@@ -94,8 +94,8 @@ func (e *Engine) DockStream(ctx context.Context, documentID int64, question, ses
 
 	// A conversation the provider keeps (Wintermute) is given the document
 	// when it starts and again whenever the document has changed -- or with
-	// every question, when Settings says so. Claude keeps no conversation, so
-	// every question carries it.
+	// every question, when Settings says so. A provider that keeps no
+	// conversation is given it with every question.
 	fingerprint := hash(p.pc.fingerprint())
 	lead := p.pc.render()
 	_, wintermute := p.provider.(*aiprovider.Wintermute)

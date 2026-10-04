@@ -62,7 +62,6 @@ func TestStoredAICredential(t *testing.T) {
 	original := activeSettings
 	t.Cleanup(func() { activeSettings = original })
 
-	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("WINTERMUTE_TOKEN", "")
 
 	// No store configured at all: every provider resolves to empty rather than
@@ -75,9 +74,6 @@ func TestStoredAICredential(t *testing.T) {
 	}
 
 	svc := newTestSettings(t)
-	if err := svc.Set(settings.AnthropicAPIKey, "sk-ant-stored-value", "alice"); err != nil {
-		t.Fatalf("Set anthropic: %v", err)
-	}
 	if err := svc.Set(settings.WintermuteToken, "wintermute-stored-token", "alice"); err != nil {
 		t.Fatalf("Set wintermute: %v", err)
 	}
@@ -87,9 +83,9 @@ func TestStoredAICredential(t *testing.T) {
 		provider string
 		want     string
 	}{
-		// An empty provider means Claude, matching the switch in aiChatAsk.
-		{"", "sk-ant-stored-value"},
-		{"claude", "sk-ant-stored-value"},
+		// Wintermute is the only provider; nothing else has a credential.
+		{"", ""},
+		{"claude", ""},
 		{"wintermute", "wintermute-stored-token"},
 	}
 	for _, tc := range tests {
@@ -106,10 +102,10 @@ func TestStoredAICredentialFallsBackToEnvironment(t *testing.T) {
 	original := activeSettings
 	t.Cleanup(func() { activeSettings = original })
 
-	t.Setenv("ANTHROPIC_API_KEY", "env-key-value")
+	t.Setenv("WINTERMUTE_TOKEN", "env-token-value")
 	configureAICredentials(newTestSettings(t))
 
-	if got := storedAICredential("claude"); got != "env-key-value" {
+	if got := storedAICredential("wintermute"); got != "env-token-value" {
 		t.Errorf("storedAICredential = %q, want the environment fallback", got)
 	}
 }

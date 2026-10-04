@@ -432,9 +432,9 @@ func helpPage(c *gin.Context) {
         <div class="panel-header">Asking the AI</div>
         <div class="panel-body">
           <ol>
-            <li><a href="/ai-chat">AI Chat</a> — ask either the Anthropic Claude API or your own
-              Wintermute server. Per question you choose the provider, the model, and for
-              Wintermute the backend and the <strong>agent</strong>: which document library the
+            <li><a href="/ai-chat">AI Chat</a> — ask your Wintermute server, which answers on a
+              self-hosted model or on to Claude where it has a Claude backend. Per question you
+              choose the backend and the <strong>agent</strong>: which document library the
               answer is grounded in. No agent means an answer from the model's training data
               rather than from this installation's material.</li>
             <li>The <strong>Usage</strong> panel on that page reports what has been spent, per
@@ -463,11 +463,11 @@ func helpPage(c *gin.Context) {
       <article class="panel">
         <div class="panel-header">Settings and credentials</div>
         <div class="panel-body">
-          <p><a href="/settings">Settings</a> holds the Anthropic API key and the Wintermute client
-          token — the only place either is set — plus which provider answers, and the default
-          backend, model and agent every AI field on this installation uses.</p>
-          <p class="note">Keys are stored encrypted and are never returned to a browser; a page can
-          only learn whether one exists.</p>
+          <p><a href="/settings">Settings</a> holds the Wintermute server URL and client token —
+          the only place they are set — and the default backend, model and agent every AI field
+          on this installation uses.</p>
+          <p class="note">The token is stored encrypted and is never returned to a browser; a page can
+          only learn whether it exists.</p>
         </div>
       </article>
 
@@ -550,7 +550,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/jira/json">/jira/json</a></td><td>Inspect Jira project, issue and search JSON.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/jira/reports">/jira/reports</a></td><td>Read-only Jira report and search presets.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/changelog">/changelog</a></td><td>What changed in this application, and when.</td></tr>
-          <tr><td class="section">AI Chat</td><td class="page"><a href="/ai-chat">/ai-chat</a></td><td>Ask Claude or your Wintermute server; choose provider, model and agent.</td></tr>
+          <tr><td class="section">AI Chat</td><td class="page"><a href="/ai-chat">/ai-chat</a></td><td>Ask your Wintermute server; choose the backend and agent.</td></tr>
           <tr><td class="section">Documents</td><td class="page"><a href="/templates">/templates</a></td><td>Typeset a policy document as a deliverable.</td></tr>
           <tr><td class="section">Documents</td><td class="page"><a href="/templates/manage">/templates/manage</a></td><td>Brand identity, palette and type for rendered documents.</td></tr>
           <tr><td class="section">Admin</td><td class="page"><a href="/help">/help</a></td><td>This page.</td></tr>

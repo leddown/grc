@@ -385,7 +385,7 @@ func TestAIDockNamesWhatWillAnswer(t *testing.T) {
 		"/ai-chat/wintermute/status", // where the answer comes from
 		"Wintermute",
 		"no agent",
-		"Claude",
+		"Wintermute not configured",
 	} {
 		if !strings.Contains(aiQuickPromptDockTag, want) {
 			t.Errorf("the AI panel does not report what will answer: missing %q", want)

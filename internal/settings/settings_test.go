@@ -64,28 +64,28 @@ func testService(t *testing.T) (*Service, *memRepo) {
 
 func TestResolvePrefersStoredOverEnvironment(t *testing.T) {
 	svc, _ := testService(t)
-	t.Setenv("ANTHROPIC_API_KEY", "env-key-value")
+	t.Setenv("WINTERMUTE_TOKEN", "env-key-value")
 
 	// Environment only.
-	value, origin := svc.Resolve(AnthropicAPIKey)
+	value, origin := svc.Resolve(WintermuteToken)
 	if value != "env-key-value" || origin != OriginEnv {
 		t.Fatalf("with env only: got (%q, %q), want (env-key-value, %q)", value, origin, OriginEnv)
 	}
 
 	// Stored wins once set.
-	if err := svc.Set(AnthropicAPIKey, "stored-key-value", "alice"); err != nil {
+	if err := svc.Set(WintermuteToken, "stored-key-value", "alice"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	value, origin = svc.Resolve(AnthropicAPIKey)
+	value, origin = svc.Resolve(WintermuteToken)
 	if value != "stored-key-value" || origin != OriginSettings {
 		t.Fatalf("with stored: got (%q, %q), want (stored-key-value, %q)", value, origin, OriginSettings)
 	}
 
 	// Clearing falls back to the environment rather than disabling the feature.
-	if err := svc.Clear(AnthropicAPIKey); err != nil {
+	if err := svc.Clear(WintermuteToken); err != nil {
 		t.Fatalf("Clear: %v", err)
 	}
-	value, origin = svc.Resolve(AnthropicAPIKey)
+	value, origin = svc.Resolve(WintermuteToken)
 	if value != "env-key-value" || origin != OriginEnv {
 		t.Fatalf("after clear: got (%q, %q), want the env fallback", value, origin)
 	}
@@ -93,8 +93,8 @@ func TestResolvePrefersStoredOverEnvironment(t *testing.T) {
 
 func TestResolveWithNothingConfigured(t *testing.T) {
 	svc, _ := testService(t)
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	value, origin := svc.Resolve(AnthropicAPIKey)
+	t.Setenv("WINTERMUTE_TOKEN", "")
+	value, origin := svc.Resolve(WintermuteToken)
 	if value != "" || origin != OriginNone {
 		t.Errorf("got (%q, %q), want empty and %q", value, origin, OriginNone)
 	}
@@ -103,10 +103,10 @@ func TestResolveWithNothingConfigured(t *testing.T) {
 func TestStoredValueIsEncryptedAtRest(t *testing.T) {
 	svc, repo := testService(t)
 	const secret = "sk-ant-super-secret-value"
-	if err := svc.Set(AnthropicAPIKey, secret, "alice"); err != nil {
+	if err := svc.Set(WintermuteToken, secret, "alice"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	rec := repo.rows[AnthropicAPIKey]
+	rec := repo.rows[WintermuteToken]
 	if rec.Ciphertext == "" {
 		t.Fatal("nothing was stored")
 	}
@@ -127,8 +127,8 @@ func TestSetValidation(t *testing.T) {
 		wantErr string
 	}{
 		{"unknown credential", "not_a_credential", "a-long-enough-value", "unknown credential"},
-		{"truncated paste", AnthropicAPIKey, "abc", "truncated"},
-		{"whitespace only", AnthropicAPIKey, "        ", "truncated"},
+		{"truncated paste", WintermuteToken, "abc", "truncated"},
+		{"whitespace only", WintermuteToken, "        ", "truncated"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,10 +144,10 @@ func TestSetTrimsSurroundingWhitespace(t *testing.T) {
 	svc, _ := testService(t)
 	// Pasting from a terminal or a password manager routinely picks up a
 	// trailing newline, which the provider would reject as a bad key.
-	if err := svc.Set(AnthropicAPIKey, "  sk-ant-padded-value\n", "alice"); err != nil {
+	if err := svc.Set(WintermuteToken, "  sk-ant-padded-value\n", "alice"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if got := svc.Get(AnthropicAPIKey); got != "sk-ant-padded-value" {
+	if got := svc.Get(WintermuteToken); got != "sk-ant-padded-value" {
 		t.Errorf("stored value = %q, want the trimmed form", got)
 	}
 }
@@ -157,15 +157,15 @@ func TestSetTrimsSurroundingWhitespace(t *testing.T) {
 // environment rather than the whole app failing.
 func TestWithoutKeyringStorageIsRefusedButEnvStillWorks(t *testing.T) {
 	svc := NewService(newMemRepo(), nil)
-	t.Setenv("ANTHROPIC_API_KEY", "env-key-value")
+	t.Setenv("WINTERMUTE_TOKEN", "env-key-value")
 
 	if svc.StorageAvailable() {
 		t.Error("StorageAvailable reported true without a keyring")
 	}
-	if err := svc.Set(AnthropicAPIKey, "stored-value", "alice"); !errors.Is(err, ErrNoKeyring) {
+	if err := svc.Set(WintermuteToken, "stored-value", "alice"); !errors.Is(err, ErrNoKeyring) {
 		t.Errorf("Set error = %v, want ErrNoKeyring", err)
 	}
-	if value, origin := svc.Resolve(AnthropicAPIKey); value != "env-key-value" || origin != OriginEnv {
+	if value, origin := svc.Resolve(WintermuteToken); value != "env-key-value" || origin != OriginEnv {
 		t.Errorf("resolve = (%q, %q), want the env fallback to still work", value, origin)
 	}
 }
@@ -175,14 +175,14 @@ func TestWithoutKeyringStorageIsRefusedButEnvStillWorks(t *testing.T) {
 // rather than take the feature down.
 func TestUndecryptableRowFallsBackToEnv(t *testing.T) {
 	svc, repo := testService(t)
-	t.Setenv("ANTHROPIC_API_KEY", "env-key-value")
-	repo.rows[AnthropicAPIKey] = Record{Name: AnthropicAPIKey, Ciphertext: "not-openable-ciphertext"}
+	t.Setenv("WINTERMUTE_TOKEN", "env-key-value")
+	repo.rows[WintermuteToken] = Record{Name: WintermuteToken, Ciphertext: "not-openable-ciphertext"}
 
-	value, origin := svc.Resolve(AnthropicAPIKey)
+	value, origin := svc.Resolve(WintermuteToken)
 	if value != "env-key-value" || origin != OriginEnv {
 		t.Errorf("got (%q, %q), want the env fallback", value, origin)
 	}
-	st, err := svc.Status(AnthropicAPIKey)
+	st, err := svc.Status(WintermuteToken)
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -194,10 +194,10 @@ func TestUndecryptableRowFallsBackToEnv(t *testing.T) {
 func TestStatusNeverDisclosesTheCredential(t *testing.T) {
 	svc, _ := testService(t)
 	const secret = "sk-ant-super-secret-value"
-	if err := svc.Set(AnthropicAPIKey, secret, "alice"); err != nil {
+	if err := svc.Set(WintermuteToken, secret, "alice"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	st, err := svc.Status(AnthropicAPIKey)
+	st, err := svc.Status(WintermuteToken)
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -238,13 +238,13 @@ func TestStatusesCoversEveryManagedCredential(t *testing.T) {
 // key — off the database, while a write still takes effect immediately.
 func TestResolveCachesLookups(t *testing.T) {
 	svc, repo := testService(t)
-	if err := svc.Set(AnthropicAPIKey, "stored-key-value", "alice"); err != nil {
+	if err := svc.Set(WintermuteToken, "stored-key-value", "alice"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
 	repo.getHits = 0
 	for i := 0; i < 5; i++ {
-		if got := svc.Get(AnthropicAPIKey); got != "stored-key-value" {
+		if got := svc.Get(WintermuteToken); got != "stored-key-value" {
 			t.Fatalf("Get = %q", got)
 		}
 	}
@@ -252,10 +252,10 @@ func TestResolveCachesLookups(t *testing.T) {
 		t.Errorf("repository was read %d times for 5 resolutions; expected caching", repo.getHits)
 	}
 
-	if err := svc.Set(AnthropicAPIKey, "replacement-value", "bob"); err != nil {
+	if err := svc.Set(WintermuteToken, "replacement-value", "bob"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if got := svc.Get(AnthropicAPIKey); got != "replacement-value" {
+	if got := svc.Get(WintermuteToken); got != "replacement-value" {
 		t.Errorf("after replacement Get = %q, want the new value (cache not invalidated)", got)
 	}
 }

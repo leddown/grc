@@ -20,9 +20,9 @@ import (
 // It learns about an exercise one of two ways. By default it is told which
 // exercise is open and fetches the record itself from the knowledge API, which
 // serves exercises in full, drafts included, and uncached, so what it reads is
-// what is on screen. When the agent cannot reach this server, or the question
-// is going to Claude, which has nothing to fetch with, the exercise is put into
-// the conversation instead.
+// what is on screen. When the agent cannot reach this server, or no Wintermute
+// server is configured to fetch with, the exercise is put into the
+// conversation instead.
 
 // PersonaAgent keys the conversation with the agent itself. It shares the
 // adviser transcript table, where it is one more voice on the exercise.
@@ -39,7 +39,7 @@ type AgentConfig struct {
 	// the agent to fetch it, for an agent that cannot reach this server.
 	SendExercise func() bool
 	// Grounded reports whether questions are answered by something that can
-	// fetch a record at all. Claude cannot.
+	// fetch a record at all: a configured Wintermute server.
 	Grounded func() bool
 }
 

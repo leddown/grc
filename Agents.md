@@ -44,7 +44,9 @@ all backed by SQLite and served via Gin.
 - `internal/regcoverage` — Regulation Coverage: imports an EU regulation from
   the AI agent's library on the Wintermute server, maps every article to
   Security NFRs and 800-53 with AI, and keeps a versioned report that can be
-  questioned and revised. Uses `internal/regmap`'s segmentation and framework
+  questioned and revised. The Wintermute server cuts the regulation into
+  requirements (its grc domain's framework profiles); `internal/regmap` turns
+  them into requirement ids and categories with this application's framework
   profiles — see `REGULATION_COVERAGE.md`
 - `internal/nfrenrich` — NFR Enrichment: imports a security document from the
   same library and proposes enrichments to the NFR catalog, which a human
@@ -70,8 +72,8 @@ all backed by SQLite and served via Gin.
   publish templates in the app, stored in `policy_templates` — see
   `POLICY_STUDIO.md`
 - `internal/policyai` — the Policy Studio's AI proposal engine: context,
-  standing rules, strict parsing of the EditProposal contract (structured
-  outputs on Claude, one repair turn on Wintermute), server-side validation and
+  standing rules, strict parsing of the EditProposal contract (one repair
+  turn on a malformed answer), server-side validation and
   anchoring of every edit, `ai_policy` routing, limits, and the record of each
   proposal and decision. The AI never writes the document: edits become
   suggestions a person decides

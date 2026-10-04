@@ -94,11 +94,11 @@ func (f *fixture) streamPropose(t *testing.T, body string) (*httptest.ResponseRe
 	return rec, readSSE(t, rec.Body.String())
 }
 
-// Through Claude, a proposal asked for as a stream arrives as the answer's
-// text in pieces and then the validated result; the model call is still
-// logged once, and the preview never carries the edits.
+// A proposal asked for as a stream arrives as the answer's text and then the
+// validated result; the model call is logged once, and the preview never
+// carries the edits. Wintermute answers whole, so the text is one piece.
 func TestProposeStreams(t *testing.T) {
-	f := newFixture(t, "claude")
+	f := newFixture(t)
 	bid := f.blockOf("review access every quarter")
 	f.replies = []string{answerJSON(t, map[string]any{
 		"answer_markdown": "Made the review testable: a named owner, a quarter, and evidence.",
@@ -118,7 +118,7 @@ func TestProposeStreams(t *testing.T) {
 		answers++
 		text.WriteString(e.data["text"].(string))
 	}
-	if answers < 3 || text.String() != "Made the review testable: a named owner, a quarter, and evidence." {
+	if answers < 1 || text.String() != "Made the review testable: a named owner, a quarter, and evidence." {
 		t.Fatalf("%d pieces: %q", answers, text.String())
 	}
 	if strings.Contains(rec.Body.String()[:strings.LastIndex(rec.Body.String(), "event: result")], "recorded by the system owner") {
@@ -128,15 +128,15 @@ func TestProposeStreams(t *testing.T) {
 	if last.name != "result" || last.data["has_proposal"] != true || last.data["id"] == nil {
 		t.Fatalf("result: %v", last)
 	}
-	if f.streams != 1 || len(f.usage) != 1 {
-		t.Fatalf("streams %d, usage %v", f.streams, f.usage)
+	if len(f.usage) != 1 {
+		t.Fatalf("usage %v", f.usage)
 	}
 }
 
 // An answer that needs the repair turn voids the preview first; a request the
 // engine refuses before asking is an ordinary JSON error.
 func TestStreamRestartsAndRefusesPlainly(t *testing.T) {
-	f := newFixture(t, "claude")
+	f := newFixture(t)
 	good := `{"answer_markdown":"Done.","proposal":null}`
 	f.replies = []string{`{"answer_markdown":"Half an answer","proposal":`, good}
 	_, events := f.streamPropose(t, `{"action":"review","scope":"document"}`)
