@@ -78,17 +78,25 @@ func openAPIJSON(c *gin.Context) {
 			"/security-nfrs/data": gin.H{
 				"get": gin.H{
 					"summary":     "List security NFRs",
-					"description": "Supports optional pagination with page and per_page query parameters.",
+					"description": "Supports optional pagination with page and per_page query parameters. Each NFR carries weight, its relative relevance from 1 (lowest) to 5 (highest); 3 is the default.",
 				},
 			},
 			"/security-nfrs/{key}": gin.H{
 				"put": gin.H{
-					"summary":  "Update security NFR",
-					"security": []gin.H{{"AdminBearer": []string{}}},
+					"summary":     "Update security NFR",
+					"description": "Replaces the NFR's fields. weight is a whole number from 1 (lowest) to 5 (highest); left out, the NFR keeps the weight it has.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
 				},
 				"delete": gin.H{
 					"summary":  "Delete security NFR",
 					"security": []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/security-nfrs/{key}/weight": gin.H{
+				"put": gin.H{
+					"summary":     "Set a security NFR's weight",
+					"description": "Body {\"weight\": n}, a whole number from 1 (lowest) to 5 (highest). Changes nothing else about the NFR and returns it.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
 			"/security-nfrs/links/data": gin.H{

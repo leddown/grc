@@ -22,6 +22,9 @@ type Entry struct {
 	AdditionalDetails string `json:"Additional Details"`
 	Implementation    string `json:"Implementation"`
 	Domain            string `json:"Domain"`
+	// Weight is absent from a file written before weights existed; zero means
+	// the file does not say, and the reader decides what that defaults to.
+	Weight int `json:"Weight,omitempty"`
 }
 
 func (e *Entry) UnmarshalJSON(data []byte) error {
@@ -35,6 +38,7 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 		AdditionalDetailsOld string `json:"Additional Details "`
 		Implementation       string `json:"Implementation"`
 		Domain               string `json:"Domain"`
+		Weight               int    `json:"Weight"`
 	}
 
 	var raw rawEntry
@@ -53,6 +57,7 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 	}
 	e.Implementation = raw.Implementation
 	e.Domain = raw.Domain
+	e.Weight = raw.Weight
 	return nil
 }
 

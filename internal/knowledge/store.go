@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"grc/internal/db"
@@ -26,7 +27,7 @@ func (s *Store) NFRs() ([]Item, error) {
 	}
 
 	rows, err := s.conn.Query(`SELECT record_key, nfr_id, summary, description, nist_mapping,
-		additional_details, implementation, domain, issue_type
+		additional_details, implementation, domain, issue_type, weight
 		FROM security_nfrs ORDER BY record_key`)
 	if err != nil {
 		return nil, fmt.Errorf("read security NFRs: %w", err)
@@ -36,8 +37,9 @@ func (s *Store) NFRs() ([]Item, error) {
 	out := []Item{}
 	for rows.Next() {
 		var key, id, summary, description, mapping, details, implementation, domain, issueType string
+		var weight int
 		if err := rows.Scan(&key, &id, &summary, &description, &mapping,
-			&details, &implementation, &domain, &issueType); err != nil {
+			&details, &implementation, &domain, &issueType, &weight); err != nil {
 			return nil, err
 		}
 		body := strings.TrimSpace(strings.Join([]string{description, details, implementation}, "\n\n"))
@@ -54,6 +56,7 @@ func (s *Store) NFRs() ([]Item, error) {
 				"domain":       domain,
 				"issue_type":   issueType,
 				"nist_mapping": mapping,
+				"weight":       strconv.Itoa(weight),
 			}),
 			URL: "/security-nfrs?key=" + key,
 		})

@@ -82,8 +82,10 @@ CREATE TABLE IF NOT EXISTS security_nfrs (
 	nist_mapping TEXT NOT NULL DEFAULT '',
 	additional_details TEXT NOT NULL DEFAULT '',
 	implementation TEXT NOT NULL DEFAULT '',
-	domain TEXT NOT NULL DEFAULT ''
+	domain TEXT NOT NULL DEFAULT '',
+	weight INTEGER NOT NULL DEFAULT 3
 );
+ALTER TABLE security_nfrs ADD COLUMN IF NOT EXISTS weight INTEGER NOT NULL DEFAULT 3;
 
 CREATE TABLE IF NOT EXISTS security_nfr_control_links (
 	id BIGSERIAL PRIMARY KEY,

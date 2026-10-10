@@ -88,7 +88,8 @@ func OpenSQLite(path string) (*Conn, error) {
 		nist_mapping TEXT NOT NULL DEFAULT '',
 		additional_details TEXT NOT NULL DEFAULT '',
 		implementation TEXT NOT NULL DEFAULT '',
-		domain TEXT NOT NULL DEFAULT ''
+		domain TEXT NOT NULL DEFAULT '',
+		weight INTEGER NOT NULL DEFAULT 3
 	);
 
 	CREATE TABLE IF NOT EXISTS security_nfr_control_links (
@@ -1162,6 +1163,9 @@ func OpenSQLite(path string) (*Conn, error) {
 		return nil, err
 	}
 	if err := ensureColumn(db, "security_nfrs", "domain", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	if err := ensureColumn(db, "security_nfrs", "weight", "INTEGER NOT NULL DEFAULT 3"); err != nil {
 		return nil, err
 	}
 	if err := ensureColumn(db, "security_nfr_control_links", "nfr_id", "TEXT NOT NULL DEFAULT ''"); err != nil {

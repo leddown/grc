@@ -14,6 +14,7 @@ type Repository interface {
 	UpsertMany(nfrs []NFR) error
 	List(search, domain string) ([]NFR, error)
 	GetByKey(key string) (NFR, error)
+	SetWeight(key string, weight int) error
 	DeleteByKey(key string) error
 }
 
@@ -27,8 +28,8 @@ func NewSQLiteRepository(conn *db.Conn) *SQLiteRepository {
 
 const upsertNFRSQL = `INSERT INTO security_nfrs (
 		record_key, nfr_id, summary, issue_type, description,
-		nist_mapping, additional_details, implementation, domain
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		nist_mapping, additional_details, implementation, domain, weight
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(record_key) DO UPDATE SET
 		nfr_id = excluded.nfr_id,
 		summary = excluded.summary,
@@ -37,7 +38,8 @@ const upsertNFRSQL = `INSERT INTO security_nfrs (
 		nist_mapping = excluded.nist_mapping,
 		additional_details = excluded.additional_details,
 		implementation = excluded.implementation,
-		domain = excluded.domain`
+		domain = excluded.domain,
+		weight = excluded.weight`
 
 func upsertNFRArgs(nfr NFR) []any {
 	return []any{
@@ -50,6 +52,7 @@ func upsertNFRArgs(nfr NFR) []any {
 		nfr.AdditionalDetails,
 		nfr.Implementation,
 		nfr.Domain,
+		nfr.Weight,
 	}
 }
 
@@ -84,7 +87,7 @@ func (r *SQLiteRepository) UpsertMany(nfrs []NFR) error {
 func (r *SQLiteRepository) List(search, domain string) ([]NFR, error) {
 	query := `SELECT
 		record_key, nfr_id, summary, issue_type, description,
-		nist_mapping, additional_details, implementation, domain
+		nist_mapping, additional_details, implementation, domain, weight
 	FROM security_nfrs
 	WHERE 1=1`
 
@@ -132,12 +135,27 @@ func (r *SQLiteRepository) GetByKey(key string) (NFR, error) {
 	row := r.db.QueryRow(
 		`SELECT
 			record_key, nfr_id, summary, issue_type, description,
-			nist_mapping, additional_details, implementation, domain
+			nist_mapping, additional_details, implementation, domain, weight
 		FROM security_nfrs
 		WHERE record_key = ?`,
 		key,
 	)
 	return scanNFR(row)
+}
+
+func (r *SQLiteRepository) SetWeight(key string, weight int) error {
+	result, err := r.db.Exec(`UPDATE security_nfrs SET weight = ? WHERE record_key = ?`, weight, key)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (r *SQLiteRepository) DeleteByKey(key string) error {
@@ -167,6 +185,7 @@ func scanNFR(scanner interface{ Scan(dest ...any) error }) (NFR, error) {
 		&item.AdditionalDetails,
 		&item.Implementation,
 		&item.Domain,
+		&item.Weight,
 	); err != nil {
 		return NFR{}, err
 	}
