@@ -111,7 +111,7 @@ var syncOrder = []tableSpec{
 		table: "security_nfrs",
 		cols: []string{
 			"record_key", "nfr_id", "summary", "issue_type", "description",
-			"nist_mapping", "additional_details", "implementation", "domain",
+			"nist_mapping", "additional_details", "implementation", "domain", "weight",
 		},
 		conflictCols: []string{"record_key"},
 	},

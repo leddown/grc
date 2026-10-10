@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -89,6 +90,9 @@ type updateNFRRequest struct {
 	AdditionalDetails string `json:"additional_details"`
 	Implementation    string `json:"implementation"`
 	Domain            string `json:"domain"`
+	// Weight is optional so a client written before weights existed does not
+	// reset one by leaving it out.
+	Weight *int `json:"weight"`
 }
 
 func (h *Handler) UpdateNFR(c *gin.Context) {
@@ -98,6 +102,14 @@ func (h *Handler) UpdateNFR(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
 		return
+	}
+	weight := 0
+	if req.Weight != nil {
+		if !ValidWeight(*req.Weight) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidWeight.Error()})
+			return
+		}
+		weight = *req.Weight
 	}
 
 	updated, err := h.service.Update(key, NFR{
@@ -109,10 +121,11 @@ func (h *Handler) UpdateNFR(c *gin.Context) {
 		AdditionalDetails: req.AdditionalDetails,
 		Implementation:    req.Implementation,
 		Domain:            req.Domain,
+		Weight:            weight,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
-		if strings.Contains(strings.ToLower(err.Error()), "required") {
+		if strings.Contains(strings.ToLower(err.Error()), "required") || errors.Is(err, ErrInvalidWeight) {
 			status = http.StatusBadRequest
 		}
 		if errors.Is(err, ErrNotFound) {
@@ -126,6 +139,39 @@ func (h *Handler) UpdateNFR(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to rebuild NFR-control links"})
 			return
 		}
+	}
+	c.JSON(http.StatusOK, updated)
+}
+
+type setWeightRequest struct {
+	Weight *int `json:"weight"`
+}
+
+// SetNFRWeight changes the weight alone. The NFR-control links are not
+// rebuilt: nothing in them depends on a weight.
+func (h *Handler) SetNFRWeight(c *gin.Context) {
+	var req setWeightRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	if req.Weight == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidWeight.Error()})
+		return
+	}
+
+	updated, err := h.service.SetWeight(c.Param("key"), *req.Weight)
+	if err != nil {
+		status := http.StatusInternalServerError
+		message := "failed to set the weight"
+		switch {
+		case errors.Is(err, ErrInvalidWeight):
+			status, message = http.StatusBadRequest, err.Error()
+		case errors.Is(err, ErrNotFound):
+			status, message = http.StatusNotFound, err.Error()
+		}
+		c.JSON(status, gin.H{"error": message})
+		return
 	}
 	c.JSON(http.StatusOK, updated)
 }
@@ -180,6 +226,7 @@ func (h *Handler) NFRJSONData(c *gin.Context) {
 			AdditionalDetails: item.AdditionalDetails,
 			Implementation:    item.Implementation,
 			Domain:            item.Domain,
+			Weight:            item.Weight,
 		}
 	}
 
@@ -271,7 +318,7 @@ func (h *Handler) DetailPage(c *gin.Context) {
     ` + pageui.Nav("/security-nfrs/detail/"+item.Key) + `
 
     <h1>` + htmlEscape(item.Summary) + `</h1>
-    <div class="meta">Key ` + htmlEscape(item.Key) + ` | ` + htmlEscape(item.IssueType) + ` | ` + htmlEscape(item.Domain) + `</div>
+    <div class="meta">Key ` + htmlEscape(item.Key) + ` | ` + htmlEscape(item.IssueType) + ` | ` + htmlEscape(item.Domain) + ` | Weight ` + strconv.Itoa(item.Weight) + ` of ` + strconv.Itoa(MaxWeight) + `</div>
 
     <section class="grid">
       <article class="card">
@@ -308,6 +355,23 @@ var detailHTMLReplacer = strings.NewReplacer(
 
 func htmlEscape(value string) string {
 	return detailHTMLReplacer.Replace(value)
+}
+
+func weightOptions() string {
+	var b strings.Builder
+	for weight := MinWeight; weight <= MaxWeight; weight++ {
+		label := strconv.Itoa(weight)
+		switch weight {
+		case MinWeight:
+			label += " - lowest"
+		case DefaultWeight:
+			label += " - default"
+		case MaxWeight:
+			label += " - highest"
+		}
+		b.WriteString(`<option value="` + strconv.Itoa(weight) + `">` + label + `</option>`)
+	}
+	return b.String()
 }
 
 func orNA(value string) string {
@@ -617,6 +681,10 @@ func (h *Handler) Page(c *gin.Context) {
       return state.filtered.find((item) => item.key === state.selectedKey) || null;
     }
 
+    function weightLabel(item) {
+      return 'Weight ' + item.weight + ' of ` + strconv.Itoa(MaxWeight) + `';
+    }
+
     function renderDomains() {
       const domains = [...new Set(state.items.map((item) => (item.domain || '').trim()).filter(Boolean))].sort();
       const parts = ['<button class="chip ' + (state.domain === '' ? 'active' : '') + '" data-domain="" type="button">All Domains</button>'];
@@ -642,7 +710,7 @@ func (h *Handler) Page(c *gin.Context) {
         return '<button class="row ' + active + '" data-key="' + esc(item.key) + '" type="button">' +
           '<div class="row-title">Key ' + esc(item.key) + '</div>' +
           '<div class="row-sub">' + esc(item.summary || 'No summary') + '</div>' +
-          '<div class="row-sub">' + esc(item.domain || 'No domain') + '</div>' +
+          '<div class="row-sub">' + esc(item.domain || 'No domain') + ' &middot; ' + esc(weightLabel(item)) + '</div>' +
         '</button>';
       }).join('');
       rows.querySelectorAll('.row').forEach((row) => {
@@ -676,6 +744,7 @@ func (h *Handler) Page(c *gin.Context) {
         ['Summary', item.summary],
         ['Issue Type', item.issue_type],
         ['Domain', item.domain],
+        ['Weight', weightLabel(item)],
         ['NIST Mapping', item.nist_mapping],
         ['Additional Details', item.additional_details],
         ['Implementation', item.implementation],
@@ -863,7 +932,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
       gap: 12px;
       margin: 22px 0 18px;
     }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       padding: 12px 14px;
       border-radius: 14px;
@@ -922,6 +991,34 @@ func (h *Handler) ManagePage(c *gin.Context) {
     .row.active { box-shadow: inset 4px 0 0 var(--accent); }
     .row-title { font-weight: bold; }
     .row-sub { color: var(--muted); margin-top: 4px; }
+    /* A row cannot hold the weight buttons itself: it is a button, and a
+       button inside a button is not valid. They sit beside it instead. */
+    .row-line { display: flex; align-items: center; gap: 10px; padding-right: 12px; }
+    .row-line .row { flex: 1; min-width: 0; width: auto; }
+    .weights { flex: none; display: flex; gap: 2px; }
+    /* The specificity and !important are for the theme layer, which gives every
+       button on a page a filled surface and a border: five of those on each of
+       a hundred rows would bury the one that is chosen. */
+    .rows .weights .weight-btn {
+      width: 26px;
+      height: 26px;
+      padding: 0 !important;
+      border-radius: 6px !important;
+      font: 12px Arial, sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    .rows .weights .weight-btn[aria-pressed="false"] {
+      background: transparent !important;
+      border-color: transparent !important;
+      color: var(--muted) !important;
+    }
+    .rows .weights .weight-btn[aria-pressed="false"]:hover { border-color: var(--accent) !important; }
+    .rows .weights .weight-btn[aria-pressed="true"] {
+      border-color: var(--accent) !important;
+      color: var(--accent) !important;
+      font-weight: 700 !important;
+    }
+    .weights.saving .weight-btn { cursor: progress !important; }
     form { padding: 18px; display: grid; gap: 14px; }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .field label {
@@ -1004,9 +1101,15 @@ func (h *Handler) ManagePage(c *gin.Context) {
             </div>
           </div>
 
-          <div class="field">
-            <label for="nfrNISTMapping">NIST Mapping</label>
-            <input id="nfrNISTMapping" type="text">
+          <div class="grid">
+            <div class="field">
+              <label for="nfrNISTMapping">NIST Mapping</label>
+              <input id="nfrNISTMapping" type="text">
+            </div>
+            <div class="field">
+              <label for="nfrWeight">Weight</label>
+              <select id="nfrWeight">` + weightOptions() + `</select>
+            </div>
           </div>
 
           <div class="field">
@@ -1055,10 +1158,13 @@ func (h *Handler) ManagePage(c *gin.Context) {
     const nfrIssueType = document.getElementById('nfrIssueType');
     const nfrDomain = document.getElementById('nfrDomain');
     const nfrNISTMapping = document.getElementById('nfrNISTMapping');
+    const nfrWeight = document.getElementById('nfrWeight');
     const nfrDescription = document.getElementById('nfrDescription');
     const nfrAdditionalDetails = document.getElementById('nfrAdditionalDetails');
     const nfrImplementation = document.getElementById('nfrImplementation');
 
+    const WEIGHT_MIN = ` + strconv.Itoa(MinWeight) + `;
+    const WEIGHT_MAX = ` + strconv.Itoa(MaxWeight) + `;
     // Deep link from the Edit button in the /security-nfrs detail panel.
     let pendingKey = new URLSearchParams(window.location.search).get('key') || '';
 
@@ -1082,11 +1188,16 @@ func (h *Handler) ManagePage(c *gin.Context) {
       }
       rows.innerHTML = state.filtered.map((item) => {
         const active = item.key === state.selectedKey ? 'active' : '';
-        return '<button class="row ' + active + '" data-key="' + esc(item.key) + '" type="button">' +
-          '<div class="row-title">Key ' + esc(item.key) + '</div>' +
-          '<div class="row-sub"><strong>' + esc(item.summary || 'Untitled') + '</strong></div>' +
-          '<div class="row-sub">' + esc(item.domain || 'No domain') + '</div>' +
-        '</button>';
+        return '<div class="row-line">' +
+          '<button class="row ' + active + '" data-key="' + esc(item.key) + '" type="button">' +
+            '<div class="row-title">Key ' + esc(item.key) + '</div>' +
+            '<div class="row-sub"><strong>' + esc(item.summary || 'Untitled') + '</strong></div>' +
+            '<div class="row-sub">' + esc(item.domain || 'No domain') + '</div>' +
+          '</button>' +
+          '<div class="weights" role="group" aria-label="Weight of key ' + esc(item.key) + '" data-key="' + esc(item.key) + '">' +
+            weightButtons(item) +
+          '</div>' +
+        '</div>';
       }).join('');
 
       rows.querySelectorAll('.row').forEach((row) => {
@@ -1096,6 +1207,70 @@ func (h *Handler) ManagePage(c *gin.Context) {
           renderRows();
         });
       });
+      rows.querySelectorAll('.weight-btn').forEach((button) => {
+        button.addEventListener('click', () => {
+          setWeight(button.parentElement, Number(button.getAttribute('data-weight')));
+        });
+      });
+    }
+
+    function weightButtons(item) {
+      let html = '';
+      for (let weight = WEIGHT_MIN; weight <= WEIGHT_MAX; weight++) {
+        let title = 'Weight ' + weight + ' of ' + WEIGHT_MAX;
+        if (weight === WEIGHT_MIN) title += ' (lowest)';
+        if (weight === WEIGHT_MAX) title += ' (highest)';
+        html += '<button class="weight-btn" type="button" data-weight="' + weight + '" title="' + title + '" ' +
+          'aria-pressed="' + (item.weight === weight ? 'true' : 'false') + '">' + weight + '</button>';
+      }
+      return html;
+    }
+
+    function showWeight(group, weight) {
+      group.querySelectorAll('.weight-btn').forEach((button) => {
+        button.setAttribute('aria-pressed', Number(button.getAttribute('data-weight')) === weight ? 'true' : 'false');
+      });
+    }
+
+    // Saved at once, and without touching the editor form: weighting the
+    // catalog is a pass down the list, not a hundred trips through Save.
+    async function setWeight(group, weight) {
+      const key = group.getAttribute('data-key');
+      const item = state.items.find((entry) => entry.key === key);
+      if (!item || item.weight === weight || group.classList.contains('saving')) return;
+      const previous = item.weight;
+      group.classList.add('saving');
+      showWeight(group, weight);
+      try {
+        const resp = await fetch('/security-nfrs/' + encodeURIComponent(key) + '/weight', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ weight: weight })
+        });
+        const data = await readReply(resp);
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        item.weight = data.weight;
+        showWeight(group, data.weight);
+        // The form's Save sends its own Weight field; left stale, it would
+        // put this NFR back to the weight it had when it was opened.
+        if (key === state.selectedKey) nfrWeight.value = String(data.weight);
+        formMessage.textContent = 'Weight of key ' + key + ' set to ' + data.weight + '.';
+        formMessage.className = 'status success';
+      } catch (err) {
+        showWeight(group, previous);
+        formMessage.textContent = 'Weight of key ' + key + ' was not changed: ' + err.message;
+        formMessage.className = 'status error';
+      } finally {
+        group.classList.remove('saving');
+      }
+    }
+
+    async function readReply(resp) {
+      try {
+        return await resp.json();
+      } catch (_) {
+        return {};
+      }
     }
 
     function fillForm(item) {
@@ -1106,6 +1281,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
         nfrIssueType.value = '';
         nfrDomain.value = '';
         nfrNISTMapping.value = '';
+        nfrWeight.value = '` + strconv.Itoa(DefaultWeight) + `';
         nfrDescription.value = '';
         nfrAdditionalDetails.value = '';
         nfrImplementation.value = '';
@@ -1119,6 +1295,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
       nfrIssueType.value = item.issue_type || '';
       nfrDomain.value = item.domain || '';
       nfrNISTMapping.value = item.nist_mapping || '';
+      nfrWeight.value = String(item.weight);
       nfrDescription.value = item.description || '';
       nfrAdditionalDetails.value = item.additional_details || '';
       nfrImplementation.value = item.implementation || '';
@@ -1195,7 +1372,8 @@ func (h *Handler) ManagePage(c *gin.Context) {
         nist_mapping: nfrNISTMapping.value.trim(),
         additional_details: nfrAdditionalDetails.value.trim(),
         implementation: nfrImplementation.value.trim(),
-        domain: nfrDomain.value.trim()
+        domain: nfrDomain.value.trim(),
+        weight: Number(nfrWeight.value)
       };
 
       formMessage.textContent = 'Saving to SQLite...';

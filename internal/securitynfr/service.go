@@ -16,6 +16,8 @@ import (
 
 var ErrNotFound = errors.New("security NFR not found")
 
+var ErrInvalidWeight = fmt.Errorf("weight must be a whole number from %d to %d", MinWeight, MaxWeight)
+
 type Service struct {
 	repo     Repository
 	flatPath string
@@ -47,11 +49,30 @@ func (s *Service) Seed() (int, error) {
 		return 0, err
 	}
 
+	existing, err := s.repo.List("", "")
+	if err != nil {
+		return 0, err
+	}
+	// A source file that carries no weight for an NFR must not reset one set in
+	// the application: the embedded catalog carries none at all.
+	weights := make(map[string]int, len(existing))
+	for _, item := range existing {
+		weights[item.Key] = item.Weight
+	}
+
 	incoming := make(map[string]struct{}, len(fileData))
 	toSeed := make([]NFR, 0, len(fileData))
 	for key, entry := range fileData {
 		normalizedKey := normalize(key)
 		incoming[normalizedKey] = struct{}{}
+
+		weight := entry.Weight
+		if !ValidWeight(weight) {
+			weight = weights[normalizedKey]
+		}
+		if !ValidWeight(weight) {
+			weight = DefaultWeight
+		}
 
 		toSeed = append(toSeed, NFR{
 			Key:               normalizedKey,
@@ -63,6 +84,7 @@ func (s *Service) Seed() (int, error) {
 			AdditionalDetails: normalize(entry.AdditionalDetails),
 			Implementation:    normalize(entry.Implementation),
 			Domain:            normalize(entry.Domain),
+			Weight:            weight,
 		})
 	}
 
@@ -71,10 +93,6 @@ func (s *Service) Seed() (int, error) {
 	}
 	seeded := len(toSeed)
 
-	existing, err := s.repo.List("", "")
-	if err != nil {
-		return seeded, err
-	}
 	for _, item := range existing {
 		if _, ok := incoming[item.Key]; ok {
 			continue
@@ -118,7 +136,36 @@ func (s *Service) Update(key string, nfr NFR) (NFR, error) {
 		return NFR{}, fmt.Errorf("summary is required")
 	}
 
+	// A zero weight means the caller did not say: the NFR keeps the weight it
+	// has, and a new one starts in the middle.
+	if nfr.Weight == 0 {
+		nfr.Weight = DefaultWeight
+		current, err := s.repo.GetByKey(key)
+		if err == nil {
+			nfr.Weight = current.Weight
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return NFR{}, err
+		}
+	}
+	if !ValidWeight(nfr.Weight) {
+		return NFR{}, ErrInvalidWeight
+	}
+
 	if err := s.repo.Upsert(nfr); err != nil {
+		return NFR{}, err
+	}
+	return s.repo.GetByKey(key)
+}
+
+func (s *Service) SetWeight(key string, weight int) (NFR, error) {
+	if !ValidWeight(weight) {
+		return NFR{}, ErrInvalidWeight
+	}
+	key = normalize(key)
+	if err := s.repo.SetWeight(key, weight); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NFR{}, ErrNotFound
+		}
 		return NFR{}, err
 	}
 	return s.repo.GetByKey(key)
@@ -159,6 +206,7 @@ func (s *Service) SaveToJSON() (int, string, error) {
 			AdditionalDetails: item.AdditionalDetails,
 			Implementation:    item.Implementation,
 			Domain:            item.Domain,
+			Weight:            item.Weight,
 		}
 	}
 

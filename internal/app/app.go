@@ -882,6 +882,7 @@ func registerAdminRoutes(r gin.IRouter, userHandler *user.Handler, authHandler *
 	admin.PUT("/controls/:controlID", controlHandler.UpdateControl)
 	admin.DELETE("/controls/:controlID", controlHandler.DeleteControl)
 	admin.PUT("/security-nfrs/:key", securityNFRHandler.UpdateNFR)
+	admin.PUT("/security-nfrs/:key/weight", securityNFRHandler.SetNFRWeight)
 	admin.DELETE("/security-nfrs/:key", securityNFRHandler.DeleteNFR)
 	admin.GET("/security-nfrs/links/overrides", nfrLinkHandler.ListOverrides)
 	admin.PUT("/security-nfrs/links/overrides", nfrLinkHandler.SetOverride)

@@ -3,6 +3,133 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-10 (security-patches: Go 1.26 — toolchain go1.26.9, golang.org/x/net v0.60.0)
+
+`TestGovulncheck` was failing on twelve advisories published on 2026-10-08, all
+reachable from this application. None has a fix in the Go 1.25 line: the
+vulnerability database gives go1.26.9 and go1.27.2 as the fixed releases, and
+go1.25.14 is not one of them. The module therefore moves to Go 1.26, the
+migration the 2026-09-08 entry left as "a deliberate decision with its own
+testing".
+
+`go.mod`:
+
+- `toolchain go1.25.13` -> `go1.26.9`. On its own this cleared eight of the
+  twelve.
+- `golang.org/x/net` v0.57.0 -> v0.60.0 for the other four, which are in its
+  `http2` package as well as in `net/http`. v0.60.0 requires Go 1.26, so the
+  language directive moves too: `go 1.25.0` -> `go 1.26.0`.
+- Pulled by that bump: `golang.org/x/crypto` v0.55.0 -> v0.57.0,
+  `golang.org/x/text` v0.41.0 -> v0.42.0, `golang.org/x/sys` v0.47.0 -> v0.48.0,
+  `golang.org/x/sync` v0.22.0 -> v0.23.0, `golang.org/x/mod` v0.38.0 -> v0.41.0,
+  `golang.org/x/tools` v0.48.0 -> v0.49.0, and `golang.org/x/telemetry`.
+
+Impacted libraries: the Go standard library and `golang.org/x/net`. Remediation
+status: **remediated**, confirmed by `go test ./...` — every package passes,
+`TestGovulncheck` and `TestGosec` among them, and govulncheck reports **0
+vulnerabilities called by this code**.
+
+| Advisory | Package | Reached via |
+|---|---|---|
+| GO-2026-6617 | `net/http`, `x/net` (HTTP/2 HPACK encoder race) | the HTTP server |
+| GO-2026-6613 | `net/http` (HTTP/1 server, CONNECT desynchronisation) | `crisisexercise.MSELCSV` -> `http.CanonicalHeaderKey` |
+| GO-2026-6612 | `net/http`, `x/net` (HTTP/2 flow control refund) | `policystudio.Service.CreateFromTemplate` -> `http2.ConnectionError.Error` |
+| GO-2026-6611 | `net/http`, `x/net` (HTTP/2 window changes, CPU) | same |
+| GO-2026-6610 | `net/http`, `x/net` (HTTP/2 transport, malformed headers) | `aiprovider.Wintermute.requestInto` -> `http.Client.Do` |
+| GO-2026-6609 | `net/http` (unbounded Range header parsing) | `app.markdownKnowledgeDocPage` -> `http.ServeFile` |
+| GO-2026-6608 | `net/textproto`, `mime/multipart` (MIME header memory limit) | `app.utilitiesImport` -> `http.Request.FormFile` |
+| GO-2026-6607 | `crypto/tls` (malformed ECH outer extensions) | `app.serve` -> `http.Server.ListenAndServe` |
+| GO-2026-6605 | `net/http` (HTTP/1 client, CONNECT rejection) | `aiprovider.Wintermute.requestInto` -> `http.Client.Do` |
+| GO-2026-6603 | `net/http`, `x/net` (HTTP/2 Trailer memory exhaustion) | `policystudio.Service.CreateFromTemplate` -> `http2.ConnectionError.Error` |
+| GO-2026-6600 | `html/template` (`yield` before a regexp) | `reporting.renderHTML` |
+| GO-2026-6599 | `html/template` (context tracking) | `reporting.renderHTML` |
+
+### golang.org/x/crypto
+
+The move to v0.57.0 also closes GO-2026-6354 and GO-2026-6355, which the
+2026-09-08 entry had to leave open because their fix needed Go 1.26. Neither
+was reachable from this code. One advisory remains against the module:
+GO-2026-5932, the unmaintained `openpgp` package. It has no fixed version, and
+this application does not import that package. Remediation status: **not
+remediable by a version bump; not reachable**.
+
+### What changes for a build
+
+- Building needs Go 1.26.9 or later. With the default `GOTOOLCHAIN=auto` the
+  `go` command downloads it; a host that sets `GOTOOLCHAIN=local` or installs
+  Go from a distribution package has to be updated first. Until now a Go 1.25
+  installation could build this module.
+- No source file changed. `go fmt` and `go vet` are clean under 1.26, and the
+  module still has no cgo: `CGO_ENABLED=0` builds of `./cmd/api` for linux,
+  windows and darwin amd64 succeed.
+- `Agents.md` and `README.md` say Go 1.26.
+- `npm audit --omit=dev` in `web/policy-studio`: 0 vulnerabilities; the
+  editor bundle is unchanged.
+
+Not done: the goreleaser cross-build and its smoke test were not run, and the
+PostgreSQL tests were not run.
+
+## 2026-10-10 (Security NFRs carry a weight from 1 to 5)
+
+Not every Security NFR matters equally, and the catalog had no way to say so.
+Each NFR now has a `weight`: a whole number from 1 (lowest) to 5 (highest).
+Every NFR starts at 3. Nothing reads the weight to compute a score yet; this
+change records it and shows it.
+
+- **Schema:** `security_nfrs.weight INTEGER NOT NULL DEFAULT 3`, in the SQLite
+  and PostgreSQL schemas. An existing database gains the column on startup
+  (`ensureColumn` / `ADD COLUMN IF NOT EXISTS`), which sets every NFR already
+  in it to 3. `internal/dbsync` copies the column.
+- **Setting it, a row at a time:** every row in the Security NFR Editor's list
+  (`/security-nfrs/manage`) has a 1–5 control beside it. A click saves that
+  weight at once, without opening the NFR or using Save: weighting the catalog
+  is one click per NFR. The chosen number is outlined in the accent; the other
+  four are plain digits. A click that fails puts the row back and says why
+  under the form. If the row is the one open in the form, the form's Weight
+  field follows, so a later Save does not put the old weight back.
+- **`PUT /security-nfrs/{key}/weight {"weight": n}`** (admin) is what the row
+  control calls. It changes the weight and nothing else, returns the NFR, does
+  not rebuild the NFR-control links, answers 404 for a key that does not exist
+  (it never creates one) and 400 for anything but a whole number from 1 to 5.
+- **Setting it in the form:** the editor form also has a Weight field
+  (1 - lowest … 3 - default … 5 - highest), saved with the rest of the NFR:
+  `weight` on `PUT /security-nfrs/{key}`, with the same 400. A request that
+  leaves `weight` out keeps the weight the NFR has, so a client written before
+  weights existed does not reset them; a new NFR created without one gets 3.
+- **Seeing it:** `weight` is in `GET /security-nfrs/data`; the rows on
+  `/security-nfrs` show "Weight n of 5" beside the domain; the detail panel on
+  `/security-nfrs` has a Weight card and `/security-nfrs/detail/{key}` shows
+  it in the heading line. `/api/knowledge` gives the agent `fields.weight`.
+- **The JSON catalog file:** "Rewrite JSON" writes each NFR's `"Weight"`, and
+  `/security-nfrs/json/data` shows it. On a reseed, a `"Weight"` from 1 to 5 in
+  the file wins, like every other field. An entry with no `"Weight"` (the
+  embedded catalog has none) or one out of range keeps the weight the database
+  has, so a catalog update does not put weights set in the application back
+  to 3.
+- **NFR Enrichment:** accepting a proposal rewrites the NFR it read, so the
+  weight is carried through unchanged.
+
+Files: `internal/securitynfr/{model,repository,service,handler}.go`,
+`internal/nfrfile/nfrfile.go`, `internal/db/{sqlite,postgres}.go`,
+`internal/dbsync/dbsync.go`, `internal/knowledge/store.go`,
+`internal/app/{app,api_docs}.go`.
+
+Tests: `internal/securitynfr/service_test.go` covers the default, a weight in
+the file, an out-of-range weight in the file, a reseed that keeps a weight set
+in the application, the update rules, the JSON rewrite, the handler's 400s,
+and that the weight endpoint changes only the weight.
+Verified by `go fmt ./...`, `go vet ./...`, and by starting a throwaway
+`LOCAL_MODE` instance on a database created with the old `security_nfrs`
+table: all 109 NFRs came up at weight 3, and a weight set through the API
+showed on the pages. The row control was driven in headless Chrome against a
+throwaway instance (not kept as a test): a click saved and marked the weight,
+the form's Weight field followed the open row, a form Save kept it, and a
+failed request put the row back. The PostgreSQL path was not run.
+
+`go test ./...` is clean, `TestGosec` and `TestGovulncheck` included. This
+change sits on top of the Go 1.26 patch in the entry above; before that patch
+`TestGovulncheck` failed, on `main` as well, for the advisories listed there.
+
 ## 2026-10-04 (AI Chat: a long turn no longer ends in "Unexpected token '<'", and can be watched and stopped)
 
 A question to the GRC agent came back as `Error: Unexpected token '<',
