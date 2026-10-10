@@ -3,6 +3,72 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-10 (security-patches: Go 1.26 — toolchain go1.26.9, golang.org/x/net v0.60.0)
+
+`TestGovulncheck` was failing on twelve advisories published on 2026-10-08, all
+reachable from this application. None has a fix in the Go 1.25 line: the
+vulnerability database gives go1.26.9 and go1.27.2 as the fixed releases, and
+go1.25.14 is not one of them. The module therefore moves to Go 1.26, the
+migration the 2026-09-08 entry left as "a deliberate decision with its own
+testing".
+
+`go.mod`:
+
+- `toolchain go1.25.13` -> `go1.26.9`. On its own this cleared eight of the
+  twelve.
+- `golang.org/x/net` v0.57.0 -> v0.60.0 for the other four, which are in its
+  `http2` package as well as in `net/http`. v0.60.0 requires Go 1.26, so the
+  language directive moves too: `go 1.25.0` -> `go 1.26.0`.
+- Pulled by that bump: `golang.org/x/crypto` v0.55.0 -> v0.57.0,
+  `golang.org/x/text` v0.41.0 -> v0.42.0, `golang.org/x/sys` v0.47.0 -> v0.48.0,
+  `golang.org/x/sync` v0.22.0 -> v0.23.0, `golang.org/x/mod` v0.38.0 -> v0.41.0,
+  `golang.org/x/tools` v0.48.0 -> v0.49.0, and `golang.org/x/telemetry`.
+
+Impacted libraries: the Go standard library and `golang.org/x/net`. Remediation
+status: **remediated**, confirmed by `go test ./...` — every package passes,
+`TestGovulncheck` and `TestGosec` among them, and govulncheck reports **0
+vulnerabilities called by this code**.
+
+| Advisory | Package | Reached via |
+|---|---|---|
+| GO-2026-6617 | `net/http`, `x/net` (HTTP/2 HPACK encoder race) | the HTTP server |
+| GO-2026-6613 | `net/http` (HTTP/1 server, CONNECT desynchronisation) | `crisisexercise.MSELCSV` -> `http.CanonicalHeaderKey` |
+| GO-2026-6612 | `net/http`, `x/net` (HTTP/2 flow control refund) | `policystudio.Service.CreateFromTemplate` -> `http2.ConnectionError.Error` |
+| GO-2026-6611 | `net/http`, `x/net` (HTTP/2 window changes, CPU) | same |
+| GO-2026-6610 | `net/http`, `x/net` (HTTP/2 transport, malformed headers) | `aiprovider.Wintermute.requestInto` -> `http.Client.Do` |
+| GO-2026-6609 | `net/http` (unbounded Range header parsing) | `app.markdownKnowledgeDocPage` -> `http.ServeFile` |
+| GO-2026-6608 | `net/textproto`, `mime/multipart` (MIME header memory limit) | `app.utilitiesImport` -> `http.Request.FormFile` |
+| GO-2026-6607 | `crypto/tls` (malformed ECH outer extensions) | `app.serve` -> `http.Server.ListenAndServe` |
+| GO-2026-6605 | `net/http` (HTTP/1 client, CONNECT rejection) | `aiprovider.Wintermute.requestInto` -> `http.Client.Do` |
+| GO-2026-6603 | `net/http`, `x/net` (HTTP/2 Trailer memory exhaustion) | `policystudio.Service.CreateFromTemplate` -> `http2.ConnectionError.Error` |
+| GO-2026-6600 | `html/template` (`yield` before a regexp) | `reporting.renderHTML` |
+| GO-2026-6599 | `html/template` (context tracking) | `reporting.renderHTML` |
+
+### golang.org/x/crypto
+
+The move to v0.57.0 also closes GO-2026-6354 and GO-2026-6355, which the
+2026-09-08 entry had to leave open because their fix needed Go 1.26. Neither
+was reachable from this code. One advisory remains against the module:
+GO-2026-5932, the unmaintained `openpgp` package. It has no fixed version, and
+this application does not import that package. Remediation status: **not
+remediable by a version bump; not reachable**.
+
+### What changes for a build
+
+- Building needs Go 1.26.9 or later. With the default `GOTOOLCHAIN=auto` the
+  `go` command downloads it; a host that sets `GOTOOLCHAIN=local` or installs
+  Go from a distribution package has to be updated first. Until now a Go 1.25
+  installation could build this module.
+- No source file changed. `go fmt` and `go vet` are clean under 1.26, and the
+  module still has no cgo: `CGO_ENABLED=0` builds of `./cmd/api` for linux,
+  windows and darwin amd64 succeed.
+- `Agents.md` and `README.md` say Go 1.26.
+- `npm audit --omit=dev` in `web/policy-studio`: 0 vulnerabilities; the
+  editor bundle is unchanged.
+
+Not done: the goreleaser cross-build and its smoke test were not run, and the
+PostgreSQL tests were not run.
+
 ## 2026-10-04 (AI Chat: a long turn no longer ends in "Unexpected token '<'", and can be watched and stopped)
 
 A question to the GRC agent came back as `Error: Unexpected token '<',

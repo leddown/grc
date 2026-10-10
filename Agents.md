@@ -116,7 +116,7 @@ all backed by SQLite and served via Gin.
 
 ## Conventions & Code Style
 
-- Module `grc`, Go 1.25 (see `go.mod` for the exact toolchain version)
+- Module `grc`, Go 1.26 (see `go.mod` for the exact toolchain version)
   — don't downgrade
 - Gin for HTTP, `modernc.org/sqlite` for storage (pure Go — the module has no
   cgo, and must not gain any: that is what keeps a build from needing a C
