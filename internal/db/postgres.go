@@ -1,0 +1,1100 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+)
+
+// OpenPostgres connects to an external PostgreSQL database using a standard
+// connection string (e.g. postgres://user:pass@host:5432/db?sslmode=require)
+// and ensures the schema exists. It mirrors OpenSQLite's tables/indexes using
+// Postgres-native types (BIGSERIAL/BIGINT identities, DOUBLE PRECISION) so the
+// application's backend-agnostic repositories work unchanged.
+func OpenPostgres(dsn string) (*Conn, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
+	}
+
+	if _, err := db.Exec(strings.ReplaceAll(postgresRenameLegacyControlTable, "legacy_controls", LegacyControlTable)); err != nil {
+		return nil, fmt.Errorf("failed to rename the control table: %w", err)
+	}
+	if _, err := db.Exec(postgresSchema); err != nil {
+		return nil, fmt.Errorf("failed to initialize postgres schema: %w", err)
+	}
+
+	return &Conn{DB: db, dialect: DialectPostgres}, nil
+}
+
+// postgresRenameLegacyControlTable is renameLegacyControlTable for PostgreSQL,
+// where the sequence, the constraints and the indexes are renamed with the
+// table. legacy_controls stands for LegacyControlTable.
+const postgresRenameLegacyControlTable = `
+DO $$
+BEGIN
+	IF to_regclass('legacy_controls') IS NOT NULL AND to_regclass('nist_controls') IS NULL THEN
+		ALTER TABLE legacy_controls RENAME TO nist_controls;
+		ALTER SEQUENCE IF EXISTS legacy_controls_id_seq RENAME TO nist_controls_id_seq;
+		ALTER INDEX IF EXISTS legacy_controls_pkey RENAME TO nist_controls_pkey;
+		ALTER INDEX IF EXISTS legacy_controls_control_id_key RENAME TO nist_controls_control_id_key;
+		ALTER INDEX IF EXISTS idx_legacy_controls_control_id RENAME TO idx_nist_controls_control_id;
+		ALTER INDEX IF EXISTS idx_legacy_controls_family_type RENAME TO idx_nist_controls_family_type;
+	END IF;
+END $$;`
+
+const postgresSchema = `
+CREATE TABLE IF NOT EXISTS users (
+	id BIGSERIAL PRIMARY KEY,
+	name TEXT NOT NULL,
+	email TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS nist_stride_mappings (
+	id BIGSERIAL PRIMARY KEY,
+	control_id TEXT NOT NULL UNIQUE,
+	baselines_json TEXT NOT NULL,
+	threats_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS nist_controls (
+	id BIGSERIAL PRIMARY KEY,
+	source_key TEXT NOT NULL DEFAULT '',
+	control_id TEXT NOT NULL UNIQUE,
+	control_type TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	family TEXT NOT NULL,
+	in_low INTEGER NOT NULL DEFAULT 0,
+	in_moderate INTEGER NOT NULL DEFAULT 0,
+	in_high INTEGER NOT NULL DEFAULT 0,
+	in_privacy INTEGER NOT NULL DEFAULT 0,
+	mapping_baselines_json TEXT NOT NULL,
+	threats_json TEXT NOT NULL,
+	confidentiality_status TEXT NOT NULL DEFAULT '',
+	integrity_status TEXT NOT NULL DEFAULT '',
+	availability_status TEXT NOT NULL DEFAULT '',
+	justification TEXT NOT NULL DEFAULT '',
+	potentially_common_inheritable TEXT NOT NULL DEFAULT '',
+	requirements TEXT NOT NULL DEFAULT '',
+	discussion TEXT NOT NULL DEFAULT '',
+	related_controls_json TEXT NOT NULL DEFAULT '[]',
+	appendix_json TEXT NOT NULL DEFAULT 'null'
+);
+
+CREATE TABLE IF NOT EXISTS control_family_visibility (
+	family TEXT PRIMARY KEY,
+	enabled INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS security_nfrs (
+	id BIGSERIAL PRIMARY KEY,
+	record_key TEXT NOT NULL UNIQUE,
+	nfr_id TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL DEFAULT '',
+	issue_type TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	nist_mapping TEXT NOT NULL DEFAULT '',
+	additional_details TEXT NOT NULL DEFAULT '',
+	implementation TEXT NOT NULL DEFAULT '',
+	domain TEXT NOT NULL DEFAULT '',
+	weight INTEGER NOT NULL DEFAULT 3
+);
+ALTER TABLE security_nfrs ADD COLUMN IF NOT EXISTS weight INTEGER NOT NULL DEFAULT 3;
+
+CREATE TABLE IF NOT EXISTS security_nfr_control_links (
+	id BIGSERIAL PRIMARY KEY,
+	nfr_key TEXT NOT NULL,
+	nfr_id TEXT NOT NULL DEFAULT '',
+	nfr_summary TEXT NOT NULL DEFAULT '',
+	nfr_domain TEXT NOT NULL DEFAULT '',
+	nist_mapping_raw TEXT NOT NULL DEFAULT '',
+	mapping_control_id TEXT NOT NULL DEFAULT '',
+	control_id TEXT NOT NULL DEFAULT '',
+	control_name TEXT NOT NULL DEFAULT '',
+	control_family TEXT NOT NULL DEFAULT '',
+	matched INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS nfr_control_link_overrides (
+	nfr_key TEXT NOT NULL,
+	mapping_control_id TEXT NOT NULL,
+	override_control_id TEXT NOT NULL DEFAULT '',
+	matched INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (nfr_key, mapping_control_id)
+);
+
+CREATE TABLE IF NOT EXISTS nfr_source_documents (
+	id BIGSERIAL PRIMARY KEY,
+	title TEXT NOT NULL DEFAULT '',
+	origin TEXT NOT NULL DEFAULT '',
+	url TEXT NOT NULL DEFAULT '',
+	filename TEXT NOT NULL DEFAULT '',
+	media_type TEXT NOT NULL DEFAULT '',
+	sha256 TEXT NOT NULL DEFAULT '',
+	byte_size BIGINT NOT NULL DEFAULT 0,
+	uploaded_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS nfr_source_chunks (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	heading TEXT NOT NULL DEFAULT '',
+	body TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_nfr_source_chunks_document
+	ON nfr_source_chunks (document_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS nfr_enrichment_proposals (
+	id BIGSERIAL PRIMARY KEY,
+	nfr_key TEXT NOT NULL DEFAULT '',
+	document_id BIGINT NOT NULL,
+	field TEXT NOT NULL DEFAULT '',
+	suggested_text TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+	citations_json TEXT NOT NULL DEFAULT '[]',
+	status TEXT NOT NULL DEFAULT 'pending',
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	decided_at TEXT NOT NULL DEFAULT '',
+	decided_by TEXT NOT NULL DEFAULT '',
+	decided_note TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_nfr_enrichment_proposals_status
+	ON nfr_enrichment_proposals (status, nfr_key);
+
+CREATE TABLE IF NOT EXISTS ai_usage_log (
+	id BIGSERIAL PRIMARY KEY,
+	provider TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	input_tokens BIGINT NOT NULL DEFAULT 0,
+	output_tokens BIGINT NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS stored_json_documents (
+	id BIGSERIAL PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT '',
+	content_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS auth_users (
+	id BIGSERIAL PRIMARY KEY,
+	username TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL,
+	is_admin INTEGER NOT NULL DEFAULT 0,
+	allowed_pages_json TEXT NOT NULL DEFAULT '[]',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+	session_token TEXT PRIMARY KEY,
+	user_id BIGINT NOT NULL,
+	expires_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS security_risk_register (
+	id BIGSERIAL PRIMARY KEY,
+	risk_id TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL DEFAULT '',
+	business_unit TEXT NOT NULL DEFAULT '',
+	asset TEXT NOT NULL DEFAULT '',
+	threat_source TEXT NOT NULL DEFAULT '',
+	vulnerability TEXT NOT NULL DEFAULT '',
+	likelihood INTEGER NOT NULL DEFAULT 1,
+	impact INTEGER NOT NULL DEFAULT 1,
+	inherent_score INTEGER NOT NULL DEFAULT 1,
+	current_controls TEXT NOT NULL DEFAULT '',
+	residual_likelihood INTEGER NOT NULL DEFAULT 1,
+	residual_impact INTEGER NOT NULL DEFAULT 1,
+	residual_score INTEGER NOT NULL DEFAULT 1,
+	response_strategy TEXT NOT NULL DEFAULT 'Mitigate',
+	response_action TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'Open',
+	target_date TEXT NOT NULL DEFAULT '',
+	last_review_date TEXT NOT NULL DEFAULT '',
+	next_review_date TEXT NOT NULL DEFAULT '',
+	risk_appetite_aligned INTEGER NOT NULL DEFAULT 0,
+	notes TEXT NOT NULL DEFAULT ''
+);
+
+
+CREATE TABLE IF NOT EXISTS policy_documents (
+	id BIGSERIAL PRIMARY KEY,
+	client_id BIGINT NOT NULL DEFAULT 0,
+	client_name TEXT NOT NULL DEFAULT '',
+	doc_type TEXT NOT NULL DEFAULT 'policy',
+	reference TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'draft',
+	owner_role TEXT NOT NULL DEFAULT '',
+	approver TEXT NOT NULL DEFAULT '',
+	classification TEXT NOT NULL DEFAULT 'Internal',
+	frameworks_json TEXT NOT NULL DEFAULT '[]',
+	effective_date TEXT NOT NULL DEFAULT '',
+	review_cadence_months INTEGER NOT NULL DEFAULT 12,
+	next_review_date TEXT NOT NULL DEFAULT '',
+	parent_document_id BIGINT NOT NULL DEFAULT 0,
+	summary TEXT NOT NULL DEFAULT '',
+	author TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS policy_sections (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	heading TEXT NOT NULL DEFAULT '',
+	body TEXT NOT NULL DEFAULT '',
+	section_kind TEXT NOT NULL DEFAULT 'statements',
+	provenance TEXT NOT NULL DEFAULT 'human',
+	provenance_detail TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS policy_versions (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	version_label TEXT NOT NULL DEFAULT '',
+	approved_by TEXT NOT NULL DEFAULT '',
+	approved_at TEXT NOT NULL DEFAULT '',
+	change_summary TEXT NOT NULL DEFAULT '',
+	snapshot TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+-- No foreign key to nist_controls on purpose. The catalog is reseeded from
+-- JSON and controls can be deleted from the Control Editor; a cascade there
+-- would silently erase coverage claims, which are evidence. Dangling refs are
+-- surfaced as orphans by the coverage report instead.
+CREATE TABLE IF NOT EXISTS policy_section_controls (
+	id BIGSERIAL PRIMARY KEY,
+	section_id BIGINT NOT NULL,
+	control_id TEXT NOT NULL,
+	framework TEXT NOT NULL DEFAULT '',
+	coverage TEXT NOT NULL DEFAULT 'full',
+	note TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(section_id) REFERENCES policy_sections(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_section_controls_unique
+	ON policy_section_controls(section_id, control_id);
+CREATE INDEX IF NOT EXISTS idx_policy_section_controls_control
+	ON policy_section_controls(control_id);
+
+-- Added after policy_documents shipped. CREATE TABLE IF NOT EXISTS does not add
+-- a column to an existing table, so an upgraded database needs this explicitly;
+-- ADD COLUMN IF NOT EXISTS makes it idempotent.
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS author TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_policy_documents_client ON policy_documents(client_id);
+CREATE INDEX IF NOT EXISTS idx_policy_documents_status ON policy_documents(status);
+CREATE INDEX IF NOT EXISTS idx_policy_sections_document ON policy_sections(document_id, ordinal);
+CREATE INDEX IF NOT EXISTS idx_policy_versions_document ON policy_versions(document_id);
+
+CREATE TABLE IF NOT EXISTS app_state (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL DEFAULT ''
+);
+
+-- Credentials set in the Settings page (AI provider keys today). Values are
+-- AES-256-GCM ciphertext, base64-encoded so both backends store them as TEXT
+-- rather than diverging over BLOB/BYTEA. Deliberately separate from app_state
+-- so plaintext state and secret material never share a table, and so who set a
+-- credential and when is recorded for the audit trail.
+CREATE TABLE IF NOT EXISTS app_secrets (
+	name TEXT PRIMARY KEY,
+	ciphertext TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+
+
+-- Document-template brand settings: one row, because the brand is a property of
+-- the install rather than of a client. The settings are a JSON blob rather than
+-- a column per knob -- the row is never queried by any of them, and a column
+-- each would mean a migration every time the templates gain a setting.
+CREATE TABLE IF NOT EXISTS doc_template_brand (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	settings_json TEXT NOT NULL DEFAULT '{}',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+-- Regulation Coverage: an uploaded regulation, its sections, the model's
+-- findings and mappings, the immutable report versions, and the conversation
+-- held about them. See internal/regcoverage.
+CREATE TABLE IF NOT EXISTS reg_coverage_regulations (
+	id BIGSERIAL PRIMARY KEY,
+	title TEXT NOT NULL DEFAULT '',
+	framework TEXT NOT NULL DEFAULT '',
+	framework_name TEXT NOT NULL DEFAULT '',
+	source_ref TEXT NOT NULL DEFAULT '',
+	detected INTEGER NOT NULL DEFAULT 0,
+	filename TEXT NOT NULL DEFAULT '',
+	media_type TEXT NOT NULL DEFAULT '',
+	sha256 TEXT NOT NULL DEFAULT '',
+	byte_size BIGINT NOT NULL DEFAULT 0,
+	extract_method TEXT NOT NULL DEFAULT '',
+	extract_notes TEXT NOT NULL DEFAULT '',
+	body_text TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'ingested',
+	status_detail TEXT NOT NULL DEFAULT '',
+	uploaded_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	analyzed_at TEXT NOT NULL DEFAULT ''
+);
+
+-- The upload itself, kept so the report can be read against the original
+-- document rather than against this module's extraction of it. Separate from
+-- the regulation row because every listing would otherwise carry a
+-- multi-megabyte blob it never reads.
+CREATE TABLE IF NOT EXISTS reg_coverage_sources (
+	regulation_id BIGINT PRIMARY KEY REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	media_type TEXT NOT NULL DEFAULT '',
+	filename TEXT NOT NULL DEFAULT '',
+	byte_size BIGINT NOT NULL DEFAULT 0,
+	content BYTEA NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_sections (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	ref TEXT NOT NULL DEFAULT '',
+	label TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	category TEXT NOT NULL DEFAULT '',
+	body TEXT NOT NULL DEFAULT '',
+	position INTEGER NOT NULL DEFAULT 0,
+	confidence TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_sections_regulation
+	ON reg_coverage_sections (regulation_id, position);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_findings (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	section_id BIGINT NOT NULL REFERENCES reg_coverage_sections(id) ON DELETE CASCADE,
+	relevant INTEGER NOT NULL DEFAULT 0,
+	requirement TEXT NOT NULL DEFAULT '',
+	commentary TEXT NOT NULL DEFAULT '',
+	gaps TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	grounded INTEGER NOT NULL DEFAULT 0,
+	confidence TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	revision INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_findings_section
+	ON reg_coverage_findings (section_id, revision);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_mappings (
+	id BIGSERIAL PRIMARY KEY,
+	finding_id BIGINT NOT NULL REFERENCES reg_coverage_findings(id) ON DELETE CASCADE,
+	kind TEXT NOT NULL DEFAULT '',
+	ref TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	confidence TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT '',
+	known INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_mappings_finding
+	ON reg_coverage_mappings (finding_id);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_versions (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	number INTEGER NOT NULL DEFAULT 1,
+	summary TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	snapshot TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_coverage_versions_number
+	ON reg_coverage_versions (regulation_id, number);
+
+CREATE TABLE IF NOT EXISTS reg_coverage_chat (
+	id BIGSERIAL PRIMARY KEY,
+	regulation_id BIGINT NOT NULL REFERENCES reg_coverage_regulations(id) ON DELETE CASCADE,
+	version INTEGER NOT NULL DEFAULT 0,
+	role TEXT NOT NULL DEFAULT '',
+	content TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	session_id TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_reg_coverage_chat_regulation
+	ON reg_coverage_chat (regulation_id, id);
+
+-- ---- Risk & Crisis Exercise (internal/crisisexercise) ----
+--
+-- One exercise is one delivered instance: designed, run, and reported on.
+-- A re-run is a clone rather than a second pass over the same rows, so an
+-- exercise that has been reported on cannot silently acquire a different
+-- set of observations.
+CREATE TABLE IF NOT EXISTS crisis_ex_exercises (
+	id BIGSERIAL PRIMARY KEY,
+	reference TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL DEFAULT '',
+	format TEXT NOT NULL DEFAULT 'tabletop',
+	kind TEXT NOT NULL DEFAULT 'discussion',
+	audience TEXT NOT NULL DEFAULT 'management',
+	entity_name TEXT NOT NULL DEFAULT '',
+	entity_type TEXT NOT NULL DEFAULT '',
+	jurisdiction TEXT NOT NULL DEFAULT '',
+	supervision TEXT NOT NULL DEFAULT '',
+	critical_functions TEXT NOT NULL DEFAULT '',
+	threat_actor TEXT NOT NULL DEFAULT '',
+	threat_narrative TEXT NOT NULL DEFAULT '',
+	initial_vector TEXT NOT NULL DEFAULT '',
+	scenario_key TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'draft',
+	tlp TEXT NOT NULL DEFAULT 'TLP:AMBER',
+	scheduled_for TEXT NOT NULL DEFAULT '',
+	duration_minutes INTEGER NOT NULL DEFAULT 0,
+	started_at TEXT NOT NULL DEFAULT '',
+	ended_at TEXT NOT NULL DEFAULT '',
+	facilitator TEXT NOT NULL DEFAULT '',
+	control_team TEXT NOT NULL DEFAULT '',
+	evaluators TEXT NOT NULL DEFAULT '',
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crisis_ex_exercises_reference
+	ON crisis_ex_exercises (reference);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_objectives (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	text TEXT NOT NULL DEFAULT '',
+	capability TEXT NOT NULL DEFAULT '',
+	success_criteria TEXT NOT NULL DEFAULT '',
+	rating TEXT NOT NULL DEFAULT 'untested',
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_objectives_exercise
+	ON crisis_ex_objectives (exercise_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_phases (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	phase_key TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	purpose TEXT NOT NULL DEFAULT '',
+	entry_criteria TEXT NOT NULL DEFAULT '',
+	exit_criteria TEXT NOT NULL DEFAULT '',
+	lead_role TEXT NOT NULL DEFAULT '',
+	offset_minutes INTEGER NOT NULL DEFAULT 0,
+	duration_minutes INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL DEFAULT 'pending',
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_phases_exercise
+	ON crisis_ex_phases (exercise_id, ordinal);
+
+-- The Master Scenario Events List. Ordered by offset rather than by id
+-- because an inject inserted later in design still belongs at its own point
+-- on the clock.
+CREATE TABLE IF NOT EXISTS crisis_ex_injects (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	phase_id BIGINT NOT NULL DEFAULT 0,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	offset_minutes INTEGER NOT NULL DEFAULT 0,
+	title TEXT NOT NULL DEFAULT '',
+	body TEXT NOT NULL DEFAULT '',
+	channel TEXT NOT NULL DEFAULT '',
+	from_actor TEXT NOT NULL DEFAULT '',
+	to_actor TEXT NOT NULL DEFAULT '',
+	inject_type TEXT NOT NULL DEFAULT 'event',
+	expected_actions TEXT NOT NULL DEFAULT '',
+	expected_decision TEXT NOT NULL DEFAULT '',
+	decision_owner TEXT NOT NULL DEFAULT '',
+	evaluation_notes TEXT NOT NULL DEFAULT '',
+	difficulty TEXT NOT NULL DEFAULT 'challenge',
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	confidence TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_injects_exercise
+	ON crisis_ex_injects (exercise_id, offset_minutes, ordinal);
+
+-- One response per inject: re-recording corrects the record rather than
+-- appending a second account of the same moment.
+CREATE TABLE IF NOT EXISTS crisis_ex_responses (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	inject_id BIGINT NOT NULL,
+	delivered_at TEXT NOT NULL DEFAULT '',
+	responded_offset INTEGER NOT NULL DEFAULT -1,
+	outcome TEXT NOT NULL DEFAULT 'not_played',
+	actual_actions TEXT NOT NULL DEFAULT '',
+	observations TEXT NOT NULL DEFAULT '',
+	evaluator TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE,
+	FOREIGN KEY(inject_id) REFERENCES crisis_ex_injects(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crisis_ex_responses_inject
+	ON crisis_ex_responses (inject_id);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_decisions (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	phase_id BIGINT NOT NULL DEFAULT 0,
+	offset_minutes INTEGER NOT NULL DEFAULT 0,
+	title TEXT NOT NULL DEFAULT '',
+	options TEXT NOT NULL DEFAULT '',
+	decision TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	made_by TEXT NOT NULL DEFAULT '',
+	role TEXT NOT NULL DEFAULT '',
+	authority TEXT NOT NULL DEFAULT '',
+	reversible INTEGER NOT NULL DEFAULT 1,
+	regulatory_implication TEXT NOT NULL DEFAULT '',
+	customer_impact TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_decisions_exercise
+	ON crisis_ex_decisions (exercise_id, offset_minutes);
+
+-- The DORA materiality assessment, one row per exercise. Kept as its own
+-- table rather than as columns on the exercise because it is the artefact
+-- of one phase, it is re-entered as facts change, and it is what the clock
+-- arithmetic reads.
+CREATE TABLE IF NOT EXISTS crisis_ex_classification (
+	exercise_id BIGINT PRIMARY KEY REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE,
+	aware_offset INTEGER NOT NULL DEFAULT 0,
+	classified_offset INTEGER NOT NULL DEFAULT 0,
+	critical_services_affected INTEGER NOT NULL DEFAULT 0,
+	clients_affected TEXT NOT NULL DEFAULT '',
+	clients_material INTEGER NOT NULL DEFAULT 0,
+	transactions_affected TEXT NOT NULL DEFAULT '',
+	transactions_material INTEGER NOT NULL DEFAULT 0,
+	reputational_impact TEXT NOT NULL DEFAULT '',
+	reputational_material INTEGER NOT NULL DEFAULT 0,
+	downtime_minutes INTEGER NOT NULL DEFAULT 0,
+	duration_material INTEGER NOT NULL DEFAULT 0,
+	geographical_spread TEXT NOT NULL DEFAULT '',
+	geographical_material INTEGER NOT NULL DEFAULT 0,
+	data_losses TEXT NOT NULL DEFAULT '',
+	data_losses_material INTEGER NOT NULL DEFAULT 0,
+	economic_impact TEXT NOT NULL DEFAULT '',
+	economic_material INTEGER NOT NULL DEFAULT 0,
+	personal_data_breach INTEGER NOT NULL DEFAULT 0,
+	nis2_significant INTEGER NOT NULL DEFAULT 0,
+	major INTEGER NOT NULL DEFAULT 0,
+	rationale TEXT NOT NULL DEFAULT '',
+	team_verdict TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+-- actual_offset is -1 until a notification is recorded, which is why it is
+-- not an unsigned count of minutes.
+CREATE TABLE IF NOT EXISTS crisis_ex_clocks (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	regime TEXT NOT NULL DEFAULT '',
+	authority TEXT NOT NULL DEFAULT '',
+	label TEXT NOT NULL DEFAULT '',
+	basis TEXT NOT NULL DEFAULT '',
+	due_offset INTEGER NOT NULL DEFAULT 0,
+	actual_offset INTEGER NOT NULL DEFAULT -1,
+	status TEXT NOT NULL DEFAULT 'pending',
+	evidence TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_clocks_exercise
+	ON crisis_ex_clocks (exercise_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_findings (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	phase_id BIGINT NOT NULL DEFAULT 0,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	category TEXT NOT NULL DEFAULT '',
+	severity TEXT NOT NULL DEFAULT 'medium',
+	description TEXT NOT NULL DEFAULT '',
+	root_cause TEXT NOT NULL DEFAULT '',
+	evidence TEXT NOT NULL DEFAULT '',
+	recommendation TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	due_date TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'open',
+	risk_ref TEXT NOT NULL DEFAULT '',
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_findings_exercise
+	ON crisis_ex_findings (exercise_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_participants (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	name TEXT NOT NULL DEFAULT '',
+	role_key TEXT NOT NULL DEFAULT '',
+	org TEXT NOT NULL DEFAULT '',
+	player INTEGER NOT NULL DEFAULT 1,
+	attended INTEGER NOT NULL DEFAULT 0,
+	contact TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_participants_exercise
+	ON crisis_ex_participants (exercise_id);
+
+-- The link table that lets any part of an exercise cite any part of this
+-- installation's compliance vocabulary, plus the seeded authority catalog.
+-- Polymorphic on both ends because the alternative was thirty tables that
+-- would still have missed the pairing somebody wanted next.
+CREATE TABLE IF NOT EXISTS crisis_ex_references (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	owner_kind TEXT NOT NULL DEFAULT '',
+	owner_id BIGINT NOT NULL DEFAULT 0,
+	ref_kind TEXT NOT NULL DEFAULT '',
+	ref TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT 'manual',
+	known INTEGER NOT NULL DEFAULT 0,
+	url TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_references_owner
+	ON crisis_ex_references (exercise_id, owner_kind, owner_id);
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_references_target
+	ON crisis_ex_references (ref_kind, ref);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_versions (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	number INTEGER NOT NULL DEFAULT 1,
+	kind TEXT NOT NULL DEFAULT 'design',
+	summary TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	snapshot TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crisis_ex_versions_number
+	ON crisis_ex_versions (exercise_id, number);
+
+CREATE TABLE IF NOT EXISTS crisis_ex_chat (
+	id BIGSERIAL PRIMARY KEY,
+	exercise_id BIGINT NOT NULL,
+	persona TEXT NOT NULL DEFAULT '',
+	role TEXT NOT NULL DEFAULT '',
+	content TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL DEFAULT '',
+	session_id TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(exercise_id) REFERENCES crisis_ex_exercises(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crisis_ex_chat_exercise
+	ON crisis_ex_chat (exercise_id, id);
+
+-- Audit Findings & Remediation: see AUDIT_FINDINGS.md.
+CREATE TABLE IF NOT EXISTS audit_findings (
+	id BIGSERIAL PRIMARY KEY,
+	reference TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT '',
+	engagement TEXT NOT NULL DEFAULT '',
+	auditor TEXT NOT NULL DEFAULT '',
+	finding_type TEXT NOT NULL DEFAULT '',
+	severity TEXT NOT NULL DEFAULT '',
+	deficiency_type TEXT NOT NULL DEFAULT '',
+	criteria TEXT NOT NULL DEFAULT '',
+	condition_text TEXT NOT NULL DEFAULT '',
+	cause TEXT NOT NULL DEFAULT '',
+	effect TEXT NOT NULL DEFAULT '',
+	recommendation TEXT NOT NULL DEFAULT '',
+	root_cause_category TEXT NOT NULL DEFAULT '',
+	business_unit TEXT NOT NULL DEFAULT '',
+	process_area TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	management_response TEXT NOT NULL DEFAULT '',
+	management_response_text TEXT NOT NULL DEFAULT '',
+	identified_date TEXT NOT NULL DEFAULT '',
+	report_date TEXT NOT NULL DEFAULT '',
+	original_due_date TEXT NOT NULL DEFAULT '',
+	due_date TEXT NOT NULL DEFAULT '',
+	extension_count INTEGER NOT NULL DEFAULT 0,
+	extension_reason TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'Open',
+	repeat_finding INTEGER NOT NULL DEFAULT 0,
+	prior_reference TEXT NOT NULL DEFAULT '',
+	linked_risks TEXT NOT NULL DEFAULT '',
+	linked_controls TEXT NOT NULL DEFAULT '',
+	framework_refs TEXT NOT NULL DEFAULT '',
+	validated_by TEXT NOT NULL DEFAULT '',
+	validation_date TEXT NOT NULL DEFAULT '',
+	validation_notes TEXT NOT NULL DEFAULT '',
+	closure_evidence TEXT NOT NULL DEFAULT '',
+	closed_date TEXT NOT NULL DEFAULT '',
+	risk_accepted_by TEXT NOT NULL DEFAULT '',
+	risk_acceptance_rationale TEXT NOT NULL DEFAULT '',
+	risk_acceptance_expiry TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_findings_status ON audit_findings (status);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_due_date ON audit_findings (due_date);
+
+CREATE TABLE IF NOT EXISTS audit_finding_actions (
+	id BIGSERIAL PRIMARY KEY,
+	finding_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	reference TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	action_type TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	due_date TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT '',
+	completed_date TEXT NOT NULL DEFAULT '',
+	evidence TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(finding_id) REFERENCES audit_findings(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_finding_actions_finding
+	ON audit_finding_actions (finding_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS audit_finding_history (
+	id BIGSERIAL PRIMARY KEY,
+	finding_id BIGINT NOT NULL,
+	at TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	event TEXT NOT NULL DEFAULT '',
+	from_value TEXT NOT NULL DEFAULT '',
+	to_value TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(finding_id) REFERENCES audit_findings(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
+	ON audit_finding_history (finding_id, id);
+
+-- Policy Studio: see internal/db/sqlite.go for what each table holds.
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS editor_format TEXT NOT NULL DEFAULT 'markdown';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS projection_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS projection_token TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS uid TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS detached_at TEXT NOT NULL DEFAULT '';
+UPDATE policy_sections SET uid = md5(random()::text || clock_timestamp()::text || id::text) WHERE uid = '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_sections_uid ON policy_sections(uid);
+
+CREATE TABLE IF NOT EXISTS policy_doc_state (
+	document_id BIGINT PRIMARY KEY,
+	state BYTEA NOT NULL,
+	projection_token TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS policy_doc_updates (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	upd BYTEA NOT NULL,
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_doc_updates_document
+	ON policy_doc_updates (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_doc_snapshots (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	reason TEXT NOT NULL DEFAULT '',
+	format TEXT NOT NULL DEFAULT 'yjs',
+	state BYTEA NOT NULL,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_doc_snapshots_document
+	ON policy_doc_snapshots (document_id, id);
+
+-- Policy Studio review layer: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_comment_threads (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	section_uid TEXT NOT NULL DEFAULT '',
+	anchor_start TEXT NOT NULL DEFAULT '',
+	anchor_end TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	visibility TEXT NOT NULL DEFAULT 'internal',
+	kind TEXT NOT NULL DEFAULT 'comment',
+	suggestion_suid TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'open',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	resolved_by TEXT NOT NULL DEFAULT '',
+	resolved_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_comment_threads_document
+	ON policy_comment_threads (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_comments (
+	id BIGSERIAL PRIMARY KEY,
+	thread_id BIGINT NOT NULL,
+	author TEXT NOT NULL DEFAULT '',
+	author_kind TEXT NOT NULL DEFAULT 'human',
+	body TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(thread_id) REFERENCES policy_comment_threads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_comments_thread
+	ON policy_comments (thread_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_studio_audit (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	actor TEXT NOT NULL DEFAULT '',
+	actor_kind TEXT NOT NULL DEFAULT 'human',
+	event TEXT NOT NULL DEFAULT '',
+	detail_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_studio_audit_document
+	ON policy_studio_audit (document_id, id);
+
+-- Policy Studio AI proposals: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_ai_proposals (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	requested_by TEXT NOT NULL DEFAULT '',
+	action TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL DEFAULT '',
+	instruction TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	served_by TEXT NOT NULL DEFAULT '',
+	agent TEXT NOT NULL DEFAULT '',
+	prompt_sha256 TEXT NOT NULL DEFAULT '',
+	context_fingerprint TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL DEFAULT '',
+	answer_markdown TEXT NOT NULL DEFAULT '',
+	mappings_json TEXT NOT NULL DEFAULT '[]',
+	new_facts_json TEXT NOT NULL DEFAULT '[]',
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_ai_proposals_document
+	ON policy_ai_proposals (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_ai_edits (
+	id BIGSERIAL PRIMARY KEY,
+	proposal_id BIGINT NOT NULL,
+	suid TEXT NOT NULL UNIQUE,
+	op TEXT NOT NULL DEFAULT '',
+	block_id TEXT NOT NULL DEFAULT '',
+	section_uid TEXT NOT NULL DEFAULT '',
+	quote TEXT NOT NULL DEFAULT '',
+	fragment_json TEXT NOT NULL DEFAULT '',
+	rationale TEXT NOT NULL DEFAULT '',
+	citations_json TEXT NOT NULL DEFAULT '[]',
+	validation TEXT NOT NULL DEFAULT '',
+	placement TEXT NOT NULL DEFAULT '',
+	decision TEXT NOT NULL DEFAULT '',
+	decided_by TEXT NOT NULL DEFAULT '',
+	decided_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(proposal_id) REFERENCES policy_ai_proposals(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_ai_edits_proposal
+	ON policy_ai_edits (proposal_id, id);
+
+-- Policy Studio guest access: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_share_links (
+	id BIGSERIAL PRIMARY KEY,
+	document_id BIGINT NOT NULL,
+	token_sha256 TEXT NOT NULL UNIQUE,
+	label TEXT NOT NULL DEFAULT '',
+	role TEXT NOT NULL DEFAULT 'viewer',
+	allow_ai INTEGER NOT NULL DEFAULT 0,
+	max_uses INTEGER NOT NULL DEFAULT 0,
+	uses INTEGER NOT NULL DEFAULT 0,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	expires_at TEXT NOT NULL DEFAULT '',
+	revoked_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(document_id) REFERENCES policy_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_share_links_document
+	ON policy_share_links (document_id, id);
+
+CREATE TABLE IF NOT EXISTS policy_guest_sessions (
+	id BIGSERIAL PRIMARY KEY,
+	link_id BIGINT NOT NULL,
+	session_sha256 TEXT NOT NULL UNIQUE,
+	display_name TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	last_seen_at TEXT NOT NULL DEFAULT '',
+	expires_at TEXT NOT NULL DEFAULT '',
+	ended_at TEXT NOT NULL DEFAULT '',
+	end_reason TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(link_id) REFERENCES policy_share_links(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_guest_sessions_link
+	ON policy_guest_sessions (link_id, id);
+
+ALTER TABLE policy_sections ADD COLUMN IF NOT EXISTS blocks_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS client_profile_id BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS template_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS ai_policy TEXT NOT NULL DEFAULT 'inherit';
+ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS snapshot_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS content_json TEXT NOT NULL DEFAULT '';
+
+-- Policy Studio templates made in the app: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS policy_templates (
+	id BIGSERIAL PRIMARY KEY,
+	template_id TEXT NOT NULL UNIQUE,
+	status TEXT NOT NULL DEFAULT 'draft',
+	draft_json TEXT NOT NULL DEFAULT '',
+	published_json TEXT NOT NULL DEFAULT '',
+	published_version TEXT NOT NULL DEFAULT '',
+	origin TEXT NOT NULL DEFAULT '',
+	source_library_id BIGINT NOT NULL DEFAULT 0,
+	source_title TEXT NOT NULL DEFAULT '',
+	sources_json TEXT NOT NULL DEFAULT '',
+	notes_json TEXT NOT NULL DEFAULT '',
+	ai_provider TEXT NOT NULL DEFAULT '',
+	ai_model TEXT NOT NULL DEFAULT '',
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	published_by TEXT NOT NULL DEFAULT '',
+	published_at TEXT NOT NULL DEFAULT ''
+);
+
+-- Client profiles: see internal/db/sqlite.go.
+CREATE TABLE IF NOT EXISTS client_profiles (
+	id BIGSERIAL PRIMARY KEY,
+	name TEXT NOT NULL,
+	crm_ref TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS client_profile_facts (
+	client_id BIGINT NOT NULL,
+	key TEXT NOT NULL,
+	value TEXT NOT NULL DEFAULT '',
+	value_type TEXT NOT NULL DEFAULT 'text',
+	source TEXT NOT NULL DEFAULT 'manual',
+	updated_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (client_id, key),
+	FOREIGN KEY(client_id) REFERENCES client_profiles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_nist_controls_control_id ON nist_controls(control_id);
+CREATE INDEX IF NOT EXISTS idx_nist_controls_family_type ON nist_controls(family, control_type);
+CREATE INDEX IF NOT EXISTS idx_security_nfrs_domain ON security_nfrs(domain);
+CREATE INDEX IF NOT EXISTS idx_security_nfr_links_control_match ON security_nfr_control_links(control_id, matched);
+CREATE INDEX IF NOT EXISTS idx_security_nfr_links_nfr_key ON security_nfr_control_links(nfr_key, mapping_control_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_stored_json_documents_created_at ON stored_json_documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_risk_register_status ON security_risk_register(status);
+CREATE INDEX IF NOT EXISTS idx_security_risk_register_owner ON security_risk_register(owner);
+CREATE INDEX IF NOT EXISTS idx_security_risk_register_scores ON security_risk_register(residual_score, inherent_score);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_security_risk_register_risk_id ON security_risk_register(risk_id);`

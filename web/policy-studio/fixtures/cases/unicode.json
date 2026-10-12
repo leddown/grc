@@ -1,0 +1,106 @@
+{
+  "name": "unicode",
+  "input": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-7",
+          "kind": "other"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h7"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Ünïcödé — “quotes”"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p8"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "emoji 🔐 then "
+              },
+              {
+                "type": "text",
+                "text": "CJK 情報セキュリティ",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": " é combining"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "update": "AQ8BAAcBBnBvbGljeQMNcG9saWN5U2VjdGlvbgcAAQADDnNlY3Rpb25IZWFkaW5nBwABAQYEAAECHMOcbsOvY8O2ZMOpIOKAlCDigJxxdW90ZXPigJ0oAAEBA2JpZAF3BGItaDeHAQEDCXBhcmFncmFwaAcAARYGBAABFxBlbW9qaSDwn5SQIHRoZW4ghgElBGJvbGQCe32EASYcQ0pLIOaDheWgseOCu+OCreODpeODquODhuOCo4YBMgRib2xkBG51bGyEATMOIGXMgSBjb21iaW5pbmcoAAEWA2JpZAF3BGItcDgoAAEAA3VpZAF3A3MtNygAAQAEa2luZAF3BW90aGVyAA==",
+  "expected": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-7",
+          "kind": "other"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h7"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Ünïcödé — “quotes”"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p8"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "emoji 🔐 then "
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ],
+                "text": "CJK 情報セキュリティ"
+              },
+              {
+                "type": "text",
+                "text": " é combining"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "standard-skeleton",
+  "version": "1.0.0",
+  "title": "Standard (skeleton)",
+  "doc_type": "standard",
+  "frameworks": [],
+  "description": "A blank standard with the sections a standard cannot be approved without: purpose, scope and requirements.",
+  "review_cadence_months": 12,
+  "classification": "Internal",
+  "default": false,
+  "facts": [
+    {
+      "key": "parent_policy_reference",
+      "label": "Parent policy",
+      "description": "The policy this document implements, by title and reference.",
+      "example": "ICT and Information Security Policy (POL-IS-001)",
+      "value_type": "text"
+    },
+    {
+      "key": "document_owner_role",
+      "label": "Document owner role",
+      "description": "The role accountable for this document.",
+      "example": "Head of IT Operations",
+      "value_type": "text"
+    }
+  ],
+  "sections": [
+    {
+      "uid_seed": "purpose",
+      "heading": "Purpose",
+      "kind": "purpose",
+      "content": "This standard sets out the specific, measurable requirements that implement {{fact:parent_policy_reference}}.",
+      "guidance": "Name the policy requirement this standard makes specific.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "scope",
+      "heading": "Scope",
+      "kind": "scope",
+      "content": "This standard applies to the systems, information and people in scope of {{fact:parent_policy_reference}}, unless an exclusion is recorded here with its justification.",
+      "guidance": "Narrow the parent policy's scope if this standard covers less of it.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "requirements",
+      "heading": "Requirements",
+      "kind": "statements",
+      "content": "1. Each requirement in this standard must be specific, measurable and testable.\n2. The {{fact:document_owner_role}} must be able to show how each requirement is met.",
+      "guidance": "A standard is where technology-bound detail belongs: settings, versions, thresholds. Every value that depends on the client is a fact.",
+      "proposed_mappings": []
+    }
+  ]
+}

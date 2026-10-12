@@ -1,0 +1,129 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{.Cover.Title}}</title>
+<style>
+{{.ThemeCSS}}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  color: var(--text);
+  font-size: 10.5pt;
+  line-height: 1.45;
+}
+h1, h2, h3, h4 { color: var(--primary); font-weight: 700; margin: 0 0 6px; }
+h2 { font-size: 15pt; border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin-top: 4px; }
+h3 { font-size: 12pt; margin-top: 14px; }
+p { margin: 0 0 8px; }
+a { color: var(--accent); text-decoration: none; }
+.muted { color: var(--muted); }
+.small { font-size: 8.5pt; }
+
+/* ---- Watermark: repeats on every printed page via position:fixed ---- */
+.watermark {
+  position: fixed;
+  top: 42%;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  transform: rotate(-32deg);
+  transform-origin: center;
+  font-size: 86pt;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: rgba(139, 61, 46, 0.12);
+  text-transform: uppercase;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ---- Cover page ---- */
+.cover {
+  display: flex;
+  flex-direction: column;
+  min-height: 88vh;
+  page-break-after: always;
+  break-after: page;
+}
+.cover-banner {
+  background: var(--banner);
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 8px 0;
+  font-size: 11pt;
+}
+.cover-logo { max-height: 70px; max-width: 260px; margin: 36px 0 0; }
+.cover-org { font-size: 12pt; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 8px; }
+.cover-main { margin-top: auto; margin-bottom: auto; }
+.cover-title { font-size: 30pt; line-height: 1.1; color: var(--primary); margin: 0 0 8px; }
+.cover-subtitle { font-size: 14pt; color: var(--muted); margin: 0; }
+.cover-meta {
+  margin-top: 28px;
+  border-top: 1px solid var(--accent);
+  padding-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 28px;
+  font-size: 10pt;
+}
+.cover-meta .label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 8pt; }
+
+/* ---- Content sections ---- */
+.content { position: relative; z-index: 1; }
+section { margin-bottom: 18px; }
+.section-keep { break-inside: avoid; page-break-inside: avoid; }
+
+/* ---- Summary cards ---- */
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0; }
+.card { border: 1px solid #d8d2c6; border-radius: 8px; padding: 10px 12px; }
+.card .num { font-size: 20pt; font-weight: 800; color: var(--primary); line-height: 1; }
+.card .lbl { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-top: 4px; }
+
+/* ---- Charts ---- */
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: center; margin: 12px 0; }
+.chart-box { text-align: center; }
+.chart-box .chart-title { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+
+/* ---- Tables: repeat header on each page, avoid splitting rows ---- */
+table.datatable { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 8px 0 4px; }
+table.datatable caption { caption-side: top; text-align: left; font-weight: 700; color: var(--primary); padding: 4px 0; font-size: 10pt; }
+table.datatable thead { display: table-header-group; }
+table.datatable tfoot { display: table-footer-group; }
+table.datatable th {
+  background: var(--accent);
+  color: #fff;
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+table.datatable td { padding: 5px 8px; border-bottom: 1px solid #e0dbcf; vertical-align: top; }
+table.datatable tbody tr { break-inside: avoid; page-break-inside: avoid; }
+table.datatable tbody tr:nth-child(even) { background: #f6f3ec; }
+.mono { font-family: "Courier New", monospace; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-size: 8pt; font-weight: 700; white-space: nowrap; }
+.empty { padding: 10px; color: var(--muted); font-style: italic; }
+
+/* ---- Findings (keep each finding together) ---- */
+.finding { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e0dbcf; border-left: 4px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 10px 0; }
+.finding .finding-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.finding h4 { margin: 0; font-size: 11pt; }
+.finding dl { margin: 8px 0 0; }
+.finding dt { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-top: 6px; }
+.finding dd { margin: 2px 0 0; }
+</style>
+</head>
+<body>
+{{if .Watermark}}<div class="watermark">{{.Watermark}}</div>{{end}}
+{{template "cover" .}}
+<main class="content">
+{{template "content" .Data}}
+</main>
+</body>
+</html>{{end}}

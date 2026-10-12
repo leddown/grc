@@ -1,0 +1,302 @@
+{
+  "name": "lists",
+  "input": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-2",
+          "kind": "statements"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h2"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Policy statements"
+              }
+            ]
+          },
+          {
+            "type": "bulletList",
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {
+                  "bid": "b-l1"
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {
+                      "bid": "b-l1p"
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Access must be approved."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {
+                  "bid": "b-l2"
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {
+                      "bid": "b-l2p"
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Nested:"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "orderedList",
+                    "attrs": {
+                      "start": 1,
+                      "type": null
+                    },
+                    "content": [
+                      {
+                        "type": "listItem",
+                        "attrs": {
+                          "bid": "b-l3"
+                        },
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {
+                              "bid": "b-l3p"
+                            },
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "first"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "attrs": {
+                          "bid": "b-l4"
+                        },
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {
+                              "bid": "b-l4p"
+                            },
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "second"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "start": 3,
+              "type": null
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {
+                  "bid": "b-l5"
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {
+                      "bid": "b-l5p"
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "starts at three"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "update": "ASoBAAcBBnBvbGljeQMNcG9saWN5U2VjdGlvbgcAAQADDnNlY3Rpb25IZWFkaW5nBwABAQYEAAECEVBvbGljeSBzdGF0ZW1lbnRzKAABAQNiaWQBdwRiLWgyhwEBAwpidWxsZXRMaXN0BwABFQMIbGlzdEl0ZW0HAAEWAwlwYXJhZ3JhcGgHAAEXBgQAARgYQWNjZXNzIG11c3QgYmUgYXBwcm92ZWQuKAABFwNiaWQBdwViLWwxcCgAARYDYmlkAXcEYi1sMYcBFgMIbGlzdEl0ZW0HAAEzAwlwYXJhZ3JhcGgHAAE0BgQAATUHTmVzdGVkOigAATQDYmlkAXcFYi1sMnCHATQDC29yZGVyZWRMaXN0BwABPgMIbGlzdEl0ZW0HAAE/AwlwYXJhZ3JhcGgHAAFABgQAAUEFZmlyc3QoAAFAA2JpZAF3BWItbDNwKAABPwNiaWQBdwRiLWwzhwE/AwhsaXN0SXRlbQcAAUkDCXBhcmFncmFwaAcAAUoGBAABSwZzZWNvbmQoAAFKA2JpZAF3BWItbDRwKAABSQNiaWQBdwRiLWw0KAABPgVzdGFydAF9ASgAATMDYmlkAXcEYi1sMocBFQMLb3JkZXJlZExpc3QHAAFWAwhsaXN0SXRlbQcAAVcDCXBhcmFncmFwaAcAAVgGBAABWQ9zdGFydHMgYXQgdGhyZWUoAAFYA2JpZAF3BWItbDVwKAABVwNiaWQBdwRiLWw1KAABVgVzdGFydAF9AygAAQADdWlkAXcDcy0yKAABAARraW5kAXcKc3RhdGVtZW50cwA=",
+  "expected": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-2",
+          "kind": "statements"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h2"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Policy statements"
+              }
+            ]
+          },
+          {
+            "type": "bulletList",
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {
+                  "bid": "b-l1"
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {
+                      "bid": "b-l1p"
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Access must be approved."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {
+                  "bid": "b-l2"
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {
+                      "bid": "b-l2p"
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Nested:"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "orderedList",
+                    "attrs": {
+                      "start": 1,
+                      "type": null
+                    },
+                    "content": [
+                      {
+                        "type": "listItem",
+                        "attrs": {
+                          "bid": "b-l3"
+                        },
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {
+                              "bid": "b-l3p"
+                            },
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "first"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "attrs": {
+                          "bid": "b-l4"
+                        },
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {
+                              "bid": "b-l4p"
+                            },
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "second"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "start": 3,
+              "type": null
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {
+                  "bid": "b-l5"
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {
+                      "bid": "b-l5p"
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "starts at three"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

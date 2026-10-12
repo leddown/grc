@@ -1,0 +1,45 @@
+{{define "content"}}
+<section class="section-keep">
+  <h2>Assessment Overview</h2>
+  {{if .Framework}}<p><strong>Framework:</strong> {{.Framework}}</p>{{end}}
+  {{if .System}}<p><strong>System:</strong> {{.System}}</p>{{end}}
+  {{if .Scope}}<p><strong>Scope:</strong> {{.Scope}}</p>{{end}}
+  {{if .Assessor}}<p><strong>Assessor:</strong> {{.Assessor}}{{if .AssessmentDate}} &middot; {{.AssessmentDate}}{{end}}</p>{{end}}
+  {{if .Narrative}}<p>{{.Narrative}}</p>{{end}}
+  <div class="cards">
+    <div class="card"><div class="num">{{.Summary.TotalControls}}</div><div class="lbl">Controls Assessed</div></div>
+    <div class="card"><div class="num">{{.Summary.ImplementationRate}}%</div><div class="lbl">Satisfied (of assessed)</div></div>
+    <div class="card"><div class="num">{{.Summary.NotSatisfied}}</div><div class="lbl">Not Satisfied</div></div>
+    <div class="card"><div class="num">{{.Summary.Deficiencies}}</div><div class="lbl">Deficiencies</div></div>
+  </div>
+  <div class="charts">
+    <div class="chart-box"><div class="chart-title">Assessment Results</div>{{.ResultChart}}</div>
+    <div class="chart-box"><div class="chart-title">Controls by Family</div>{{.FamilyChart}}</div>
+  </div>
+</section>
+
+<section>
+  <h2>Control Assessment Results</h2>
+  {{template "datatable" .ResultsTable}}
+</section>
+
+<section>
+  <h2>Identified Deficiencies</h2>
+  {{if .Deficiencies}}
+    {{range .Deficiencies}}
+    <div class="finding">
+      <div class="finding-head">
+        <h4>{{.ControlID}} &mdash; {{.Weakness}}</h4>
+        <span class="badge" style="background:{{.Severity.Color}}">{{.Severity}}</span>
+      </div>
+      <dl>
+        <dt>Recommended Remediation</dt><dd>{{.Remediation}}</dd>
+        <dt>Owner</dt><dd>{{.Owner}}{{if .Milestone}} &middot; milestone {{.Milestone}}{{end}}</dd>
+      </dl>
+    </div>
+    {{end}}
+  {{else}}
+    <p class="muted">No control deficiencies were identified during this assessment.</p>
+  {{end}}
+</section>
+{{end}}

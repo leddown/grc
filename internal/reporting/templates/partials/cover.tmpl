@@ -1,0 +1,16 @@
+{{define "cover"}}<section class="cover">
+  {{if not .Classification.IsZero}}<div class="cover-banner">{{.Classification}}</div>{{end}}
+  {{if .Branding.LogoDataURI}}<img class="cover-logo" src="{{.Branding.LogoDataURI}}" alt="{{.Branding.OrgName}} logo">{{end}}
+  <div class="cover-org">{{.Branding.OrgName}}</div>
+  <div class="cover-main">
+    <h1 class="cover-title">{{.Cover.Title}}</h1>
+    {{if .Cover.Subtitle}}<p class="cover-subtitle">{{.Cover.Subtitle}}</p>{{end}}
+  </div>
+  <div class="cover-meta">
+    {{if .Cover.Author}}<div><div class="label">Author</div><div>{{.Cover.Author}}</div></div>{{end}}
+    {{if .Cover.Owner}}<div><div class="label">Owner</div><div>{{.Cover.Owner}}</div></div>{{end}}
+    {{if .Cover.Version}}<div><div class="label">Version</div><div>{{.Cover.Version}}</div></div>{{end}}
+    {{if not .Cover.Classification.IsZero}}<div><div class="label">Classification</div><div>{{.Cover.Classification}}</div></div>{{end}}
+    <div><div class="label">Generated</div><div>{{formatTime .Cover.GeneratedAt}}</div></div>
+  </div>
+</section>{{end}}

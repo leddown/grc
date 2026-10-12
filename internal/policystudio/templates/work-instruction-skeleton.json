@@ -1,0 +1,45 @@
+{
+  "id": "work-instruction-skeleton",
+  "version": "1.0.0",
+  "title": "Work instruction (skeleton)",
+  "doc_type": "work_instruction",
+  "frameworks": [],
+  "description": "A blank work instruction with the sections one cannot be approved without: purpose and steps.",
+  "review_cadence_months": 12,
+  "classification": "Internal",
+  "default": false,
+  "facts": [
+    {
+      "key": "parent_policy_reference",
+      "label": "Parent policy",
+      "description": "The policy this document implements, by title and reference.",
+      "example": "ICT and Information Security Policy (POL-IS-001)",
+      "value_type": "text"
+    },
+    {
+      "key": "document_owner_role",
+      "label": "Document owner role",
+      "description": "The role accountable for this document.",
+      "example": "Head of IT Operations",
+      "value_type": "text"
+    }
+  ],
+  "sections": [
+    {
+      "uid_seed": "purpose",
+      "heading": "Purpose",
+      "kind": "purpose",
+      "content": "This work instruction describes exactly how to perform one task under {{fact:parent_policy_reference}}.",
+      "guidance": "One task, on one system.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "steps",
+      "heading": "Steps",
+      "kind": "procedure_steps",
+      "content": "1. Describe the first step precisely enough that someone new to the task can follow it.\n2. Describe the next step.\n\nThe {{fact:document_owner_role}} must be told when a step no longer matches the system.",
+      "guidance": "Precise enough to follow without prior knowledge; screenshots are not supported, so describe what to look for.",
+      "proposed_mappings": []
+    }
+  ]
+}

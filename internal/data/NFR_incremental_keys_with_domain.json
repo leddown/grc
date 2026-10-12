@@ -1,0 +1,1084 @@
+{
+  "1": {
+    "Summary": "0.1 Solution architecture must be documented",
+    "ID": 0.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "PL-8, CM-8",
+    "Implementation": "Create, at minimum, documentation equivalent to C4 levels 1 to 3 diagrams (Context, Container, Component) and architecture description of the solution.\n Publish the architecture description, all relevant vendor-provided documentation, RFI/RFP questionnaires and results of assessments, and list assumptions, known security constraints and internal dependencies (on other services or platforms) on Luminor Confluence and share the link with the assigned Security Architect",
+    "Additional Details": "The product team must document solution architecture, including component-level decomposition, interfaces, data flows, and relevant technology descriptions, sufficient to determine NFR applicability and assess security control implementation across the full solution scope."
+  },
+  "2": {
+    "Summary": "1.1. Applications must be free of known vulnerabilities",
+    "ID": 1.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-2, RA-5, SA-11",
+    "Implementation": "Use SonarQube for Static Application Security Testing (SAST). It helps us identify code-level vulnerabilities, enforce coding standards, and maintain code quality across our projects.\n Use Jfrog Xray for Software Bill of Materials (SBOM). It provides a detailed inventory of all software components used in an application, including open-source and third-party libraries.\n Leverage JFrog Xray for Software Composition Analysis (SCA). It scans our open-source dependencies for known vulnerabilities, license compliance issues, and outdated components.\n JFrog Artifactory is used as our artifact repository, ensuring controlled and traceable management of all software components.\n For Dynamic Application Security Testing (DAST), we do not have tools yet onboarded. Pilot is planned for Q4 2025.This requirement will be updated.Security Components list for SSDLC -¬†¬†[Secure Software Development Life Cycle. Security components - Security & Privacy - Global Site|https://confluence.luminorgroup.com/pages/viewpage.action?spaceKey=SECPRIV&title=Secure+Software+Development++Life+Cycle.+Security+components]\n Proposed conceptual flow -¬†[Luminor Secure Software Development Lifecycle architecture. Framework (Draft/Proposal) - Security & Privacy - Global Site|https://confluence.luminorgroup.com/pages/viewpage.action?pageId=362848101]",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "SAST (Static Application Security Testing), DAST (Dynamic Application Security Testing), SCA (Software Composition Analysis) and SBOM (Software Bill of Materials) checks must be performed.\n Applications must follow OWASP and language/framework-specific secure coding standards.\n All software components and dependencies must be regularly updated.\n All identified vulnerabilities must be remediated within timelines based on severity"
+  },
+  "3": {
+    "Summary": "1.2. Sessions must be protected from attacks",
+    "ID": 1.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-23, SC-8",
+    "Implementation": "Use Gitlab secret detection to prevent secrets from being added to the code (detection on git commit). Refer to documentation -¬†[Secret detection | GitLab Docs|https://docs.gitlab.com/user/application_security/secret_detection/], [Session Management - OWASP Cheat Sheet Series|https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html]\n For web applications, always use HTTPS, with:\n HSTS long max age, includeSubDomains, preload directives\n CSP (the strictest the app can support without damaging functionality), define default-src, script-src, img-src, style-src\n X-Frame-Options: SAMEORIGIN or DENY\n cookie attributes: Secure, HttpOnly, SameSite\n no session identifiers in URLs or localStorage\n If web application is onboarded to Cloudflare WAF - HSTS and other security settings can be enforced through Cloudflare. Check with Network team.",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "Each session must use a system-generated, unique, random and non-persistent session identifier.\n All HTTP responses from web applications and APIs must include appropriate security headers relevant to their use case."
+  },
+  "4": {
+    "Summary": "1.3. Secure-by-design and privacy-by-design principles must be applied to the solution and all its components",
+    "ID": 1.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SA-8, AC-6, AC-3, PL-8",
+    "Implementation": "Deny access by default; only allow what is explicitly permitted. (e.g. Only users with the admin role can access /admin route. All others are denied by default.);\n Users, services, and processes should have the minimum access necessary to perform their function. (e.g. A database user for a reporting service is granted read-only access to specific tables, not full access to the entire database. In AWS, IAM roles are scoped to specific actions and resources, etc.).\n Collect, store and process only the minimum data needed for the stated purpose",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "Implement fail-safe defaults, least privilege, and data minimization principles throughout the architecture."
+  },
+  "5": {
+    "Summary": "1.4. Unverified external code must not be used",
+    "ID": 1.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SR-4, SR-11, SI-7, SA-9",
+    "Implementation": "Use Jfrog artifactory as repository for dependencies, both internal and external.\n Utilize methods such as CSP (Content Security policy) and SRI (Sub resource integrity) hashing to combat JavaScript skimming attacks\n Maintain an inventory of all scripts and implement a method to check their authenticity",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "No external code or artifacts may be used unless:\n They are retrieved through approved repositories or from approved and vetted sources with tamper-evident chain of custody\n They undergo the same secure SDLC controls as internal code.\n They pass an acceptance assessment with retained evidence (SBOM, security testing)\n They are cryptographically verified for authenticity before use"
+  },
+  "6": {
+    "Summary": "1.5. All internal and external actor input must be validated",
+    "ID": 1.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-10",
+    "Implementation": "On frontend apps use libraries like Yup, Zod, e.t.c.\n On backend use DTOs and field validation rules.\n Sanitize request Headers and Payloads. Spring boot has built-in header protection.\n For payload sanitization Apache Common Texts, OWASP Java HTML Sanitizer or other similar tools.",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "All internal and external actor inputs must be validated on both client and server sides, with server side being mandatory and authoritative.\n Request payloads and metadata (e.g. HTTP headers) must be sanitized and validated.\n The system must behave predictably and in a documented manner when invalid inputs are received"
+  },
+  "7": {
+    "Summary": "1.6. Information about the solution must not be exposed to external actors",
+    "ID": 1.6,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-11, SI-12",
+    "Implementation": "If it is required to log PII data, mask it before printing to logs.\n Set up the application to display only generic error messages\n Configure frontend to sanitize messages and strip sensitive debug info",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "Debug and verbose modes must be disabled in production.\n Error messages in production systems/applications must be generic and must not disclose internal details, such as component names, configuration parameters, etc.\n All exceptions must be caught and logged securely.\n In the event of a security incident or investigation, log levels may be temporarily elevated (e.g., to debug or trace) to support root cause analysis, provided this is done in a controlled and auditable manner and for a limited time necessary for the analysis.\n Limit the detail of error messages (e.g., generic messages for failed logins such as 'Authentication failed' instead of specifying 'Incorrect password') to only data required for the business purpose and user role.\n Control and limit data exposure through interfaces such as clipboard access, file uploads, and drive mappings."
+  },
+  "8": {
+    "Summary": "1.7. Confidential or strictly confidential data must not be stored in application source code",
+    "ID": 1.7,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-5",
+    "Implementation": "Automated secret scanning by CI/CD tools\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "Confidential or strictly confidential data (e.g., PII, cryptographic keys, credentials, API keys, tokens, certificates) must not be stored in the source code, configuration files, scripts and test data."
+  },
+  "9": {
+    "Summary": "1.8. Confidential or strictly confidential data must not be stored by application locally on user devices",
+    "ID": 1.8,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-19, SC-28",
+    "Implementation": null,
+    "Domain": "Secure System & Software Development",
+    "Additional Details": null
+  },
+  "10": {
+    "Summary": "1.9. All integrations with external actors must be secure",
+    "ID": 1.9,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7, SC-8, AC-4",
+    "Implementation": "Luminor has different EBS solutions implemented, so decision which to use should be done by architect. At the moment we have CXM, IBM MB, IBM ACE.\n IBM ACE is considered as Target ESB which should be used.\n If EBS solution is not used as gateway to external system, proper measures should be enforced in the system, such as:\n Log all requests and responses (with confidential or strictly confidential data redacted or masked)Include metadata: timestamp, user ID, IP address, endpoint, and response status\n Integrate with centralized logging systems (ELK, Grafana)Encrypt all data at rest and in transit\n Apply data minimization: only send/receive what‚Äôs strictly necessary\n Maintain audit trails for all integration activities",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "All integrations with external actors should be routed through approved enterprise integration layers, which enforces standardized logging, access control, and data protection policies.\n In cases where direct integration is necessary and enterprise middleware is not used, the application must implement equivalent controls, including:\n Comprehensive logging of all data exchanges\n Strict access control mechanisms\n Robust data protection measures (e.g., encryption, masking, rate limiting)"
+  },
+  "11": {
+    "Summary": "1.10. Third-party systems or components must securely integrate with Luminor solutions",
+    "ID": 1.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SR-3, SR-5, SC-7, AC-4",
+    "Implementation": null,
+    "Domain": "Secure System & Software Development",
+    "Additional Details": null
+  },
+  "12": {
+    "Summary": "1.11. Application authenticity must be verifiable by users",
+    "ID": 1.11,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-7(15), SR-4",
+    "Implementation": "Web app:\n Use subdomains of Luminor official domains for web applications.\n Use proper certificates (see NFRs on Cryptography)Implement HSTS and enable TLS certificate pinning.\n Mobile app:\n Use available functionality from a specific mobile app store to validate authenticity.\n Embed app integrity checks:\n Google Play Integrity API - request a signed token, send it to backend, verify integrity server-side.\n Apple App Attest & DeviceCheck - create keys, validate on backend.\n Desktop app:\n Should be signed and provided via the official distribution channels only;\n Incorporate automatic code-signing step into build pipeline (e.g. via Jenkins with signing certificates).",
+    "Domain": "Secure System & Software Development",
+    "Additional Details": "Applications must be verifiably authentic to users:\n Web apps must use official subdomains and secure HTTP settings\n Mobile apps must use app store protections (e.g., signature validation).\n Desktop apps must be digitally signed and distributed via trusted channels."
+  },
+  "13": {
+    "Summary": "2.1. Expiration dates and revocation mechanisms must be defined for all keys and certificates",
+    "ID": 2.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-12, SC-17",
+    "Implementation": "Currently we have maximum 1 year certificate validity setting in Luminor\n Set up certificate management and key management processes that enforce validity settings and revocation procedures\n Align with PKI Team within the Security Engineering Team\n Refer to¬†Certificate Management Process - DevOps - Global Site",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "Cryptographic exposure window must be limited in case of compromise.\n Compromised keys must be invalidated quickly.\n Clients must perform certificate path validation and status checks using OCSP or CRL."
+  },
+  "14": {
+    "Summary": "2.2. The solution must integrate with the Central Certificate Inventory and Management System",
+    "ID": 2.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-12, SC-17",
+    "Implementation": "Align with PKI Team within the Security Engineering Team\n Refer to¬†Certificate Management Process - DevOps\n Cert-Manager automates TLS certificate management for Kubernetes workloads.",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "All digital certificates must be automatically discovered, tracked, and managed."
+  },
+  "15": {
+    "Summary": "2.3. All digital certificates must be interoperable, verifiable, and secure.",
+    "ID": 2.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-13, SC-17",
+    "Implementation": "Raise a new certificate request to obtain a certificate for your solution\n Use the following certificate Authorities (Platforms) in process Scope:\n DigiCert\n OneLum CA & Sub CAs\n Azure AD\n Amazon Web Services (AWS)\n Cloud CXM\n Let`s encrypt\n Tieto\n Smart ID\n Visa\n Evry\n There is an initiative to cut unnecessary CAs for internal use. Contact Security Engineering Team to verify what CA are in use.",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "Digital certificates must:\n comply with current industry standards such as X.509 v3, ¬†¬†- be issued by a trusted Certificate Authority\n have a validity period aligned with CA/Browser Forum Baseline Requirements (currently transitioning toward a maximum of 398 days, and eventually 47 days by 2029)"
+  },
+  "16": {
+    "Summary": "2.4. The solution must only use cryptographic algorithms recognized as secure by current industry standards",
+    "ID": 2.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-13",
+    "Implementation": "List of acceptable cryptographic algorithms (both encryption and hashing):\n AES-CBC mode\n AES-GCM mode\n DH-2048\n RSA-2048\n DSA-2048\n DH-3072\n RSA-3072\n DSA-3072\n ECDH-256\n ECDSA-256\n ECDH-384\n ECDSA-384\n SHA-256\n SHA-384\n SHA-512\n HMAC-SHA-1\n HMAC-SHA-256\nOther standards: PCI-DSS v4.0.1 Requirement 3.7",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "Cryptographic algorithms must:\n Be approved or recommended by an industry standard (NIST -¬†Cryptographic Standards and Guidelines | CSRC) or a reputable vendor (Microsoft -¬†Microsoft SDL cryptographic recommendations | Microsoft Learn).\n Be secure for key or certificate generation and signing, including RSA (2048 bits or higher), ECDSA (P-256 or stronger).\n Provide secure hashing, like SHA-256 or stronger.\n Provide at least 128-bit security strength - such as AES-GCM (256-bit), AES-CBC, ECDH/ECDSA-256 or higher, and SHA-256 or stronger, to protect data at rest.\n Be aligned with internal and external regulations applicable to the system"
+  },
+  "17": {
+    "Summary": "2.5. All certificates must be renewed automatically",
+    "ID": 2.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-17",
+    "Implementation": "Set this up in Certificate Management System",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "All certificates must be automatically renewed where supported, to minimize the risk associated with key compromise or certificate mis-issuance.\n Automated renewal reduces the window of exposure for stolen or mis-issued certificates, limits manual errors, and ensures continuous service availability and compliance with security policies."
+  },
+  "18": {
+    "Summary": "2.6. Cryptographic keys and secrets must be regularly rotated",
+    "ID": 2.6,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-12",
+    "Implementation": "Contact PKI team\n Set this up in Certificate Management System\n for external facing - done via Cloudflare\n for internal:\n service mesh - automatically done on Istio side",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "Expiration dates and automatic key rotation procedure must be defined\n Manual rotation is permitted only where automation is technically impossible\n Rotation failures must be detected, alerted and remediated before expiration\n Rotation intervals must be defined per key type"
+  },
+  "19": {
+    "Summary": "2.7. Cryptographic keys and secrets must be immediately and securely disabled/deleted when required",
+    "ID": 2.7,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-12",
+    "Implementation": "Raise a certificate revocation request for decommissioning a certificate\n Raise a security incident in case if certificate is compromised",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "When keys reach their expiry date and not planned for rotation (one time keys, keys for decommissioned systems).When keys are compromised."
+  },
+  "20": {
+    "Summary": "2.8. Cryptographic keys and secrets must be unique for each system and environment",
+    "ID": 2.8,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-12",
+    "Implementation": "Use a centralized KMS (like AWS KMS) that isolates keys by environment.\n Implement access policies ensuring each application only retrieves its specific keys.",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "If one key is exposed, it should not affect other systems.\n No key or secret should be reused across systems or environments."
+  },
+  "21": {
+    "Summary": "2.9. Cryptographic key and secret usage must be tracked",
+    "ID": 2.9,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-2, AU-6, AU-12",
+    "Implementation": "Configure the KMS logs to capture key operations: generation, retrieval, use, rotation, deletion.\n AWS KMS supports Cloudtrail for logging\n Conduct periodic reviews of logs for anomalies",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "Audit logging to track usage of keys and secrets must be implemented\n All cryptographic key and secret lifecycle events (creation, access, use, rotation, revocation, deletion, failed access) must be logged\n See [[SCL-70] 8.2. Systems and components must support logging that captures a chronological record of user activities. - Jira|https://luminorgroupcloud.atlassian.net/browse/SCL-70] for log contents."
+  },
+  "22": {
+    "Summary": "2.10. All cryptographic keys and secrets must be protected from exposure, unauthorized changes, loss or accidental deletion",
+    "ID": 2.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-12, SC-13, AC-3",
+    "Implementation": "Store all keys and secrets in a Hardware Security Module (HSM) or key vault like AWS Secrets Manager.\n Implement role-based access control (RBAC) to restrict who can access or modify keys.\n Enable multi-party approval for key changes or recovery (e.g., two-person rule).\n Set up automated key backups with secure storage and encryption.\n Apply key lifecycle management to handle key creation, rotation, and retirement securely.\n Deploy redundant HSMs or secure vaults to prevent key loss during outages.\nOther standards: PCI-DSS v4.0.1 Requirement 3.6.1, PCI-DSS v4.0.1 Requirement 3.6.1.2, PCI-DSS v4.0.1 Requirement 3.7, Special publication 800-171",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "Secure tamper-proof key storage that separates keys from data they protect and prevents their exposure (Key Management Service or a Secure Cryptographic Device like HSM) must be implemented.\n Where data-encrypting keys are stored in an HSM, the HSM interaction channel should be protected to prevent interception of encryption or decryption operations.\n Keys must be stored in encrypted form.\n Keys must not be embedded in application code or stored/transferred in plain text.\n Only authorized systems and users should be able to access or update keys and secrets.\n Key-encrypting keys must be at least as strong as the data-encrypting keys they protect.\n Key-encrypting keys must be stored separately from data-encrypting keys.\n Keys must be stored in the fewest possible locations"
+  },
+  "23": {
+    "Summary": "2.11. All data in transit must be encrypted",
+    "ID": 2.11,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-8",
+    "Implementation": "For TLS:\n Ensure that application/system and its underlying frameworks support TLS 1.2 or higher. Update if necessary (for example, .NET Framework 4.6.2 and higher natively support TLS 1.2,¬†Windows 10 and Windows Server 2012 and later natively support TLS 1.2, for Java 7 update to at least 1.7.0_131., etc.)Enable TLS 1.2. or higher at OS level if necessary\n Configure the application to use TLS 1.2 or higher\n Disable legacy ciphers\n For Middleware Without TLS (e.g., Sonic):\n Ensure all communication is routed through a VPN that uses strong encryption.\n Validate that no traffic bypasses the VPN.\n Regularly audit configurations to confirm secure routing.",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": null
+  },
+  "24": {
+    "Summary": "2.12. Confidential or strictly confidential data at rest must be encrypted or protected via equally effective controls",
+    "ID": 2.12,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-28",
+    "Implementation": "Align protection level with sensitivity, threat, and risk assessment outcomes\n For encryption algorithms refer to [[SCL-17] 2.4. The solution must only use cryptographic algorithms recognized as secure by current industry standards - Jira|https://luminorgroupcloud.atlassian.net/browse/SCL-17]\n For AWS cloud - 2 ways of implementation:\n Using AWS Key Management Service (AWS KMS) encryption keys - EBS/EFS/S3\n Utilizing transparent data encryption (TDE) - database encryption\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]",
+    "Domain": "Cryptographic Protection",
+    "Additional Details": "Information at rest must be protected to ensure data confidentiality and integrity consistent with organizational risk strategy."
+  },
+  "25": {
+    "Summary": "3.1. All cybersecurity solutions deployed within Luminor must be updated in a timely manner",
+    "ID": 3.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-2, RA-5",
+    "Implementation": null,
+    "Domain": "Security Solutions",
+    "Additional Details": null
+  },
+  "26": {
+    "Summary": "3.2. An Intrusion Detection System (IDS) and/or Intrusion Prevention System (IPS) must be deployed across relevant enterprise network segments and at the enterprise network perimeter",
+    "ID": 3.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-4, SC-7, IR-5",
+    "Implementation": "For on-prem:\n PaloAlto - IPS/IDS is covered automatically for all external inbound and outbound connections\n For verification - contact Network Team\n For AWS - no IPS/IDS is available. Compensating controls:\n Ingress traffic on Cloud (for new bank) is going through CloudFlare (DDoS protection and WAF)\n Applications are published using load balancers, which are using security groups to accept traffic only from CloudFlare",
+    "Domain": "Security Solutions",
+    "Additional Details": "Decide on IPS/IDS deployment based on risk, document the decision\n Monitor, detect, and respond to anomalous or malicious network activity in real time, including segmented, restricted, and internal subnets.\n Analyze traffic and event patterns for malicious intent.\n Block or alarm potential network anomalies.\n Use the traffic/event baselines to tune system-monitoring devices to reduce the number of false positives and the number of false negatives.\n Heighten the level of information system monitoring activity for imminent threats to organizational operations and for the institution‚Äôs most critical systems and server;\n The system must have a repeatable process to regularly update known intrusion signatures;"
+  },
+  "27": {
+    "Summary": "3.3. Firewall solutions, Web Application Firewalls (WAF), and Distributed Denial of Service (DDoS) protection mechanisms must be deployed at the enterprise network perimeter",
+    "ID": 3.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7, SC-5, SI-4",
+    "Implementation": "Onboard to Cloudflare WAF (F5 WAF solution is gradually decommissioned and no longer a solution for new projects) -¬† inform Network team\n Cloudflare L3-L4 DDoS protection is in use by default\n CloudFlare is strategic solution for both on-prem and AWS for any publicly exposed services.",
+    "Domain": "Security Solutions",
+    "Additional Details": "Malicious or unauthorized incoming traffic must be monitored, inspected, filtered, and mitigated in real time"
+  },
+  "28": {
+    "Summary": "3.4. API gateways must be deployed for all publicly accessible service endpoints",
+    "ID": 3.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7, AC-4, IA-2",
+    "Implementation": "Use Apigee API gateway which is utilized to provide external access to internal API.\n Use Istio API gateway which is utilized for service-to-service communication.¬†Istio as a service is supported by Cloud Platform, but access policies have to be set up by VS or Project team\n Use API gateways to centralize all inbound traffic to public endpoints\n Allow no direct access to services outside gateway\n Require strong authentication at the gateway\n Block invalid payloads, implement input validation\n Use fine-graded policies to make access decisions\n Ensure gateways default to deny-all approach\n Enforce rate limiting and quotas per API, user or IP",
+    "Domain": "Security Solutions",
+    "Additional Details": "Centralized security controls, including authentication, authorization, rate limiting, input validation, and logging must be enforced."
+  },
+  "29": {
+    "Summary": "3.5. Data received from external actors must be validated before being processed by internal systems",
+    "ID": 3.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-7, SI-10",
+    "Implementation": "Examples of activities which should be done:\n Antivirus/Malware Scanning: Use tools like Microsoft Defender to scan files upon receipt.\n Checksum Verification: Validate file integrity using SHA-256 or similar hashes.\n File Type Validation: Allow only specific MIME types and extensions (e.g., .pdf, .docx).",
+    "Domain": "Security Solutions",
+    "Additional Details": "All data (including files) received from external actors‚Äîwhether via email, uploads, or other channels‚Äîmust be validated and verified for integrity, authenticity, and security before being processed by internal systems."
+  },
+  "30": {
+    "Summary": "3.6. All enterprise workstations and servers must be equipped with a centrally managed antivirus or endpoint protection solution",
+    "ID": 3.6,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-3, SI-4",
+    "Implementation": "Use Microsoft Defender EDR for new workstations and Azure VMs\n For AWS - use Wiz\n For old/legacy systems - use TrendMicro\nThis requirement will be updated later.",
+    "Domain": "Security Solutions",
+    "Additional Details": "Malware and other malicious software threats must be detected and blocked."
+  },
+  "31": {
+    "Summary": "3.7. Configuration settings critical for core system functionality must be monitored and protected by centrally managed integrity tool",
+    "ID": 3.7,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-7, CM-3, CM-6",
+    "Implementation": "Use Trend Micro Deep Security File Integrity Monitoring solution\n AWS Config tracks and records configuration changes",
+    "Domain": "Security Solutions",
+    "Additional Details": "A solution to monitor critical configuration and protect it from unauthorized changes or corruption must be implemented."
+  },
+  "32": {
+    "Summary": "3.8. All endpoint telemetry must be collected and analyzed",
+    "ID": 3.8,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-4, AU-2, AU-6, AU-12",
+    "Implementation": "Integrate EDR logs with SIEM for correlation and hunting. Luminor currently uses QRadar SIEM solution for on-prem and Wiz+ Cloudtrail for AWS cloud.\n Utilize Grafana for telemetry monitoring.",
+    "Domain": "Security Solutions",
+    "Additional Details": "Telemetry must provide additional visibility and support proactive threat hunting and incident response."
+  },
+  "33": {
+    "Summary": "3.9. All components must have the latest software security updates installed",
+    "ID": 3.9,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-2, MA-3, RA-5",
+    "Implementation": "As per Luminor Patching procedure Patch Coordinator is responsible for patching and list maintenance of which systems should be patched.\n Critical vulnerabilities must be patched immediately or within 30 days of release at latest to ensure systems remain secure and compliant with organizational policies.\n Depending on OS we have different repositories:\n for Windows patch repo is WSUS,\n for RedHat Satellite server and Solaris we use Oracle repo.\n Regardless of the way of patching - manual or through patch manager ( it's used for some of Win and Lin servers) patches are being taken from repos configured on server.¬†We are running monthly patching (on supported systems). Starting always 2nd Wednesday of the month up and ending before 2nd Tuesday of following month\n[https://luminorgroup.sharepoint.com/:w:/r/sites/InternalRegulations/_layouts/15/Doc.aspx?sourcedoc=%7B45BE7053-BFA2-4AD2-A19E-BA9388909324%7D&file=Patch%20Management%20Procedure.docx&action=default&mobileredirect=true&DefaultItemOpen=1|https://luminorgroup.sharepoint.com/:w:/r/sites/InternalRegulations/_layouts/15/Doc.aspx?sourcedoc=%7B45BE7053-BFA2-4AD2-A19E-BA9388909324%7D&file=Patch%20Management%20Procedure.docx&action=default&mobileredirect=true&DefaultItemOpen=1]",
+    "Domain": "Security Solutions",
+    "Additional Details": "All components, including workstations and servers, must have the latest software security updates installed in a timely manner, based on a risk-based assessment and vendor recommendations.\n Unpatched operating systems and software are among the most common attack vectors exploited by threat actors. Ensuring that endpoints are regularly updated reduces the risk of compromise."
+  },
+  "34": {
+    "Summary": "3.10. All DNS queries and web traffic from endpoints must be routed through secure, policy-enforced DNS and web filtering services¬†",
+    "ID": 3.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-22, AC-4(4), SC-7",
+    "Implementation": "Planned approach:\n Cloudflare - primary DNS provider, used for publicly exposed assets\n Route 53 - DNS service used for internal purposes\n Current situation:\n Depends on DNS zones - some zones are on Cloudflare (e.g. luminor.lt, luminor.lv), some - on Route 53 (lumsolutions.net, lumcloud.net)\n Approach Network Team for requests and clarification\n Currently some subdomains in Route 53 are also publicly resolvable. This requirement will be updated.",
+    "Additional Details": "Access to malicious or unauthorized content must be blocked\n Datacenter assets (servers) must use internal DNS services for all connections.\n Endpoints (laptops) are using public DNS (depends on provider, location, etc.), with split tunneling."
+  },
+  "35": {
+    "Summary": "3.11. All outgoing network traffic from systems must be inspected using security filtering and threat intelligence mechanisms",
+    "ID": 3.11,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7, SI-4, AC-4",
+    "Implementation": "On-prem:\n egress traffic goes through NGFW by default\n Leverages threat intelligence feeds to detect traffic outgoing to malicious IPs/domains\n Filtering ACL rules + IPS/IDS for outgoing unencrypted traffic\n For both on-prem and cloud - packet inspection is not there and not planned for near future.\n For Cloud Platform:\n Fortinet external NGFW for egress, centralized.¬†(to be replaced by Palo Alto in the future)\n Ingress is decentralized via multiple Internet Gateways\n Policy for environments Dev - Prod - deny by default\n Sandboxes - allowed, monitored",
+    "Domain": "Security Solutions",
+    "Additional Details": "Ensure compliance with enterprise internet access policies\n Detect potential data exfiltration or command-and-control activity.\n Centralized egress approach must be used to effectively control outgoing traffic"
+  },
+  "36": {
+    "Summary": "4.1. All physical connection ports must be managed, disabled, or removed where not explicitly required",
+    "ID": 4.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "CM-7, MP-7",
+    "Implementation": "Endpoint device controls are applied automatically via policy to all Luminor managed workstations",
+    "Domain": "Infrastructure Security",
+    "Additional Details": "All physical connection ports (e.g., USB, Thunderbolt, FireWire) and input/output (I/O) devices (e.g., CD/DVD drives) must be managed, disabled, or removed where not explicitly required."
+  },
+  "37": {
+    "Summary": "4.2. All systems and components that generate logs must synchronize their system clocks with trusted and authorized Network Time Protocol (NTP) servers",
+    "ID": 4.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-8",
+    "Implementation": "For on-prem:\n Configure components to use Luminor NTP servers to synchronize time.\n Here are the details on Luminor NTP servers configuration:¬†[https://luminorgroupcloud.atlassian.net/wiki/spaces/DCP/pages/131609383/NTP+Servers+Details|https://luminorgroupcloud.atlassian.net/wiki/spaces/DCP/pages/131609383/NTP+Servers+Details|smart-link]\n For AWS:\n EC2 instances: Amazon provides NTP via the Amazon Time Sync Service ({{169.254.169.123}}). This is centrally managed by AWS (strongly recommended).\n managed services (like RDS, ECS, Lambda) use Amazon Time Sync Service by default, cannot be changed.",
+    "Domain": "Infrastructure Security",
+    "Additional Details": "Accurate and consistent timestamping must be ensured\n Procedures and process for exception handling must be implemented."
+  },
+  "38": {
+    "Summary": "4.3. Printing of Luminor company data must be restricted to authorized and managed printing systems",
+    "ID": 4.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-41, AC-6",
+    "Implementation": "Endpoint device controls are applied automatically via policy to all Luminor managed workstations\n Access to printing devices must be physically controlled (authentication cards or PINS or Passwords or RFID);\n Printing logging must be implemented;\n Printing and scanning must be available only from company managed endpoint devices;\n Scanning must be available only to company resources such as personal company mailbox, personal company data storage service;",
+    "Domain": "Infrastructure Security",
+    "Additional Details": "Any attempt to print data using unmanaged or unauthorized systems must be blocked.\n USB printing must blocked.BT printing must blocked.\n Network printing must be blocked.\n Procedures and process for exception handling must be implemented.\n All printing and scanning devices must be integrated with Luminor endpoint and identity management systems to ensure access control, usage, monitoring, and data protection."
+  },
+  "39": {
+    "Summary": "4.4. All production components necessary for delivering business operations must be securely configured (hardened) according to industry best practices",
+    "ID": 4.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "CM-2, CM-6, CM-7",
+    "Implementation": "Apply CIS Benchmarks -¬†[Luminor Approved Secure Configuration baselines for IT platforms. - Security & Privacy - Global Site|https://confluence.luminorgroup.com/pages/viewpage.action?pageId=357683309]\n In AWS, Chef Cookbooks are created in accordance with CIS Benchmarks for Operating Systems.\n For software components and network devices see guidelines from vendor/manufacturer",
+    "Domain": "Infrastructure Security",
+    "Additional Details": "Prevent access control violations and exploitation of known vulnerabilities.\n Default configurations often include unnecessary services, open ports, and weak settings that can be exploited by attackers. Hardening systems reduces the attack surface and enforces consistent security baselines."
+  },
+  "40": {
+    "Summary": "4.5. All production and critical non-production components necessary for delivering business operations must have automated, encrypted, and verifiable backup mechanisms in place",
+    "ID": 4.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "CP-6, CP-9, CP-10",
+    "Implementation": "Use Dell NetWorker for backups of servers for on-prem.Use AWS Backup service for AWS resources.\n Backup frequency and setup should be aligned with Tier of the application.\n Please refer to [https://confluence.luminorgroup.com/pages/viewpage.action?spaceKey=LNFR&title=Service+%28Application%29+Resiliency+requirements|https://confluence.luminorgroup.com/pages/viewpage.action?spaceKey=LNFR&title=Service+%28Application%29+Resiliency+requirements]\n For immutability in AWS Backup solution use AWS Backup Vault Lock -¬†AWS Backup Vault Lock - AWS Backup\n Backup documentation -¬†[Networker Backup Oracle DB clients integration scenario for Luminor bank - IT Operations - Global Site|https://confluence.luminorgroup.com/pages/viewpage.action?spaceKey=ITOP&title=Networker+Backup+Oracle+DB+clients+integration+scenario+for+Luminor+bank]\n In AWS the following regions are used - eu-central-1 for deployment\neu-north-1 for backup",
+    "Domain": "Infrastructure Security",
+    "Additional Details": "These backups must be immutable\n Backups must support rapid recovery in the event of data loss, corruption, or disaster.\n Backups must be stored separately from data, in different cloud region or datacenter"
+  },
+  "41": {
+    "Summary": "5.1. Every user and service account must be uniquely associated with a verifiable identity, ensuring traceability and accountability for account creation",
+    "ID": 5.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-2, IA-4, AC-2(1)",
+    "Implementation": "Luminor uses HRB system as primary date source for employee records, SVG creates, modifies and deletes accounts based on data from HRB.\n For human users - Luminor uses Microsoft Entra ID (formerly Azure AD) as its centralized identity provider -¬†Entra ID (Azure AD Adapter) - T&T Security Services - Global Site\n Follow the instruction to raise necessary requests here -¬†[Microsoft Entra ID (Azure AD) SSO implementation requirements - IT Operations - Global Site|https://confluence.luminorgroup.com/pages/viewpage.action?spaceKey=ITOP&title=Microsoft+Entra+ID+%28Azure+AD%29+SSO+implementation+requirements]\n Contact IAM Team (under Security Engineering) for clarifications\n For Entra ID service account creation - raise¬†[IAM Request for support - Employee Center|https://luminor.service-now.com/esc?id=sc_cat_item&sys_id=bd8968db3b74e2104cdf99e0c5e45ae6]\n For service accounts not in Entra ID (like AWS services used for service to service communication) - create system accounts (like AWS IAM) with clear accountability (for example, using AWS Identity Center). Use automation for IAM policy and account provisioning as much as possible.",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "The identity must be authenticated using strong, standard-based mechanisms and recorded in a centralized identity service.\n Automated mechanisms should be used to create, enable, modify, disable and remove service accounts\n This ensures that all actions can be traced to a specific identity, supporting auditability, regulatory compliance, and Zero Trust security principles."
+  },
+  "42": {
+    "Summary": "5.2. Authentication and authorization must be enforced for every access¬†request,¬†regardless of the actor's location, device, or network origin, in accordance with Zero Trust principles",
+    "ID": 5.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-2, AC-3, AC-6",
+    "Implementation": null,
+    "Additional Details": null
+  },
+  "43": {
+    "Summary": "5.3. All user access rights must be reviewed periodically based on role, risk, and regulatory requirements",
+    "ID": 5.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-2(8), AC-6",
+    "Implementation": "SVG has process of recertification, where managers review provided accesses.\n The process is launched by IAM team manually once a year.\n SVG will be replaced by Veza by 2026. This requirement will be updated.",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Prevents privilege creep and ensures access remains appropriate over time."
+  },
+  "44": {
+    "Summary": "5.4. All¬†privileged user access to critical infrastructure¬†must be managed through a centralized Privileged Access Management (PAM) solution",
+    "ID": 5.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-2(7), AC-6, AC-3",
+    "Implementation": "Define critical components of the solution that require privileged access\n Use Delinea PAM solution for On-Prem components\n For AWS components, use AWS SSM as a tactical solution, until proper PAM is onboarded. [https://confluence.luminorgroup.com/display/CUP/nix+assets+onboarding+processhttps://confluence.luminorgroup.com/display/BICASBSFL/PAM+%28tactical+solution%29+-+START+HERE|https://confluence.luminorgroup.com/display/CUP/nix+assets+onboarding+processhttps://confluence.luminorgroup.com/display/BICASBSFL/PAM+%28tactical+solution%29+-+START+HEREThis]\n This requirement will be updated when cloud PAM solution is onboarded.",
+    "Additional Details": "Root account usage must be minimized as much as possible\n Infrastructure in scope includes servers, databases, network devices, cloud¬†environments, and security systems\n Controlling privileged access through PAM reduces the risk of unauthorized actions, enforces least privilege, and ensures full auditability of administrative activities."
+  },
+  "45": {
+    "Summary": "5.5. Password complexity and lifecycle policies aligned with industry standards must be enforced on all components",
+    "ID": 5.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-5",
+    "Implementation": "AD joined applications use domain level password policy automatically.\n Specific password complexity requirements for applications that cannot be integrated with Luminor AD:\n Be at least 17 characters in length,\n Contain at least one uppercase alphabetic character (A-Z),\n Contain at least one lowercase alphabetic characters (a-z),\n Have at least one numerical character (0-9),\n Have at least one special character (e.g. ~!@#$%^&()_-+=),\n No password reuse within previous 8 passwords,\n Passwords are changed at least every 60 days.",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Comply with standards such as NIST SP 800-63B or equivalent\n In cases where full adherence to these standards is not technically feasible, systems must implement alternative password complexity and management controls that ensure a comparable level of security, including minimum length, character variety, and periodic rotation.\n Enforcing strong password policies reduces the risk of unauthorized access due to weak or compromised credentials."
+  },
+  "46": {
+    "Summary": "6.1. Data leakage prevention controls must be in place to protect Luminor data across all communication channels used for user interaction",
+    "ID": 6.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-4, SC-7(10)",
+    "Implementation": "For endpoints: use Purview and AppLocker to implement DLP controls.¬†[https://confluence.luminorgroup.com/display/SECPRIV/DLP+Strategy+and+roadmap|https://confluence.luminorgroup.com/display/SECPRIV/DLP+Strategy+and+roadmapFor]\n For remote access: use RDP and Citrix - they have embedded DLP controls.\n Currently Purview is not fully implemented. Citrix is being replaced by Azure Virtual Desktop. This requirement will be updated.",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "Ensure data confidentiality and prevent unauthorized disclosure.\n Data leakage must be prevented by:\n Controlling copy/paste between company and personal apps\n Restricting which apps can access company data"
+  },
+  "47": {
+    "Summary": "6.2. All Confidential or strictly confidential data (including data in logs and temporary storage) must be protected through tokenization,  pseudonymization, or equivalent techniques where applicable",
+    "ID": 6.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AR-8, SC-28",
+    "Implementation": "Databases:\n Tokenize credit card PAN before storage; store mapping in a secure token vault.\n Encrypt government IDs and health data; pseudonymize for analytics or reporting.\n Logs & Non-Production:\n Mask sensitive fields in logs (e.g.,    1234).\n Use masked or pseudonymized datasets in development and testing environments.\n Documents & Attachments:\n Replace PAN with tokens before storing or sharing.\n Apply pseudonymization for identifiers in reports used for analytics.\n Validate with DPO (for PII) and PCI-DSS expert (for card related data)\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "All data classified as Confidential or Strictly Confidential‚Äîincluding data stored in databases, logs, temporary storage, and documents‚Äîmust be protected using tokenization, pseudonymization, or equivalent techniques where required by regulations or business needs.\n Select techniques based on the nature of the data, business requirements, and applicable regulatory obligations such as PCI DSS and GDPR.\n These methods must be applied to reduce identifiability and exposure risk during processing, while maintaining data utility where necessary.\n Mandatory: Payment card data (PAN) must be tokenized or encrypted in compliance with PCI DSS.\n Personal Data: Encryption and strict access control are sufficient in production; masking or pseudonymization must be applied in non-production environments to prevent exposure."
+  },
+  "48": {
+    "Summary": "6.3. All payment and fund-related (account statements, etc.) data must be digitally signed while being transmitted or actively used",
+    "ID": 6.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-7, SC-16",
+    "Implementation": "Cryptographically sign the payment information ensuring its integrity and authenticity is verifiable",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "Ensure that the sender is verified (authentication) and cannot later deny having sent the data (non-repudiation).\n When money or payment information is being sent or processed, it‚Äôs important to:\n Know who sent it (authentication),\n Make sure it hasn‚Äôt been changed (data integrity),\n Prevent the sender from denying they sent it (non-repudiation)."
+  },
+  "49": {
+    "Summary": "6.4. All write operations, access control mechanisms, and data storage activities involving removable media devices must be secured using encryption and access restrictions, and must be fully auditable through logging and monitoring systems",
+    "ID": 6.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "MP-5, MP-7, SC-28, AU-12",
+    "Implementation": "Measures are applied in centralized way and enforced to all devices of the company.\n Usage is limited to specific AD groups or roles\n Encryption keys are stored centrally\n Least privilege principle is applied",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "Securing and tracking all write operations, access controls, and data storage activities on removable media is essential to prevent unauthorized data transfers, ensure accountability, and comply with data protection regulations by maintaining a clear audit trail of all interactions with external storage devices."
+  },
+  "50": {
+    "Summary": "6.5. All Luminor data must be stored exclusively on components and accessed by identities that are authorized or managed by Luminor",
+    "ID": 6.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "MP-7, AC-3, AC-20",
+    "Implementation": null,
+    "Domain": "Data Security & Privacy",
+    "Additional Details": null
+  },
+  "51": {
+    "Summary": "6.6. Direct user access to underlying data sources must be controlled",
+    "ID": 6.6,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-3, AC-6",
+    "Implementation": "Disable direct database access, only allow through managed data access layers/APIs\n Enforce RBAC via IAMMFA & JIT access for privileged queries (onboard application to PAM)",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "Access to confidential or strictly confidential data sources (e.g., database consoles or raw¬†data interfaces) must be routed through secure, monitored layers such as application interfaces or services that enforce role-based access controls, logging, and data protection policies to ensure accountability and minimize risk."
+  },
+  "52": {
+    "Summary": "6.7. All access to confidential or strictly confidential data must be logged and auditable, with logs retained and protected",
+    "ID": 6.7,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-2, AU-11, AU-9",
+    "Implementation": "Enable audit logging (reads, writes, deletes, admin actions) at the OS/DB/App levels for confidential or strictly confidential data access\n Logs should be stored for 12 months, if logs sent to SIEM, then this will be enforced by it, else system has to ensure, that logs are stored for needed period.\n Send logs to a centralized SIEM or log management solution\n If sending logs not possible (for example in SaaS) - protect log integrity using WORM storage, digital signatures or encryption\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "Audit logs are essential for detecting unauthorized access, supporting incident investigations, and meeting compliance requirements"
+  },
+  "53": {
+    "Summary": "6.8. Confidential or strictly confidential data must be automatically retained only for as long as necessary for its intended purpose",
+    "ID": 6.8,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-12, PT-7",
+    "Implementation": "Incorporate data lifecycle policies, using TTLs in database and object storage - set data retention\n Automate secure data deletion or cryptographic erasure with key destruction\n Use anonymization for AI, analytics or archival datasets\n Track deletion in audit records\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]\nOther standards: ¬†PCI-DSS v4.0.1 Requirements 3.3.1 and 3.3.3",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "Any confidential or strictly confidential data (PII, authentication data, Card PIN and CVV/CVC codes, sensitive customer data, etc.) must be either securely disposed of or irreversibly anonymized to prevent identification of individuals, when it is no longer necessary for the purposes it is processed.\n That also includes:\n Logs and audit records\n Unstructured and structured data storages"
+  },
+  "54": {
+    "Summary": "6.9. Confidential or strictly confidential data displayed in the user interface must be masked by default in high risk environment",
+    "ID": 6.9,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-19(4), AC-6, PT-7",
+    "Implementation": "Display masked versions of confidential/strictly confidential data in the UI (e.g., 1234 for PAN).\n Masking refers to the concealment of certain data during display or printing, even when the entire data is stored on a system\n For card data, only BIN and last 4 digits of PAN can be shown before unmasking\n Provide an explicit reveal option (e.g., click-to-reveal) with optional confirmation or lightweight authentication.\n Allow role-based exceptions for trusted/restricted user groups.\n  Log all reveal actions for auditability and accountability\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]\nOther standards: PCI-DSS v4.0.1 Requirement 3.4.1",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "When systems display confidential or strictly confidential data in environments where others may view the screen (e.g., call centers, shared desks), such data should be masked in the user interface by default to reduce the risk of accidental exposure (e.g., shoulder surfing). This is a contextual control aligned with GDPR‚Äôs ‚Äúdata protection by design and by default‚Äù principle."
+  },
+  "55": {
+    "Summary": "6.10. All confidential or strictly confidential data must be masked or sanitized or anonymized in non-production environments",
+    "ID": 6.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-19, AC-3, AC-6",
+    "Implementation": "Define which data fields are considered confidential\n Automate dataset masking or anonymization when copying from production\n Implement validation checks scanning dev/test environment for unmasked data (using regex or DLP)\n If confidential data is used unmasked in non-production environment, then the environment must have the same security controls and policies in place as production\n Live PANs can be used for Testing/ Pre-production, only if they exist in the defined CDE (cardholder data environment) and are protected by all applicable PCI-DSS requirements\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]\nOther standards: PCI-DSS v4.0.1 Requirement 6.5.5, NIST SP 800-122, GDPR",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "Masking confidential or strictly confidential data in non-production environments (e.g., development, testing, staging) is critical because these environments often lack the same security controls as production."
+  },
+  "56": {
+    "Summary": "6.11. Cardholder Data Environment must be isolated and protected",
+    "ID": 6.11,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "CM-8, SC-7, AC-4",
+    "Implementation": "Create and maintain an inventory of all CDE components.\n Use segmentation via VLANs, firewalls, or software-defined perimeters to create network zones between CDE and non-CDE environments\n Apply ingress/egress controls to allow only necessary traffic flows in/out of the CDE\n Log all configuration changes and review them regularly as part of compliance checks\n Use network monitoring, segmentation verification tools, and vulnerability scans to confirm isolation and detect any unauthorized CDE connectivity\n Apply robust authentication and access restrictions for CDE systems (e.g., MFA, least privilege).\nOther standards: PCI DSS v4.0.1 Requirement 11.4.5",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "The system must ensure that its Cardholder Data Environment (CDE), comprising all components that store, process, or transmit cardholder data is\n accurately scoped,\n clearly defined,\n strictly isolated from non-CDE systems."
+  },
+  "57": {
+    "Summary": "6.12. Card PAN (Primary Account number) is rendered unreadable anywhere it is stored",
+    "ID": 6.12,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-28(1), SI-19(4)",
+    "Implementation": "For information on tokenization, see the PCI SSCs (Security Standards council) supplemental Guidelines:¬†[Tokenization_Product_Security_Guidelines.pdf|https://listings.pcisecuritystandards.org/documents/Tokenization_Product_Security_Guidelines.pdf]\nOther standards: PCI-DSS v4.01 Requirement 3.5.1",
+    "Domain": "Data Security & Privacy",
+    "Additional Details": "This requirement applies to PANs stored in primary storage (databases, or flat files) as well as non-primary storage (backup, audit logs, exception, or troubleshooting logs).\n This requirement does not preclude the use of temporary files containing cleartext PAN while encrypting and decrypting PAN.\n Methods:\n One-way hashes based on strong cryptography of the entire PAN.\n Truncation (hashing cannot be used to replace the truncated segment of PAN).\n Index tokens.\n Strong cryptography with associated key-management processes and procedures"
+  },
+  "58": {
+    "Summary": "7.1. Access to the ports, protocols and applications must be managed by filtering and inspecting all possible traffic at the network perimeter",
+    "ID": 7.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7, SC-7(5), SC-7(3)",
+    "Implementation": "For cloud:\n Enable VPC Flow Logs, CloudTrail, in AWS.\n Use AWS Security Groups, NACLs (database subnets only) and on-prem firewalls to allow only required traffic.\n Use AWS Config to detect and remediate overly permissive rules - planned for future\n Set default deny rules on all firewalls and security groups - deny by default\n Maintain an approved traffic matrix - all rules are as code in Gitlab. (applied using Terraform)For both on-prem and cloud - packet inspection is not there and not planned for near future.\n For on-prem:\n Network Team provides assurance - for high permissive rules automatically, by using Tufin\n More information can be found in recently approved SAD for external and internal perimeter improvements -\n ¬†[https://confluence.luminorgroup.com/display/IAS/On-prem+external+and+internal+firewall+perimeter+improvements|https://confluence.luminorgroup.com/display/IAS/On-prem+external+and+internal+firewall+perimeter+improvementsLT]\n LT perimeter - is based on Palo Alto¬†[https://confluence.luminorgroup.com/pages/viewpage.action?pageId=321789208|https://confluence.luminorgroup.com/pages/viewpage.action?pageId=321789208LV]\n LV perimeter - link¬†[https://confluence.luminorgroup.com/pages/viewpage.action?pageId=321787217|https://confluence.luminorgroup.com/pages/viewpage.action?pageId=321787217EE]\n EE perimeter -¬†[https://confluence.luminorgroup.com/pages/viewpage.action?pageId=321789290|https://confluence.luminorgroup.com/pages/viewpage.action?pageId=321789290]",
+    "Domain": "Network Security",
+    "Additional Details": "Ensure that only authorized, minimum necessary traffic which is required to support business is being exchanged.\n Apply preventive controls:\n All network traffic must be explicitly authorized.\n No cross-environment connections are permitted.\n No \"allow any\" firewall rules are permitted.\n Deny-by-default policy must be enforced.\n Only business-justified traffic is allowed.\n All inbound and outbound traffic must be inspected.\n Encrypted traffic must be decrypted before inspection.\n Decrypted traffic must be content-checked.Packet filtering must be enforced at the network perimeter.\n All traffic must be logged and monitored."
+  },
+  "59": {
+    "Summary": "7.2. All incoming connections from the Internet and third-party networks must be routed through a secure intermediary layer‚Äîsuch as a demilitarized zone (DMZ), proxy, or firewall‚Äîbefore reaching internal components",
+    "ID": 7.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7(3), SC-7(5)",
+    "Implementation": "On-prem:\n DMZ is present in each datacenter. All publicly exposed components must be located there\n Network team provides assurance - Tufin will automatically highlight all ingress connections that don't land in DMZ\n Cloud:\n Shared public subnets are used for components that are publicly accessible (e.g. load balancers)",
+    "Additional Details": "These intermediary layers must inspect, filter, and control traffic to enforce security policies and prevent unauthorized access.¬†Direct access from external sources to internal network resources is strictly prohibited.\n The firewall rule set must deny incoming traffic by default, returning traffic only for established connections;\n Whitelist must be applied that only allows authorized protocols, ports - and applications to exchange data across the boundary;\n No business logics in shall be located in a buffer zone (e.g. DMZ);\n Intermediary components (e.g., MQ, SFTP) must have a separate instance for public access;"
+  },
+  "60": {
+    "Summary": "7.3. The solution must be protected against Distributed Denial of Service (DDoS) attacks using automated detection and mitigation services",
+    "ID": 7.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-5",
+    "Implementation": "Both cloud and on-prem:\n Use Cloudflare WAF/DDoS (L7) to protect the publicly exposed web applications from attacks.\n For L3, L4 Cloudflare is solution for protection of DC in LT and LV (planned).\n EE DC is out of scope (has no services on DC level - no need to protect)",
+    "Domain": "Network Security",
+    "Additional Details": null
+  },
+  "61": {
+    "Summary": "7.4. Network-level security controls must be in place to prevent components within the same subnet from communicating with each other unless explicitly required and authorized",
+    "ID": 7.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7(3)",
+    "Implementation": "Cloud:\n Use Security Groups to control traffic between instances, even within the same subnet.\n Monitor internal traffic with VPC Flow Logs to detect suspicious behavior.\n On-prem:\n Internal Firewalls are used to control traffic flow between subnets\nFor on-prem - we don't have micro segmentation within subnets.\nThis requirement will be updated.",
+    "Domain": "Network Security",
+    "Additional Details": "Preventing lateral movement within a subnet helps contain threats. If one component is compromised, this control stops attackers from easily spreading to other components in the same network."
+  },
+  "62": {
+    "Summary": "7.5. All components with different functionalities‚Äîsuch as type, role, or the sensitivity of processed information‚Äîmust be deployed in separate network subnets, each protected with appropriate security controls",
+    "ID": 7.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7, CM-7",
+    "Implementation": "On-prem:\n Network team maintains a map of VLANs to separate the functions, as required\n Map can be provided to VS and Project team to assist with solution design\n In cloud:\n There are three main grouping constructs in AWS: AWS account, Virtual Private Cloud (VPC), and subnet.\n The segmentation strategy is as follows:\n AWS accounts: Based on ownership (per Luminor VS, Units) and environments, according to the Luminor Development Strategy, divided into five tiers (PRD, STG, TST, DEV, and SNB).\n VPCs: Based on environments.\n Subnets: Based on the four-tier Network Landing Zone design (public, internal, DB, and network support)",
+    "Additional Details": "Systems must be segmented based on their role:\n asset type (e.g., end-users, servers, voice, CCTV, etc.);\n asset roles (e.g., web, application, database, terminal servers, etc.);\n provided services (e.g., application specific and common services);\n processed information (e.g., production and test, personal data, cards,¬†¬† etc.);\n access type (e.g., employees only and publicly accessible such as Internet Banking or ATMs);\n integration type (e.g., end-users and system-to-system access, etc.);\n compliance requirements (e.g., EBA, ECB, local FSAs, SWIFT, PCI).The segregation of security zones can be done using\n physically segregated networks\n different VLANs\n logical network segregation on IaaS/PaaS clouds (e.g., AWS accounts, VPC and security groups);\n IT administration management systems MUST be located in dedicated security zones;\n Systems in development stage or test MUST be located in different zones than production systems."
+  },
+  "63": {
+    "Summary": "7.6. Wireless access controls must be implemented",
+    "ID": 7.6,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-18, IA-3",
+    "Implementation": "Wireless network solutions are outsourced and not connected to Luminor internal network.\n Controls must be provided by vendor",
+    "Domain": "Network Security",
+    "Additional Details": "Secure all wireless access points with modern encryption standards, such as WPA3.\n Protect wireless access to the Luminor network using authentication of device and encryption\n Ensure that wireless access requires authentication and that unauthorized devices are blocked from accessing the network\n Disable, when not intended for use, wireless networking capabilities embedded within infrastructure/system components prior to issuance and deployment\n Identify and explicitly authorize users allowed to independently configure wireless networking capabilities"
+  },
+  "64": {
+    "Summary": "7.7. Public wireless access point passwords must be changed at least once per year",
+    "ID": 7.7,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-5, AC-18",
+    "Implementation": "Wireless network solutions are outsourced and not connected to Luminor internal network.\n Controls must be provided by vendor\n Wireless network solutions are outsourced and not connected to Luminor internal network.\n Controls must be provided by vendor\n Split tunneling is used in Luminor\n Compensating control - zero trust approach applied on workstation level\n Consult with Workplace Security team.",
+    "Domain": "Network Security",
+    "Additional Details": "Ensure that logs of wireless access activity are regularly reviewed or monitored, and that suspicious activity is escalated for investigation and corrective actions."
+  },
+  "65": {
+    "Summary": "7.8. Wireless access points must be monitored to detect unauthorized access attempts",
+    "ID": 7.8,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-18, SI-4, AU-6",
+    "Implementation": "Wireless network solutions are outsourced and not connected to Luminor internal network.\n Controls must be provided by vendor",
+    "Domain": "Network Security",
+    "Additional Details": "Regularly monitor wireless access points to detect unauthorized access attempts"
+  },
+  "66": {
+    "Summary": "7.9. Split tunneling must not be allowed for remote devices unless securely provisioned",
+    "ID": 7.9,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7(7), AC-17",
+    "Implementation": "Split tunneling is used in Luminor for managed devices\n Compensating control - zero trust approach applied on workstation level\n Consult with Workplace Security team.",
+    "Domain": "Network Security",
+    "Additional Details": "Split tunneling must not be allowed for remote devices unless securely provisioned"
+  },
+  "67": {
+    "Summary": "7.10. All internal network connections must originate from a network zone with a higher security level and terminate in a zone with a lower security level",
+    "ID": 7.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SC-7, AC-4",
+    "Implementation": "Classify assets into zones\n Document and diagram connections\n On-prem - utilize VLANs with ACLs and internal FWs to segment and enforce flow directions\n In AWS - use security groups and VPC rules to enforce one way connectivity\n For exceptions - follow risk-based approach",
+    "Domain": "Network Security",
+    "Additional Details": "Reverse connections from lower to higher security zones must be explicitly prohibited unless strictly required and approved.\n This control minimizes the risk of lateral movement by attackers from less secure areas into critical systems. It supports a defense-in-depth strategy by adding an extra layer of protection between zones."
+  },
+  "68": {
+    "Summary": "8.1. All security-relevant events must be collected from applicable sources to support incident detection, investigation, and compliance",
+    "ID": 8.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-2, AU-3, AU-9, SI-4",
+    "Implementation": "Use QRadar SIEM for security log onboarding - consult with Cyber Defense Team\n Make sure the logs are transmitted via encrypted channel\n Make sure the logs are stored securely before being sent to SIEM, with strict access policies and access logging\n QRadar will be replaced with a new SIEM solution. This requirement will be updated. Please verify with Cyber Defense team.",
+    "Domain": "Audit & Logging",
+    "Additional Details": "Security logs must be collected, at a minimum\n from security systems and solutions (EDR, PAM, IPS/IDS, WAF, DLP, etc.)\n from Operating Systems\n from Identity Providers, like AD, Azure Entra ID\n SaaS platforms via their audit logs or APIs\n Events to be captured: Authentication attempts, privilege changes, configuration changes, data access, API token creation and other.\n Logs must be protected from deletion or modification, as well as from unauthorized access and disclosure.\n Any operation on audit logs also should be logged, such as:\n audit log initialization,\n audit log rotation,\n logging pausing,\n logging configuration changes.\n Security log is a chronological record of security-relevant events, captured to support security incident detection and investigation.\n Security logs are essential for detecting threats, supporting investigations, and proving compliance. Ensuring their integrity and confidentiality protects against tampering and unauthorized access.\n Security incident detection must be supported by establishing a security log monitoring system or process (SIEM/SOC)"
+  },
+  "69": {
+    "Summary": "8.2. Systems and components must support logging that captures a chronological record of user activities",
+    "ID": 8.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-2, AU-3, AU-8",
+    "Implementation": "Set up the system or component producing the security logs to include all necessary information",
+    "Domain": "Audit & Logging",
+    "Additional Details": "Logs must include, when relevant:\n user IDs;\n system activities;\n dates, times and details of key events, e.g. log-on and log-off;\n device identity or location if possible and system identifier;\n records of successful and rejected system access attempts;\n records of successful and rejected data and other resource access attempts;\n changes to system configuration;\n use of privileges;\n use of system utilities and applications;\n files accessed and the kind of access;\n network addresses and protocols;\n alarms raised by the access control system;\n activation and de-activation of protection systems, such as anti-virus systems and intrusion detection systems;\n records of transactions executed by users in applications."
+  },
+  "70": {
+    "Summary": "8.3. Security logs must be retained for a defined period and deleted automatically after that period, where supported",
+    "ID": 8.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-11",
+    "Implementation": "By default, security logs must be retained for 12 months. This setting will be enforced by SIEM.\n All exceptions must be submitted as a request to Cyber Defense Team, documented and approved.\n On-Prem / Managed Systems: Configure automated retention and deletion policies.\n SaaS Platforms: If retention cannot be configured, implement compensating controls such as scheduled exports to a centralized system and document vendor retention limits to ensure compliance.",
+    "Domain": "Audit & Logging",
+    "Additional Details": "Defining and enforcing log retention periods ensures compliance with data protection regulations and internal policies, while also managing storage costs and reducing the risk of retaining¬†confidential or strictly confidential data longer than necessary.\n Automatic deletion minimizes human error and ensures consistent enforcement of retention rules."
+  },
+  "71": {
+    "Summary": "8.4. All security relevant logs, including security event logs and audit logs, must be confidential and protected from tampering.",
+    "ID": 8.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-9, AU-5(5), SC-28",
+    "Implementation": null,
+    "Domain": "Audit & Logging",
+    "Additional Details": null
+  },
+  "72": {
+    "Summary": "8.5. The logging infrastructure must ensure high availability and resilience, including buffering or failover mechanisms in case of network or system outages",
+    "ID": 8.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-5, AU-5(2)",
+    "Implementation": null,
+    "Domain": "Audit & Logging",
+    "Additional Details": null
+  },
+  "73": {
+    "Summary": "8.6. Collected logs must be transmitted to a centralized log management or SIEM system where feasible, using secure mechanisms that ensure integrity and confidentiality",
+    "ID": 8.6,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-4, SC-13",
+    "Implementation": "Transmission: Use encrypted channels (TLS 1.2+) and integrity controls (hashing, digital signatures).\n Storage: Encrypt logs at rest (AES-256 or equivalent) and enforce role-based access.\n SaaS: Export logs periodically or via API to meet retention and monitoring requirements.\n Luminor uses QRadar SIEM for on-prem security logs [https://confluence.luminorgroup.com/display/ITOP/Guidelines+for+onboarding+cybersecurity+related+log+events+to+Qradar+SIEM|https://confluence.luminorgroup.com/display/ITOP/Guidelines+for+onboarding+cybersecurity+related+log+events+to+Qradar+SIEMLuminor]\n Luminor relies on Wiz for AWS security monitoring.",
+    "Domain": "Audit & Logging",
+    "Additional Details": "Direct transmission of logs to the SIEM ensures real-time visibility, faster threat detection, and immediate correlation across systems. However, to maintain log continuity and avoid data loss in environments where dual forwarding is unsupported, routing through the centralized logging system ensures that all logs are still captured, normalized, and analyzed. This approach balances operational flexibility with security and compliance requirements.\n Endpoint security logs must be centrally collected and monitored."
+  },
+  "74": {
+    "Summary": "5.6. Inactive or dissociated accounts must be disabled within 5 working days",
+    "ID": 5.6,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-2(2), AC-2(3)",
+    "Implementation": null,
+    "Domain": "Identity & Access Management",
+    "Additional Details": null
+  },
+  "75": {
+    "Summary": "5.7. The solution must enforce application-level and database-level security controls, including the ability to define and manage multiple roles and users with granular access permissions",
+    "ID": 5.7,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-3(7), AC-6",
+    "Implementation": "Define clear roles and permissions and manage them through a centralized platform (Entra ID)",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Role-based access control (RBAC) at both application and database layers must be implemented:\n ensures least privilege,\n reduces the risk of unauthorized access,\n supports compliance with data protection regulations."
+  },
+  "76": {
+    "Summary": "5.8. Accounts must not be shared",
+    "ID": 5.8,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-2, AC-2",
+    "Implementation": "Disallow shared credentials via instructions and policies\n Use unique identifiers for all access\n Disable/avoid creating generic or shared accounts (including admin accounts)",
+    "Domain": "Identity & Access Management",
+    "Additional Details": null
+  },
+  "77": {
+    "Summary": "5.9. Access to Luminor data must follow the principle of least privilege",
+    "ID": 5.9,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-6",
+    "Implementation": "JIT access should be implemented using Luminor PAM solution.",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Ensure that users and systems are granted only the minimum access necessary to perform their tasks.\n Wherever feasible, access should be provisioned using Just-in-Time (JIT) mechanisms to further reduce standing privileges."
+  },
+  "78": {
+    "Summary": "5.10. Systems must provide functionality to proactively terminate user sessions on all devices",
+    "ID": 5.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-12",
+    "Implementation": "If using SSO, implement single-logout (SLO):\n Logging out from the Identity Provider (IdP) should log the user out from the application.\n Logging out from the application should not log the user out from the IdP or other connected apps.\n This ensures the IdP session remains active unless explicitly terminated by the user.\n Provide UI for logout functionality\n Configure backend to immediately revoke cookies, JWTs and session store entries",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "If Single Sign-On (SSO) is implemented, a global logout mechanism must be supported to terminate all active sessions across integrated applications.\n Allowing users to end sessions proactively and ensuring global logout in SSO environments reduces the risk of unauthorized access from unattended or compromised sessions."
+  },
+  "79": {
+    "Summary": "5.11. Sessions must end after inactivity or user logout",
+    "ID": 5.11,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-11, AC-12",
+    "Implementation": "For all web applications - set up a server-side session timeout. If not possible - set up a client-side inactivity detection and force logout\n User sessions must automatically terminate after 15 minutes of inactivity or another duration if explicitly approved by the system owner and security team. Session tokens must be invalidated immediately upon logout or expiration.\n For managed desktop/Windows environments - the screen lock settings should be applied automatically with group policies\nOther standards: SP 800-63B",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "User sessions must automatically terminate after a defined period of inactivity.\n Session tokens must be invalidated immediately upon logout or session expiration.\n Devices must be locked after a defined period of inactivity"
+  },
+  "80": {
+    "Summary": "5.12. Multi-Factor Authentication (MFA) must be enforced for all human-user authentication events across all systems, applications, and environments, regardless of user role or access level",
+    "ID": 5.12,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-2(1),IA-2(2)",
+    "Implementation": "For internal managed systems, MFA is enforced by default with MS Entra ID\n The Cloud Platform integrates AWS IAM Identity Canter (IAM Service) identities with the Luminor‚Äôs central directory service (Microsoft Entra ID) and manages role-based access control (RBAC) policies with SSO integration\n AWS IAM policies support enforcing MFA requirements for AWS Management Console, AWS CLI, and API access to AWS services\nOther standards: PCI-DSS v4.0.1, Requirements 8.4.1 & 8.4.2 & 8.4.3",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "MFA significantly reduces the risk of unauthorized access by requiring a second factor beyond passwords, which are often compromised or reused."
+  },
+  "81": {
+    "Summary": "5.13. System (non-human) user accounts must operate from fixed, pre-approved locations.",
+    "ID": 5.13,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-3, SC-7",
+    "Implementation": "Define subnets for system accounts\n Enforce via network controls (FW, VLAN ACLs, security groups, etc.) or on app/system level\n Use mechanisms such as IP whitelisting, static network zones, or validated redirect URIs.",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Restricting system accounts to known locations reduces the attack surface and helps detect unauthorized or anomalous access attempts."
+  },
+  "82": {
+    "Summary": "5.14. All access to confidential or strictly confidential data resources must be authenticated and authorized",
+    "ID": 5.14,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-3, AC-6",
+    "Implementation": "Use existing Luminor authentication providers with industry standards. Refer to \"Identity & user access management\".\n Project team will identify categories of data by following [[DATAMGMT-1] Data Management Non-functional Requirements - Jira|https://luminorgroupcloud.atlassian.net/browse/DATAMGMT-1]",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Use industry standard protocols and best practices like OAuth 2.0, OpenID Connect, SAML, and role-based access control (RBAC).\n Using standardized authentication and authorization mechanisms ensures interoperability, reduces security risks, and aligns with regulatory and compliance requirements."
+  },
+  "83": {
+    "Summary": "5.15. Authentication and authorization for all users must be managed through a centralized identity provider",
+    "ID": 5.15,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-2(10)",
+    "Implementation": "Use Microsoft Entra ID (formerly Azure AD) as its centralized identity provider.\n Cloud platform integrates AWS AWS IAM Identity Center (IAM Service) identities with the Luminor‚Äôs central directory service (Microsoft Entra ID) and manages role-based access control (RBAC) policies with SSO integration",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Use¬† enterprise directory services, with Single Sign-On capabilities\n Centralized identity management ensures consistent access control, simplifies auditing, and reduces the risk of misconfigured or orphaned accounts.\n The requirement is applicable to internal employees as well as consultants"
+  },
+  "84": {
+    "Summary": "5.16. Authentication data must be stored securely, ensuring its confidentiality, integrity and availability",
+    "ID": 5.16,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-5, SC-28",
+    "Implementation": null,
+    "Domain": "Identity & Access Management",
+    "Additional Details": null
+  },
+  "85": {
+    "Summary": "5.17. Authentication mechanism must be resistant to brute force attacks",
+    "ID": 5.17,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-7, IA-5, AC-10",
+    "Implementation": "Enforce¬†per‚Äëendpoint¬†and¬†per‚Äëidentity¬†rate limits for login, password reset¬†and¬†transaction APIs, with exponential¬†back‚Äëoff¬†after threshold breaches.\n Cap active sessions per user/role\n Use modern authentication protocols/methods, like OAuth, OIDC, SAML, etc.\n Legacy authentication protocols, like Kerberos, must only be used in cases of utmost necessity.",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Apply adaptive rate limits and real‚Äëtime fraud analytics to block credential‚Äëstuffing and brute‚Äëforce attacks"
+  },
+  "86": {
+    "Summary": "5.18. Service-to-service authentication and authorization must be secure",
+    "ID": 5.18,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-9, AC-3",
+    "Implementation": null,
+    "Domain": "Identity & Access Management",
+    "Additional Details": null
+  },
+  "87": {
+    "Summary": "5.19. Critical system functions must implement segregation of duties and the four-eye principle",
+    "ID": 5.19,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-3, AC-5, CM-3(3)",
+    "Implementation": "Define high-risk actions.\n Enable two-person approval in CI/CD (set up pipelines Jenkins/Gitlab CI with protected branches and required reviewers).Implement configuration management rules (require \"reviewed\" tags before config changes via IaC tools).Ensure approvers are separate from requestors via AD groups or roles.\n Enforce via solution business logic.\n Enforce via instructions and policies.",
+    "Domain": "Identity & Access Management",
+    "Additional Details": "Require at least two authorized individuals to review and approve high-risk actions or changes\n Segregation of duties is required¬†where significant conflicts of interest emerge and are not mitigated by other factors.\n This reduces the risk of fraud, error, or unauthorized activity by ensuring that no single individual has unchecked control over sensitive operations."
+  },
+  "88": {
+    "Summary": "9.1. Customer authentication must be managed through a centralized Customer Identity and Access Management (CIAM) system for identity handling",
+    "ID": 9.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-2, IA-4",
+    "Implementation": "Luminor has multiple CIAM solutions used.\n In Estonia and our target system is CIAM from vendor RedHat, which uses underneath opensource KeyCloak.\n Use new CIAM as a centralized solution for Identity and access management for all upcoming projects",
+    "Domain": "Product & Customer Security",
+    "Additional Details": "Centralized CIAM enables secure, scalable, and consistent customer identity management while supporting regulatory compliance and a seamless user experience."
+  },
+  "89": {
+    "Summary": "9.2. Customer authentication must be implemented securely",
+    "ID": 9.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-2, IA-5, SC-13",
+    "Implementation": "Keep session and account objects in RAM‚Äëonly structures; prevent serialization to disk\n Zeroise all in‚Äëmemory buffers and caches on explicit logout, background transition, or idle period\n Clear shared preferences, keychain items, WebView stores,¬†and¬†application logs of authentication data",
+    "Domain": "Product & Customer Security",
+    "Additional Details": "Must be implemented via secure connection\n Must require MFA\n Must only store customer authentication data in trusted locations and only for as long as necessary"
+  },
+  "90": {
+    "Summary": "9.3. Luminor mobile application installed on a customer mobile device must require secure device enrollment and verification",
+    "ID": 9.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-7(2), IA-7",
+    "Implementation": "Request customer approval through existing and verified channels.\n Verify package identity at runtime through store attestation services (Google‚ÄØPlay Integrity / Apple‚ÄØApp‚ÄØAttest) and refuse execution on mismatch.\n Bind a cryptographic key pair to the device¬†hardware¬†keystore (Android¬†Keystore / iOS¬†Secure‚ÄØEnclave) and validate attestation.\n Integrate root/jailbreak¬†detectors (su‚ÄØbinary, Magisk, SuperSU, Cydia¬†substrate) and terminate¬†the session on¬†positive¬†match.\n Verify OS version and security‚Äëpatch level at each app start; if unsupported, terminate execution and instruct the user to upgrade.\n Integrate a RASP component that detects code injection or hooking at runtime and terminates the session.\n Perform self‚Äëchecksum verification of critical binaries and libraries at startup and terminate execution if any mismatch is found.",
+    "Domain": "Product & Customer Security",
+    "Additional Details": "Strong out‚Äëof‚Äëband verification must be required before activating banking functions on a new device\n Access is only permitted from mobile devices where operating system and application runtime are uncompromised\n Mobile application must only be permitted to run on supported mobile OS versions\n Mobile application must perform integrity and security checks"
+  },
+  "91": {
+    "Summary": "9.4. Cryptographic keys on customer mobile devices must be protected",
+    "ID": 9.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IA-7, SC-12, SC-28",
+    "Implementation": "Generate and retain asymmetric signing/encryption keys inside Android StrongBox/Keymaster or iOS Secure‚ÄØEnclave; mark keys as non‚Äëexportable.\n Use platform¬†Key Attestation to bind each key to a device‚Äëunique hardware root and verify at app enrolment.\n Require AES‚ÄëGCM or X25519/Ed25519 operations to execute only within the hardware module; deny fallback to software providers.\n Encrypt locally cached tokens, database rows¬†and preferences with a _data‚Äëat‚Äërest_ key derived and unwrapped solely inside the hardware keystore.\n Zeroise key handles and wipe protected storage on logout, uninstall¬†or integrity failure; log zeroisation events centrally.\nOther standards: RTS PSD2 art. 25",
+    "Domain": "Product & Customer Security",
+    "Additional Details": null
+  },
+  "92": {
+    "Summary": "9.5. Local data leakage prevention measures must be implemented on a customer mobile device",
+    "ID": 9.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-7, SI-4",
+    "Implementation": "Block screenshots, screen recordings¬†and¬†mirroring while the session is active.\n Disable automatic device/cloud backups for application data.\n Detect and block overlay windows to prevent clickjacking and phishing overlays.\n Refuse execution when a debugger is attached or when debug flags are enabled.\n Scrub all logs, caches¬†and¬†temporary files that may¬†hold¬†customer data when the app moves to¬†background, logs out¬†or¬†times out.\n Restrict copy‚Äëand‚Äëpaste and third‚Äëparty keyboards in fields that display or collect confidential or strictly confidential data.\nOther standards: OWASP MASVS; Android / iOS security guides",
+    "Domain": "Product & Customer Security",
+    "Additional Details": "Local data leakage must be prevented by shielding on‚Äëscreen information and temporary artefacts from screenshots, cloud backups, overlay attacks and runtime debugging on both Android and‚ÄØiOS devices."
+  },
+  "93": {
+    "Summary": "9.6 Customer facing applications must issue short-lived access tokens",
+    "ID": null,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-12",
+    "Implementation": "Set access‚Äëtoken lifetime to a few minutes and enforce automatic expiry.\n Rotate refresh tokens on every exchange; previous tokens become invalid immediately.\n Revoke all tokens on logout Responsibility:",
+    "Domain": "Product & Customer Security",
+    "Additional Details": "Short-lived access tokens and single‚Äëuse rotating refresh tokens must be issues so that credential validity windows remain minimal, limiting their value if intercepted."
+  },
+  "94": {
+    "Summary": "10.1. All endpoint devices (including mobile phones, tablets, laptops, and desktops) used to access Luminor internal systems must be centrally and securely managed",
+    "ID": 10.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "CM-2, CM-6",
+    "Implementation": "Managed devices are automatically enrolled to MS Intune",
+    "Domain": "Endpoint & Device Security",
+    "Additional Details": "Devices must be enrolled in Microsoft Intune (or equivalent endpoint management platform).\n Device status (active/inactive) must be trackable.\n Devices must support remote lock and remote wipe (full or selective/company data).\n Devices must allow enforcement of allowed and blocked application lists, allowed OS settings, device settings (password settings, screen lock)\n End‚Äëuser devices must be isolated from server and administrative network segments. Direct wired connectivity is prohibited.\n Endpoints must be centrally managed (configuration, compliance, and updates).\n Endpoints must be hardened:\n Only required services, tools, applications, and firewall ports allowed.\n Endpoints must be encrypted (e.g., BitLocker, FileVault, mobile encryption).\n Endpoints must be regularly updated (patch management).\n Endpoints must be protected by a web filtering solution.\n Remote access to endpoints must be blocked, except for authorized support activities.\n Local user accounts must be disabled.\n Credential caching must be restricted or disabled where applicable.\n Azure Conditional Access compliant device checks must be applied to:\n All users\n All devices\n All remote applications/resources\n Company data (including app data) must be encrypted.\n Company data must be separated from personal data (logical or physical containerization).\n Mobile Device Management (MDM) or Unified Endpoint Management (UEM) ensures that only secure, policy-compliant devices can access sensitive enterprise systems."
+  },
+  "95": {
+    "Summary": "10.2. All remote access solutions must generate detailed audit trails",
+    "ID": 10.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AU-2, AU-3",
+    "Implementation": "Audit logs must contain sufficient information to establish the following:\n Date and time,\n event type (authentication, connection or disconnection),\n user associated with the event,\n local IP address and remote IP address or hostname,\n status of event (success/failure).",
+    "Domain": "Endpoint & Device Security",
+    "Additional Details": "Audit trails must include the date and time of access, the specific event performed, the authenticated user identity, and the originating location (IP address or geolocation).\n These logs must be securely stored, tamper-proof, and integrated with Luminor‚Äôs centralized security monitoring and incident response systems.\n Ensure traceability of user actions during remote sessions"
+  },
+  "96": {
+    "Summary": "10.3. A secure Remote Access Gateway (RAGw) solution must be used to enable human-user access to internal applications hosted either on-premises or in cloud environments",
+    "ID": 10.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-17, IA-2, AC-3",
+    "Implementation": "Use solutions like Azure Application Proxy, Citrix Gateway, or Remote Desktop Services (RDS) Gateway\n Ensure consistent security posture across hybrid environments (on-prem + cloud).\n Validate user identity, device compliance, and session context before granting access.\n Enable centralized logging and monitoring of remote access sessions across environments.\n Prevent exposure of AWS-hosted internal apps to the public internet while maintaining secure access.\n[List_of_remote_access_solution.md ¬∑ main ¬∑ Jevgenijs.Egle / aws-guardrails ¬∑ GitLab|https://git.onelum.host/Jevgenijs.Egle/aws-guardrails/-/blob/main/List_of_remote_access_solution.md]\nCitrix will be replaced with Azure Virtual Desktop. This requirement will be updated.\nThere are different approached to remote access.¬†The main difference among them is where the trust boundary lies.\nNetwork-based approach:¬†Users are given access to your network through VPCs and are granted broad access to the actual target resource, web application, or EC2 instances. The trust boundary in this case is the VPC.Host-based approach:¬†Users have access to the host running the application. This is commonly used for operator access. The trust boundary is the host.\nApplication-based approach:¬†Users access the application using their corporate credentials. This is commonly the case for software as a service (SaaS) applications. The trust boundary is the application.\nEnd-user computing approach: End-user computing (EUC) is a combination of technologies, policies, and processes that gives users secure, remote access to applications, desktops, and data that they need to get their work done. Desktops are operated centrally in the cloud and interacted with using streamed pixels to users‚Äô devices. This approach shifts the trust boundary from the user device to desktops and data residing in the cloud.",
+    "Domain": "Endpoint & Device Security",
+    "Additional Details": "Direct access to these applications from external networks must be strictly prohibited.\n RAGw must comply with applicable regulations and internal policies.\n RAGw must follow the least privilege access model.\n RAGw must support two-factor authentication (2FA).\n RAGw must support high availability (HA).\n RAGw components must be hardened.\n Connection to RAGw must be allowed only from managed and properly secured endpoint devices."
+  },
+  "97": {
+    "Summary": "11.1. Each system must implement and maintain an incident response procedure",
+    "ID": 11.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IR-1, IR-4",
+    "Implementation": "Define clear escalation paths and runbooks\n Integrate with central IR tooling\n Define evidence preservation expectations",
+    "Domain": "Incident Response",
+    "Additional Details": "Enables timely detection, reporting, analysis, and resolution of security incidents specific to that system.\n Each self‚Äëhosted system must have a documented incident response procedure that defines roles, escalation steps, communication, and post‚Äëincident review to support continuous improvement and regulatory compliance. For SaaS systems, it must be verified that the provider has an incident response procedure in place and that Luminor‚Äôs internal process describes how provider notifications and cooperation are handled for that system."
+  },
+  "98": {
+    "Summary": "11.2. Each system must have its incident response procedures regularly tested and updated¬†",
+    "ID": 11.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "IR-3",
+    "Implementation": "Schedule IR exercises and drills\n Define and track IR metrics",
+    "Additional Details": "Each self‚Äëhosted system must have a documented incident response procedure that defines roles, escalation steps, communication, and post‚Äëincident review to support continuous improvement and regulatory compliance. For SaaS systems, it must be verified that the provider has an incident response procedure in place and that Luminor‚Äôs internal process describes how provider notifications and cooperation are handled for that system."
+  },
+  "99": {
+    "Summary": "12.1. Procedures must be in place for authorizing and managing access to facilities",
+    "ID": 12.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "PE-1, PE-2",
+    "Implementation": null,
+    "Domain": "Physical & Environmental Security",
+    "Additional Details": null
+  },
+  "100": {
+    "Summary": "12.2. All critical facilities must be equipped with surveillance systems (e.g., CCTV)¬†",
+    "ID": 12.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "PE-8, PE-7, PE-6",
+    "Implementation": null,
+    "Additional Details": null
+  },
+  "101": {
+    "Summary": "12.3. Appropriate facility entry controls must be in place to restrict access to physical systems",
+    "ID": 12.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "PE-2, PE-3, PE-6",
+    "Implementation": null,
+    "Domain": "Physical & Environmental Security",
+    "Additional Details": null
+  },
+  "102": {
+    "Summary": "13.1. Solutions using AI as a part of functionality must provide ways to control AI operations and/or outcome.",
+    "ID": 13.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "PL-2",
+    "Implementation": "Implement role separation with possibility for humans to review and approve AI actions.\nOther standards: NIST AI RMF",
+    "Domain": "Artificial Intelligence & Emerging Tech Security",
+    "Additional Details": "If a system uses Artificial Intelligence, a Human-In-Control or Human-in-the-loop control levels must be used, with capabilities to:\n Override or stop any AI actions.\n Inspect any data used by AI.\n Authorize any AI decisions prior to execution."
+  },
+  "103": {
+    "Summary": "13.2. All AI solutions hosted outside of Luminor must not be trained on Luminor data or user input.",
+    "ID": 13.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SA-9",
+    "Implementation": "Enforce by policy or vendor contract",
+    "Domain": "Artificial Intelligence & Emerging Tech Security",
+    "Additional Details": "Any externally hosted AI solution that has access to Luminor data or can receive Luminor data through user input or uploads:\n Must not store Luminor data for longer than required to provide context for AI operations.\n Must encrypt any Luminor data it stores.\n Must not be trained on Luminor data."
+  },
+  "104": {
+    "Summary": "13.4. All AI solutions must be protected from known cyber attacks.",
+    "ID": 13.4,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "RA-5",
+    "Implementation": "Conduct adversarial tests per NIST-AI-100-2e to simulate injection attempts\n As a minimum (especially for embedded and ‚Äúblack-box‚Äù AI solutions - Atlassian Rovo, Wiz Mika, etc.):\n Validate vendor security (can the vendor prove they have input sanitization, injection defense, isolation of tenant data, no-training guarantee)\n Narrow data exposure (restrict model access to data based on business needs, disable AI features that are not needed)\n Enforce rules on the user (restrict/detect sensitive data input with DLP, add disclaimers that AI output must be reviewed)\n Implement logging and monitoring of AI usage (which users invoked AI and when, what actions it performed on behalf of the user)\n For enterprise AI solutions (like Gemini Enterprise, MS Copilot, etc.) use native services and third-party tools that enforce security controls (AI Security Gateways like Google Model Armor, Azure AI Filters and Azure AI Studio Prompt Shields, AWS Bedrock Guardrails, etc.)\nOther standards: NIST AI RMF",
+    "Domain": "Artificial Intelligence & Emerging Tech Security",
+    "Additional Details": "OWASP LLM-Top-10 (LLM-01 & 02) highlights prompt injection and confidential or strictly confidential data disclosure\n Including:\n Inference-time attacks (prompt injection, jailbreaks)\n Supply chain attacks\n Embedding poisoning\n Model inversion\n Membership inference\n Shadow model extraction\n Model training pipeline attacks (for internally trained models)"
+  },
+  "105": {
+    "Summary": "13.3. AI input and output must be validated.",
+    "ID": 13.3,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-10",
+    "Implementation": "Other standards: NIST AI RMF",
+    "Domain": "Artificial Intelligence & Emerging Tech Security",
+    "Additional Details": null
+  },
+  "106": {
+    "Summary": "13.5. All imported third-party AI models and datasets must be scanned for malicious artifacts before import.",
+    "ID": 13.5,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SA-12",
+    "Implementation": "Use SBOM tools for model provenance and license scanning\n Request model validation from Model Risk Management and Validation Department\nOther standards: NIST AI RMF",
+    "Domain": "Artificial Intelligence & Emerging Tech Security",
+    "Additional Details": "Aligns with governance of third-party risks from the NIST AI RMF\n Scan for malware, embedded shells, compromised/corrupted model weights"
+  },
+  "107": {
+    "Summary": "14.1. Components must undergo regular vulnerability scans",
+    "ID": 14.1,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "RA-5",
+    "Implementation": "For on-prem:\n Luminor uses Qualys vulnerability scanner.¬†Respective system should be onboarded to Qualys scanner.\n During new server onboarding to on-prem datacenters admins are deploying Qualys agent, so it automatically connects to Qualys\n Qualys administration team reviews CMDB if new assets are added to it and we onboard new servers for regular scanning.\n Qualys is scanning on-prem infrastructure servers.\n For AWS Cloud:\n Use Wiz which automatically scans all resources if AWS account is onboarded to Wiz. Clarify with the Cloud Platform team.",
+    "Domain": "Security Assessment & Testing",
+    "Additional Details": "Vulnerability scans are performed as follows:\n At least once every three months.\n Rescans are performed as needed to confirm that vulnerabilities are resolved."
+  },
+  "108": {
+    "Summary": "14.2. Components must undergo regular penetration tests",
+    "ID": 14.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "SI-2, RA-5, CA-8",
+    "Implementation": "For SaaS solutions - penetration tests are performed by SaaS vendor. Luminor only performs penetration tests on integrations.\n If testing is not performed by the SaaS vendor - may be performed by Luminor or by independent qualified 3rd party on behalf of Luminor. Contact Security Engineering Team to arrange.",
+    "Domain": "Security Assessment & Testing",
+    "Additional Details": "Performed:\n At least once every 12 months and after any changes to security controls/methods, or to components that are applicable (see below).\n By a qualified internal resource or qualified external third party using industry-accepted penetration testing approaches.\n Reviewed:\n After each penetration test, by analyzing pentest reports and recording identified risks and mitigation actions.\n By a team of Luminor security SMEs, project team and stakeholders.\n Applicable to:\n Components storing, processing or transmitting PII, sensitive information, cardholder data, confidential and strictly confidential data.\n Components that are externally exposed.\n Components where it is mandated by external regulatory requirements (like PCI DSS).\n Components where penetration testing is used for risk mitigation or prescribed as an additional security measure."
+  },
+  "109": {
+    "Summary": "5.20. Authentication of a user must be repeated at least once per 12 hours during a session, regardless of user activity",
+    "ID": 5.2,
+    "Issue Type": "Control",
+    "Description": "",
+    "NIST Mapping": "AC-12, IA-11",
+    "Implementation": null,
+    "Domain": "Identity & Access Management",
+    "Additional Details": null
+  }
+}

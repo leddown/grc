@@ -1,0 +1,120 @@
+id: pci-dss
+displayName: Payment Card Industry Data Security Standard v4.0
+sourceRef: PCI DSS v4.0
+idPrefix: PCI
+
+detect:
+  filenamePatterns: [pci, pci-dss, pci_dss]
+  contentPatterns:
+    - payment card industry
+    - pci dss
+    - cardholder data environment
+
+segmentation:
+  # Hierarchical requirement numbers: 1.1, 3.4.1, 8.3.6 ...
+  - type: numbered
+    minDepth: 2
+    maxDepth: 3
+    minBodyChars: 60
+  # ... plus the twelve top-level requirement headings.
+  - type: regex
+    pattern: '(?im)^[ \t]*Requirement[ \t]+(\d{1,2})\b[ \t]*:?[ \t]*'
+    label: Requirement
+    idPrefix: PCI-REQ
+    minBodyChars: 60
+
+classification:
+  categories:
+    - Network Security Controls
+    - Secure Configuration
+    - Protect Stored Account Data
+    - Protect Data in Transit
+    - Malicious Software
+    - Secure Systems and Software
+    - Restrict Access
+    - Identify and Authenticate Access
+    - Physical Access
+    - Log and Monitor
+    - Test Security
+    - Information Security Policy
+  rules:
+    - category: Network Security Controls
+      match:
+        sections: ["1."]
+        articles: "1"
+    - category: Secure Configuration
+      match:
+        sections: ["2."]
+        articles: "2"
+    - category: Protect Stored Account Data
+      match:
+        sections: ["3."]
+        articles: "3"
+    - category: Protect Data in Transit
+      match:
+        sections: ["4."]
+        articles: "4"
+    - category: Malicious Software
+      match:
+        sections: ["5."]
+        articles: "5"
+    - category: Secure Systems and Software
+      match:
+        sections: ["6."]
+        articles: "6"
+    - category: Restrict Access
+      match:
+        sections: ["7."]
+        articles: "7"
+    - category: Identify and Authenticate Access
+      match:
+        sections: ["8."]
+        articles: "8"
+    - category: Physical Access
+      match:
+        sections: ["9."]
+        articles: "9"
+    - category: Log and Monitor
+      match:
+        sections: ["10."]
+        articles: "10"
+    - category: Test Security
+      match:
+        sections: ["11."]
+        articles: "11"
+    - category: Information Security Policy
+      match:
+        sections: ["12."]
+        articles: "12"
+
+seedCrosswalk:
+  - group: Requirement 1 — network security controls
+    match:
+      sections: ["1."]
+      articles: "1"
+    controls: [SC-7, AC-4]
+    rationale: Network security controls between trusted and untrusted networks map to boundary protection and information flow enforcement.
+  - group: Requirement 3 — protect stored account data
+    match:
+      sections: ["3."]
+      articles: "3"
+    controls: [SC-28, MP-4]
+    rationale: Rendering stored account data unreadable and controlling media map to protection of information at rest and media storage.
+  - group: Requirement 8 — identify and authenticate access
+    match:
+      sections: ["8."]
+      articles: "8"
+    controls: [IA-2, IA-5]
+    rationale: Unique user identification and authentication factor management map to user identification/authentication and authenticator management.
+  - group: Requirement 10 — log and monitor all access
+    match:
+      sections: ["10."]
+      articles: "10"
+    controls: [AU-2, AU-6, AU-12]
+    rationale: Logging of access to system components and daily log review map to event logging, audit review and audit record generation.
+  - group: Requirement 11 — test security of systems and networks
+    match:
+      sections: ["11."]
+      articles: "11"
+    controls: [CA-8, RA-5]
+    rationale: Internal and external penetration testing and vulnerability scanning map directly to penetration testing and vulnerability monitoring.

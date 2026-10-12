@@ -1,0 +1,278 @@
+{
+  "name": "suggestions",
+  "input": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-6",
+          "kind": "statements"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h6"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Statements"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p6"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Staff "
+              },
+              {
+                "type": "text",
+                "text": "will",
+                "marks": [
+                  {
+                    "type": "deletion",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000001",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "must",
+                "marks": [
+                  {
+                    "type": "insertion",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000002",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": " review ",
+                "marks": [
+                  {
+                    "type": "insertion",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000003",
+                      "authorId": "ai:claude-opus-5",
+                      "authorKind": "ai",
+                      "authorName": "AI · claude-opus-5",
+                      "proposalId": "prop-1",
+                      "createdAt": "2026-09-28T10:00:00Z"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "access quarterly."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p7"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "two modifications",
+                "marks": [
+                  {
+                    "type": "modification",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000004",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z",
+                      "type": "attr",
+                      "attrName": "href",
+                      "previousValue": "a",
+                      "newValue": "b"
+                    }
+                  },
+                  {
+                    "type": "modification",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000005",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z",
+                      "type": "attr",
+                      "attrName": "href",
+                      "previousValue": "b",
+                      "newValue": "c"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "update": "AR0BAAcBBnBvbGljeQMNcG9saWN5U2VjdGlvbgcAAQADDnNlY3Rpb25IZWFkaW5nBwABAQYEAAECClN0YXRlbWVudHMoAAEBA2JpZAF3BGItaDaHAQEDCXBhcmFncmFwaAcAAQ4GBAABDwZTdGFmZiCGARUIZGVsZXRpb26hAXsiaWQiOiJjMGZmZWUwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJhdXRob3JJZCI6InU6YWxpY2UiLCJhdXRob3JLaW5kIjoiaHVtYW4iLCJhdXRob3JOYW1lIjoiQWxpY2UiLCJwcm9wb3NhbElkIjpudWxsLCJjcmVhdGVkQXQiOiIyMDI2LTA5LTI4VDEwOjAwOjAwWiJ9hAEWBHdpbGyGARoIZGVsZXRpb24EbnVsbIYBGwlpbnNlcnRpb26hAXsiaWQiOiJjMGZmZWUwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIiLCJhdXRob3JJZCI6InU6YWxpY2UiLCJhdXRob3JLaW5kIjoiaHVtYW4iLCJhdXRob3JOYW1lIjoiQWxpY2UiLCJwcm9wb3NhbElkIjpudWxsLCJjcmVhdGVkQXQiOiIyMDI2LTA5LTI4VDEwOjAwOjAwWiJ9hAEcBG11c3SGASAJaW5zZXJ0aW9uBG51bGyGASEJaW5zZXJ0aW9uuQF7ImlkIjoiYzBmZmVlMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIiwiYXV0aG9ySWQiOiJhaTpjbGF1ZGUtb3B1cy01IiwiYXV0aG9yS2luZCI6ImFpIiwiYXV0aG9yTmFtZSI6IkFJIMK3IGNsYXVkZS1vcHVzLTUiLCJwcm9wb3NhbElkIjoicHJvcC0xIiwiY3JlYXRlZEF0IjoiMjAyNi0wOS0yOFQxMDowMDowMFoifYQBIgggcmV2aWV3IIYBKglpbnNlcnRpb24EbnVsbIQBKxFhY2Nlc3MgcXVhcnRlcmx5LigAAQ4DYmlkAXcEYi1wNocBDgMJcGFyYWdyYXBoBwABPgYGAAE/Fm1vZGlmaWNhdGlvbi0tL043U0V4bGHkAXsiaWQiOiJjMGZmZWUwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDQiLCJhdXRob3JJZCI6InU6YWxpY2UiLCJhdXRob3JLaW5kIjoiaHVtYW4iLCJhdXRob3JOYW1lIjoiQWxpY2UiLCJwcm9wb3NhbElkIjpudWxsLCJjcmVhdGVkQXQiOiIyMDI2LTA5LTI4VDEwOjAwOjAwWiIsInR5cGUiOiJhdHRyIiwiYXR0ck5hbWUiOiJocmVmIiwicHJldmlvdXNWYWx1ZSI6ImEiLCJuZXdWYWx1ZSI6ImIifYYBQBZtb2RpZmljYXRpb24tLTlRSmQ3RHk45AF7ImlkIjoiYzBmZmVlMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA1IiwiYXV0aG9ySWQiOiJ1OmFsaWNlIiwiYXV0aG9yS2luZCI6Imh1bWFuIiwiYXV0aG9yTmFtZSI6IkFsaWNlIiwicHJvcG9zYWxJZCI6bnVsbCwiY3JlYXRlZEF0IjoiMjAyNi0wOS0yOFQxMDowMDowMFoiLCJ0eXBlIjoiYXR0ciIsImF0dHJOYW1lIjoiaHJlZiIsInByZXZpb3VzVmFsdWUiOiJiIiwibmV3VmFsdWUiOiJjIn2EAUERdHdvIG1vZGlmaWNhdGlvbnOGAVIWbW9kaWZpY2F0aW9uLS0vTjdTRXhsYQRudWxshgFTFm1vZGlmaWNhdGlvbi0tOVFKZDdEeTgEbnVsbCgAAT4DYmlkAXcEYi1wNygAAQADdWlkAXcDcy02KAABAARraW5kAXcKc3RhdGVtZW50cwA=",
+  "expected": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-6",
+          "kind": "statements"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h6"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Statements"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p6"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Staff "
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "deletion",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000001",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z"
+                    }
+                  }
+                ],
+                "text": "will"
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "insertion",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000002",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z"
+                    }
+                  }
+                ],
+                "text": "must"
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "insertion",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000003",
+                      "authorId": "ai:claude-opus-5",
+                      "authorKind": "ai",
+                      "authorName": "AI · claude-opus-5",
+                      "proposalId": "prop-1",
+                      "createdAt": "2026-09-28T10:00:00Z"
+                    }
+                  }
+                ],
+                "text": " review "
+              },
+              {
+                "type": "text",
+                "text": "access quarterly."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p7"
+            },
+            "content": [
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "modification",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000004",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z",
+                      "type": "attr",
+                      "attrName": "href",
+                      "previousValue": "a",
+                      "newValue": "b"
+                    }
+                  },
+                  {
+                    "type": "modification",
+                    "attrs": {
+                      "id": "c0ffee00-0000-4000-8000-000000000005",
+                      "authorId": "u:alice",
+                      "authorKind": "human",
+                      "authorName": "Alice",
+                      "proposalId": null,
+                      "createdAt": "2026-09-28T10:00:00Z",
+                      "type": "attr",
+                      "attrName": "href",
+                      "previousValue": "b",
+                      "newValue": "c"
+                    }
+                  }
+                ],
+                "text": "two modifications"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,99 @@
+id: cra
+displayName: EU Cyber Resilience Act (CRA)
+sourceRef: EU 2024/2847
+idPrefix: CRA-ART
+
+detect:
+  filenamePatterns: [cra, cyber-resilience, cyber_resilience, "2024-2847", "2024_2847"]
+  contentPatterns:
+    - cyber resilience act
+    - "2024/2847"
+    - products with digital elements
+
+# The CRA needs two structures: numbered Articles in the body, and the essential
+# requirements in Annex I, which is organised into Parts.
+segmentation:
+  - type: article
+    label: Article
+    minBodyChars: 120
+  - type: annex
+    label: Annex
+    idPrefix: CRA-ANNEX
+    minBodyChars: 80
+  - type: regex
+    pattern: '(?m)^[ \t]*Part[ \t]+([IVX]+)\b[ \t]*:?[ \t]*'
+    label: Annex Part
+    idPrefix: CRA-ANNEX-PART
+    minBodyChars: 80
+
+classification:
+  categories:
+    - Scope and Definitions
+    - Obligations of Economic Operators
+    - Conformity Assessment
+    - Market Surveillance
+    - Essential Cybersecurity Requirements
+    - Vulnerability Handling Requirements
+  # Article-range rules come first: a numbered Article is located precisely, so
+  # it should be classified by where it sits rather than by a keyword that
+  # happens to appear in its text. The keyword and annex rules below then pick
+  # up the Annex material, which carries no article number.
+  rules:
+    - category: Scope and Definitions
+      match:
+        articles: "1-6"
+    - category: Obligations of Economic Operators
+      match:
+        articles: "13-26"
+    - category: Conformity Assessment
+      match:
+        articles: "27-51"
+    - category: Market Surveillance
+      match:
+        articles: "52-64"
+    - category: Vulnerability Handling Requirements
+      match:
+        keywords:
+          - vulnerability handling
+          - coordinated vulnerability disclosure
+          - software bill of materials
+    - category: Essential Cybersecurity Requirements
+      match:
+        annexes: ["I"]
+        keywords:
+          - secure by default
+          - essential cybersecurity requirements
+          - attack surface
+
+seedCrosswalk:
+  - group: Annex I — secure-by-default product properties
+    match:
+      keywords:
+        - secure by default
+        - default configuration
+        - attack surface
+        - without any known exploitable vulnerabilities
+    controls: [CM-6, CM-7]
+    rationale: Delivering products with a secure default configuration and minimised attack surface maps to configuration settings and least functionality.
+  - group: Annex I — vulnerability handling requirements
+    match:
+      keywords:
+        - vulnerability handling
+        - coordinated vulnerability disclosure
+        - security updates
+        - software bill of materials
+    controls: [RA-5, SI-2, SR-11]
+    rationale: Identifying and documenting vulnerabilities, shipping security updates and attesting component provenance map to vulnerability monitoring, flaw remediation and component authenticity.
+  - group: Reporting obligations of manufacturers
+    match:
+      keywords:
+        - actively exploited vulnerability
+        - notify enisa
+        - severe incident having an impact on the security
+    controls: [IR-6, SI-5]
+    rationale: Mandatory notification of actively exploited vulnerabilities and severe incidents maps to incident reporting and security alerts/advisories.
+  - group: Secure development and conformity of products
+    match:
+      articles: "13-26"
+    controls: [SA-8, SA-11, SA-15]
+    rationale: Manufacturer duties to design, develop and produce secure products map to security engineering principles, developer testing and a documented development process.

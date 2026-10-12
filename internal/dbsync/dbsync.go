@@ -1,0 +1,757 @@
+// Package dbsync copies application data between two database backends
+// (SQLite or PostgreSQL, in either direction) using the shared logical schema
+// defined in internal/db. It is used by the application's -sync-to / -sync-from
+// modes to export a local database up to a remote one (or pull the other way).
+//
+// Sync is merge-oriented: rows are upserted by each table's natural key, so
+// rows that exist only on the destination are left untouched. The lone derived
+// table (security_nfr_control_links) is fully replaced because it has no stable
+// key and is regenerated from its sources; ephemeral login sessions
+// (auth_sessions) are skipped.
+//
+// Three modules are outside Sync entirely -- Regulation Coverage, the crisis
+// exercises and the audit findings. Each of their records is a tree of rows joined by autoincrement
+// ids, which is an identity two deployments do not share, so there is no honest
+// merge to perform (see skipInSync). Export and Import still carry them, and
+// that is the supported way to move them between deployments.
+//
+// Export and Import cover every managed table regardless of strategy: a
+// snapshot is a backup, and a backup that quietly omitted two modules is the
+// bug this package already shipped once.
+//
+// Two tables are deliberately left out, and it is worth being explicit about
+// why, because "the backup is missing a table" is otherwise discovered at
+// restore time: app_state holds this deployment's own configuration (which AI
+// provider it talks to, which Wintermute agent it asks), which should not
+// follow the data onto another server, and app_secrets holds ciphertext whose
+// key file never travels in a snapshot, so copying it would move an unreadable
+// blob and hide the fact that the credential has to be set again.
+package dbsync
+
+import (
+	"fmt"
+	"strings"
+
+	"grc/internal/db"
+)
+
+// strategy selects how a table's rows are reconciled on the destination.
+type strategy int
+
+const (
+	// upsert inserts rows and updates existing ones matched on conflictCols.
+	upsert strategy = iota
+	// replace clears the destination table, then inserts every source row.
+	replace
+	// skipInSync excludes a table from Sync while leaving it in Export and
+	// Import. It is for data Sync cannot reconcile honestly: a record that is a
+	// tree of rows joined by autoincrement ids has no identity two deployments
+	// agree on, so neither merge strategy is correct. Upserting on id rewrites
+	// whatever unrelated record happens to hold that id on the destination, and
+	// replace would delete every record the destination has and the source does
+	// not -- and could not even do that safely, because copyTable commits one
+	// table at a time, so a failure part-way through a multi-table replace
+	// leaves parents deleted and children not yet reinserted, with nothing to
+	// roll back.
+	//
+	// Import has neither problem: it is one transaction over every table, it
+	// deletes children before parents, and it is a full replace by design. So
+	// moving one of these modules between deployments is the JSON snapshot's
+	// job, and Sync stays what it is good at -- merging the flat,
+	// natural-keyed catalogs.
+	skipInSync
+)
+
+// tableSpec describes how one table is copied. cols is the ordered set of
+// columns read from the source and written to the destination; for tables
+// matched on a natural/business key the auto-increment id is intentionally
+// omitted so the destination assigns its own. idKeyed marks tables whose id is
+// referenced by foreign keys (so the id is carried over and, on PostgreSQL,
+// the identity sequence is realigned afterwards). blobCols names the columns
+// holding binary data, which have to be kept as bytes rather than coerced to
+// text (and are base64-encoded in a JSON snapshot -- see transfer.go).
+type tableSpec struct {
+	table        string
+	cols         []string
+	conflictCols []string
+	strat        strategy
+	idKeyed      bool
+	blobCols     []string
+	// formerly is the key an older snapshot carries this table's rows under.
+	formerly string
+}
+
+// isBlob reports whether col holds binary data on this table.
+func (s tableSpec) isBlob(col string) bool {
+	for _, c := range s.blobCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
+}
+
+// syncOrder lists tables parent-before-child so foreign keys are satisfied as
+// each table is committed in turn.
+var syncOrder = []tableSpec{
+	{table: "users", cols: []string{"name", "email"}, conflictCols: []string{"email"}},
+	{table: "nist_stride_mappings", cols: []string{"control_id", "baselines_json", "threats_json"}, conflictCols: []string{"control_id"}},
+	{
+		table:    "nist_controls",
+		formerly: db.LegacyControlTable,
+		cols: []string{
+			"source_key", "control_id", "control_type", "name", "family",
+			"in_low", "in_moderate", "in_high", "in_privacy",
+			"mapping_baselines_json", "threats_json",
+			"confidentiality_status", "integrity_status", "availability_status",
+			"justification", "potentially_common_inheritable", "requirements",
+			"discussion", "related_controls_json", "appendix_json",
+		},
+		conflictCols: []string{"control_id"},
+	},
+	{table: "control_family_visibility", cols: []string{"family", "enabled"}, conflictCols: []string{"family"}},
+	{
+		table: "security_nfrs",
+		cols: []string{
+			"record_key", "nfr_id", "summary", "issue_type", "description",
+			"nist_mapping", "additional_details", "implementation", "domain", "weight",
+		},
+		conflictCols: []string{"record_key"},
+	},
+	{
+		table: "nfr_control_link_overrides",
+		cols:  []string{"nfr_key", "mapping_control_id", "override_control_id", "matched"},
+		// Composite primary key.
+		conflictCols: []string{"nfr_key", "mapping_control_id"},
+	},
+	{
+		// The uploaded/fetched security-document corpus behind the NFR
+		// enrichment module, and the AI proposals derived from it. Chunks and
+		// proposals reference a document id, so documents sync first.
+		table: "nfr_source_documents",
+		cols: []string{"id", "title", "origin", "url", "filename", "media_type", "sha256",
+			"byte_size", "library_doc_id", "extract_via", "uploaded_by", "created_at"},
+		conflictCols: []string{"id"},
+	},
+	{
+		table:        "nfr_source_chunks",
+		cols:         []string{"id", "document_id", "ordinal", "heading", "body"},
+		conflictCols: []string{"id"},
+	},
+	{
+		table:        "nfr_enrichment_proposals",
+		cols:         []string{"id", "nfr_key", "document_id", "field", "suggested_text", "rationale", "confidence", "citations_json", "status", "model", "prompt_hash", "created_at", "decided_at", "decided_by", "decided_note"},
+		conflictCols: []string{"id"},
+	},
+	{
+		// Per-call token/cost tracking behind the AI Chat usage dashboard. Not
+		// referenced by any foreign key, so it is id-keyed only to keep the
+		// primary key stable across a round trip rather than out of necessity.
+		table:        "ai_usage_log",
+		cols:         []string{"id", "provider", "model", "input_tokens", "output_tokens", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "auth_users",
+		cols:  []string{"username", "password_hash", "is_admin", "allowed_pages_json", "created_at", "updated_at"},
+		// auth_sessions (FK -> auth_users) is intentionally not synced.
+		conflictCols: []string{"username"},
+	},
+	{
+		table: "security_risk_register",
+		cols: []string{
+			"risk_id", "title", "business_unit", "asset", "threat_source", "vulnerability",
+			"likelihood", "impact", "inherent_score", "current_controls",
+			"residual_likelihood", "residual_impact", "residual_score",
+			"response_strategy", "response_action", "owner", "status",
+			"target_date", "last_review_date", "next_review_date", "risk_appetite_aligned", "notes",
+		},
+		conflictCols: []string{"risk_id"},
+	},
+	// Policy documents are id-keyed: sections and versions carry a foreign key
+	// to the document, and a document's parent_document_id points at another
+	// row in this same table, so the ids have to survive the copy.
+	// Client profiles and their facts (internal/clientprofile). Profiles are
+	// id-keyed because policy documents point at them by id.
+	{
+		table:        "client_profiles",
+		cols:         []string{"id", "name", "crm_ref", "notes", "created_at", "updated_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	// Templates made in the app are keyed by template_id, which documents
+	// refer to and which never changes once published, so they merge across
+	// installations on it.
+	{
+		table: "policy_templates",
+		cols: []string{"template_id", "status", "draft_json", "published_json", "published_version", "origin", "source_library_id",
+			"source_title", "sources_json", "notes_json", "ai_provider", "ai_model", "input_tokens", "output_tokens",
+			"created_by", "created_at", "updated_by", "updated_at", "published_by", "published_at"},
+		conflictCols: []string{"template_id"},
+	},
+	{
+		table:        "client_profile_facts",
+		cols:         []string{"client_id", "key", "value", "value_type", "source", "updated_by", "updated_at"},
+		conflictCols: []string{"client_id", "key"},
+	},
+	{
+		table: "policy_documents",
+		cols: []string{
+			"id", "client_id", "client_name", "doc_type", "reference", "title", "status",
+			"owner_role", "approver", "classification", "frameworks_json",
+			"effective_date", "review_cadence_months", "next_review_date",
+			"parent_document_id", "summary", "author", "created_at", "updated_at",
+			"editor_format", "projection_version", "projection_token",
+			"client_profile_id", "template_id", "template_version", "ai_policy",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "policy_sections",
+		cols: []string{
+			"id", "uid", "document_id", "ordinal", "heading", "body", "section_kind",
+			"provenance", "provenance_detail", "updated_at", "content_json", "detached_at",
+			"blocks_json",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "policy_versions",
+		cols: []string{
+			"id", "document_id", "version_label", "approved_by", "approved_at",
+			"change_summary", "snapshot", "content_json", "snapshot_sha256",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table: "policy_section_controls",
+		cols: []string{
+			"id", "section_id", "control_id", "framework", "coverage", "note", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		table:        "stored_json_documents",
+		cols:         []string{"id", "name", "source", "content_json", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	{
+		// The document-template brand: one row, id fixed at 1 by a CHECK.
+		// Included because it is authored content rather than machine-local
+		// state — a firm's palette and wordmark should survive a migration, and
+		// losing them would be silent until the next deliverable came out in
+		// the shipped default maroon.
+		table:        "doc_template_brand",
+		cols:         []string{"id", "settings_json", "updated_at", "updated_by"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+	},
+	// ---- Regulation Coverage (internal/regcoverage) ----
+	//
+	// All id-keyed: sections, findings, mappings, versions and the chat
+	// transcript all carry a foreign key up the chain, so the ids have to
+	// survive the copy. Regulations come first, then the upload, then the
+	// analysis derived from it.
+	{
+		table: "reg_coverage_regulations",
+		cols: []string{
+			"id", "title", "framework", "framework_name", "source_ref", "detected",
+			"library_doc_id", "filename", "media_type", "sha256", "byte_size", "extract_method",
+			"extract_notes", "body_text", "status", "status_detail", "uploaded_by",
+			"created_at", "analyzed_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		// The original uploaded file. It travels so a restored report can still
+		// be read against the document it was written about; content is a BLOB,
+		// carried through JSON as base64 (see blobCols).
+		table:        "reg_coverage_sources",
+		cols:         []string{"regulation_id", "media_type", "filename", "byte_size", "content"},
+		conflictCols: []string{"regulation_id"},
+		blobCols:     []string{"content"},
+		strat:        skipInSync,
+	},
+	{
+		table:        "reg_coverage_sections",
+		cols:         []string{"id", "regulation_id", "ref", "label", "title", "category", "body", "position", "confidence"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "reg_coverage_findings",
+		cols: []string{
+			"id", "regulation_id", "section_id", "relevant", "requirement", "commentary",
+			"gaps", "quote", "grounded", "confidence", "model", "prompt_hash", "revision", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "reg_coverage_mappings",
+		cols:         []string{"id", "finding_id", "kind", "ref", "title", "rationale", "confidence", "source", "known"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "reg_coverage_versions",
+		cols:         []string{"id", "regulation_id", "number", "summary", "note", "snapshot", "created_at", "created_by"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "reg_coverage_chat",
+		cols:         []string{"id", "regulation_id", "version", "role", "content", "model", "actor", "session_id", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+
+	// ---- Risk & Crisis Exercises (internal/crisisexercise) ----
+	//
+	// The exercise is the parent of everything below it, and phases are the
+	// parent of injects, decisions and findings, so the order here is exercise,
+	// objectives, phases, then the rest. All id-keyed for the same reason as
+	// above.
+	{
+		table: "crisis_ex_exercises",
+		cols: []string{
+			"id", "reference", "title", "summary", "format", "kind", "audience",
+			"entity_name", "entity_type", "jurisdiction", "supervision", "critical_functions",
+			"threat_actor", "threat_narrative", "initial_vector", "scenario_key",
+			"status", "tlp", "scheduled_for", "duration_minutes", "started_at", "ended_at",
+			"facilitator", "control_team", "evaluators", "ai_generated", "model", "prompt_hash",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "crisis_ex_objectives",
+		cols:         []string{"id", "exercise_id", "ordinal", "code", "text", "capability", "success_criteria", "rating", "notes"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "crisis_ex_phases",
+		cols: []string{
+			"id", "exercise_id", "ordinal", "phase_key", "name", "purpose",
+			"entry_criteria", "exit_criteria", "lead_role", "offset_minutes",
+			"duration_minutes", "status", "notes",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "crisis_ex_injects",
+		cols: []string{
+			"id", "exercise_id", "phase_id", "ordinal", "code", "offset_minutes", "title", "body",
+			"channel", "from_actor", "to_actor", "inject_type", "expected_actions",
+			"expected_decision", "decision_owner", "evaluation_notes", "difficulty",
+			"ai_generated", "model", "prompt_hash", "confidence", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "crisis_ex_responses",
+		cols: []string{
+			"id", "exercise_id", "inject_id", "delivered_at", "responded_offset", "outcome",
+			"actual_actions", "observations", "evaluator", "created_at", "updated_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "crisis_ex_decisions",
+		cols: []string{
+			"id", "exercise_id", "phase_id", "offset_minutes", "title", "options", "decision",
+			"rationale", "made_by", "role", "authority", "reversible",
+			"regulatory_implication", "customer_impact", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		// One row per exercise, keyed by the exercise rather than an id of its
+		// own — the DORA classification of the incident being exercised.
+		table: "crisis_ex_classification",
+		cols: []string{
+			"exercise_id", "aware_offset", "classified_offset", "critical_services_affected",
+			"clients_affected", "clients_material", "transactions_affected", "transactions_material",
+			"reputational_impact", "reputational_material", "downtime_minutes", "duration_material",
+			"geographical_spread", "geographical_material", "data_losses", "data_losses_material",
+			"economic_impact", "economic_material", "personal_data_breach", "nis2_significant",
+			"major", "rationale", "team_verdict", "notes", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"exercise_id"},
+		strat:        skipInSync,
+	},
+	{
+		table: "crisis_ex_clocks",
+		cols: []string{
+			"id", "exercise_id", "ordinal", "regime", "authority", "label", "basis",
+			"due_offset", "actual_offset", "status", "evidence", "notes", "source",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "crisis_ex_findings",
+		cols: []string{
+			"id", "exercise_id", "phase_id", "ordinal", "code", "title", "category", "severity",
+			"description", "root_cause", "evidence", "recommendation", "owner", "due_date",
+			"status", "risk_ref", "ai_generated", "model", "created_at", "created_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "crisis_ex_participants",
+		cols:         []string{"id", "exercise_id", "name", "role_key", "org", "player", "attended", "contact", "notes"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		// The citations tying an exercise (or one of its parts) to the controls,
+		// NFRs, regulation clauses and risks it exercises. owner_id is a
+		// polymorphic reference into the tables above, which is why this comes
+		// after all of them.
+		table: "crisis_ex_references",
+		cols: []string{
+			"id", "exercise_id", "owner_kind", "owner_id", "ref_kind", "ref",
+			"title", "note", "source", "known", "url", "created_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "crisis_ex_versions",
+		cols:         []string{"id", "exercise_id", "number", "kind", "summary", "note", "snapshot", "created_at", "created_by"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "crisis_ex_chat",
+		cols:         []string{"id", "exercise_id", "persona", "role", "content", "model", "actor", "scope", "session_id", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// Audit findings carry their action plans and status history as child rows
+	// joined by id, the same shape as the crisis exercises, so they are moved
+	// with the snapshot rather than merged by Sync.
+	{
+		table: "audit_findings",
+		cols: []string{
+			"id", "reference", "title", "source", "engagement", "auditor", "finding_type",
+			"severity", "deficiency_type", "criteria", "condition_text", "cause", "effect",
+			"recommendation", "root_cause_category", "business_unit", "process_area", "owner",
+			"management_response", "management_response_text", "identified_date", "report_date",
+			"original_due_date", "due_date", "extension_count", "extension_reason", "status",
+			"repeat_finding", "prior_reference", "linked_risks", "linked_controls", "framework_refs",
+			"validated_by", "validation_date", "validation_notes", "closure_evidence", "closed_date",
+			"risk_accepted_by", "risk_acceptance_rationale", "risk_acceptance_expiry", "notes",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "audit_finding_actions",
+		cols: []string{
+			"id", "finding_id", "ordinal", "reference", "description", "action_type", "owner",
+			"due_date", "status", "completed_date", "evidence",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "audit_finding_history",
+		cols:         []string{"id", "finding_id", "at", "actor", "event", "from_value", "to_value", "note"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// ---- Policy Studio (internal/policystudio) ----
+	//
+	// The live collaborative document of each Studio policy, as Yjs binary.
+	// These travel in a full snapshot, so a restore brings every Studio
+	// document back exactly, but not in -sync-to / -sync-from: an update log is
+	// a history that only means something next to the state it was written
+	// against, and merging one deployment's log into another's would stitch two
+	// documents together. A sync carries the section rows instead (with their
+	// content_json); the destination notices the rows no longer match the
+	// state they were projected from and rebuilds the document from them.
+	{
+		table:        "policy_doc_state",
+		cols:         []string{"document_id", "state", "projection_token", "updated_at"},
+		conflictCols: []string{"document_id"},
+		blobCols:     []string{"state"},
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_doc_updates",
+		cols:         []string{"id", "document_id", "upd", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		blobCols:     []string{"upd"},
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_doc_snapshots",
+		cols:         []string{"id", "document_id", "reason", "format", "state", "created_by", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		blobCols:     []string{"state"},
+		strat:        skipInSync,
+	},
+	// Comment anchors are Yjs relative positions into the state above, so the
+	// threads, and the audit that refers to their suggestions, stay out of a
+	// sync for the same reason: the destination rebuilds its document from the
+	// rows, and these would point into a document it does not have.
+	{
+		table: "policy_comment_threads",
+		cols: []string{"id", "document_id", "section_uid", "anchor_start", "anchor_end", "quote", "visibility", "kind",
+			"suggestion_suid", "status", "created_by", "created_at", "updated_at", "resolved_by", "resolved_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_comments",
+		cols:         []string{"id", "thread_id", "author", "author_kind", "body", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "policy_studio_audit",
+		cols:         []string{"id", "document_id", "actor", "actor_kind", "event", "detail_json", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	// AI proposals and their edits belong with the audit above: the edits'
+	// suids are suggestion ids in Yjs state a sync does not carry.
+	{
+		table: "policy_ai_proposals",
+		cols: []string{"id", "document_id", "requested_by", "action", "scope", "instruction", "provider", "model",
+			"served_by", "agent", "prompt_sha256", "context_fingerprint", "status", "summary", "answer_markdown",
+			"mappings_json", "new_facts_json", "input_tokens", "output_tokens", "created_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "policy_ai_edits",
+		cols: []string{"id", "proposal_id", "suid", "op", "block_id", "section_uid", "quote", "fragment_json",
+			"rationale", "citations_json", "validation", "placement", "decision", "decided_by", "decided_at"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+
+	{
+		// Derived from the catalogs + overrides; no stable key, so replace it
+		// wholesale to keep it consistent with the rows just copied.
+		table: "security_nfr_control_links",
+		cols: []string{
+			"nfr_key", "nfr_id", "nfr_summary", "nfr_domain", "nist_mapping_raw",
+			"mapping_control_id", "control_id", "control_name", "control_family", "matched",
+		},
+		strat: replace,
+	},
+}
+
+// Report records how many rows were copied per table, in source order.
+type Report struct {
+	Tables []TableResult
+}
+
+// TableResult is the per-table outcome of a sync. Skipped distinguishes a table
+// Sync deliberately did not touch from one that was copied and had no rows --
+// both report 0, and only one of them means the destination still holds data
+// this sync did not look at.
+type TableResult struct {
+	Table   string
+	Rows    int
+	Skipped bool
+}
+
+// Total returns the number of rows copied across all tables.
+func (r Report) Total() int {
+	total := 0
+	for _, t := range r.Tables {
+		total += t.Rows
+	}
+	return total
+}
+
+// Sync copies every managed table from src to dst. Both connections must
+// already have their schema initialized (db.Open / OpenSQLite / OpenPostgres
+// all do this). It returns a per-table Report; on the first error the partial
+// report is returned alongside it.
+func Sync(src, dst *db.Conn) (Report, error) {
+	var report Report
+	for _, spec := range syncOrder {
+		if spec.strat == skipInSync {
+			report.Tables = append(report.Tables, TableResult{Table: spec.table, Skipped: true})
+			continue
+		}
+		rows, err := copyTable(src, dst, spec)
+		report.Tables = append(report.Tables, TableResult{Table: spec.table, Rows: rows})
+		if err != nil {
+			return report, fmt.Errorf("sync %s: %w", spec.table, err)
+		}
+		if spec.idKeyed {
+			if err := resetSequence(dst, spec.table); err != nil {
+				return report, fmt.Errorf("reset %s id sequence: %w", spec.table, err)
+			}
+		}
+	}
+	return report, nil
+}
+
+func copyTable(src, dst *db.Conn, spec tableSpec) (int, error) {
+	insertSQL := buildInsertSQL(spec)
+
+	srcRows, err := src.Query(fmt.Sprintf("SELECT %s FROM %s", strings.Join(spec.cols, ", "), spec.table))
+	if err != nil {
+		return 0, fmt.Errorf("read source: %w", err)
+	}
+	defer srcRows.Close()
+
+	tx, err := dst.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	if spec.strat == replace {
+		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s", spec.table)); err != nil {
+			return 0, fmt.Errorf("clear destination: %w", err)
+		}
+	}
+
+	stmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	count := 0
+	for srcRows.Next() {
+		values := make([]any, len(spec.cols))
+		ptrs := make([]any, len(spec.cols))
+		for i := range values {
+			ptrs[i] = &values[i]
+		}
+		if err := srcRows.Scan(ptrs...); err != nil {
+			return count, err
+		}
+		for i := range values {
+			// SQLite hands back TEXT columns as []byte; normalize to string so
+			// they bind as text (not bytea) on PostgreSQL. A genuinely binary
+			// column is left as bytes, because that coercion would corrupt it.
+			if spec.isBlob(spec.cols[i]) {
+				continue
+			}
+			if b, ok := values[i].([]byte); ok {
+				values[i] = string(b)
+			}
+		}
+		if _, err := stmt.Exec(values...); err != nil {
+			return count, err
+		}
+		count++
+	}
+	if err := srcRows.Err(); err != nil {
+		return count, err
+	}
+	if err := tx.Commit(); err != nil {
+		return count, err
+	}
+	return count, nil
+}
+
+// buildInsertSQL renders an INSERT with ? placeholders (db.Conn/db.Tx rebind
+// these for PostgreSQL). For upsert specs it appends an ON CONFLICT clause that
+// updates the non-key columns; replace specs are plain inserts.
+func buildInsertSQL(spec tableSpec) string {
+	placeholders := make([]string, len(spec.cols))
+	for i := range placeholders {
+		placeholders[i] = "?"
+	}
+	insert := fmt.Sprintf(
+		"INSERT INTO %s (%s) VALUES (%s)",
+		spec.table,
+		strings.Join(spec.cols, ", "),
+		strings.Join(placeholders, ", "),
+	)
+	if spec.strat == replace || len(spec.conflictCols) == 0 {
+		return insert
+	}
+
+	conflict := make(map[string]struct{}, len(spec.conflictCols))
+	for _, c := range spec.conflictCols {
+		conflict[c] = struct{}{}
+	}
+	var sets []string
+	for _, c := range spec.cols {
+		if _, isKey := conflict[c]; isKey {
+			continue
+		}
+		sets = append(sets, fmt.Sprintf("%s = excluded.%s", c, c))
+	}
+	if len(sets) == 0 {
+		return insert + fmt.Sprintf(" ON CONFLICT (%s) DO NOTHING", strings.Join(spec.conflictCols, ", "))
+	}
+	return insert + fmt.Sprintf(
+		" ON CONFLICT (%s) DO UPDATE SET %s",
+		strings.Join(spec.conflictCols, ", "),
+		strings.Join(sets, ", "),
+	)
+}
+
+// resetSequence realigns a PostgreSQL identity/serial sequence to the table's
+// current max id after rows with explicit ids were inserted, so the
+// destination's own future inserts don't collide. It is a no-op on SQLite.
+func resetSequence(dst *db.Conn, table string) error {
+	if dst.Dialect() != db.DialectPostgres {
+		return nil
+	}
+	// setval(..., max(id), true) leaves nextval = max+1; coalesce handles an
+	// empty table (start the sequence at 1 without marking it called).
+	query := fmt.Sprintf(
+		"SELECT setval(pg_get_serial_sequence('%s', 'id'), COALESCE((SELECT MAX(id) FROM %s), 1), (SELECT COUNT(*) > 0 FROM %s))",
+		table, table, table,
+	)
+	_, err := dst.Exec(query)
+	return err
+}

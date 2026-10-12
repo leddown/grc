@@ -1,0 +1,2125 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	neturl "net/url"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"grc/internal/aiprovider"
+	"grc/internal/crisisexercise"
+	"grc/internal/pageui"
+	"grc/internal/policyai"
+	"grc/internal/policystudio"
+	"grc/internal/settings"
+)
+
+// The Wintermute protocol, its endpoint rules and its session titles live in
+// internal/aiprovider, which this page asks through.
+
+var aiProviderHTTPClient = &http.Client{Timeout: 90 * time.Second}
+
+// aiChatRequest is one question from the page. It deliberately carries no
+// credential: keys and tokens are set once in the Settings page and resolved
+// server-side, so a secret never rides in a browser request to this endpoint.
+// Nor does it carry a model: that is set in Settings too (see aiChatProvider).
+type aiChatRequest struct {
+	Provider string `json:"provider"`
+	Question string `json:"question"`
+	System   string `json:"system_prompt"`
+	Endpoint string `json:"endpoint"`
+	// Backend names a wintermuted backend (a local model server, or Claude)
+	// for the wintermute provider. Empty means that server's default.
+	Backend string `json:"backend"`
+	// Agent names an agent profile on that server — the document library and
+	// sources the answer is grounded in. It is a pointer because "no agent" and
+	// "not specified" are different instructions: the AI Chat page always says
+	// which agent it means, including none at all, while the AI dock omits the
+	// field and gets the one configured in Settings.
+	Agent *string `json:"agent"`
+	// History is the conversation before Question, oldest first, so a follow-up
+	// question can refer to what came before. The client holds the transcript —
+	// this endpoint is stateless — and the server bounds what it will accept
+	// (see boundedHistory).
+	History []aiChatTurn `json:"history"`
+	// SessionID continues a conversation the provider itself is holding, from a
+	// previous answer's session_id. Wintermute keeps transcripts server-side;
+	// when this is set, History is not resent.
+	SessionID string `json:"session_id"`
+	// ClearReads asks this question without what the agent's tools returned
+	// earlier in the session, to give the model's context window back to it
+	// (aiprovider.Request.ClearReads).
+	ClearReads bool `json:"clear_reads"`
+	// Page is the path the AI dock was asked from. On a Crisis Exercises page
+	// the question goes to that module's agent, about the exercise on screen
+	// (see crisisDockTurn). On a Policy Studio page it goes to the proposal
+	// engine (see policyDockAsk).
+	Page string `json:"page"`
+	// PageContext is what the page says is in view (window.GRCAskAIContext).
+	// It narrows scope only; it is never trusted for which document or
+	// whether the person may use AI on it.
+	PageContext json.RawMessage `json:"page_context"`
+}
+
+// aiChatTurn is one earlier message in the conversation.
+type aiChatTurn struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func aiChatPage(c *gin.Context) {
+	html := `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AI Chat · GRC</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --panel: rgba(255,252,246,0.94);
+      --ink: #1c2431;
+      --muted: #5e6672;
+      --line: #d7cebf;
+      --accent: #8b3d2e;
+      --warn: #9a6700;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(139,61,46,0.12), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(11,93,59,0.12), transparent 28%),
+        linear-gradient(135deg, #f7f3eb, #ece4d6 55%, #e4d8c4);
+    }
+    main {
+      max-width: 1320px;
+      margin: 24px auto;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid rgba(215,206,191,0.8);
+      border-radius: 24px;
+      box-shadow: 0 24px 60px rgba(28,36,49,0.12);
+    }
+    .tabs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    .tab {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: #efe6d6;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      text-decoration: none;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .tab.active { background: #e1d0b7; border-color: #b89d78; }
+    h1 { margin: 0; font-size: 1.25rem; line-height: 1.2; letter-spacing: -0.01em; }
+    p { color: var(--muted); }
+    .page-head {
+      display: flex;
+      gap: 8px 24px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .creds {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+    }
+    /* The chips carry their own opaque surface and literal text colours: the
+       global theme repaints --ink/--muted for the dark themes, which would
+       otherwise leave pale text on these light pills. */
+    .chip {
+      display: inline-block;
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface-strong);
+      color: #5e6672;
+      white-space: nowrap;
+    }
+    .chip.on { border-color: #7fae94; color: #0b5d3b; background: var(--surface-strong); }
+    .chip.off { border-color: #d7b271; color: #9a6700; background: var(--surface-strong); }
+    /* Transparent so the theme's own link colour stays legible on whichever
+       background the page is painted with. */
+    a.chip { text-decoration: none; background: transparent; }
+    .layout {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      /* Chat is the work; the page fills the viewport so the conversation gets
+         the leftover height rather than stopping at a fixed box. */
+      height: clamp(460px, calc(100dvh - 140px), 1400px);
+    }
+    .panel {
+      border: 1px solid rgba(215,206,191,0.9);
+      border-radius: 18px;
+      background: var(--panel);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(215,206,191,0.9);
+      background: rgba(236,227,210,0.55);
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex: 0 0 auto;
+    }
+    .panel-header button {
+      padding: 5px 12px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-family: Arial, sans-serif;
+    }
+    .panel-header { flex-wrap: wrap; padding: 8px 12px; }
+    .panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    /* The transcript is resent with every question, so what it is costing is
+       worth stating rather than leaving to be inferred from the bill. */
+    .context-note { font-size: 11px; letter-spacing: 0.06em; }
+    .panel.chat { flex: 1 1 auto; }
+    /* Which backend and agent answer is a choice made once and then left
+       alone, so it sits in the conversation's own header at the size of a
+       label rather than in a panel above it. */
+    .routing { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+    .routing.off { opacity: 0.55; }
+    .routing label { font-size: 10px; letter-spacing: 0.08em; font-weight: 700; }
+    .routing select {
+      width: auto;
+      max-width: 210px;
+      padding: 3px 6px;
+      margin-right: 6px;
+      border-radius: 8px;
+      font-size: 12px;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .panel-header .routing button { padding: 3px 9px; font-size: 13px; line-height: 1.2; }
+    .routing-detail {
+      flex: 0 0 auto;
+      margin: 0;
+      padding: 4px 12px;
+      border-bottom: 1px solid rgba(215,206,191,0.9);
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .routing-detail span:not(:empty) { margin-right: 12px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--ink);
+      font: inherit;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    .status { color: var(--muted); min-height: 22px; }
+    .status.warn { color: var(--warn); }
+    button {
+      padding: 11px 14px;
+      border-radius: 999px;
+      border: 0;
+      background: #dfc4b4;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: var(--surface-strong);
+      border: 1px solid var(--line);
+    }
+    button:disabled, select:disabled { cursor: not-allowed; opacity: 0.6; }
+    .chat-box {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .msg {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-strong);
+      padding: 10px 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-width: min(80ch, 88%);
+    }
+    .msg.user { align-self: flex-end; border-left: 4px solid #8b3d2e; }
+    .msg.ai { align-self: flex-start; border-left: 4px solid #0b5d3b; }
+    .msg.note { align-self: flex-start; color: var(--muted); font-family: Arial, sans-serif; font-size: 13px; }
+    /* What an answer cost and what served it, under the answer. */
+    .msg-foot {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: baseline;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      white-space: normal;
+    }
+    .msg-foot button {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--accent);
+      font-size: 11px;
+      text-decoration: underline;
+    }
+    /* The answer being waited for: a light that says whether all is well,
+       how long it has been and what the turn is doing, and a way to stop it. */
+    .msg.pending { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; white-space: normal; color: var(--muted); }
+    .msg.pending .meta { margin: 0; }
+    .pending-status { font-family: Arial, sans-serif; font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .msg.pending button { padding: 3px 12px; font-family: Arial, sans-serif; font-size: 12px; }
+    .turn-light { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--good, #3fb950); }
+    .turn-light.ok { animation: light-breathe 2s ease-in-out infinite; }
+    .turn-light.warn { background: #d29922; }
+    .turn-light.bad { background: var(--danger, #b3261e); }
+    .turn-light.lost, .turn-light.done { background: var(--muted); }
+    @keyframes light-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    @media (prefers-reduced-motion: reduce) { .turn-light.ok { animation: none; } }
+    /* How full the model's window is, above the composer. One bar the width
+       of the window: what the conversation keeps, then what its lookups
+       returned and could be cleared, and a mark where a turn stops reading. */
+    .room {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 16px;
+      font-family: Arial, sans-serif;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .room[hidden] { display: none; }
+    .room-bar {
+      position: relative;
+      flex: 0 0 140px;
+      height: 6px;
+      display: flex;
+      background: var(--line);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .room-bar i { display: block; height: 100%; background: var(--accent); }
+    #roomReads { opacity: 0.45; }
+    .room-bar b { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ink); opacity: 0.7; }
+    .room.tight .room-bar i { background: var(--danger, #b3261e); }
+    .room.tight .room-text { color: var(--warn); }
+    /* Armed, the reads are on their way out: drawn as already gone. */
+    .room.clearing #roomReads { opacity: 0.15; }
+    .room-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .room button { padding: 2px 10px; font-size: 11.5px; white-space: nowrap; }
+    .room button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+    .composer {
+      flex: 0 0 auto;
+      border-top: 1px solid rgba(215,206,191,0.9);
+      /* Transparent rather than tinted: the panel underneath is repainted by
+         the global theme, and a fixed tint here reads as a grey band on the
+         dark themes. */
+      background: transparent;
+      padding: 12px 16px;
+    }
+    .composer textarea { min-height: 70px; max-height: 34vh; }
+    .composer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .hint { font-family: Arial, sans-serif; font-size: 12px; color: var(--muted); }
+    .meta {
+      color: var(--muted);
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .usage-panel {
+      margin: 12px 16px 0;
+      flex: 0 0 auto;
+      max-height: 40%;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-strong);
+      padding: 10px 14px;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+    }
+    .usage-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(215,206,191,0.4);
+      color: var(--ink);
+    }
+    .usage-row:last-child { border-bottom: none; }
+    .usage-row span:first-child { color: var(--muted); }
+    .usage-section-head {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      padding: 6px 0 2px;
+    }
+    @media (max-width: 980px) {
+      .layout { height: auto; }
+      .chat { min-height: 70vh; }
+      .msg { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    ` + pageui.Nav("/ai-chat") + `
+    <header class="page-head">
+      <h1>AI Chat Gateway</h1>
+      <div class="creds">
+        <span id="wintermuteChip" class="chip">Wintermute token: checking&hellip;</span>
+        <a class="chip" href="/settings">Keys &amp; tokens &rarr; Settings</a>
+        <a class="chip" id="wintermuteDocsLink" href="/settings" hidden>Add documents in Wintermute &#8599;</a>
+      </div>
+    </header>
+
+    <div class="layout">
+      <section class="panel chat">
+        <div class="panel-header">
+          <div id="routing" class="routing">
+            <label for="wintermuteBackend">Backend</label>
+            <select id="wintermuteBackend">
+              <option value="">Server default</option>
+            </select>
+            <label for="wintermuteAgent">Agent</label>
+            <select id="wintermuteAgent">
+              <option value="">No agent &mdash; general assistant</option>
+            </select>
+            <button id="loadCatalog" class="secondary" type="button" title="Refresh backends and agents" aria-label="Refresh backends and agents">&#8635;</button>
+          </div>
+          <span class="panel-header-actions">
+            <span id="contextNote" class="context-note"></span>
+            <button id="usageBtn" class="secondary" type="button">Usage &#9656;</button>
+            <button id="clearBtn" class="secondary" type="button">Clear</button>
+          </span>
+        </div>
+        <p id="routingDetail" class="routing-detail hint"><span id="answeringWith">checking&hellip;</span><span id="routingNote" hidden></span><span id="agentDetail"></span><span id="catalogDetail"></span></p>
+        <div id="usagePanel" class="usage-panel" style="display:none;"></div>
+        <div id="chatBox" class="chat-box">
+          <div class="msg note"><div class="meta">System</div>Responses will appear here after you submit a question.</div>
+        </div>
+        <div id="room" class="room" hidden>
+          <div id="roomBar" class="room-bar" role="meter" aria-valuemin="0" aria-label="Context window in use">
+            <i id="roomKept"></i><i id="roomReads"></i><b id="roomMark" hidden></b>
+          </div>
+          <span id="roomNote" class="room-text"></span>
+          <button id="clearReadsBtn" class="secondary" type="button" aria-pressed="false" hidden>Clear earlier reads</button>
+        </div>
+        <form id="chatForm" class="composer">
+          <textarea id="question" required placeholder="Ask your question here" aria-label="Question"></textarea>
+          <div class="composer-row">
+            <span id="status" class="status hint">Enter sends &middot; Shift+Enter for a new line</span>
+            <button id="sendBtn" type="submit">Ask</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const routing = document.getElementById('routing');
+    const routingDetail = document.getElementById('routingDetail');
+    const answeringWith = document.getElementById('answeringWith');
+    const routingNote = document.getElementById('routingNote');
+    const wintermuteBackend = document.getElementById('wintermuteBackend');
+    const wintermuteAgent = document.getElementById('wintermuteAgent');
+    const agentDetail = document.getElementById('agentDetail');
+    const loadCatalogBtn = document.getElementById('loadCatalog');
+    const catalogDetail = document.getElementById('catalogDetail');
+    const wintermuteChip = document.getElementById('wintermuteChip');
+    const wintermuteDocsLink = document.getElementById('wintermuteDocsLink');
+    const question = document.getElementById('question');
+    const chatForm = document.getElementById('chatForm');
+    const sendBtn = document.getElementById('sendBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusEl = document.getElementById('status');
+    const chatBox = document.getElementById('chatBox');
+    const contextNote = document.getElementById('contextNote');
+    const roomBox = document.getElementById('room');
+    const roomBar = document.getElementById('roomBar');
+    const roomKept = document.getElementById('roomKept');
+    const roomReads = document.getElementById('roomReads');
+    const roomMark = document.getElementById('roomMark');
+    const roomNote = document.getElementById('roomNote');
+    const clearReadsBtn = document.getElementById('clearReadsBtn');
+    const COMPOSER_HINT = 'Enter sends · Shift+Enter for a new line';
+
+    // The conversation is carried, so a follow-up question means what it says.
+    // /ai-chat/ask is stateless: the transcript goes back with each turn, except
+    // on a Wintermute session, which the server holds and only needs its id.
+    // The server bounds both.
+    let history = [];
+    let sessionID = '';
+
+    // What this conversation's answers have cost, summed. Every question sends
+    // the conversation so far again, so the tokens sent grow faster than the
+    // transcript does.
+    let spent = { input: 0, output: 0 };
+
+    // The question being answered, while one is: what stops it, the session
+    // its turn runs in once the server has said, and what that turn was last
+    // reported doing. One at a time — a second question into the same session
+    // is refused by the server, and into a new one answers without the first.
+    let asking = null;
+
+    // How full the answering model's context window is with this session in
+    // it, as the Wintermute server measured it on the last answer. Every
+    // question sends the whole session again, so what one question's lookups
+    // returned is still there for the next; past the budget the agent can no
+    // longer look anything up. "Clear earlier reads" asks the next question
+    // without those results: the questions and answers stay, and it is the
+    // asker's choice because the agent must look a passage up again to quote it.
+    let room = null;
+    let clearReads = false;
+
+    function tokens(n) {
+      return n < 1000 ? String(n) : (n / 1000).toFixed(1) + 'k';
+    }
+
+    function elapsedLabel(ms) {
+      const s = Math.round(ms / 1000);
+      if (s < 60) return s + 's';
+      return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    }
+
+    // The bar is the window. Its solid part is what the conversation keeps,
+    // its pale part what lookups returned and could be cleared, and the mark
+    // is where a turn stops reading to leave room for the answer.
+    function renderRoom() {
+      const used = room && room.used;
+      roomBox.hidden = !used;
+      if (!used) {
+        clearReads = false;
+        return;
+      }
+      const reads = Math.min(room.reads || 0, room.used);
+      if (!reads || !sessionID) clearReads = false;
+      const full = Boolean(room.budget && room.used >= room.budget);
+
+      roomBar.hidden = !room.window;
+      if (room.window) {
+        const share = (n) => Math.min(100, (100 * n) / room.window).toFixed(1) + '%';
+        roomKept.style.width = share(room.used - reads);
+        roomReads.style.width = share(reads);
+        roomMark.hidden = !room.budget;
+        roomMark.style.left = share(room.budget || 0);
+        roomBar.setAttribute('aria-valuemax', room.window);
+        roomBar.setAttribute('aria-valuenow', Math.min(room.used, room.window));
+      }
+      roomBox.classList.toggle('tight', full && !clearReads);
+      roomBox.classList.toggle('clearing', clearReads);
+
+      let text = room.window
+        ? tokens(room.used) + ' of ' + tokens(room.window) + ' tokens'
+        : tokens(room.used) + ' tokens in this conversation';
+      if (clearReads) text += ' · about ' + tokens(reads) + ' cleared with your next question';
+      else if (full) text += reads ? ' · no room left to look things up' : ' · no room left to look things up — Clear starts again';
+      else if (reads) text += ' · ' + tokens(reads) + ' is earlier reading';
+      roomNote.textContent = text;
+      roomNote.title = room.window
+        ? 'The model can hold ' + room.window + ' tokens and this conversation takes about ' + room.used + '.'
+          + (room.budget ? ' The agent stops looking things up at ' + room.budget + ', to leave room for its answer.' : '')
+        : '';
+      clearReadsBtn.hidden = !reads || !sessionID;
+      clearReadsBtn.setAttribute('aria-pressed', String(clearReads));
+      clearReadsBtn.textContent = clearReads ? 'Clearing earlier reads ✓' : 'Clear earlier reads';
+      clearReadsBtn.title = clearReads
+        ? 'Your next question will be asked without what the agent looked up earlier. Click to keep it after all.'
+        : 'Ask your next question without what the agent looked up earlier in this conversation. '
+          + 'Your questions and its answers stay; it looks a passage up again if it needs it.';
+    }
+
+    clearReadsBtn.addEventListener('click', () => {
+      clearReads = !clearReads;
+      renderRoom();
+      question.focus();
+    });
+
+    // What Settings configures, from the status call. The model is not chosen
+    // on this page: a question goes to the model Settings pins for every other
+    // AI field. Until the status call answers nothing is assumed, so a failed
+    // check reads as unknown rather than as a server that is not there.
+    const configured = {
+      loaded: false,
+      wintermute: false,
+      wintermuteModel: '',
+      backend: '',
+      agent: '',
+    };
+
+    function setStatus(message, isWarning) {
+      statusEl.textContent = message || COMPOSER_HINT;
+      statusEl.className = 'status hint' + (isWarning ? ' warn' : '');
+    }
+
+    function esc(value) {
+      return String(value || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    // Reads a reply that should be JSON. When it is not, it did not come from
+    // this application: a proxy in front of it answered with its own error
+    // page, most often because it gave up waiting. Parsing that as JSON says
+    // "Unexpected token '<'", which tells the reader nothing, so the status
+    // is reported in words instead.
+    async function readJSON(resp) {
+      const text = await resp.text();
+      if (!text) return {};
+      try {
+        return JSON.parse(text);
+      } catch (_) {
+        const why = {
+          413: 'the request is larger than it accepts',
+          502: 'it could not reach this application',
+          503: 'this application is not available',
+          504: 'it gave up waiting for the answer',
+        }[resp.status];
+        throw new Error(resp.ok
+          ? 'The reply was a web page, not an answer. Reload this page; you may have been signed out.'
+          : 'HTTP ' + resp.status + ' from the server in front of this application, not from the application itself'
+            + (why ? ': ' + why : '') + '.');
+      }
+    }
+
+    function appendMessage(role, content, foot) {
+      const kind = role === 'User' ? 'user' : (role === 'Assistant' ? 'ai' : 'note');
+      const row = document.createElement('div');
+      row.className = 'msg ' + kind;
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = role;
+      row.append(meta, document.createTextNode(content || ''));
+      if (foot) row.appendChild(foot);
+      chatBox.appendChild(row);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      return row;
+    }
+
+    // What served an answer, what it cost and how long it took. None of it
+    // can be read off the text, and the backend is not always the one asked
+    // for.
+    function answerFoot(data, answer) {
+      const foot = document.createElement('div');
+      foot.className = 'msg-foot';
+      const usage = data.usage || {};
+      const input = Number(usage.input_tokens) || 0;
+      const output = Number(usage.output_tokens) || 0;
+      const parts = [];
+      if (data.backend) parts.push(data.backend);
+      if (data.model) parts.push(data.model);
+      parts.push(input || output
+        ? tokens(input) + ' in → ' + tokens(output) + ' out tokens'
+        : 'no token count reported');
+      if (data.elapsed_ms) parts.push(elapsedLabel(data.elapsed_ms));
+      const text = document.createElement('span');
+      text.textContent = parts.join(' · ');
+      if (input || output) {
+        text.title = input + ' tokens sent to the model and ' + output
+          + ' written by it for this answer, as the Wintermute server counted them.';
+      }
+      foot.appendChild(text);
+      // The clipboard is only there on https and localhost.
+      if (navigator.clipboard) {
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.textContent = 'Copy';
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(answer);
+            copy.textContent = 'Copied';
+          } catch (_) {
+            copy.textContent = 'Could not copy';
+          }
+          setTimeout(() => { copy.textContent = 'Copy'; }, 1500);
+        });
+        foot.appendChild(copy);
+      }
+      return foot;
+    }
+
+    // Names what will answer, since the page no longer has a field that says so.
+    // Settings pins its Wintermute model within its own backend, so a different
+    // backend picked here gets that backend's default — the rule the server
+    // applies.
+    function renderAnsweringWith() {
+      if (!configured.loaded) return;
+      const backend = wintermuteBackend.value;
+      let model;
+      if (backend === configured.backend && configured.wintermuteModel) {
+        model = configured.wintermuteModel;
+      } else {
+        model = backend ? 'default model for ' + backend : 'backend default model';
+      }
+      answeringWith.textContent = 'Answering with ' + model + '.';
+    }
+
+    // Until a Wintermute server is configured the backend and agent stay in
+    // view, so the reader can see what is set, but cannot be changed: a choice
+    // that silently does nothing is worse than none. Nor while a question is
+    // being answered: its session is pinned to the pair it was asked with.
+    function renderRouting() {
+      const wm = configured.wintermute;
+      const locked = Boolean(asking) || (configured.loaded && !wm);
+      wintermuteBackend.disabled = locked;
+      wintermuteAgent.disabled = locked;
+      loadCatalogBtn.disabled = locked;
+      if (!configured.loaded) return;
+      routing.classList.toggle('off', !wm);
+      routingNote.hidden = wm;
+      if (!wm) {
+        routingNote.textContent =
+          'Set a Wintermute server URL and client token in Settings ' +
+          'to choose a backend or agent.';
+      }
+      renderAnsweringWith();
+    }
+
+    // The line under the header is cut to its width; the whole of it is there
+    // on hover.
+    routingDetail.addEventListener('mouseenter', () => {
+      routingDetail.title = Array.from(routingDetail.children)
+        .filter((part) => !part.hidden && part.textContent)
+        .map((part) => part.textContent)
+        .join(' ');
+    });
+
+    // The backend comes from the server rather than being typed in. A name that
+    // is one character out is not an error anyone sees here: the question fails
+    // at ask time, or quietly goes to the server's default and reads as though
+    // the pin worked.
+    let catalog = { backends: [], default_backend: '', fallback: '' };
+
+    // Keeps a select's current value selectable while its list is rebuilt, and
+    // lets a stored default be shown before any list has arrived.
+    function ensureOption(select, value, label) {
+      if (!value) return;
+      for (let i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === value) return;
+      }
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label || value;
+      select.appendChild(opt);
+    }
+
+    function clearOptions(select) {
+      while (select.options.length > 1) select.remove(1);
+    }
+
+    function renderBackends(selected) {
+      const want = selected !== undefined ? selected : wintermuteBackend.value;
+      clearOptions(wintermuteBackend);
+      wintermuteBackend.options[0].textContent = catalog.default_backend
+        ? 'Server default — ' + catalog.default_backend
+        : 'Server default';
+      catalog.backends.forEach((backend) => {
+        const opt = document.createElement('option');
+        opt.value = backend.name;
+        const notes = [];
+        if (backend.kind) notes.push(backend.kind);
+        if (backend.status && backend.status !== 'ok') notes.push(backend.status);
+        opt.textContent = backend.name + (notes.length ? ' (' + notes.join(', ') + ')' : '');
+        wintermuteBackend.appendChild(opt);
+      });
+      // A backend the server no longer has is shown as such rather than
+      // dropped: it is the configured value, and losing it silently here is
+      // how a question ends up somewhere nobody chose.
+      ensureOption(wintermuteBackend, want, want + ' — not on this server');
+      wintermuteBackend.value = want || '';
+      renderAnsweringWith();
+    }
+
+    async function loadCatalog(selectedBackend) {
+      catalogDetail.textContent = 'Loading backends…';
+      try {
+        const resp = await fetch('/ai-chat/wintermute/catalog');
+        const data = await readJSON(resp);
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+
+        catalog = {
+          backends: data.backends || [],
+          default_backend: data.default_backend || '',
+          fallback: data.fallback || '',
+        };
+        renderBackends(selectedBackend);
+
+        let detail = catalog.backends.length
+          ? catalog.backends.length + ' backend(s) on this server.'
+          : 'This server has no backends yet.';
+        if (catalog.fallback) detail += ' Fallback: ' + catalog.fallback + '.';
+        catalogDetail.textContent = detail;
+      } catch (err) {
+        catalogDetail.textContent = 'Could not list backends: ' + err.message;
+      }
+    }
+
+    // Which agent answers decides which documents the answer is grounded in,
+    // so it is a per-question choice here rather than only an installation
+    // setting. The list comes from the server for the same reason the backend
+    // list does: an agent id that is one character out is not an error anyone
+    // sees — it is an ungrounded answer wearing the same confidence as a
+    // grounded one.
+    let agents = [];
+    // Set once the reader picks an agent, so a status response arriving late
+    // cannot move the choice under them.
+    let agentTouched = false;
+    let docsBase = '';
+
+    // Documents live on the Wintermute server, which owns the library and the
+    // search over it; this is the way there rather than a second upload page
+    // here. It points at the agent the next question would use, since that is
+    // the library a missing document would have to be added to.
+    function syncDocsLink() {
+      if (!docsBase) return;
+      wintermuteDocsLink.href = docsBase.replace(/\/+$/, '') + '/#agents';
+      wintermuteDocsLink.hidden = false;
+      wintermuteDocsLink.target = '_blank';
+      wintermuteDocsLink.rel = 'noopener noreferrer';
+      const chosen = wintermuteAgent.value;
+      const agent = agentByID(chosen);
+      wintermuteDocsLink.textContent = chosen
+        ? 'Documents for ' + ((agent && agent.name) || chosen) + ' ↗'
+        : 'Add documents in Wintermute ↗';
+    }
+
+    function agentByID(id) {
+      return agents.find((agent) => agent.id === id) || null;
+    }
+
+    // Says what the current choice means rather than only naming it: "no agent"
+    // is a real option here, and the difference it makes to an answer is the
+    // one thing this field has to make visible.
+    function renderAgentDetail(note) {
+      if (note) {
+        agentDetail.textContent = note;
+        return;
+      }
+      const chosen = wintermuteAgent.value;
+      if (!chosen) {
+        agentDetail.textContent = agents.length
+          ? 'No agent: answered from the model’s training data, not from this installation’s documents.'
+          : '';
+        return;
+      }
+      const agent = agentByID(chosen);
+      if (!agent) {
+        agentDetail.textContent = 'This agent is not on the server — the question would be asked without one.';
+        return;
+      }
+      const parts = [];
+      if (agent.description) parts.push(agent.description);
+      if (agent.sources && agent.sources.length) parts.push('Sources: ' + agent.sources.join(', ') + '.');
+      agentDetail.textContent = parts.join(' ');
+    }
+
+    function renderAgents(selected) {
+      const want = selected !== undefined ? selected : wintermuteAgent.value;
+      clearOptions(wintermuteAgent);
+      agents.forEach((agent) => {
+        const opt = document.createElement('option');
+        opt.value = agent.id;
+        opt.textContent = agent.name || agent.id;
+        wintermuteAgent.appendChild(opt);
+      });
+      // A configured agent the server no longer has is shown as such rather
+      // than dropped: silently falling back to none is how a question stops
+      // being grounded without anyone being told.
+      ensureOption(wintermuteAgent, want, want + ' — not on this server');
+      wintermuteAgent.value = want || '';
+      renderAgentDetail();
+      syncDocsLink();
+    }
+
+    async function loadAgents(selected) {
+      renderAgentDetail('Loading agents…');
+      try {
+        const resp = await fetch('/ai-chat/wintermute/agents');
+        const data = await readJSON(resp);
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        agents = data.agents || [];
+        renderAgents(selected);
+        if (!agents.length) {
+          renderAgentDetail('This server has no agents yet — create one there first.');
+        }
+      } catch (err) {
+        renderAgentDetail('Could not list agents: ' + err.message);
+      }
+    }
+
+    function renderContextNote() {
+      const turns = history.length / 2;
+      const parts = [];
+      if (turns) parts.push(turns + (turns === 1 ? ' turn' : ' turns'));
+      if (spent.input || spent.output) {
+        parts.push(tokens(spent.input) + ' in → ' + tokens(spent.output) + ' out tokens');
+      }
+      contextNote.textContent = parts.join(' · ');
+      contextNote.title = spent.input || spent.output
+        ? 'What this conversation has cost so far: ' + spent.input + ' tokens sent to the model and '
+          + spent.output + ' written by it, over all its answers. Every question sends the conversation so far again.'
+        : '';
+    }
+
+    // A Wintermute session is pinned to the backend and agent it was opened
+    // with, so changing either has to start a new one. The transcript survives
+    // that: it is the client's, and it is sent with the first question of the
+    // new session.
+    function dropSession() {
+      sessionID = '';
+      room = null;
+      renderRoom();
+    }
+
+    // The credentials live in Settings, so this page only reports whether each
+    // provider can answer — an operator should not have to submit a question to
+    // find out that nothing is configured.
+    function setChip(el, label, ok) {
+      el.className = 'chip ' + (ok ? 'on' : 'off');
+      el.textContent = label + (ok ? ': configured' : ': not configured');
+    }
+
+    async function refreshStatus() {
+      try {
+        const resp = await fetch('/ai-chat/wintermute/status');
+        const data = await readJSON(resp);
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        configured.wintermute = Boolean(data.configured) && Boolean(data.token_configured);
+        configured.wintermuteModel = String(data.default_model || '');
+        configured.backend = String(data.default_backend || '');
+        configured.agent = String(data.default_agent || '');
+        configured.loaded = true;
+        setChip(wintermuteChip, 'Wintermute token', Boolean(data.token_configured));
+        docsBase = String(data.default_endpoint || '');
+        // Settings' own backend and agent are this page's starting point, and
+        // are shown before the server has been asked for its lists so a slow or
+        // failed lookup does not leave the fields looking unset. A reader who
+        // changes nothing gets the answer the AI dock would give.
+        if (!wintermuteBackend.value && configured.backend) {
+          ensureOption(wintermuteBackend, configured.backend, configured.backend);
+          wintermuteBackend.value = configured.backend;
+        }
+        if (!agentTouched && !wintermuteAgent.value && configured.agent) {
+          ensureOption(wintermuteAgent, configured.agent, configured.agent);
+          wintermuteAgent.value = configured.agent;
+          renderAgentDetail();
+        }
+        syncDocsLink();
+        renderRouting();
+        // The lists are only fetched from a configured server: without one
+        // there is nothing for them to change.
+        if (configured.wintermute) {
+          loadCatalog(wintermuteBackend.value).catch(() => { /* reported inline */ });
+          loadAgents(wintermuteAgent.value).catch(() => { /* reported inline */ });
+        }
+      } catch (_) {
+        setChip(wintermuteChip, 'Wintermute token', false);
+        answeringWith.textContent = 'provider unknown';
+      }
+    }
+
+    // A Wintermute session is created with its agent, so changing the agent
+    // starts a new one rather than carrying the question into the library the
+    // previous answers came from.
+    for (const field of [wintermuteBackend, wintermuteAgent]) {
+      field.addEventListener('change', dropSession);
+    }
+
+    wintermuteAgent.addEventListener('change', () => {
+      agentTouched = true;
+      renderAgentDetail();
+      syncDocsLink();
+    });
+
+    wintermuteBackend.addEventListener('change', renderAnsweringWith);
+
+    loadCatalogBtn.addEventListener('click', () => {
+      loadCatalog().catch((err) => { catalogDetail.textContent = err.message; });
+      loadAgents().catch((err) => { renderAgentDetail(err.message); });
+    });
+
+    const query = new URLSearchParams(window.location.search);
+    const prefilledQuestion = String(query.get('q') || '').trim();
+    if (prefilledQuestion && !question.value.trim()) {
+      question.value = prefilledQuestion;
+    }
+
+    clearBtn.addEventListener('click', () => {
+      chatBox.innerHTML =
+        '<div class="msg note"><div class="meta">System</div>Responses will appear here after you submit a question.</div>';
+      history = [];
+      spent = { input: 0, output: 0 };
+      dropSession();
+      renderContextNote();
+      setStatus('');
+    });
+
+    /* ---------- the turn being waited for ---------- */
+    //
+    // A question is one request that answers once, sometimes minutes later:
+    // the agent may run the model several times with lookups in between. So
+    // the server streams what the turn is doing every couple of seconds, as
+    // the Wintermute server reports it, and that is put into words here with
+    // a light: green while something is visibly happening, amber when it has
+    // gone quiet for longer than it should, red when it failed, grey when
+    // nothing is arriving at all.
+
+    // How long a model that has started answering may go without sending
+    // anything, and one that has not may take to start, before the light turns
+    // amber. Loading a large model from disk takes a minute; reading a long
+    // conversation can take as long on a small card.
+    const TURN_QUIET_MS = 45000;
+    const TURN_UNANSWERED_MS = 90000;
+    // How long a tool may run before it is called slow.
+    const TURN_TOOL_MS = 120000;
+    // How long the stream may say nothing before that is said. A report
+    // arrives every two seconds.
+    const TURN_SILENT_MS = 12000;
+
+    function plural(n, one, many) {
+      return n + ' ' + (n === 1 ? one : many);
+    }
+
+    // liveStatus says what a turn is doing and whether that is all right:
+    // { level: 'ok' | 'warn' | 'bad' | 'done', text }.
+    function liveStatus(live) {
+      const who = live.model
+        ? live.model + (live.backend ? ' on ' + live.backend : '')
+        : (live.backend || 'the model');
+      const step = live.calls > 1 ? 'step ' + live.calls + ' · ' : '';
+      const phase = live.phase_ms || 0;
+      switch (live.phase) {
+        case 'starting':
+          return { level: 'ok', text: 'starting' };
+        case 'recalling':
+          return { level: 'ok', text: 'looking through earlier conversations' };
+        case 'checking':
+          return { level: 'ok', text: 'checking the reply against the library' };
+        case 'tool':
+          return phase > TURN_TOOL_MS
+            ? { level: 'warn', text: step + live.tool + ' has been running for ' + elapsedLabel(phase) + ' — longer than lookups usually take' }
+            : { level: 'ok', text: step + 'running ' + live.tool + ' · ' + elapsedLabel(phase) };
+        case 'model': {
+          if (live.unstreamed) {
+            return { level: 'ok', text: step + 'waiting for ' + who + ' · ' + elapsedLabel(phase) + ' — this backend says nothing until its answer is complete' };
+          }
+          if (!live.connected) {
+            const base = step + 'waiting for ' + who + ' · no answer yet after ' + elapsedLabel(phase);
+            if (phase > TURN_UNANSWERED_MS) {
+              return { level: 'warn', text: base + ' — it may be loading a large model, busy with another request, or down' };
+            }
+            return { level: 'ok', text: phase > 8000 ? base + ' — loading the model or reading the conversation' : base };
+          }
+          const counts = [];
+          if (live.thinking_tokens) counts.push(plural(live.thinking_tokens, 'token', 'tokens') + ' of thinking');
+          if (live.writing_tokens) counts.push(plural(live.writing_tokens, 'token', 'tokens') + ' of reply');
+          const doing = live.tool_tokens ? 'preparing a lookup'
+            : live.writing_tokens ? 'writing' : live.thinking_tokens ? 'thinking' : 'answering';
+          const text = step + who + ' is ' + doing + (counts.length ? ' · ' + counts.join(', ') : '');
+          const quiet = live.quiet_ms || 0;
+          if (quiet > TURN_QUIET_MS) {
+            return { level: 'warn', text: text + ' — nothing more for ' + elapsedLabel(quiet) + '; it may have stalled' };
+          }
+          return { level: 'ok', text: text };
+        }
+        case 'done':
+          return { level: 'done', text: 'finished' };
+        case 'paused':
+          return { level: 'done', text: 'waiting on the server' };
+        case 'stopped':
+          return { level: 'done', text: 'stopped' };
+        case 'failed':
+          return { level: 'bad', text: 'failed: ' + (live.error || 'no reason given') };
+        default:
+          return { level: 'ok', text: live.phase || 'working' };
+      }
+    }
+
+    function paintPending(turn) {
+      const now = Date.now();
+      let status;
+      if (turn.stopping) status = { level: 'done', text: 'stopping…' };
+      else if (now - turn.heardAt > TURN_SILENT_MS) {
+        status = { level: 'lost', text: 'nothing heard for ' + elapsedLabel(now - turn.heardAt) + ' — still waiting' };
+      } else if (turn.live) status = liveStatus(turn.live);
+      else status = { level: 'ok', text: turn.sessionID ? 'waiting for the Wintermute server' : 'sent — opening the conversation' };
+      // The server's own count where it gives one, carried forward between
+      // its reports.
+      const ms = turn.live && turn.live.elapsed_ms
+        ? turn.live.elapsed_ms + (now - turn.liveAt)
+        : now - turn.startedAt;
+      turn.label.textContent = elapsedLabel(ms) + ' · ' + status.text;
+      turn.light.className = 'turn-light ' + status.level;
+      turn.light.title = {
+        ok: 'all is well', warn: 'taking longer than it should', bad: 'failed',
+        lost: 'nothing is arriving', done: 'ended'
+      }[status.level] || '';
+    }
+
+    function appendPending(turn) {
+      const row = document.createElement('div');
+      row.className = 'msg ai pending';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = 'Assistant';
+      turn.light = document.createElement('span');
+      turn.label = document.createElement('span');
+      turn.label.className = 'pending-status';
+      const stop = document.createElement('button');
+      stop.type = 'button';
+      stop.className = 'secondary';
+      stop.textContent = 'Stop';
+      stop.title = 'Stop this turn (Esc). What it has already done stays.';
+      stop.addEventListener('click', stopTurn);
+      turn.stopBtn = stop;
+      row.append(meta, turn.light, turn.label, stop);
+      chatBox.appendChild(row);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      turn.node = row;
+      paintPending(turn);
+      turn.tick = setInterval(() => paintPending(turn), 1000);
+    }
+
+    function clearPending(turn) {
+      clearInterval(turn.tick);
+      if (turn.node) turn.node.remove();
+    }
+
+    function setBusy(busy) {
+      sendBtn.textContent = busy ? 'Stop' : 'Ask';
+      // While a turn runs, Ask stops it; the theme paints .danger.
+      sendBtn.classList.toggle('danger', busy);
+      sendBtn.title = busy ? 'Stop this turn (Esc)' : '';
+      clearBtn.disabled = busy;
+      renderRouting();
+    }
+
+    // Stopping is said to the server, by the session the turn runs in: a turn
+    // on the Wintermute server outlives the request that asked for it, so
+    // hanging up alone would leave the model working on an answer nobody is
+    // waiting for. The question then ends by itself, with the server's word
+    // that it was stopped. Before the session is known there is only the
+    // request to hang up on, and the server stops whatever that had begun.
+    async function stopTurn() {
+      const turn = asking;
+      if (!turn || turn.stopping) return;
+      turn.stopping = true;
+      turn.stopBtn.disabled = true;
+      sendBtn.disabled = true;
+      paintPending(turn);
+      if (!turn.sessionID) {
+        turn.controller.abort();
+        return;
+      }
+      try {
+        const resp = await fetch('/ai-chat/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: 'wintermute', session_id: turn.sessionID })
+        });
+        const data = await readJSON(resp);
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        // Nothing was running: the turn ended as the button was pressed, and
+        // its answer is on its way.
+        if (!data.stopping) turn.stopping = false;
+        // A turn that will not stop is not waited on for ever.
+        else setTimeout(() => { if (asking === turn) turn.controller.abort(); }, 15000);
+      } catch (_) {
+        turn.controller.abort();
+      }
+    }
+
+    sendBtn.addEventListener('click', (event) => {
+      if (!asking) return;
+      event.preventDefault();
+      stopTurn();
+    });
+
+    // Enter sends, so the composer behaves like a chat box rather than a form
+    // field; Shift+Enter still writes a multi-line question. Escape stops the
+    // turn being waited for.
+    question.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && asking) {
+        event.preventDefault();
+        stopTurn();
+        return;
+      }
+      if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        chatForm.requestSubmit();
+      }
+    });
+
+    // readEvents reads a question's stream and resolves with its result
+    // event, noting on the way which session the turn runs in and what it is
+    // doing.
+    async function readEvents(body, turn) {
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.value) buf += decoder.decode(chunk.value, { stream: true });
+        let end;
+        while ((end = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, end);
+          buf = buf.slice(end + 2);
+          let name = 'message';
+          let raw = '';
+          block.split('\n').forEach((line) => {
+            if (line.indexOf('event: ') === 0) name = line.slice(7);
+            else if (line.indexOf('data: ') === 0) raw += line.slice(6);
+          });
+          let data = {};
+          try { data = JSON.parse(raw); } catch (_) { /* skipped */ }
+          turn.heardAt = Date.now();
+          if (name === 'result') { reader.cancel().catch(() => {}); return data; }
+          if (name === 'error') { reader.cancel().catch(() => {}); throw new Error(data.error || 'request failed'); }
+          if (name === 'session') turn.sessionID = String(data.session_id || '');
+          if (name === 'progress') {
+            turn.live = data.live || null;
+            turn.liveAt = Date.now();
+          }
+          paintPending(turn);
+        }
+        if (chunk.done) {
+          throw new Error('The connection closed before the answer arrived. Ask again.');
+        }
+      }
+    }
+
+    chatForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (asking) {
+        setStatus('Still answering. Stop (Esc) to ask something else.', true);
+        return;
+      }
+      const text = question.value.trim();
+      if (!text) {
+        setStatus('Question is required.', true);
+        return;
+      }
+      // Credentials are install-wide, so the only thing this page can check is
+      // whether Settings has them.
+      if (configured.loaded && !configured.wintermute) {
+        setStatus('Wintermute needs a server URL and client token. Set them in Settings.', true);
+        return;
+      }
+
+      const payload = {
+        question: text,
+        // A resumed Wintermute session already holds the transcript; sending it
+        // again would replay every earlier turn into the same session.
+        history: sessionID ? [] : history,
+        session_id: sessionID,
+        clear_reads: clearReads && Boolean(sessionID),
+        // The provider is named, unlike the AI dock's request, because the
+        // backend and agent chosen above ride with it. The agent is sent even
+        // when empty: asking without one is not the same instruction as saying
+        // nothing and getting the Settings agent.
+        provider: 'wintermute',
+        backend: wintermuteBackend.value.trim(),
+        agent: wintermuteAgent.value.trim()
+      };
+
+      // Spent on this question whether or not it is answered: the server
+      // clears before it asks the model.
+      clearReads = false;
+      appendMessage('User', text);
+      question.value = '';
+      const turn = {
+        controller: new AbortController(),
+        sessionID: '',
+        stopping: false,
+        live: null,
+        liveAt: 0,
+        startedAt: Date.now(),
+        heardAt: Date.now(),
+      };
+      asking = turn;
+      appendPending(turn);
+      setBusy(true);
+      setStatus('Waiting for the answer…');
+
+      try {
+        // Asked for as a stream: a request that is silent for the minutes a
+        // turn can take is cut off by a proxy on the way.
+        const resp = await fetch('/ai-chat/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+          body: JSON.stringify(payload),
+          signal: turn.controller.signal
+        });
+        let data;
+        if ((resp.headers.get('Content-Type') || '').indexOf('text/event-stream') === 0 && resp.body) {
+          data = await readEvents(resp.body, turn);
+        } else {
+          data = await readJSON(resp);
+          if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        }
+        const answer = data.answer || '(empty answer)';
+        clearPending(turn);
+        appendMessage('Assistant', answer, answerFoot(data, answer));
+        // Recorded only on success: a question that never got an answer would
+        // otherwise sit in the transcript as context for every later turn.
+        history.push({ role: 'user', content: text });
+        history.push({ role: 'assistant', content: answer });
+        sessionID = data.session_id || '';
+        const usage = data.usage || {};
+        spent.input += Number(usage.input_tokens) || 0;
+        spent.output += Number(usage.output_tokens) || 0;
+        renderContextNote();
+        if (data.cut_off) appendMessage('System', data.cut_off);
+        // The server retries a failed backend on its fallback, so what
+        // answered is not always what was chosen above.
+        if (data.fell_back_from) {
+          appendMessage('System', 'Answered by ' + (data.backend || 'the fallback backend') + ' because '
+            + data.fell_back_from + ' could not' + (data.fallback_reason ? ': ' + data.fallback_reason : '.'));
+        }
+        room = data.room || null;
+        let served = data.provider || 'the AI provider';
+        if (data.backend) served += ' / ' + data.backend;
+        if (data.model) served += ' (' + data.model + ')';
+        setStatus('Response received from ' + served + '.');
+        if (usageOpen) loadUsage();
+      } catch (err) {
+        clearPending(turn);
+        if (turn.stopping || (err && err.name === 'AbortError')) {
+          // The stopped turn's question is in its session, so the next one
+          // carries on from it.
+          if (turn.sessionID) sessionID = turn.sessionID;
+          appendMessage('System', turn.sessionID
+            ? 'Stopped. What the turn had already done is kept in this conversation.'
+            : 'Stopped.');
+          setStatus('Stopped.');
+        } else {
+          appendMessage('Error', (err && err.message) || 'request failed');
+          setStatus('Request failed.', true);
+        }
+        // Back in the box, to be asked again or reworded.
+        if (!question.value.trim()) question.value = text;
+      } finally {
+        asking = null;
+        sendBtn.disabled = false;
+        setBusy(false);
+        renderRoom();
+        // The measure above the composer takes a line from the transcript.
+        chatBox.scrollTop = chatBox.scrollHeight;
+        question.focus();
+      }
+    });
+
+    refreshStatus();
+
+    const usageBtn = document.getElementById('usageBtn');
+    const usagePanel = document.getElementById('usagePanel');
+    let usageOpen = false;
+
+    function renderUsage(d) {
+      const providerLabel = { 'claude': 'Claude', 'wintermute': 'Wintermute' };
+      let html = '';
+      if (d.providers && d.providers.length > 0) {
+        for (const p of d.providers) {
+          const label = providerLabel[p.provider] || p.provider;
+          html += '<div class="usage-section-head">' + esc(label) + '</div>';
+          html += '<div class="usage-row"><span>Today (requests)</span><span>' + p.today_request_count + '</span></div>';
+          html += '<div class="usage-row"><span>Today (in / out tokens)</span><span>' + p.today_input_tokens + ' / ' + p.today_output_tokens + '</span></div>';
+          html += '<div class="usage-row"><span>All-time (requests)</span><span>' + p.request_count + '</span></div>';
+          html += '<div class="usage-row"><span>All-time (in / out tokens)</span><span>' + p.input_tokens + ' / ' + p.output_tokens + '</span></div>';
+        }
+        if (d.providers.length > 1) {
+          const t = d.total;
+          html += '<div class="usage-section-head">Total</div>';
+          html += '<div class="usage-row"><span>Today (requests)</span><span>' + t.today_request_count + '</span></div>';
+          html += '<div class="usage-row"><span>Today (in / out tokens)</span><span>' + t.today_input_tokens + ' / ' + t.today_output_tokens + '</span></div>';
+          html += '<div class="usage-row"><span>All-time (requests)</span><span>' + t.request_count + '</span></div>';
+          html += '<div class="usage-row"><span>All-time (in / out tokens)</span><span>' + t.input_tokens + ' / ' + t.output_tokens + '</span></div>';
+        }
+      } else {
+        html = '<div class="usage-row"><span>No requests recorded yet.</span><span></span></div>';
+      }
+      usagePanel.innerHTML = html;
+    }
+
+    // Read again after each answer while the panel is open, so the figures
+    // in it are not the ones from before the question.
+    async function loadUsage() {
+      try {
+        const resp = await fetch('/ai-chat/usage');
+        const data = await readJSON(resp);
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        renderUsage(data);
+      } catch (err) {
+        usagePanel.innerHTML = '<div class="usage-row"><span>Error: ' + esc(err.message) + '</span><span></span></div>';
+      }
+    }
+
+    function toggleUsage() {
+      usageOpen = !usageOpen;
+      usageBtn.innerHTML = usageOpen ? 'Usage &#9662;' : 'Usage &#9656;';
+      if (!usageOpen) { usagePanel.style.display = 'none'; return; }
+      usagePanel.style.display = '';
+      usagePanel.innerHTML = '<div class="usage-row"><span>Loading…</span><span></span></div>';
+      loadUsage();
+    }
+
+    usageBtn.addEventListener('click', toggleUsage);
+  </script>
+</body>
+</html>`
+
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+// aiChatWintermuteStatus reports where Settings routes questions and the
+// Wintermute defaults, so the page can say what will answer and prefill its
+// backend and agent, and whether a credential is available for each provider
+// so the page can say which one can answer before a question is sent.
+//
+// The credentials themselves are never returned — only whether one exists.
+// Availability comes from storedAICredential, so it covers a key set in the
+// Settings page as well as one inherited from the environment.
+//
+// The defaults come from the Settings preferences rather than the environment
+// directly: Preference already falls back to the same variables, so an install
+// configured either way prefills, and one configured in Settings no longer
+// leaves this page blank.
+func aiChatWintermuteStatus(c *gin.Context) {
+	endpoint := aiChatPreference(settings.PrefWintermuteURL, "WINTERMUTE_URL")
+	c.JSON(http.StatusOK, gin.H{
+		"configured":       endpoint != "",
+		"token_configured": storedAICredential("wintermute") != "",
+		"default_endpoint": endpoint,
+		"default_backend":  aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND"),
+		"default_agent":    aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT"),
+		// The agent the dock asks on Crisis Exercises pages, when one is set.
+		"crisis_agent": aiChatPreference(settings.PrefCrisisAgent, ""),
+		// The agent the dock asks on Policy Studio pages, when one is set.
+		"policy_agent":  aiChatPreference(settings.PrefPolicyAgent, ""),
+		"default_model": aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL"),
+	})
+}
+
+// aiChatWintermuteCatalog lists the backends and models on the Wintermute
+// server, so this page's backend field is a choice rather than a typed name —
+// the same list the Settings page offers.
+//
+// The optional url parameter overrides the server, and reaches no further than
+// the ask path already does: the same ValidateEndpoint rules apply, and the
+// client token comes from Settings rather than the request.
+func aiChatWintermuteCatalog(c *gin.Context) {
+	endpoint := strings.TrimSpace(c.Query("url"))
+	if endpoint == "" {
+		endpoint = aiChatPreference(settings.PrefWintermuteURL, "WINTERMUTE_URL")
+	}
+	if endpoint == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no Wintermute server URL: set one in Settings"})
+		return
+	}
+	token := storedAICredential("wintermute")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no Wintermute client token: set one in Settings"})
+		return
+	}
+	if _, err := aiprovider.ValidateEndpoint(endpoint); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	catalog, err := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
+		return aiprovider.WintermuteConfig{URL: endpoint, Token: token}
+	}).Catalog(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, catalog)
+}
+
+// aiChatRequestAgent resolves which agent profile a question is asked under.
+// An absent field means the installation's configured agent; a present one —
+// including the empty string, which the AI Chat page sends for "no agent" — is
+// what the reader chose for this question.
+func aiChatRequestAgent(req aiChatRequest) string {
+	if req.Agent == nil {
+		return aiChatPreference(settings.PrefWintermuteAgent, "WINTERMUTE_AGENT")
+	}
+	return strings.TrimSpace(*req.Agent)
+}
+
+// aiChatWintermuteAgents lists the agent profiles on the Wintermute server, so
+// the agent behind an answer is a choice made per question rather than whatever
+// Settings was last set to. Which agent answers decides which documents the
+// answer is grounded in, and that is a question-by-question decision here in a
+// way the server URL and the token are not.
+//
+// Same shape as aiChatWintermuteCatalog: the optional url parameter overrides
+// the server, the client token comes from Settings and never from the request,
+// and the endpoint passes the same ValidateEndpoint rules the ask path applies.
+func aiChatWintermuteAgents(c *gin.Context) {
+	endpoint := strings.TrimSpace(c.Query("url"))
+	if endpoint == "" {
+		endpoint = aiChatPreference(settings.PrefWintermuteURL, "WINTERMUTE_URL")
+	}
+	if endpoint == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no Wintermute server URL: set one in Settings"})
+		return
+	}
+	token := storedAICredential("wintermute")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no Wintermute client token: set one in Settings"})
+		return
+	}
+	if _, err := aiprovider.ValidateEndpoint(endpoint); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	agents, err := aiprovider.NewWintermute(func() aiprovider.WintermuteConfig {
+		return aiprovider.WintermuteConfig{URL: endpoint, Token: token}
+	}).Agents(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"agents": agents})
+}
+
+// aiChatWintermuteModel resolves the model a Wintermute question is asked on:
+// the one Settings configures. Settings pins that model within its own backend,
+// so a question this page sends to a different backend gets that backend's
+// default rather than a model it may not serve.
+func aiChatWintermuteModel(backend string) string {
+	if strings.TrimSpace(backend) != aiChatPreference(settings.PrefWintermuteBackend, "WINTERMUTE_BACKEND") {
+		return ""
+	}
+	return aiChatPreference(settings.PrefWintermuteModel, "WINTERMUTE_MODEL")
+}
+
+// activeAIRouter is the shared provider harness, wired at startup. It follows
+// the same configured-singleton shape as activeSettings because these handlers
+// are package-level functions rather than methods on a service.
+//
+// Usage is logged by aiChatAsk rather than by the router: Selected returns the
+// provider itself, so a docked question is counted once, in the same place a
+// page question is.
+var activeAIRouter *aiprovider.Router
+
+// configureAIRouter wires the harness the AI dock routes through. A nil router
+// means the dock has nothing to ask, which is what the unit tests exercise.
+func configureAIRouter(router *aiprovider.Router) { activeAIRouter = router }
+
+// crisisDock is the slice of the Crisis Exercise module the AI dock needs.
+type crisisDock interface {
+	DockQuestion(path, sessionID, question string) (crisisexercise.DockTurn, bool, error)
+}
+
+// activeCrisisDock is wired at startup, like activeAIRouter. Nil leaves every
+// docked question as it was asked.
+var activeCrisisDock crisisDock
+
+func configureCrisisDock(dock crisisDock) { activeCrisisDock = dock }
+
+// policyDock is the Policy Studio's proposal engine, as the AI dock uses it.
+type policyDock interface {
+	DockStream(ctx context.Context, documentID int64, question, sessionID string, history []aiprovider.Message, page policyai.PageContext, actor string, stream policyai.Stream) (policyai.Result, error)
+}
+
+// activePolicyDock and activeStudioIdentity are wired at startup with the
+// Studio. Nil leaves Studio pages' questions as any other page's.
+var (
+	activePolicyDock     policyDock
+	activeStudioIdentity policystudio.IdentityFunc
+)
+
+func configurePolicyDock(dock policyDock, identity policystudio.IdentityFunc) {
+	activePolicyDock, activeStudioIdentity = dock, identity
+}
+
+// policyDockAsk answers a dock question asked on a Policy Studio page through
+// the proposal engine, and reports whether it did. Which document is asked
+// about comes from the path, and whether the person may use AI on it from
+// their session -- an administrator with the policy grant, as for every AI
+// feature that spends model calls; anyone else is answered as on any other
+// page. The engine logs usage through the router, once per model call.
+func policyDockAsk(c *gin.Context, req aiChatRequest) bool {
+	if req.Provider != "" || activePolicyDock == nil || activeStudioIdentity == nil {
+		return false
+	}
+	documentID, ok := policyai.StudioDocument(req.Page)
+	if !ok {
+		return false
+	}
+	id, ok := activeStudioIdentity(c.Request)
+	if !ok || !id.Admin || !id.CanReadPolicies {
+		return false
+	}
+	var stream policyai.Stream
+	sse := policyai.NewSSE(c)
+	if policyai.WantsStream(c) {
+		stream = sse
+	}
+	res, err := activePolicyDock.DockStream(c.Request.Context(), documentID, req.Question, req.SessionID,
+		boundedHistory(req.History), policyai.ParsePageContext(req.PageContext), id.Username, stream)
+	if err != nil {
+		sse.Fail(err)
+		return true
+	}
+	out := gin.H{
+		"provider":    res.Provider,
+		"answer":      res.Answer,
+		"model":       res.Model,
+		"session_id":  res.SessionID,
+		"destination": res.Destination,
+	}
+	if res.HasProposal {
+		out["proposal"] = res
+	}
+	if stream != nil {
+		sse.Event("result", out)
+		return true
+	}
+	c.JSON(http.StatusOK, out)
+	return true
+}
+
+// crisisDockTurn prepares a question the AI dock asked from a Crisis Exercises
+// page for that module's agent. Any other question — from another page, or
+// from the AI Chat page, which names its own provider and agent — goes as it
+// was asked.
+func crisisDockTurn(req aiChatRequest) (crisisexercise.DockTurn, error) {
+	asked := crisisexercise.DockTurn{Prompt: req.Question, Answered: func(string) {}}
+	if req.Provider != "" || activeCrisisDock == nil {
+		return asked, nil
+	}
+	turn, ok, err := activeCrisisDock.DockQuestion(req.Page, req.SessionID, req.Question)
+	if err != nil || !ok {
+		return asked, err
+	}
+	return turn, nil
+}
+
+// aiChatPreference reads a Settings preference, falling back to its
+// environment variable when no store is configured (the unit tests, and any
+// build that runs without the settings service wired up).
+func aiChatPreference(key, envVar string) string {
+	if activeSettings == nil {
+		return strings.TrimSpace(os.Getenv(envVar))
+	}
+	return strings.TrimSpace(activeSettings.Preference(key))
+}
+
+// activeSettings is the install-wide credential store, wired at startup by
+// configureAICredentials. It follows the same configured-singleton shape as
+// activeAIUsageStore because the AI Chat gateway handlers are package-level
+// functions rather than methods on a service.
+var activeSettings *settings.Service
+
+// configureAICredentials wires the credential store the AI gateway falls back
+// to. A nil service simply means no stored credentials, which is what the unit
+// tests exercise.
+func configureAICredentials(svc *settings.Service) { activeSettings = svc }
+
+// storedAICredential returns the stored credential for a provider, or "".
+func storedAICredential(provider string) string {
+	if activeSettings == nil {
+		return ""
+	}
+	if provider != "wintermute" {
+		return ""
+	}
+	return activeSettings.Get(settings.WintermuteToken)
+}
+
+// storedWintermuteURL returns the server URL configured in Settings, or "".
+func storedWintermuteURL() string {
+	if activeSettings == nil {
+		return ""
+	}
+	return activeSettings.Preference(settings.PrefWintermuteURL)
+}
+
+func aiChatAsk(c *gin.Context) {
+	// Bounded because the body now carries a client-held transcript, so its
+	// size is no longer a function of one typed question.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, aiChatMaxBodyBytes)
+
+	var req aiChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+
+	req.Provider = strings.TrimSpace(strings.ToLower(req.Provider))
+	req.Question = strings.TrimSpace(req.Question)
+	req.System = strings.TrimSpace(req.System)
+	req.Endpoint = strings.TrimSpace(req.Endpoint)
+	req.Backend = strings.TrimSpace(req.Backend)
+	req.SessionID = strings.TrimSpace(req.SessionID)
+
+	if req.Question == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
+		return
+	}
+
+	// The Studio's engine chooses its own route (the document's AI policy
+	// decides where it may go), so it is asked before the dock's provider.
+	if policyDockAsk(c, req) {
+		return
+	}
+
+	provider, err := aiChatProvider(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dock, err := crisisDockTurn(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// The dock asks for a stream, and the answer is shown as it is written
+	// where the provider can stream; the AI Chat page asks for JSON.
+	sse := policyai.NewSSE(c)
+	fail := func(msg string) {
+		if sse.Started() {
+			sse.Event("error", gin.H{"error": msg})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": msg})
+	}
+	ask := aiprovider.Request{
+		System:     req.System,
+		History:    boundedHistory(req.History),
+		Prompt:     dock.Prompt,
+		SessionID:  req.SessionID,
+		ClearReads: req.ClearReads,
+		Agent:      dock.Agent,
+		MaxTokens:  aiChatMaxTokens,
+	}
+	streaming := policyai.WantsStream(c)
+
+	// A turn on the Wintermute server can take minutes and says nothing until
+	// it is whole. A proxy closes a connection that is silent for that long
+	// (nginx after proxy_read_timeout) and answers with its own error page,
+	// which is what the browser then gets in place of an answer. So a streamed
+	// question says which conversation it is in, and then every few seconds
+	// what its turn is doing: that is what the page shows while it waits and
+	// stops the turn by, and it keeps the connection in use.
+	watcher, _ := provider.(aiprovider.Watcher)
+	watchCtx, stopWatching := context.WithCancel(c.Request.Context())
+	defer stopWatching()
+	var (
+		opened string
+		watch  sync.WaitGroup
+	)
+	ask.Opened = func(id string) {
+		opened = id
+		if !streaming {
+			return
+		}
+		sse.Event("session", gin.H{"session_id": id})
+		watch.Add(1)
+		go func() {
+			defer watch.Done()
+			tick := time.NewTicker(aiChatProgressEvery)
+			defer tick.Stop()
+			for {
+				select {
+				case <-watchCtx.Done():
+					return
+				case <-tick.C:
+					sse.Event("progress", gin.H{"live": turnLive(watchCtx, watcher, id)})
+				}
+			}
+		}()
+	}
+
+	started := time.Now()
+	var resp aiprovider.Response
+	if streaming {
+		resp, err = aiprovider.AskStream(c.Request.Context(), provider, ask, sse.Answer)
+	} else {
+		resp, err = provider.Ask(c.Request.Context(), ask)
+	}
+	// The response must not be written once this handler has returned.
+	stopWatching()
+	watch.Wait()
+	if err != nil {
+		// Hanging up does not stop a turn on the Wintermute server: it carries
+		// on, and its conversation refuses the next question until it is done.
+		// Nothing here can read an answer nobody is waiting for, so the turn
+		// is stopped when the asker has left or the wait for it has run out.
+		if opened != "" && watcher != nil && abandoned(c.Request.Context(), err) {
+			_, _ = watcher.Stop(context.WithoutCancel(c.Request.Context()), opened)
+		}
+		fail(err.Error())
+		return
+	}
+	if resp.Refused {
+		fail("the model declined to answer this question")
+		return
+	}
+
+	dock.Answered(resp.SessionID)
+
+	// Logged against what actually served the turn: a wintermuted server
+	// retries a failed backend against its fallback, so the model that
+	// answered is not always the one that was asked for.
+	logAIUsage(resp.Provider, resp.Model, int64(resp.Usage.InputTokens), int64(resp.Usage.OutputTokens))
+	out := gin.H{
+		"provider":   resp.Provider,
+		"answer":     resp.Text,
+		"backend":    resp.Backend,
+		"model":      resp.Model,
+		"session_id": resp.SessionID,
+		// What the answer cost and how long it took, to be shown beside it.
+		"usage": gin.H{
+			"input_tokens":  resp.Usage.InputTokens,
+			"output_tokens": resp.Usage.OutputTokens,
+		},
+		"elapsed_ms": time.Since(started).Milliseconds(),
+	}
+	if resp.FellBackFrom != "" {
+		out["fell_back_from"] = resp.FellBackFrom
+		out["fallback_reason"] = resp.FallbackReason
+	}
+	// How full the model's window is, and an answer the server stopped short:
+	// neither can be seen in the text, so both go to the page to be shown.
+	if resp.Room != nil {
+		out["room"] = resp.Room
+	}
+	if resp.CutOff != "" {
+		out["cut_off"] = resp.CutOff
+	}
+	if streaming {
+		sse.Event("result", out)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// aiChatMaxTokens bounds one chat answer.
+const aiChatMaxTokens = 4096
+
+// aiChatProgressEvery is how often a streamed question reports on its turn.
+// A variable so a test need not wait for it.
+var aiChatProgressEvery = 2 * time.Second
+
+// turnLive reads what a turn is doing, or nil when that is not known: a
+// provider that keeps no such state, a server that predates it, or a read
+// that failed. The event is sent either way, since it also keeps the stream
+// from going quiet.
+func turnLive(ctx context.Context, watcher aiprovider.Watcher, sessionID string) *aiprovider.Live {
+	if watcher == nil {
+		return nil
+	}
+	live, err := watcher.Progress(ctx, sessionID)
+	if err != nil {
+		return nil
+	}
+	return live
+}
+
+// abandoned reports whether a question failed because nobody is waiting for
+// its answer any more: the asker hung up, or the wait for the turn timed out.
+func abandoned(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	var timeout net.Error
+	return errors.As(err, &timeout) && timeout.Timeout()
+}
+
+// aiChatStop stops the turn a question is waiting on, by the session id the
+// question's stream announced. The question itself then ends with the
+// server's word that it was stopped; what the turn had already done is kept
+// in its conversation.
+func aiChatStop(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, aiChatMaxBodyBytes)
+
+	var req aiChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	req.Provider = strings.TrimSpace(strings.ToLower(req.Provider))
+	req.Endpoint = strings.TrimSpace(req.Endpoint)
+	req.Backend = strings.TrimSpace(req.Backend)
+	req.SessionID = strings.TrimSpace(req.SessionID)
+	if req.SessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id is required"})
+		return
+	}
+
+	provider, err := aiChatProvider(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	watcher, ok := provider.(aiprovider.Watcher)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this provider cannot stop a turn"})
+		return
+	}
+	stopped, err := watcher.Stop(c.Request.Context(), req.SessionID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"stopping": stopped})
+}
+
+// The transcript a client may send back is bounded on both axes: a long
+// conversation would otherwise grow every request until the model rejects it,
+// and the token cost of a turn is paid by the operator. The oldest turns are
+// dropped first, so a follow-up keeps the context that is actually near it.
+const (
+	aiChatMaxHistoryTurns = 20
+	aiChatMaxHistoryChars = 24000
+	// Comfortably above a full transcript at those limits, so the reader hits
+	// the trim above rather than a rejected request.
+	aiChatMaxBodyBytes = 512 << 10
+)
+
+// boundedHistory converts the client's transcript into harness turns, dropping
+// blanks and unknown roles, and keeping only the most recent turns within the
+// limits above.
+func boundedHistory(turns []aiChatTurn) []aiprovider.Message {
+	if len(turns) == 0 {
+		return nil
+	}
+
+	kept := make([]aiprovider.Message, 0, len(turns))
+	for _, turn := range turns {
+		text := strings.TrimSpace(turn.Content)
+		if text == "" {
+			continue
+		}
+		role := strings.TrimSpace(strings.ToLower(turn.Role))
+		if role != aiprovider.RoleUser && role != aiprovider.RoleAssistant {
+			continue
+		}
+		kept = append(kept, aiprovider.Message{Role: role, Text: text})
+	}
+
+	if len(kept) > aiChatMaxHistoryTurns {
+		kept = kept[len(kept)-aiChatMaxHistoryTurns:]
+	}
+
+	// Walk back from the newest turn, taking what fits.
+	budget := aiChatMaxHistoryChars
+	first := len(kept)
+	for i := len(kept) - 1; i >= 0; i-- {
+		if len(kept[i].Text) > budget {
+			break
+		}
+		budget -= len(kept[i].Text)
+		first = i
+	}
+	return kept[first:]
+}
+
+// aiChatProvider builds the provider for one request.
+//
+// A request that names no provider goes through the Settings router, as the AI
+// dock's questions do. A request that names one
+// builds it from the request, falling back field by field to the stored
+// configuration — which is how the AI Chat page puts a question to a different
+// Wintermute backend or agent than Settings configures. The transport itself is the shared harness, so there is one
+// implementation of each protocol rather than two.
+//
+// Credentials and the model are the exceptions to "per question": they are
+// never taken from the request. The token and the model come from Settings (or
+// the environment behind it), so there is one place to set them and every AI
+// field in the app answers on the same model.
+func aiChatProvider(req aiChatRequest) (aiprovider.Provider, error) {
+	switch req.Provider {
+	case "":
+		// No provider named means "whatever Settings says" — the AI dock, which
+		// has no provider control and should not have one. The router is the
+		// same one every other AI field asks through, so it carries the stored
+		// backend, model and agent.
+		if activeAIRouter != nil {
+			return activeAIRouter.Selected()
+		}
+		return nil, fmt.Errorf("no AI provider is configured: set a Wintermute server and token in Settings")
+
+	case "claude":
+		// This application no longer calls Claude directly: every question
+		// is an agent turn on the Wintermute server, which reaches Claude as
+		// one of its backends (wintermute decision note 0005).
+		return nil, fmt.Errorf("Claude is reached through the Wintermute server now: choose a Claude backend there")
+
+	case "wintermute":
+		cfg := aiprovider.WintermuteConfig{
+			URL:     req.Endpoint,
+			Token:   storedAICredential("wintermute"),
+			Backend: req.Backend,
+			Model:   aiChatWintermuteModel(req.Backend),
+			// A question asked without an agent is answered from the model's
+			// training data rather than from this installation's catalogs, and
+			// reads exactly like a grounded answer — so a caller that says
+			// nothing about the agent gets the one Settings configured, and
+			// only a caller that names one (the AI Chat page, which shows what
+			// it will use) overrides it.
+			Agent: aiChatRequestAgent(req),
+		}
+		if cfg.URL == "" {
+			cfg.URL = storedWintermuteURL()
+		}
+		if cfg.URL == "" {
+			return nil, fmt.Errorf("no Wintermute server URL: set one in Settings")
+		}
+		if cfg.Token == "" {
+			return nil, fmt.Errorf("no Wintermute client token: set one in Settings")
+		}
+		if _, err := aiprovider.ValidateEndpoint(cfg.URL); err != nil {
+			return nil, err
+		}
+		return aiprovider.NewWintermute(func() aiprovider.WintermuteConfig { return cfg }), nil
+
+	default:
+		return nil, fmt.Errorf("provider must be wintermute")
+	}
+}
+
+func stringField(data map[string]any, key string) string {
+	value, _ := data[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func validatedEndpoint(raw string, allowedHosts []string) (string, error) {
+	endpoint := strings.TrimSpace(raw)
+	parsed, err := neturl.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid endpoint")
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return "", fmt.Errorf("endpoint must use https")
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("endpoint host is required")
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("endpoint must not include user info")
+	}
+	if len(allowedHosts) > 0 && !hostAllowed(parsed.Hostname(), allowedHosts) {
+		return "", fmt.Errorf("endpoint host is not allowed")
+	}
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func hostAllowed(host string, allowedHosts []string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	for _, allowed := range allowedHosts {
+		if host == strings.TrimSpace(strings.ToLower(allowed)) {
+			return true
+		}
+	}
+	return false
+}
+
+func postJSON(endpoint string, headers map[string]string, payload any) (map[string]any, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode request: %w", err)
+	}
+
+	// #nosec G704 -- endpoint is validated against an allowed scheme and host set before reaching this helper.
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	// #nosec G704 -- endpoint is validated against an allowed scheme and host set before reaching this helper.
+	resp, err := aiProviderHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read provider response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := strings.TrimSpace(string(respBody))
+		if len(snippet) > 240 {
+			snippet = snippet[:240] + "..."
+		}
+		if snippet == "" {
+			snippet = resp.Status
+		}
+		return nil, fmt.Errorf("provider error: %s", snippet)
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		return nil, fmt.Errorf("failed to decode provider response: %w", err)
+	}
+	return data, nil
+}

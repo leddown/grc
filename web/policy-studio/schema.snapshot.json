@@ -1,0 +1,388 @@
+{
+  "fragment": "policy",
+  "nodes": [
+    {
+      "name": "paragraph",
+      "content": "inline*",
+      "group": "block",
+      "inline": false,
+      "atom": false,
+      "marks": null,
+      "attrs": {
+        "bid": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "doc",
+      "content": "policySection+",
+      "group": "",
+      "inline": false,
+      "atom": false,
+      "marks": null,
+      "attrs": {}
+    },
+    {
+      "name": "policySection",
+      "content": "sectionHeading block+",
+      "group": "",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "uid": {
+          "default": null
+        },
+        "kind": {
+          "default": "other"
+        }
+      }
+    },
+    {
+      "name": "sectionHeading",
+      "content": "text*",
+      "group": "",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "bid": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "text",
+      "content": "",
+      "group": "inline",
+      "inline": false,
+      "atom": false,
+      "marks": null,
+      "attrs": {}
+    },
+    {
+      "name": "hardBreak",
+      "content": "",
+      "group": "inline",
+      "inline": true,
+      "atom": false,
+      "marks": null,
+      "attrs": {}
+    },
+    {
+      "name": "heading",
+      "content": "inline*",
+      "group": "block",
+      "inline": false,
+      "atom": false,
+      "marks": null,
+      "attrs": {
+        "bid": {
+          "default": null
+        },
+        "level": {
+          "default": 1
+        }
+      }
+    },
+    {
+      "name": "blockquote",
+      "content": "paragraph+",
+      "group": "block",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "bid": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "bulletList",
+      "content": "listItem+",
+      "group": "block list",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {}
+    },
+    {
+      "name": "orderedList",
+      "content": "listItem+",
+      "group": "block list",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "start": {
+          "default": 1
+        },
+        "type": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "listItem",
+      "content": "paragraph (paragraph | bulletList | orderedList)*",
+      "group": "",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "bid": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "table",
+      "content": "tableRow+",
+      "group": "block",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {}
+    },
+    {
+      "name": "tableRow",
+      "content": "(tableCell | tableHeader)*",
+      "group": "",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {}
+    },
+    {
+      "name": "tableHeader",
+      "content": "paragraph+",
+      "group": "",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "bid": {
+          "default": null
+        },
+        "colspan": {
+          "default": 1
+        },
+        "rowspan": {
+          "default": 1
+        },
+        "colwidth": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "tableCell",
+      "content": "paragraph+",
+      "group": "",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "bid": {
+          "default": null
+        },
+        "colspan": {
+          "default": 1
+        },
+        "rowspan": {
+          "default": 1
+        },
+        "colwidth": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "callout",
+      "content": "paragraph+",
+      "group": "block",
+      "inline": false,
+      "atom": false,
+      "marks": "insertion deletion modification",
+      "attrs": {
+        "bid": {
+          "default": null
+        },
+        "kind": {
+          "default": "note"
+        }
+      }
+    },
+    {
+      "name": "factToken",
+      "content": "",
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "marks": null,
+      "attrs": {
+        "key": {
+          "default": ""
+        }
+      }
+    },
+    {
+      "name": "controlRef",
+      "content": "",
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "marks": null,
+      "attrs": {
+        "controlId": {
+          "default": ""
+        }
+      }
+    }
+  ],
+  "marks": [
+    {
+      "name": "link",
+      "rank": 0,
+      "excludes": null,
+      "inclusive": false,
+      "overlapping": false,
+      "attrs": {
+        "href": {
+          "default": null
+        },
+        "target": {
+          "default": null
+        },
+        "rel": {
+          "default": "noopener noreferrer"
+        },
+        "class": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "bold",
+      "rank": 1,
+      "excludes": null,
+      "inclusive": null,
+      "overlapping": false,
+      "attrs": {}
+    },
+    {
+      "name": "italic",
+      "rank": 2,
+      "excludes": null,
+      "inclusive": null,
+      "overlapping": false,
+      "attrs": {}
+    },
+    {
+      "name": "code",
+      "rank": 3,
+      "excludes": "code bold italic link",
+      "inclusive": null,
+      "overlapping": false,
+      "attrs": {}
+    },
+    {
+      "name": "insertion",
+      "rank": 4,
+      "excludes": "deletion modification insertion",
+      "inclusive": false,
+      "overlapping": false,
+      "attrs": {
+        "id": {
+          "default": null
+        },
+        "authorId": {
+          "default": null
+        },
+        "authorKind": {
+          "default": null
+        },
+        "authorName": {
+          "default": null
+        },
+        "proposalId": {
+          "default": null
+        },
+        "createdAt": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "deletion",
+      "rank": 5,
+      "excludes": "insertion modification deletion",
+      "inclusive": false,
+      "overlapping": false,
+      "attrs": {
+        "id": {
+          "default": null
+        },
+        "authorId": {
+          "default": null
+        },
+        "authorKind": {
+          "default": null
+        },
+        "authorName": {
+          "default": null
+        },
+        "proposalId": {
+          "default": null
+        },
+        "createdAt": {
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "modification",
+      "rank": 6,
+      "excludes": "deletion insertion",
+      "inclusive": false,
+      "overlapping": true,
+      "attrs": {
+        "id": {
+          "default": null
+        },
+        "authorId": {
+          "default": null
+        },
+        "authorKind": {
+          "default": null
+        },
+        "authorName": {
+          "default": null
+        },
+        "proposalId": {
+          "default": null
+        },
+        "createdAt": {
+          "default": null
+        },
+        "type": {
+          "default": null
+        },
+        "attrName": {
+          "default": null
+        },
+        "previousValue": {
+          "default": null
+        },
+        "newValue": {
+          "default": null
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,250 @@
+// Package aiprovider is the harness every AI field in the app asks questions
+// through. It exists so a question can be served by a model on the local
+// network as readily as by the cloud, without each feature growing its own
+// client, its own credential handling and its own idea of what a model is.
+//
+// One provider ships: Wintermute, which talks to a wintermuted server on the
+// network that in turn routes to self-hosted models (llama.cpp, Ollama, vLLM) or
+// on to Claude. The app used to call Claude directly as well; it reaches Claude
+// through that server now (wintermute decision note 0005).
+package aiprovider
+
+import (
+	"context"
+	"errors"
+	"fmt"
+)
+
+// NameWintermute is the provider's name, as usage is logged under it.
+const NameWintermute = "wintermute"
+
+// ErrNotConfigured reports that a provider has no usable configuration — no
+// credential, or no server URL. It is not a failure of the request.
+var ErrNotConfigured = errors.New("provider is not configured")
+
+// Roles for a Message in a Request's History.
+const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+// Message is one earlier turn of a conversation. Role is RoleUser or
+// RoleAssistant.
+type Message struct {
+	Role string
+	Text string
+}
+
+// Request is one question. Most AI fields in this app ask a single
+// self-contained question and use the answer, so History is optional and
+// usually empty; the chat surfaces set it so a follow-up question means what it
+// says. The harness holds no conversation state of its own — a caller that
+// wants continuity either sends the transcript back on each turn (History) or,
+// where the provider keeps the transcript itself, hands back the SessionID the
+// previous answer carried.
+type Request struct {
+	// System is the instruction that frames the task. The Wintermute provider
+	// folds it into the message text, because wintermuted derives its own
+	// system prompt from its configuration.
+	System string
+	// History is the conversation so far, oldest first, excluding Prompt. The
+	// caller is responsible for bounding it: nothing here trims a transcript
+	// that has outgrown the model's context window.
+	History []Message
+	// Prompt is the question itself.
+	Prompt string
+	// SessionID continues a conversation a provider is itself holding, as
+	// returned by a previous Response. It is opaque and provider-specific.
+	// When it is set, the provider
+	// already has the transcript and History is not resent.
+	SessionID string
+	// Model optionally overrides the provider's configured model.
+	Model string
+	// Agent names the Wintermute agent this question is for, in place of the
+	// configured one, so a module can have its own library and sources while
+	// every other AI field keeps the installation's agent. Empty keeps the
+	// configured agent. It applies when a session is opened: a resumed session
+	// stays with the agent it was opened on.
+	Agent string
+	// ClearReads asks this question without what tools returned earlier in a
+	// conversation the provider is holding. Every Wintermute request sends the
+	// whole conversation, so the passages one question read are still in the
+	// model's window when the next is asked; this gives that room back without
+	// opening a new session. The questions, the answers and the server's
+	// transcript are kept. It applies to a resumed session and holds for the
+	// questions after it.
+	ClearReads bool
+	// MaxTokens bounds the answer. Zero means the provider's default.
+	MaxTokens int
+	// OutputSchema, when set, is a JSON Schema the answer must match.
+	// Wintermute does not enforce it, so a caller that sets it must still
+	// validate the answer and say what it wants in the prompt.
+	OutputSchema map[string]any
+	// Opened, when set, is called with the conversation's id once it is known
+	// and before the question is asked. An answer can be minutes away, and the
+	// id is what a turn is watched and stopped by in the meantime (Watcher).
+	Opened func(sessionID string)
+}
+
+// Usage is the token accounting for one answer, for the shared ai_usage_log.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+}
+
+// Response is one answer, annotated with what actually served it.
+type Response struct {
+	Text string
+	// Provider names the provider that answered.
+	Provider string
+	// Backend names the Wintermute backend that served the turn, when the
+	// answer came from there. A wintermuted server retries against its
+	// configured fallback when a backend fails, so what served a turn is not
+	// always what was asked for — recording it keeps the usage log honest.
+	Backend string
+	// Model is the model that produced the answer.
+	Model string
+	// FellBackFrom names the backend the turn was meant for when another one
+	// answered it, and FallbackReason why it was left.
+	FellBackFrom   string
+	FallbackReason string
+	// SessionID identifies the conversation this turn belongs to, for providers
+	// that keep the transcript themselves. Passing it back on the next Request
+	// continues that conversation. Empty for providers that do not.
+	SessionID string
+	Usage     Usage
+	// StopReason is why the model stopped, when the provider says:
+	// StopEndTurn, StopMaxTokens, StopRefusal or another provider value. An
+	// answer that stopped for any reason but StopEndTurn may be cut short, and
+	// a structured answer cut short does not match its schema.
+	StopReason string
+	// CutOff is the provider's own account of an answer it stopped short,
+	// with the counts, when it gives one. StopReason is StopMaxTokens then.
+	CutOff string
+	// Room is how full the answering model's context window is with this
+	// conversation in it, when the provider measures it. Nil is not known.
+	Room *Room
+	// Refused reports that the provider's safety classifiers declined the
+	// request. This is a successful HTTP 200 with empty or partial content, so
+	// a caller that reads Text without checking this misreads a refusal as a
+	// malformed answer.
+	Refused bool
+}
+
+// Room is a provider's measure of a model's context window, in tokens.
+type Room struct {
+	// Used is what the conversation takes now.
+	Used int `json:"used"`
+	// Window is the model's context window and Budget the point in it where a
+	// turn stops looking things up, to leave room for the answer. At or past
+	// Budget the next question is answered from what the conversation already
+	// holds. Both are zero where the window is not known.
+	Window int `json:"window,omitempty"`
+	Budget int `json:"budget,omitempty"`
+	// Reads is roughly how much of Used is what tools returned and could be
+	// cleared (Request.ClearReads).
+	Reads int `json:"reads,omitempty"`
+}
+
+// Full reports whether the conversation has reached the point where the model
+// can no longer look anything up.
+func (r *Room) Full() bool { return r != nil && r.Budget > 0 && r.Used >= r.Budget }
+
+// Stop reasons a caller acts on.
+const (
+	StopEndTurn   = "end_turn"
+	StopMaxTokens = "max_tokens"
+	StopRefusal   = "refusal"
+)
+
+// Provider answers questions.
+type Provider interface {
+	// Name identifies the provider.
+	Name() string
+	// Available reports whether the provider could serve a request right now.
+	// It is cheap and does no network I/O — configuration only.
+	Available() bool
+	// Describe renders the provider's configuration for the Settings page. It
+	// never includes credentials.
+	Describe() string
+	// Ask answers one question.
+	Ask(ctx context.Context, req Request) (Response, error)
+}
+
+// Streamer is implemented by providers that can hand an answer over as it is
+// written. Wintermute does not: a wintermuted server answers a turn whole.
+type Streamer interface {
+	AskStream(ctx context.Context, req Request, onText func(string)) (Response, error)
+}
+
+// AskStream asks a provider, streaming the answer's text to onText where the
+// provider can; otherwise onText has the whole answer once it is complete.
+func AskStream(ctx context.Context, p Provider, req Request, onText func(string)) (Response, error) {
+	if s, ok := p.(Streamer); ok {
+		return s.AskStream(ctx, req, onText)
+	}
+	resp, err := p.Ask(ctx, req)
+	if err == nil && onText != nil && resp.Text != "" && !resp.Refused {
+		onText(resp.Text)
+	}
+	return resp, err
+}
+
+// Live is what a turn is doing while it runs, as a wintermuted server reports
+// it. The *MS fields are ages at the moment it was read.
+type Live struct {
+	Running bool   `json:"running"`
+	Phase   string `json:"phase"`
+	Backend string `json:"backend,omitempty"`
+	Model   string `json:"model,omitempty"`
+	// Tool is the tool running, in the tool phase.
+	Tool string `json:"tool,omitempty"`
+	// Calls is how many model calls the turn has made, this one included.
+	Calls int `json:"calls"`
+	// Connected says the model call in progress has started answering.
+	// Unstreamed says the backend reports nothing until its answer is whole.
+	Connected  bool `json:"connected"`
+	Unstreamed bool `json:"unstreamed,omitempty"`
+	// Thinking, Writing and ToolInput count what has arrived of the current
+	// model call, about a token each.
+	Thinking  int    `json:"thinking_tokens"`
+	Writing   int    `json:"writing_tokens"`
+	ToolInput int    `json:"tool_tokens"`
+	Error     string `json:"error,omitempty"`
+	ElapsedMS int64  `json:"elapsed_ms"`
+	PhaseMS   int64  `json:"phase_ms"`
+	QuietMS   int64  `json:"quiet_ms"`
+}
+
+// Watcher is implemented by providers that keep a turn running on their own
+// side, where it can be watched and stopped by its conversation's id.
+type Watcher interface {
+	// Progress reports the turn running in a conversation. Nil is a provider
+	// that has nothing to say about it.
+	Progress(ctx context.Context, sessionID string) (*Live, error)
+	// Stop stops the turn running in a conversation, and reports whether
+	// there was one. What the turn already did is kept.
+	Stop(ctx context.Context, sessionID string) (bool, error)
+}
+
+// Probe is what a connection test reports back.
+type Probe struct {
+	OK bool `json:"ok"`
+	// Detail carries the failure reason, or a short success summary.
+	Detail string `json:"detail"`
+	// Backends lists the backends the server advertises, so an operator can
+	// see which local models are reachable and copy a name into the settings.
+	Backends []string `json:"backends,omitempty"`
+	// DefaultBackend and Fallback are the server's own routing defaults.
+	DefaultBackend string `json:"default_backend,omitempty"`
+	Fallback       string `json:"fallback,omitempty"`
+}
+
+// Prober is implemented by providers that can be reached for a liveness and
+// capability check: the useful discovery here is which local models exist.
+type Prober interface {
+	Probe(ctx context.Context) Probe
+}
+
+// errNoAnswer is returned when a provider completes without producing text.
+var errNoAnswer = fmt.Errorf("provider returned an empty answer")

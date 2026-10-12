@@ -1,0 +1,260 @@
+{
+  "name": "marks",
+  "input": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-1",
+          "kind": "purpose"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h1"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Purpose"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p1"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Plain, "
+              },
+              {
+                "type": "text",
+                "text": "bold",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": ", "
+              },
+              {
+                "type": "text",
+                "text": "italic",
+                "marks": [
+                  {
+                    "type": "italic"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": ", "
+              },
+              {
+                "type": "text",
+                "text": "code",
+                "marks": [
+                  {
+                    "type": "code"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": " and a "
+              },
+              {
+                "type": "text",
+                "text": "link",
+                "marks": [
+                  {
+                    "type": "link",
+                    "attrs": {
+                      "href": "https://example.com/a?b=1",
+                      "target": null,
+                      "rel": "noopener noreferrer",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "after a break."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p2"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "all at once",
+                "marks": [
+                  {
+                    "type": "bold"
+                  },
+                  {
+                    "type": "italic"
+                  },
+                  {
+                    "type": "link",
+                    "attrs": {
+                      "href": "mailto:ciso@example.com"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "update": "AScBAAcBBnBvbGljeQMNcG9saWN5U2VjdGlvbgcAAQADDnNlY3Rpb25IZWFkaW5nBwABAQYEAAECB1B1cnBvc2UoAAEBA2JpZAF3BGItaDGHAQEDCXBhcmFncmFwaAcAAQsGBAABDAdQbGFpbiwghgETBGJvbGQCe32EARQEYm9sZIYBGARib2xkBG51bGyEARkCLCCGARsGaXRhbGljAnt9hAEcBml0YWxpY4YBIgZpdGFsaWMEbnVsbIQBIwIsIIYBJQRjb2RlAnt9hAEmBGNvZGWGASoEY29kZQRudWxshAErByBhbmQgYSCGATIEbGlua2h7ImhyZWYiOiJodHRwczovL2V4YW1wbGUuY29tL2E/Yj0xIiwidGFyZ2V0IjpudWxsLCJyZWwiOiJub29wZW5lciBub3JlZmVycmVyIiwiY2xhc3MiOm51bGwsInRpdGxlIjpudWxsfYQBMwRsaW5rhgE3BGxpbmsEbnVsbIcBDAMJaGFyZEJyZWFrhwE5BgQAAToOYWZ0ZXIgYSBicmVhay4oAAELA2JpZAF3BGItcDGHAQsDCXBhcmFncmFwaAcAAUoGBgABSwRsaW5rZnsiaHJlZiI6Im1haWx0bzpjaXNvQGV4YW1wbGUuY29tIiwidGFyZ2V0IjpudWxsLCJyZWwiOiJub29wZW5lciBub3JlZmVycmVyIiwiY2xhc3MiOm51bGwsInRpdGxlIjpudWxsfYYBTARib2xkAnt9hgFNBml0YWxpYwJ7fYQBTgthbGwgYXQgb25jZYYBWQRsaW5rBG51bGyGAVoEYm9sZARudWxshgFbBml0YWxpYwRudWxsKAABSgNiaWQBdwRiLXAyKAABAAN1aWQBdwNzLTEoAAEABGtpbmQBdwdwdXJwb3NlAA==",
+  "expected": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "policySection",
+        "attrs": {
+          "uid": "s-1",
+          "kind": "purpose"
+        },
+        "content": [
+          {
+            "type": "sectionHeading",
+            "attrs": {
+              "bid": "b-h1"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Purpose"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p1"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Plain, "
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ],
+                "text": "bold"
+              },
+              {
+                "type": "text",
+                "text": ", "
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "italic"
+                  }
+                ],
+                "text": "italic"
+              },
+              {
+                "type": "text",
+                "text": ", "
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "code"
+                  }
+                ],
+                "text": "code"
+              },
+              {
+                "type": "text",
+                "text": " and a "
+              },
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "link",
+                    "attrs": {
+                      "href": "https://example.com/a?b=1",
+                      "target": null,
+                      "rel": "noopener noreferrer",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                ],
+                "text": "link"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "after a break."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {
+              "bid": "b-p2"
+            },
+            "content": [
+              {
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "link",
+                    "attrs": {
+                      "href": "mailto:ciso@example.com",
+                      "target": null,
+                      "rel": "noopener noreferrer",
+                      "class": null,
+                      "title": null
+                    }
+                  },
+                  {
+                    "type": "bold"
+                  },
+                  {
+                    "type": "italic"
+                  }
+                ],
+                "text": "all at once"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,199 @@
+package settings
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"grc/internal/aiprovider"
+)
+
+// memPrefs is an in-memory PreferenceRepository.
+type memPrefs struct{ rows map[string]string }
+
+func newMemPrefs() *memPrefs { return &memPrefs{rows: map[string]string{}} }
+
+func (m *memPrefs) GetPreference(key string) (string, error) { return m.rows[key], nil }
+
+func (m *memPrefs) SetPreference(key, value string) error {
+	m.rows[key] = value
+	return nil
+}
+
+// catalogHandler wires a Handler against the stub Wintermute server at url.
+func catalogHandler(t *testing.T, url string) *Handler {
+	t.Helper()
+	svc, _ := testService(t)
+	prefs := newMemPrefs()
+	svc = svc.WithPreferences(prefs)
+	if err := svc.SetPreference(PrefWintermuteURL, url); err != nil {
+		t.Fatalf("SetPreference: %v", err)
+	}
+	if err := svc.Set(WintermuteToken, "client-token-value", "alice"); err != nil {
+		t.Fatalf("Set token: %v", err)
+	}
+	return NewHandler(svc, nil)
+}
+
+func getCatalog(t *testing.T, h *Handler) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.RegisterAdminRoutes(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/settings/ai-providers/catalog", nil))
+	return rec
+}
+
+func TestListCatalogReturnsBackendsAndModels(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Path)
+		// The client token must reach the server, and only from here — it is
+		// never handed to the browser.
+		if got := r.Header.Get("Authorization"); got != "Bearer client-token-value" {
+			t.Errorf("Authorization = %q, want the configured client token", got)
+		}
+		switch r.URL.Path {
+		case "/api/v1/backends":
+			_, _ = w.Write([]byte(`{"backends":[{"name":"workshop","kind":"ollama","status":"ok"}],
+				"default":"workshop","fallback":"claude"}`))
+		case "/api/v1/models":
+			_, _ = w.Write([]byte(`{"models":[{"backend":"workshop","id":"qwen3:8b","params_b":8,"loaded":true}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	rec := getCatalog(t, catalogHandler(t, server.URL))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var resp aiprovider.Catalog
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Backends) != 1 || resp.Backends[0].Name != "workshop" || resp.Backends[0].Kind != "ollama" {
+		t.Errorf("backends = %+v", resp.Backends)
+	}
+	if len(resp.Models) != 1 || resp.Models[0].ID != "qwen3:8b" || resp.Models[0].Backend != "workshop" {
+		t.Errorf("models = %+v", resp.Models)
+	}
+	if resp.DefaultBackend != "workshop" || resp.Fallback != "claude" {
+		t.Errorf("routing defaults = %q / %q", resp.DefaultBackend, resp.Fallback)
+	}
+	if resp.ModelsError != "" {
+		t.Errorf("models_error = %q, want none", resp.ModelsError)
+	}
+	if len(seen) != 2 {
+		t.Errorf("requested %v, want both lists", seen)
+	}
+}
+
+// A server that cannot list models is still one whose backends can be chosen:
+// a backend answers on its own default model.
+func TestListCatalogSurvivesAModelListFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/backends" {
+			_, _ = w.Write([]byte(`{"backends":[{"name":"workshop","kind":"ollama","status":"ok"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	rec := getCatalog(t, catalogHandler(t, server.URL))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp aiprovider.Catalog
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Backends) != 1 {
+		t.Errorf("backends = %+v, want the list to survive", resp.Backends)
+	}
+	if resp.ModelsError == "" {
+		t.Error("models_error is empty, so the page would show an empty list as if it were complete")
+	}
+	if resp.Models == nil {
+		t.Error("models is null; the page expects an array")
+	}
+}
+
+func TestSetPreferencesStoresTheCrisisExerciseAgent(t *testing.T) {
+	svc, _ := testService(t)
+	h := NewHandler(svc.WithPreferences(newMemPrefs()), nil)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.RegisterAdminRoutes(r)
+
+	put := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/settings/ai-providers", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+	prefs := func(rec *httptest.ResponseRecorder) map[string]string {
+		t.Helper()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		var resp providerResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return resp.Preferences
+	}
+
+	got := prefs(put(`{"crisis_agent":" crisis-exercises ","crisis_send_exercise":"TRUE"}`))
+	if got[PrefCrisisAgent] != "crisis-exercises" {
+		t.Errorf("stored crisis agent = %q, want it trimmed", got[PrefCrisisAgent])
+	}
+	if got[PrefCrisisSendExercise] != "true" {
+		t.Errorf("stored send-exercise = %q, want true", got[PrefCrisisSendExercise])
+	}
+
+	got = prefs(put(`{"crisis_send_exercise":"false"}`))
+	if got[PrefCrisisSendExercise] != "" {
+		t.Errorf("switched-off send-exercise = %q, want empty", got[PrefCrisisSendExercise])
+	}
+	if got[PrefCrisisAgent] != "crisis-exercises" {
+		t.Errorf("saving one setting cleared the crisis agent: %q", got[PrefCrisisAgent])
+	}
+
+	if rec := put(`{"crisis_send_exercise":"sometimes"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d for a value that is neither true nor false, want 400", rec.Code)
+	}
+
+	// The Policy Studio pair behaves the same way, and leaves the crisis pair alone.
+	got = prefs(put(`{"policy_agent":" policies ","policy_send_document":"1"}`))
+	if got[PrefPolicyAgent] != "policies" || got[PrefPolicySendDocument] != "true" || got[PrefCrisisAgent] != "crisis-exercises" {
+		t.Errorf("policy pair = %q/%q, crisis agent %q", got[PrefPolicyAgent], got[PrefPolicySendDocument], got[PrefCrisisAgent])
+	}
+	if rec := put(`{"policy_send_document":"maybe"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d for policy_send_document=maybe, want 400", rec.Code)
+	}
+}
+
+func TestListCatalogWithoutAServerURL(t *testing.T) {
+	// The URL preference falls back to the environment, so a developer machine
+	// with one set must not turn this into a live request.
+	t.Setenv("WINTERMUTE_URL", "")
+	h := catalogHandler(t, "")
+	rec := getCatalog(t, h)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "server URL") {
+		t.Errorf("body = %s, want it to name the missing setting", rec.Body.String())
+	}
+}

@@ -1,0 +1,66 @@
+id: nis2
+displayName: NIS2 Directive
+sourceRef: EU 2022/2555
+idPrefix: NIS2-ART
+
+detect:
+  filenamePatterns: [nis2, "nis-2", "2022-2555", "2022_2555"]
+  contentPatterns:
+    - "2022/2555"
+    - network and information systems
+    - high common level of cybersecurity
+
+segmentation:
+  - type: article
+    label: Article
+    minBodyChars: 120
+
+classification:
+  categories:
+    - Scope and Definitions
+    - National Frameworks and Authorities
+    - Cybersecurity Risk Management
+    - Incident Reporting
+    - Jurisdiction and Registration
+    - Supervision and Enforcement
+  rules:
+    - category: Scope and Definitions
+      match:
+        articles: "1-6"
+    - category: National Frameworks and Authorities
+      match:
+        articles: "7-19"
+    - category: Cybersecurity Risk Management
+      match:
+        articles: "20-22"
+    - category: Incident Reporting
+      match:
+        articles: "23"
+    - category: Jurisdiction and Registration
+      match:
+        articles: "24-28"
+    - category: Supervision and Enforcement
+      match:
+        articles: "29-46"
+
+seedCrosswalk:
+  - group: Art 21 — cybersecurity risk-management measures
+    match:
+      articles: "21"
+    controls: [RA-3, SI-4, CP-9, IR-4]
+    rationale: The minimum risk-management measures cover risk analysis, monitoring, backup/business continuity and incident handling.
+  - group: Art 23 — reporting obligations
+    match:
+      articles: "23"
+    controls: [IR-6, IR-8]
+    rationale: Early warning and incident notification deadlines map to incident reporting and the incident response plan that defines them.
+  - group: Art 20 — governance
+    match:
+      articles: "20"
+    controls: [PM-9]
+    rationale: Management-body accountability for risk-management measures maps to the organization-wide risk management strategy.
+  - group: Art 22 — Union-level coordinated security risk assessments
+    match:
+      articles: "22"
+    controls: [SR-3, RA-9]
+    rationale: Coordinated supply chain risk assessments of critical services map to supply chain controls and criticality analysis.

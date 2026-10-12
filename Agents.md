@@ -1,0 +1,203 @@
+# grc — Agent Instructions & Policy
+
+Internal Go web application for governance, risk and compliance work: a
+NIST control catalog, security NFR catalog, NFR-to-control linking, a
+security risk register, Jira reporting/connector, and an AI chat assistant,
+all backed by SQLite (or PostgreSQL) and served via Gin.
+
+`docs/` is the reference set: `docs/PROJECT_OVERVIEW.md` is the way in,
+`docs/ARCHITECTURE.md` describes every package, and `docs/DEVELOPMENT.md`
+lists what a new page or a new table has to touch. Keep them true: a change
+that adds a route, a table, a flag or a module updates the document that
+lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
+`docs/FEATURES.md`).
+
+## Build & Test
+
+- Build: `go build ./...` (entrypoints `./cmd/api` and root `main.go` are
+  functionally identical — both just call `app.BindFlags()` + `app.Run()`)
+- Run tests: `go test ./...` — this also runs `TestGosec` and
+  `TestGovulncheck` (in `security_test.go`), so a clean `go test ./...` is a
+  security gate, not just a unit-test gate
+- Format & vet: `go fmt ./...` && `go vet ./...` — run both before
+  considering any change done
+- There is no CI pipeline configured (no `.github/workflows`) — the above
+  commands must be run locally before every commit
+
+## Running the app
+
+- Normal mode (login required): `go run ./cmd/api` or `./grc`. See
+  `RUNTIME_ARGS.md` for flags/env vars and first-boot admin bootstrap
+  (`./admin_setup_login.sh`).
+- Local/no-login laptop mode (single user, every page and admin action
+  open, no auth at all): `LOCAL_MODE=true ./grc` or `./run_local.sh`.
+  Never run `-local-mode` on a server or anywhere reachable by other users.
+
+## Architecture Overview
+
+- `main.go` / `cmd/api/main.go` — entrypoints
+- `internal/app` — Gin route wiring (`app.go`), page HTML handlers,
+  auth/admin middleware (`auth.go`, `access_control.go`), login and
+  user-management pages
+- `internal/authn` — password/session auth service: bcrypt hashing,
+  sessions, per-user `allowed_pages`
+- `internal/user` — basic user CRUD, distinct from `internal/authn`'s auth
+  users
+- `internal/controlcatalog`, `internal/securitynfr`, `internal/nfrlink` —
+  NIST control catalog, security NFR catalog, and their cross-linking
+- `internal/riskregister`, `internal/reports` — risk register and
+  reporting dashboards
+- `internal/exceptionbook`, `internal/xlsx` — the Exceptions Workbook
+  (Reporting & Data): the Exceptions page as an .xlsx file that holds the NFR
+  catalog with its weights, the NIST controls and their links, and formulas
+  that redo the page's logic. The page's logic is JavaScript in
+  `internal/app/exceptions.go`; change it there and in
+  `internal/exceptionbook` together. `internal/xlsx` is the small writer
+  behind it — there is no spreadsheet library in the module
+- `internal/jira` — Jira Cloud REST connector (issues/projects/search)
+- `internal/regcoverage` — Regulation Coverage: imports an EU regulation from
+  the AI agent's library on the Wintermute server, maps every article to
+  Security NFRs and 800-53 with AI, and keeps a versioned report that can be
+  questioned and revised. The Wintermute server cuts the regulation into
+  requirements (its grc domain's framework profiles); `internal/regmap` turns
+  them into requirement ids and categories with this application's framework
+  profiles — see `REGULATION_COVERAGE.md`
+- `internal/nfrenrich` — NFR Enrichment: imports a security document from the
+  same library and proposes enrichments to the NFR catalog, which a human
+  accepts or rejects
+- `internal/auditfinding` — Audit Findings & Remediation: findings from audit,
+  regulators and certification written as criteria/condition/cause/effect, a
+  management response and dated action plan, extensions that are counted, and
+  closure only on independent validation or an expiring risk acceptance — see
+  `AUDIT_FINDINGS.md`
+- `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
+  the exercise arc from red team through incident response, DORA incident
+  classification and its notification clocks, crisis and continuity activation,
+  communications, the board and the supervisory authorities. Every objective,
+  phase, inject, decision and finding can cite the controls, NFRs, regulation
+  clauses, risks and frameworks it exercises — see `CRISIS_EXERCISE.md`
+- `internal/policystudio` — the Policy Studio: collaborative WYSIWYG authoring of
+  policy documents. An in-process ygo (pure-Go Yjs) server holds each Studio
+  document; the server validates and projects it into `policy_sections`, which
+  stay the system of record for sections and mappings. The editor lives in
+  `web/policy-studio` and ships as an embedded, hashed bundle. Its built-in
+  document templates are JSON in `internal/policystudio/templates/`;
+  administrators can also draft (from a library document), import, edit and
+  publish templates in the app, stored in `policy_templates` — see
+  `POLICY_STUDIO.md`
+- `internal/policyai` — the Policy Studio's AI proposal engine: context,
+  standing rules, strict parsing of the EditProposal contract (one repair
+  turn on a malformed answer), server-side validation and
+  anchoring of every edit, `ai_policy` routing, limits, and the record of each
+  proposal and decision. The AI never writes the document: edits become
+  suggestions a person decides
+- `internal/clientprofile` — client profiles and their facts (the
+  anti-hallucination store): what a policy states about a client comes from
+  here or stays an unresolved token that blocks approval
+- `internal/knowledge` — the read-only `/api/knowledge` surface an external AI
+  agent queries: NFRs, controls, regulation coverage, policies, risks and crisis
+  exercises, behind its own read-only token. The agent itself lives in wintermuted, not here —
+  see `AI_AGENT.md`
+- `internal/db` — the schema and the connection, for SQLite and PostgreSQL
+  (a schema change goes in both `sqlite.go` and `postgres.go`);
+  `internal/dbsync` — sync between two databases and the JSON snapshot (a new
+  table or column goes in `syncOrder`)
+- `internal/policydocs` — the policy library: documents, sections, control
+  mappings, lint, approval, versions, coverage. `internal/doctemplate` —
+  typeset output through Typst, LaTeX and Pandoc (see `DOCUMENT_TEMPLATES.md`)
+- `internal/aiprovider` — the one way out to a model: the Wintermute client,
+  usage logging, and the agent library client. `internal/settings`,
+  `internal/secrets` — the Settings store and the master key for stored
+  credentials
+- `internal/reporting` — HTML/CSS to PDF through headless Chrome
+- `internal/pageui` — shared side-nav tab rendering used across pages
+- `internal/data` — embedded/static seed JSON for the control and NFR
+  catalogs
+- **No document ingestion here.** This application does not accept document
+  uploads and does not extract text from PDFs, DOCX or images. Documents are
+  uploaded to an agent's library on the Wintermute server, which owns the
+  extraction, the OCR and the chunking; `internal/aiprovider/library.go` reads
+  the text back. Do not reintroduce a parser, an upload endpoint or an
+  outbound document fetch here — see `AI_AGENT.md`
+- `scripts/` — goreleaser cross-build, smoke-test, and artifact-upload
+  helpers
+- Root helper scripts: `admin_setup_login.sh` (first-boot bootstrap),
+  `run_local.sh` (local no-auth launch)
+
+## The Policy Studio editor bundle (`web/policy-studio`)
+
+- The bundle in `internal/policystudio/assets` is committed, so `go build`
+  never needs Node. Change the editor in `web/policy-studio/src` and rebuild
+  with `scripts/build-policy-studio.sh` (Node 24 LTS, `npm ci
+  --ignore-scripts` from the committed lockfile). Commit the rebuilt assets,
+  `THIRD_PARTY_NOTICES.md`, `schema.snapshot.json` and the fixtures together.
+- The build refuses a bundled package whose licence is not MIT, BSD, Apache-2.0,
+  ISC or MPL-2.0, and a bundle over 800 KB; `go test` checks the embedded files
+  against the manifest and the Go schema against `schema.snapshot.json`.
+- `web/policy-studio/patches/apply-y-tiptap-node-marks.mjs` patches
+  `@tiptap/y-tiptap` so node marks survive Yjs (POLICY_STUDIO.md §3.3). It
+  refuses any version but the one it was written for: bumping y-tiptap means
+  re-reading the patch against the new source.
+
+## Conventions & Code Style
+
+- Module `grc`, Go 1.26 (see `go.mod` for the exact toolchain version)
+  — don't downgrade
+- Gin for HTTP, `modernc.org/sqlite` for storage (pure Go — the module has no
+  cgo, and must not gain any: that is what keeps a build from needing a C
+  toolchain per target), `golang.org/x/crypto/bcrypt` for password hashing —
+  prefer these existing deps over adding new ones
+- Wrap errors with `fmt.Errorf("...: %w", err)`
+- No comments unless they explain a non-obvious WHY; avoid speculative
+  abstractions or unrequested refactors
+- Page handlers render HTML directly as Go string literals (no template
+  engine) — match the existing style in `internal/app/*.go` rather than
+  introducing a templating library
+- The interface is dense and for a desktop browser window only. Sizes come
+  from the scale in `internal/app/theme_design.go` (13px text, 11px captions,
+  controls and rows under 30px); a page states only what is particular to it.
+  Do not add a phone layout: no narrow-screen breakpoint that swaps the
+  sidebar for a drawer, no touch sizing, no viewport tag. A toolbar wraps
+  rather than relying on a breakpoint, and a page must stay usable at about
+  1024 by 640. Paper output (`render.go` files, PDF, print) is not part of
+  this and keeps its own sizes
+
+## Git / Branch / PR Workflow
+
+- This repo currently commits directly to `main`; no enforced
+  branch-naming or PR process exists today, but prefer a short-lived
+  feature branch + merge for any non-trivial change if asked to use one
+- Always update `CHANGELOG.md` for every substantive code, test, security,
+  UX, or build change — do not leave changelog maintenance for later (see
+  existing entries for the expected level of detail)
+
+## Security & Sensitive Data
+
+- Don't commit secrets (`SETUP_TOKEN`, `ADMIN_TOKEN`, DB files) — `users.db`,
+  `local.db`, and their `-shm`/`-wal` files are gitignored; keep it that way
+- Use HTTPS in production so auth cookies are sent with `Secure`
+- Agents must check for security patches for all internal libraries/modules
+  before finalizing changes — including the Policy Studio's JavaScript
+  dependencies: run `npm audit --omit=dev` in `web/policy-studio`, and apply
+  fixes (an updated lockfile, then a rebuilt bundle) on the `security-patches`
+  branch like any Go module
+- A full security patch audit across all internal libraries and modules
+  should run periodically; no automated cadence exists yet, so treat this
+  as a manual review duty when working in this repo
+- If a vulnerability is found and a patch is available, apply it on a
+  `security-patches` branch and add a `CHANGELOG.md` entry noting the
+  impacted library/module and remediation status; after patching, run
+  `go test ./...` and update `CHANGELOG.md` to confirm remediation
+- See `FAQ.md` / `RUNTIME_ARGS.md` for the `security-patches` → `main`
+  merge procedure
+
+## CI / Deployment
+
+- No CI pipeline exists yet (no `.github/workflows`). Until one exists,
+  treat `go fmt ./...`, `go vet ./...`, and `go test ./...` as mandatory
+  local pre-commit checks
+- Release artifacts are built via `goreleaser` (`.goreleaser.yaml`) for
+  linux/windows/darwin amd64; see `scripts/build-goreleaser-binaries.sh`,
+  `scripts/smoke-test-goreleaser-binaries.sh`, and
+  `scripts/push-goreleaser-binaries-to-gdrive.sh`
+- There is no Docker/Kubernetes deployment path in this repo today
