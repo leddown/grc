@@ -266,7 +266,11 @@ func openAPIJSON(c *gin.Context) {
 			"/reports/exceptions-workbook/download": gin.H{
 				"get": gin.H{
 					"summary":     "Download the Exceptions workbook (.xlsx)",
-					"description": "The Security NFR catalog with weights, the NIST controls and the NFR-control links, with formulas that reproduce the Exceptions page. Repeat the key query parameter to open the workbook with those Security NFRs selected.",
+					"description": "The Security NFR catalog with weights, the NIST controls and the NFR-control links, with formulas that reproduce the Exceptions page. Repeat the scope query parameter to set the Security NFRs in the scope of the exercise, and the key query parameter to open the workbook with those Security NFRs selected. Without a scope parameter the whole catalog is in scope; with no parameter at all nothing is selected: no scope and no exceptions. Repeat the partial query parameter for the selected Security NFRs whose exception is partial; those count half their weight.",
+				},
+				"post": gin.H{
+					"summary":     "Download the Exceptions workbook (.xlsx) with the descriptions of the partial exceptions",
+					"description": "The same workbook as the GET, with the same query parameters. The body is a form (application/x-www-form-urlencoded) with one description.<key> field for each partial exception, at most 1000 characters; each is written, as text, to the Comments column of that Security NFR. A body with any other field, a field given twice, or a description that is too long or is not UTF-8 is refused with 400. A description for a key that is not a partial exception of the request is left out. Nothing is stored.",
 				},
 			},
 			"/jira/json/data": gin.H{

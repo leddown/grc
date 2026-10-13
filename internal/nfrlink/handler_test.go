@@ -31,6 +31,15 @@ func TestPage_RendersLinkTable(t *testing.T) {
 		`<th>NFR Summary</th>`,
 		`<th>Linked Control ID</th>`,
 		`fetch('/security-nfrs/links/rebuild', { method: 'POST' })`,
+		// The page shows the links both ways: by NFR, and the controls that
+		// no NFR is linked to.
+		`<button id="byNFRBtn" class="secondary" type="button" aria-pressed="true">By NFR</button>`,
+		`<button id="unlinkedBtn" class="secondary" type="button" aria-pressed="false">Unlinked Controls</button>`,
+		`<div id="unlinkedView" style="display:none;">`,
+		`<tbody id="unlinkedRows"></tbody>`,
+		`function unlinkedControls() {`,
+		`if (row.matched && id) linked.add(id);`,
+		`fetch('/controls/data?slim=1')`,
 	}
 	for _, fragment := range required {
 		if !strings.Contains(body, fragment) {

@@ -61,9 +61,8 @@ the seed. Code: `internal/securitynfr`.
   delete an NFR. A save rebuilds the links.
 - **Weights.** Every NFR has a weight from 1 (lowest) to 5 (highest), default
   3. The editor's list has a 1-5 control on each row that saves on click
-  (`PUT /security-nfrs/:key/weight`), and the form has a Weight field. Nothing
-  in the application computes with the weight yet except the Exceptions
-  Workbook.
+  (`PUT /security-nfrs/:key/weight`), and the form has a Weight field. The
+  Exceptions page and the Exceptions Workbook compute with the weight.
 - **Reseeding.** When the embedded NFR file changes, the catalog is replaced
   from it and rows no longer in the file are deleted. A weight set in the
   application survives unless the file carries its own.
@@ -74,7 +73,19 @@ implementation, and its NIST mapping as free text.
 
 ### NFR-Control Links (`/security-nfrs/links`)
 
-Shows how each NFR's NIST mapping resolved. Code: `internal/nfrlink`.
+Shows the links both ways, switched by two buttons. Code: `internal/nfrlink`.
+
+- **By NFR**: how each NFR's NIST mapping resolved, one row for each token.
+  "Show unmatched only" keeps the rows whose token matched no control.
+- **Unlinked Controls**: the controls that no NFR is linked to, with their
+  name, family and type, each a link to its detail page. A control is linked
+  when a mapping of some NFR matched it, which is what the Exceptions page
+  counts, so the list is what no exception can reach. It is worked out in the
+  browser from the link rows and the control list the Controls page reads, so
+  a control in a hidden family is not in it. With the seed, 1,090 of the
+  1,193 controls are unlinked.
+
+The search box searches the view that is shown.
 
 The link table is derived, never edited. `Rebuild` reads every NFR, extracts
 control ids from the mapping text with a regular expression, normalises each,
@@ -163,17 +174,103 @@ close. Code: `internal/auditfinding`; detail in `AUDIT_FINDINGS.md`.
 Builds an **exception set**: the Security NFRs a system does not meet. Code:
 `internal/app/exceptions.go`, entirely in the browser over the catalog routes.
 
-Selecting NFRs shows, live:
+The page has two steps, switched by two buttons above the catalog list:
 
-- **Linked Controls**: the distinct controls the selected NFRs are linked to
-  through matched links.
-- **C / I / A**: how many of those controls carry each rating.
-- **Threat coverage**: for each threat, how many of those controls address it.
+1. **Scope.** Tick the Security NFRs the exercise covers. The page opens with
+   the whole catalog in scope, and a line beside the buttons reads
+   `Scope: 40 of 109 Security NFRs`.
+2. **Exceptions.** The list holds the NFRs in scope only; tick the ones the
+   system does not meet. Taking an NFR out of scope takes it out of the
+   exception set. Each selected NFR has a Full / Partial choice beside it:
+   full when the NFR is not met at all, partial when it is met in part.
 
-"Select Filtered" and "Clear Filtered" act on the current search and domain
-filter. The detail page shows each selected NFR in full with its linked
-controls, and prints. The selection is not stored: it travels in the detail
-page's URL as `key` parameters.
+Each ticked NFR of step 2 has a Full / Partial choice beside its checkbox.
+It is the same setting as the choice on that NFR's card in the Selected
+Security NFRs panel: changing either changes the other.
+
+A partial exception can be described. Setting an exception to Partial opens a
+description box on its card in the Selected Security NFRs panel, for what is
+met and what is not, up to 1,000 characters. Set back to Full, the box closes
+and keeps its text for as long as the NFR stays an exception; an NFR taken out
+of the exception set loses it. The descriptions are kept in the browser for
+the tab's session, beside the exercise. They are not in the address and not in
+the scope file, and the application does not store them: it is sent them only
+with a request for the Exceptions Workbook, where each is the Comments cell of
+its NFR.
+
+The page builds the exception set and does not report on it. The figures of
+the set are on the Exceptions Report ([Exceptions Report](#exceptions-report-reportsexceptions-report)), which opens from the menu with the
+scope and the exceptions of the browser tab: the weight that touches each
+rating and each threat, the counts of controls, and, as a minor figure, the
+total weight. An NFR *touches* a rating or a threat when a control it is
+linked to carries it, and then counts its whole weight once; a partial
+exception counts half. Each NFR is listed here with its weight.
+
+A linked control's card shows the letters of the ratings it carries, `C`, `I`
+or `A`, and leaves out the ones it does not.
+
+"Select All" and "Clear Filtered" act on the current search and domain
+filter, in the step the list is on. The detail page shows the scope line, the
+same three weight lines and each selected NFR in full with its weight,
+whether its exception is full or partial, and its linked controls, and
+prints.
+
+Neither the scope nor the selection is stored. Both travel in the address of
+the page and of the detail page: a `scope` parameter for each NFR in scope and
+a `key` parameter for each selected one, with a `partial` parameter as well
+for each selected one excepted in part. No `scope` parameter means the whole
+catalog is in scope, and an empty one (`?scope=`) means nothing is. A `key`
+outside the scope is ignored, and so is a `partial` that is not a `key`. The address follows the page as it changes, so
+a reload or a bookmark returns to the same exercise.
+
+**Scope file.** In step 1, "Export Scope" saves the scope as a local JSON
+file (`security-nfr-scope-YYYY-MM-DD.json`) and "Import Scope" reads one back
+and makes it the scope, replacing the one on the page. Both happen in the
+browser: nothing is sent to the application and nothing is stored in it. The
+file lists every Security NFR of the catalog with `"in_scope": true` or
+`false`, and its id and summary for whoever reads it; the key and that mark
+are what is read back. It holds no exceptions: an import leaves the exception
+set alone, but for the NFRs that are no longer in scope.
+
+Import Scope reads a file only if it is what Export Scope of this application
+writes, unchanged. Before the file is read: its name ends in `.json`, it is
+not empty and not over 5 MB, and its declared type, if it has one, is
+`application/json`. Then, in this order, and stopping at the first that fails:
+
+- it is JSON, an object whose `format` is `security-nfr-scope`;
+- its `version` is the whole number 2;
+- it has the fields `format`, `version`, `application`, `exported_at`, `scope`
+  and `checksum`, and no other;
+- `application` is this application's name: a file exported from another
+  application is refused;
+- `exported_at` is a time as the export writes it;
+- `checksum` is `sha256:` and 64 hexadecimal digits;
+- `scope` is a list of at most 10,000 entries, each an object with `key`,
+  `id`, `summary` and `in_scope` and no other field: a key of 1 to 256
+  characters with no space at either end and no control character, an id and
+  a summary that are text, and `in_scope` that is `true` or `false`;
+- no key is named twice;
+- the checksum is the SHA-256 of the content, so a file edited after it was
+  exported is refused;
+- every key is a Security NFR of the catalog.
+
+A refused file changes nothing on the page, and the message says which check
+failed without showing anything from the file. An NFR the catalog has and the
+file does not list is out of scope, and the message counts those. Export
+Scope reads back what it is about to save and saves nothing it would refuse.
+
+The checksum shows that a file was changed after export. It is not a
+signature: it is worked out in the page, so someone who reads the page can
+work out a checksum for a file of their own. Proof of who wrote a file would
+need a secret kept by the application and a route to sign with, and there is
+neither.
+
+**The session's exercise.** The scope and the exceptions on the page are kept
+in the browser for the tab's session (`sessionStorage`), in the form the
+address carries them. Opening `/exceptions` with a plain address comes back
+to them, and the Exceptions Workbook page offers a workbook with them.
+Putting the whole catalog back in scope and clearing the selection forgets
+them. The application is not told and stores nothing.
 
 Because the page reads the visible control list, a control in a hidden family
 still counts as linked but not towards the ratings or threats.
@@ -370,20 +467,86 @@ Downloads the Exceptions page as an `.xlsx` workbook that works without the
 application. Code: `internal/exceptionbook`, `internal/xlsx`.
 
 - It holds the NFR catalog with weights, the NIST controls and the links, and
-  formulas that reproduce the page: choosing `Yes` beside an NFR updates the
-  linked controls, the C / I / A counts, the threat coverage and the detail
-  sheets.
-- It adds what the page does not have: the weight of the selection, the
-  weight of the catalog, the share, the average, and a count at each weight.
+  formulas that reproduce the page: choosing `Yes` in the Scope column (A)
+  puts an NFR in the scope of the exercise, choosing `Full` or `Partial` in
+  the Exception column (B) puts an NFR of the scope in the exception set, and
+  the linked controls, the C / I / A counts, the threat coverage and the
+  detail sheets follow. An NFR outside the scope is not counted, whatever its
+  Exception cell holds.
+- The Exceptions sheet shows Scope, Exception, Summary, Domain,
+  Weight, Linked Controls, NIST Mapping, Comments, Additional Details and
+  Implementation, and nothing after it: the NFR's key and the other working
+  columns are there, hidden, because every figure is worked out from them and
+  a row has to keep its own when the sheet is sorted. Above the header are
+  two live lines, how many NFRs are in scope and how many are excepted; the
+  figures themselves are on the Summary sheet. Comments holds the NFR's description from the catalog or, for a partial
+  exception described on the Exceptions page, that description. The How to
+  use sheet asks for a description there of every partial exception.
+- The page has two downloads of one workbook. The first has nothing selected in
+  it: the Scope and Exception columns are empty. The second, shown when a scope or exceptions
+  are set on the Exceptions page in the same browser tab, opens with them: it
+  is the same download with the tab's `scope`, `key` and `partial` parameters.
+  What was typed on the Exceptions page of the partial exceptions goes with
+  it, in the body of the request and not in its address.
+- The Links and Controls sheets are locked, without a password: they hold
+  what the application exported, and a link or a rating is changed in the
+  application. Their formulas still calculate and the filter on Controls
+  still works. The other sheets are open.
+- The weight lines are the page's, with the same sums, the same rounding and
+  the same wording: the weight of the selection, the weight of the scope, the
+  share, the average, and a count at each weight, measured against the NFRs
+  in scope. A partial exception counts half its NFR's weight, and in every
+  other figure counts as any exception does.
 - Seven sheets: How to use, Exceptions, Summary, Selected NFRs, Selected
   controls, Links, Controls.
 - Formulas use only functions Excel 2010 and LibreOffice share. Each is stored
   with its result, so a preview shows numbers before recalculating.
-- `?key=` on the download opens the workbook with those NFRs selected.
+- `?scope=`, `?key=` and `?partial=` on the download open the workbook with
+  that scope and those NFRs selected, read as the page's own address is. With
+  none of the three the workbook has nothing selected; with `key` and no
+  `scope` the whole catalog is in scope, as on the page.
+- A `POST` to the download is the same request with the descriptions of the
+  partial exceptions in its body: a form (`application/x-www-form-urlencoded`)
+  with one `description.<key>` field for each. A description is at most 1,000
+  characters and is written as text, never as a formula; control characters
+  other than a line break and a tab are dropped. A body with any other field,
+  a field given twice, a description that is too long or is not UTF-8, or a
+  body over 2 MB is refused with `400` and no workbook. A description for a
+  key that is not a partial exception of the request is left out. Nothing of
+  the request is stored.
 
 The page's logic is JavaScript; the workbook restates it in Go and in
 formulas. A change to one needs the other. A test has LibreOffice recalculate
 the workbook and compares every cell.
+
+### Exceptions Report (`/reports/exceptions-report`)
+
+The Summary sheet of the Exceptions Workbook, on a page: five tables for a
+scope and an exception set. Code: `internal/app/exceptions_report.go`, over
+`Result.Summary` in `internal/exceptionbook`.
+
+- **Scope and selection**: the Security NFRs in the catalog, in scope and
+  selected, and the linked controls.
+- **CIA coverage**: for each rating, the excepted weight that touches it, the
+  scope's weight that does, the share, and how many of the linked controls
+  carry it.
+- **Threat coverage**: the same four figures for every threat in the catalog,
+  zero included.
+- **Total weight (minor)**: the weight of the selection, the weight of the
+  scope, the share as a whole percentage, and the average weight of a
+  selected NFR. Shown smaller, as the minor figure it is.
+- **Weight**: for each weight from 1 to 5, the NFRs in the scope and in the
+  selection. Minor as well.
+
+The figures are worked out on the server by the code that writes the sheet
+(`exceptionbook.Evaluate`), so the page and the sheet cannot differ; a test
+holds the two together line for line. The sheet's working rows are left out.
+
+The scope and the exception set are read from the address as the Exceptions
+page writes them (`scope`, `key`, `partial`). Opened from the menu, the page
+goes to the exercise of the browser tab if there is one; without one it
+reports on the whole catalog with nothing selected. Like the Exceptions page,
+it needs a signed-in user and stores nothing.
 
 ### JSON_view (`/JSON_view`)
 

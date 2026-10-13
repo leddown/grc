@@ -408,6 +408,8 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | GET | `/reports/data/unlinked-controls` | signed in | `reports.(*Handler).UnlinkedControlsData` |
 | GET | `/reports/exceptions-workbook` | signed in | `app.exceptionsWorkbookPage` |
 | GET | `/reports/exceptions-workbook/download` | signed in | `app.exceptionsWorkbookDownload` |
+| POST | `/reports/exceptions-workbook/download` | signed in | `app.exceptionsWorkbookDownload` |
+| GET | `/reports/exceptions-report` | signed in | `app.exceptionsReportPage` |
 | GET | `/reports/risk-assessment.pdf` | signed in | `reporting.(*Handler).SampleRiskAssessmentPDF` |
 
 ## Jira and stored JSON

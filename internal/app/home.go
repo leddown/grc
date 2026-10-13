@@ -114,6 +114,7 @@ func homePage(c *gin.Context) {
 	          <li><a href="/security-nfrs/links">/security-nfrs/links</a> (linking table: NFR NIST mapping to control IDs)</li>
 	          <li><a href="/reports">/reports</a> (reporting dashboard)</li>
 	          <li><a href="/reports/exceptions-workbook">/reports/exceptions-workbook</a> (the Exceptions page as a working Excel workbook)</li>
+	          <li><a href="/reports/exceptions-report">/reports/exceptions-report</a> (the workbook's Summary sheet for the scope and exceptions set on the Exceptions page)</li>
 	          <li><a href="/risk-register">/risk-register</a> (security risk register dashboard)</li>
 	          <li><a href="/risk-register/manage">/risk-register/manage</a> (risk register editor with save)</li>
 
@@ -148,6 +149,7 @@ func homePage(c *gin.Context) {
 	          <li><a href="%[1]s/security-nfrs/links">%[1]s/security-nfrs/links</a></li>
 	          <li><a href="%[1]s/reports">%[1]s/reports</a></li>
 	          <li><a href="%[1]s/reports/exceptions-workbook">%[1]s/reports/exceptions-workbook</a></li>
+	          <li><a href="%[1]s/reports/exceptions-report">%[1]s/reports/exceptions-report</a></li>
 	          <li><a href="%[1]s/risk-register">%[1]s/risk-register</a></li>
 	          <li><a href="%[1]s/risk-register/data">%[1]s/risk-register/data</a></li>
 	          <li><a href="%[1]s/changelog">%[1]s/changelog</a></li>

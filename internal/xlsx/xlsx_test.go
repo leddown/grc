@@ -188,3 +188,36 @@ func TestSheetNamesAreChecked(t *testing.T) {
 		}
 	}
 }
+
+// A protected sheet is locked without a password, keeps its filter usable, and
+// the element is where the format wants it: after the data, before the filter.
+func TestProtectLocksTheSheet(t *testing.T) {
+	book := New()
+	open := book.AddSheet("Open")
+	open.Set(1, 1, Text("free"))
+	locked := book.AddSheet("Locked")
+	locked.Set(1, 1, Text("kept"))
+	locked.AutoFilter(Range(1, 1, 1, 1))
+	locked.Protect()
+	if open.Protected() || !locked.Protected() {
+		t.Fatalf("Protected() = %v and %v, want false and true", open.Protected(), locked.Protected())
+	}
+
+	parts := writeParts(t, book)
+
+	const protection = `<sheetProtection sheet="1" objects="1" scenarios="1" autoFilter="0"/>`
+	if strings.Contains(parts["xl/worksheets/sheet1.xml"], "<sheetProtection") {
+		t.Error("a sheet that was not protected is locked")
+	}
+	sheet := parts["xl/worksheets/sheet2.xml"]
+	at := strings.Index(sheet, protection)
+	if at < 0 {
+		t.Fatalf("the protected sheet has no %s", protection)
+	}
+	if at < strings.Index(sheet, "</sheetData>") || at > strings.Index(sheet, "<autoFilter") {
+		t.Error("sheetProtection must come after sheetData and before autoFilter")
+	}
+	if strings.Contains(sheet, "password") || strings.Contains(sheet, "hashValue") {
+		t.Error("the lock must have no password")
+	}
+}

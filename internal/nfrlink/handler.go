@@ -195,6 +195,9 @@ func (h *Handler) Page(c *gin.Context) {
       cursor: pointer;
       font: inherit;
     }
+    .views { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+    .views button[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+    #unlinkedRows td:last-child { white-space: nowrap; }
     .summary {
       display: flex;
       gap: 18px;
@@ -247,9 +250,14 @@ func (h *Handler) Page(c *gin.Context) {
     <h1>Security NFR ↔ Control Linking Table</h1>
     <p>Cross-reference of Security NFR <code>NIST Mapping</code> tokens to control <code>control_id</code> values.</p>
 
+    <div class="views">
+      <button id="byNFRBtn" class="secondary" type="button" aria-pressed="true">By NFR</button>
+      <button id="unlinkedBtn" class="secondary" type="button" aria-pressed="false">Unlinked Controls</button>
+    </div>
+
     <section class="toolbar">
       <input id="searchInput" type="search" placeholder="Search NFR key, summary, mapped ID, or control ID">
-      <label class="check"><input id="onlyUnmatched" type="checkbox"> Show unmatched only</label>
+      <label id="onlyUnmatchedLabel" class="check"><input id="onlyUnmatched" type="checkbox"> Show unmatched only</label>
       <button id="reloadBtn" type="button">Rebuild & Reload</button>
     </section>
 
@@ -258,6 +266,7 @@ func (h *Handler) Page(c *gin.Context) {
       <div id="counts"></div>
     </div>
 
+    <div id="linksView">
     <section class="table-wrap">
       <table>
         <thead>
@@ -273,10 +282,38 @@ func (h *Handler) Page(c *gin.Context) {
       </table>
       <div id="empty" class="empty" style="display:none;">No rows to display.</div>
     </section>
+    </div>
+
+    <div id="unlinkedView" style="display:none;">
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Control ID</th>
+            <th>Control Name</th>
+            <th>Family</th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody id="unlinkedRows"></tbody>
+      </table>
+      <div id="unlinkedEmpty" class="empty" style="display:none;">Every control is linked to a Security NFR.</div>
+    </section>
+    </div>
   </main>
 
   <script>
-    const state = { rows: [] };
+    // view is 'links', the table of each NFR's mapping, or 'unlinked', the
+    // controls that no Security NFR is linked to. controls is the catalog as
+    // the Controls page lists it, read the first time the second view is opened.
+    const state = { rows: [], view: 'links', controls: null };
+    const byNFRBtn = document.getElementById('byNFRBtn');
+    const unlinkedBtn = document.getElementById('unlinkedBtn');
+    const linksView = document.getElementById('linksView');
+    const unlinkedView = document.getElementById('unlinkedView');
+    const unlinkedRowsEl = document.getElementById('unlinkedRows');
+    const unlinkedEmptyEl = document.getElementById('unlinkedEmpty');
+    const onlyUnmatchedLabel = document.getElementById('onlyUnmatchedLabel');
     const rowsEl = document.getElementById('rows');
     const emptyEl = document.getElementById('empty');
     const statusEl = document.getElementById('status');
@@ -294,9 +331,101 @@ func (h *Handler) Page(c *gin.Context) {
         .replaceAll("'", '&#39;');
     }
 
+    // A control is linked when a mapping of some NFR matched it. That is what
+    // the Exceptions page counts, so what is left here is what no exception
+    // can ever reach.
+    function unlinkedControls() {
+      const linked = new Set();
+      state.rows.forEach((row) => {
+        const id = String(row.control_id || '').trim();
+        if (row.matched && id) linked.add(id);
+      });
+      return (state.controls || []).filter((control) => {
+        const id = String(control.id || '').trim();
+        return id && !linked.has(id);
+      });
+    }
+
+    function renderUnlinked() {
+      if (!state.controls) {
+        unlinkedRowsEl.innerHTML = '';
+        unlinkedEmptyEl.style.display = 'none';
+        countsEl.textContent = '';
+        return;
+      }
+      const q = searchInput.value.trim().toUpperCase();
+      const unlinked = unlinkedControls();
+      const filtered = unlinked.filter((control) => {
+        if (!q) return true;
+        return [control.id, control.name, control.family, control.type]
+          .some((value) => String(value || '').toUpperCase().includes(q));
+      });
+
+      if (!filtered.length) {
+        unlinkedRowsEl.innerHTML = '';
+        unlinkedEmptyEl.style.display = 'block';
+        unlinkedEmptyEl.textContent = unlinked.length
+          ? 'No unlinked control matches the search.'
+          : 'Every control is linked to a Security NFR.';
+      } else {
+        unlinkedEmptyEl.style.display = 'none';
+        unlinkedRowsEl.innerHTML = filtered.map((control) => {
+          const id = String(control.id || '').trim();
+          return '<tr>' +
+            '<td class="mono"><a href="/controls/detail/' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer">' + esc(id) + '</a></td>' +
+            '<td>' + esc(control.name || 'N/A') + '</td>' +
+            '<td class="mono">' + esc(control.family || 'N/A') + '</td>' +
+            '<td>' + esc(control.type || 'Control') + '</td>' +
+          '</tr>';
+        }).join('');
+      }
+      countsEl.textContent = 'Rows: ' + filtered.length + ' | Unlinked: ' + unlinked.length + ' of ' + state.controls.length + ' controls';
+    }
+
+    async function loadControls() {
+      statusEl.textContent = 'Loading controls...';
+      try {
+        const resp = await fetch('/controls/data?slim=1');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        state.controls = await resp.json();
+        statusEl.textContent = 'Loaded linked dataset.';
+      } catch (err) {
+        state.controls = null;
+        statusEl.textContent = 'Failed to load controls.';
+        unlinkedRowsEl.innerHTML = '';
+        unlinkedEmptyEl.style.display = 'block';
+        unlinkedEmptyEl.textContent = 'Error: ' + err.message;
+        countsEl.textContent = '';
+        return false;
+      }
+      return true;
+    }
+
+    async function showView(view) {
+      state.view = view;
+      const unlinked = view === 'unlinked';
+      byNFRBtn.setAttribute('aria-pressed', unlinked ? 'false' : 'true');
+      unlinkedBtn.setAttribute('aria-pressed', unlinked ? 'true' : 'false');
+      linksView.style.display = unlinked ? 'none' : '';
+      unlinkedView.style.display = unlinked ? '' : 'none';
+      // "Unmatched" is a property of a mapping, so it belongs to the NFR view.
+      onlyUnmatchedLabel.style.display = unlinked ? 'none' : '';
+      searchInput.placeholder = unlinked
+        ? 'Search control ID, name, family, or type'
+        : 'Search NFR key, summary, mapped ID, or control ID';
+      if (unlinked && !state.controls && !(await loadControls())) return;
+      applyLocalFilter();
+    }
+
     function applyLocalFilter() {
+      if (state.view === 'unlinked') {
+        renderUnlinked();
+        return;
+      }
       const q = searchInput.value.trim().toUpperCase();
       const filtered = state.rows.filter((row) => {
+        // Every mapping is loaded, so "unmatched only" is a filter here.
+        if (onlyUnmatched.checked && row.matched) return false;
         if (!q) return true;
         return [row.nfr_key, row.nfr_summary, row.mapping_control_id, row.control_id]
           .some((value) => String(value || '').toUpperCase().includes(q));
@@ -324,10 +453,8 @@ func (h *Handler) Page(c *gin.Context) {
 
     async function load() {
       statusEl.textContent = 'Loading link rows...';
-      const params = new URLSearchParams();
-      if (onlyUnmatched.checked) params.set('onlyUnmatched', 'true');
       try {
-        const resp = await fetch('/security-nfrs/links/data?' + params.toString());
+        const resp = await fetch('/security-nfrs/links/data');
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         state.rows = await resp.json();
         statusEl.textContent = 'Loaded linked dataset.';
@@ -345,7 +472,10 @@ func (h *Handler) Page(c *gin.Context) {
       try {
         const rebuildResp = await fetch('/security-nfrs/links/rebuild', { method: 'POST' });
         if (!rebuildResp.ok) throw new Error('Rebuild failed: HTTP ' + rebuildResp.status);
+        // The catalog may have changed too: it is read again when it is needed.
+        state.controls = null;
         await load();
+        if (state.view === 'unlinked') await showView('unlinked');
       } catch (err) {
         statusEl.textContent = 'Failed to rebuild links.';
         rowsEl.innerHTML = '';
@@ -356,7 +486,9 @@ func (h *Handler) Page(c *gin.Context) {
 
     searchInput.addEventListener('input', applyLocalFilter);
     reloadBtn.addEventListener('click', rebuildAndLoad);
-    onlyUnmatched.addEventListener('change', load);
+    onlyUnmatched.addEventListener('change', applyLocalFilter);
+    byNFRBtn.addEventListener('click', () => showView('links'));
+    unlinkedBtn.addEventListener('click', () => showView('unlinked'));
     load();
   </script>
 </body>

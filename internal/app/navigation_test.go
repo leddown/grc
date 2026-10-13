@@ -43,6 +43,7 @@ var fullNavLinks = []string{
 	`href="/wiz-rules"`,
 	`href="/reports"`,
 	`href="/reports/exceptions-workbook"`,
+	`href="/reports/exceptions-report"`,
 	`href="/JSON_view"`,
 	`href="/jira/json"`,
 	`href="/jira/reports"`,
@@ -346,6 +347,7 @@ func navigationTestPagePaths() []string {
 		"/security-nfrs/links",
 		"/reports",
 		"/reports/exceptions-workbook",
+		"/reports/exceptions-report",
 	}
 }
 

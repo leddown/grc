@@ -103,6 +103,9 @@ type Sheet struct {
 	highlights    []highlight
 	textNumbers   []string
 	fitPageToWide bool
+	protected     bool
+	hiddenFrom    int
+	hiddenTo      int
 }
 
 type listValidation struct {
@@ -187,6 +190,15 @@ func (s *Sheet) SetRow(row int, cells ...Cell) {
 // Widths sets column widths from column A, in characters.
 func (s *Sheet) Widths(widths ...float64) { s.widths = widths }
 
+// HideColumns hides the columns from one to another, both counted from 1. The
+// cells stay, and so do the formulas in them: a hidden column still works.
+func (s *Sheet) HideColumns(from, to int) { s.hiddenFrom, s.hiddenTo = from, to }
+
+// Hidden reports whether a column is hidden.
+func (s *Sheet) Hidden(col int) bool {
+	return s.hiddenFrom > 0 && col >= s.hiddenFrom && col <= s.hiddenTo
+}
+
 // Freeze keeps the first cols columns and rows rows in view while scrolling.
 func (s *Sheet) Freeze(cols, rows int) { s.freezeCols, s.freezeRows = cols, rows }
 
@@ -211,6 +223,13 @@ func (s *Sheet) TextNumbers(ref string) { s.textNumbers = append(s.textNumbers, 
 
 // FitPageWidth prints the sheet in landscape, one page wide.
 func (s *Sheet) FitPageWidth() { s.fitPageToWide = true }
+
+// Protect locks the sheet against editing. Its formulas still calculate and
+// its filter still works. There is no password: Unprotect Sheet lifts it.
+func (s *Sheet) Protect() { s.protected = true }
+
+// Protected reports whether the sheet is locked.
+func (s *Sheet) Protected() bool { return s.protected }
 
 // Col is a column's letters: 1 is A, 27 is AA.
 func Col(col int) string {
@@ -475,7 +494,11 @@ func (s *Sheet) xml(active, omitFormulaValues bool) string {
 		b.WriteString(`<cols>`)
 		for i, width := range s.widths {
 			col := strconv.Itoa(i + 1)
-			b.WriteString(`<col min="` + col + `" max="` + col + `" width="` + formatNumber(width) + `" customWidth="1"/>`)
+			hidden := ""
+			if s.Hidden(i + 1) {
+				hidden = ` hidden="1"`
+			}
+			b.WriteString(`<col min="` + col + `" max="` + col + `" width="` + formatNumber(width) + `" customWidth="1"` + hidden + `/>`)
 		}
 		b.WriteString(`</cols>`)
 	}
@@ -499,6 +522,9 @@ func (s *Sheet) xml(active, omitFormulaValues bool) string {
 		b.WriteString(`</row>`)
 	}
 	b.WriteString(`</sheetData>`)
+	if s.protected {
+		b.WriteString(`<sheetProtection sheet="1" objects="1" scenarios="1" autoFilter="0"/>`)
+	}
 
 	// The schema fixes the order of what follows.
 	if s.filter != "" {

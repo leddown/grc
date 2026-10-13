@@ -268,14 +268,24 @@ func helpPage(c *gin.Context) {
           <p class="purpose">Record what a system does not meet, as a set rather than as scattered
           notes.</p>
           <ol>
-            <li>Search and filter the requirements at <a href="/exceptions">Exceptions</a> and
-              select the ones the exception covers.</li>
+            <li>At <a href="/exceptions">Exceptions</a>, step 1 sets the scope of the exercise: tick
+              the requirements it covers. The page opens with the whole catalog in scope.</li>
+            <li>Step 2 lists the requirements in scope: search, filter and select the ones the
+              exception covers, each in full or in part: the choice is beside the checkbox and on the
+              requirement's card. A partial exception has a description box on its card, for what is
+              met and what is not; what you type there is the requirement's Comments cell in the
+              workbook. The figures of the set are on the
+              <a href="/reports/exceptions-report">Exceptions Report</a>, which follows what you set
+              here.</li>
             <li>Open the detail view for the set: every selected requirement with its linked
               controls, their CIA classification and threat mapping — a printable page for the
               approval record.</li>
             <li>To work on a set outside the application, download the
               <a href="/reports/exceptions-workbook">Exceptions Workbook</a>: the same catalog,
               controls and weights in an Excel file whose formulas do what the page does.</li>
+            <li>For the figures of the set on one page, open the
+              <a href="/reports/exceptions-report">Exceptions Report</a>: the workbook's Summary sheet
+              for the scope and the exceptions you have set.</li>
           </ol>
         </div>
       </article>
@@ -534,7 +544,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Catalog</td><td class="page"><a href="/controls/family-visibility">/controls/family-visibility</a></td><td>Choose which families appear in every filter.</td></tr>
           <tr><td class="section">Catalog</td><td class="page"><a href="/security-nfrs">/security-nfrs</a></td><td>Browse the Security NFR catalog and its NIST mappings.</td></tr>
           <tr><td class="section">Catalog</td><td class="page"><a href="/security-nfrs/manage">/security-nfrs/manage</a></td><td>Add, edit and delete requirements.</td></tr>
-          <tr><td class="section">Catalog</td><td class="page"><a href="/security-nfrs/links">/security-nfrs/links</a></td><td>Requirement ↔ control cross-reference, with overrides and rebuild.</td></tr>
+          <tr><td class="section">Catalog</td><td class="page"><a href="/security-nfrs/links">/security-nfrs/links</a></td><td>Requirement ↔ control cross-reference both ways: by NFR, and the controls no NFR is linked to. With overrides and rebuild.</td></tr>
           <tr><td class="section">Catalog</td><td class="page"><a href="/nfr-enrichment">/nfr-enrichment</a></td><td>Propose catalog entries from a document in the agent's library, for review.</td></tr>
           <tr><td class="section">Catalog</td><td class="page"><a href="/asset-types">/asset-types</a></td><td>Resolve the baseline and controls for an asset tier.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
@@ -549,6 +559,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/wiz-rules">/wiz-rules</a></td><td>Draft a Wiz-style detection rule payload.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports">/reports</a></td><td>Operational reporting over the catalogs.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports/exceptions-workbook">/reports/exceptions-workbook</a></td><td>Download the Exceptions page as a working Excel workbook.</td></tr>
+          <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports/exceptions-report">/reports/exceptions-report</a></td><td>The workbook's Summary sheet for the scope and the exceptions you have set.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/JSON_view">/JSON_view</a></td><td>One panel for requirement, family and stored JSON.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/jira/json">/jira/json</a></td><td>Inspect Jira project, issue and search JSON.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/jira/reports">/jira/reports</a></td><td>Read-only Jira report and search presets.</td></tr>

@@ -3,6 +3,236 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-13 (Exceptions: scope first, scope file, full and partial exceptions, weights by rating and threat, Exceptions Report; workbook columns and locked sheets; NFR-Control Links both ways)
+
+The Exceptions page sets a scope before it builds an exception set, and the
+workbook does the same.
+
+- **Two steps on `/exceptions`.** Step 1, Scope, ticks the Security NFRs the
+  exercise covers; the page opens with the whole catalog in scope. Step 2,
+  Exceptions, lists only the NFRs in scope and builds the exception set from
+  them. Taking an NFR out of scope takes it out of the set. A line beside the
+  step buttons reads `Scope: 40 of 109 Security NFRs`. "Select All" and
+  "Clear Filtered" work on the step the list is on
+  (`internal/app/exceptions.go`, `exceptionScopeScript`).
+- **Not stored.** The scope travels as `scope` parameters in the address of
+  the page, the detail view and the workbook download, beside the `key`
+  parameters of the selection. No `scope` parameter means the whole catalog;
+  an empty one means nothing is in scope; a `key` outside the scope is
+  ignored. The page keeps its own address current, so a reload or a bookmark
+  returns to the same exercise. No table, route or setting was added.
+- **The workbook mirrors it** (`internal/exceptionbook`). On the Exceptions
+  sheet Scope is column A and Exception, which was Except in column A, is
+  column B; a scope line stands above the summary lines, and the Summary sheet
+  counts the NFRs in the catalog and in scope. A requirement is excepted only
+  when it is in scope. The weight of the selection, its share and the count at
+  each weight are measured against the scope, where they were measured against
+  the whole catalog. `Evaluate` takes `Options`, and `Result.CatalogWeight` is
+  `Result.ScopeWeight`.
+- **Full and partial exceptions, in the workbook.** The Exception column takes
+  `Full` or `Partial` where Except took `Yes`. A partial exception counts half
+  its requirement's weight (`PartialFactor`) in the weight of the selection,
+  the share and the average; its linked controls, ratings and threats count in
+  full, and it is one requirement in the count at each weight. A working
+  column, Factor, holds 1, 0.5 or 0, and the Selected NFRs sheet has an
+  Exception column. `Result.SelectedWeight` is a `float64`.
+- **Describing a partial exception.** An exception set to Partial has a
+  description box on its card of `/exceptions`, for what is met and what is
+  not, up to 1,000 characters (`state.descriptions`, `.exception-description`,
+  `cleanDescription`). The descriptions are kept in `sessionStorage`
+  (`exceptions.descriptions`) for the tab's session, out of the address and
+  out of the scope file, and are not stored by the application. The session
+  download on `/reports/exceptions-workbook` sends them in the body of a new
+  `POST /reports/exceptions-workbook/download` (same handler and access as the
+  `GET`), and each is the Comments cell of its row on the Exceptions sheet and
+  on the Selected NFRs sheet (`exceptionbook.Options.Descriptions`,
+  `nfrRow.comments`). The body is checked before a workbook is built
+  (`exceptionDescriptions`): `description.<key>` fields and no other, one of
+  each, UTF-8, within the length, in a body of at most 2 MB; control
+  characters are dropped, and a description is written as text, never as a
+  formula. Tests: `internal/app/exceptions_descriptions_test.go` (handler,
+  page, and under node the page's script against the handler's cleaning) and
+  `TestBuildPutsADescriptionInTheCommentsColumn` with a described workbook in
+  the LibreOffice comparison. Docs: `docs/FEATURES.md`, `docs/HTTP_API.md`,
+  help and the in-app API docs.
+- **Exceptions sheet columns.** The Exceptions sheet of the workbook shows
+  Scope, Exception, Summary, Domain, Weight, Linked Controls, NIST
+  Mapping, Comments, Additional Details and Implementation. The Issue Type
+  column is gone, and the NFR's key is a working column at the right, where
+  the Links sheet reads it. Description is
+  headed Comments: it holds the NFR's description from the catalog and is
+  where a partial exception is described. The How to use sheet has a step
+  saying that every partial exception should have a description there. The
+  NFR ID column is gone from the Exceptions sheet as well, and with it from
+  the Selected NFRs sheet, which read it from there; the Links and Selected
+  controls sheets still carry the NFR's id. The Selected NFRs sheet shows
+  Comments and neither Issue Type nor NFR ID.
+- **Scope file.** In step 1 of `/exceptions`, Export Scope saves the scope as
+  a local JSON file (`security-nfr-scope-YYYY-MM-DD.json`) and Import Scope
+  reads one back and makes it the scope. The file is written and read in the
+  browser: no route was added and nothing is stored. It lists every Security
+  NFR with its key, id, summary and `"in_scope": true` or `false`
+  (`"format": "security-nfr-scope"`, version 1), and holds no exceptions. An
+  import leaves the exception set alone but for the NFRs no longer in scope.
+  It says how many NFRs are in scope and how many NFRs of the catalog the
+  file does not list. "Select Filtered" is labelled "Select All"; it still
+  selects what the list shows.
+- **Import Scope reads only what Export Scope wrote.** A chosen file is
+  checked before it is read (a `.json` name, not empty, at most 5 MB, a JSON
+  type if it declares one) and then against the export to the letter: the
+  format, version 2, exactly the six fields (`format`, `version`,
+  `application`, `exported_at`, `scope`, `checksum`), the application's name
+  (`scopeFileApplication`, `grc`), the export time, every entry's four fields
+  and their types and lengths, no key twice, a SHA-256 checksum over the
+  content, and every key a Security NFR of the catalog. The first check that
+  fails refuses the file, nothing on the page changes, and the message shows
+  nothing from the file. A file edited after export, a file from another
+  application and a file of version 1 are refused. Export Scope reads back
+  what it is about to save. The checksum is not a signature: it is worked out
+  in the page, and SHA-256 is written out there because a page served over
+  plain HTTP has no `crypto.subtle`. `docs/FEATURES.md` lists the checks. The
+  script is `exceptionScopeFileScript` in
+  `internal/app/exceptions_scopefile.go`; `TestScopeFileScriptUnderNode` runs
+  it under node, where node is on `PATH`, against Go's SHA-256 and against a
+  file as exported and every other case.
+- **A workbook with the session's selections.** `/reports/exceptions-workbook`
+  has a second download that opens with the scope and the exceptions set on
+  `/exceptions` in the same browser tab, with a line saying what they are. It
+  is the same download with the tab's `scope`, `key` and `partial` parameters.
+  The Exceptions page keeps them in `sessionStorage` under
+  `exceptions.exercise`, and a plain `/exceptions` address comes back to them;
+  putting the whole catalog back in scope and clearing the selection forgets
+  them. The application is not told and stores nothing. The page's note that
+  weights are worked out in the workbook only is gone: the Exceptions page
+  shows them.
+- **Locked sheets.** The Links and Controls sheets of the workbook are
+  protected, without a password (`Sheet.Protect` in `internal/xlsx`): they
+  hold what the application exported. Their formulas still calculate and the
+  filter on Controls still works. The How to use sheet says so, and that
+  Review > Unprotect Sheet lifts the lock.
+- **Exceptions Report, a new page.** `/reports/exceptions-report`, in
+  Reporting & Data after the Exceptions Workbook, shows the workbook's Summary
+  sheet for the scope and the exceptions set on `/exceptions`: scope and
+  selection, CIA coverage, threat coverage, the weights and the count at each
+  weight. The figures come from `exceptionbook.Evaluate`, the code that writes
+  the sheet, through the new `Result.Summary`; `Result` gained `ByWeight` for
+  the last table. `TestSummaryIsTheSummarySheet` holds the summary to the
+  sheet's stored cells line for line, for four selections. The page reads
+  `scope`, `key` and `partial` from its address and, opened from the menu,
+  goes to the exercise of the browser tab. It is under `/reports`, so it needs
+  a signed-in user, and it is granted with Reports. Added to `navGroups`, the
+  navigation tests, the home page lists and the help page; the existing
+  Reports page is unchanged (`internal/app/exceptions_report.go`). The tables
+  sit in a wrapping row in which a table with several columns of figures asks
+  for a wider card: with equal columns the CIA and threat tables were wider
+  than their cards at window widths of 1024, 1366, 1440 and 1920 pixels and
+  the last column was cut off. Measured in headless Chrome at eight widths
+  from 1024 to 1920: no cell runs past its card.
+- **NFR-Control Links, both ways.** `/security-nfrs/links` has two views,
+  switched by two buttons. By NFR is each NFR's mapping, one row for each
+  token, as before. Unlinked Controls lists the controls that no NFR is
+  linked to, with name, family and type, each a link to its detail page; the
+  search box searches the view shown. The second view is worked out in the
+  browser from `/security-nfrs/links/data` and `/controls/data?slim=1`: no
+  route was added. "Show unmatched only" now filters the loaded rows instead
+  of asking the server again, with the same result, and is hidden in the
+  second view. Checked in headless Chrome against a count from the database
+  (1,090 of 1,193 with the seed) (`internal/nfrlink/handler.go`).
+- **Weight by what the exceptions touch.** The weights are applied to
+  confidentiality, integrity and availability and to each threat, where they
+  were one total. A requirement touches a rating or a threat when a control it
+  is linked to carries it, and then counts its whole weight once, however many
+  of its controls carry it. Each figure is the weight of the excepted
+  requirements that touch it, a partial exception counting half, of the weight
+  of the requirements in scope that touch it, with the share as a whole
+  percentage, a half rounding up: `CIA by weight: C: 4.5 of 9 (50%) | I: ...`
+  and `Threats by weight: Tampering: 3 of 9 (33%) | ...`. They are the first
+  lines on `/exceptions`, `/exceptions/detail`, the Exceptions Report and the
+  Exceptions sheet. The counts of controls stay, beside the weights. The total
+  weight of the selection is a minor figure: headed "Total weight (minor)",
+  smaller, and last.
+  - **Model** (`internal/exceptionbook`): `WeightedCoverage{Excepted, Scope}`
+    with `Share()`; `Result.ConfidentialityWeight`, `IntegrityWeight`,
+    `AvailabilityWeight`; `ThreatCount.Weight`; `CIAWeightLine()` and
+    `ThreatWeightLine()`.
+  - **Workbook formulas**: the Exceptions sheet has working columns "Touches
+    C / I / A" and one for each threat, worked out over the Links sheet, which
+    has a flag column for each threat. The Summary sheet's CIA and threat
+    sections have Excepted weight, Scope weight, Share and Controls columns;
+    excepted is `SUMPRODUCT(Factor*Weight*Touches)` and the scope's
+    `SUMPRODUCT(In scope*Weight*Touches)`. The share is the first over the
+    second, shown as a percentage.
+  - **Pages**: `computeWeightedCoverage`, `ciaWeightLine` and
+    `threatWeightLine` in `exceptionWeightScript`.
+  - **Tests**: hand-worked figures for the fixture
+    (`TestEvaluateWeighsWhatTheExceptionsTouch`); the LibreOffice comparison
+    over every workbook, partial and scoped ones included;
+    `TestSummaryIsTheSummarySheet` over five columns; and
+    `TestPageFiguresAreTheWorkbooksUnderNode`, which runs the pages' script
+    under node on the seeded catalog for nine exercises and compares each line
+    with `exceptionbook.Evaluate`, and fails when the script is changed.
+    Checked in headless Chrome: page, detail view, report and workbook gave
+    the same lines.
+- **Rating letters.** A linked control's card on `/exceptions` and
+  `/exceptions/detail` shows the letters of the ratings it carries, `C`, `I`
+  or `A`, and leaves out the ones it does not, where it showed `TRUE` or `-`
+  for all three.
+- **The Exceptions page builds the set; the Exceptions Report reports on
+  it.** The three summary panels above the selected NFRs (CIA by weight,
+  threats by weight, total weight) are gone from `/exceptions` with the code
+  only they used; their figures are on `/reports/exceptions-report`, which
+  opens with the scope and the exceptions of the browser tab. The detail view
+  keeps its summary cards. The selected list has the room the panels took.
+  Each ticked NFR of step 2 has a Full / Partial choice beside its checkbox
+  (`rowKindHTML`); it and the choice on the NFR's card in the Selected
+  Security NFRs panel are one setting, `state.partial`, and each is set when
+  the other changes. A click on the choice does not untick its row. Checked
+  in headless Chrome with both controls and a real mouse click. The workbook's
+  guide and the Exceptions Workbook page name the Exceptions Report as the
+  page that shows the same figures.
+- **The plain download has nothing selected.** "Download the workbook" on
+  `/reports/exceptions-workbook` gives the same workbook as the download with
+  the session's selections, with the Scope and Exception columns empty: no
+  requirement in scope and none excepted, where it had every requirement in
+  scope. A download request with none of `scope`, `key` and `partial` is that
+  workbook; with `key` and no `scope` the whole catalog is in scope, as on
+  the Exceptions page (`exceptionsWorkbookDownload`). A test compares the
+  sheets and the header row of the two downloads.
+- **A plain Exceptions sheet.** The Exceptions sheet of the workbook ends at
+  Implementation. The working columns after it (Key, In scope, Selected,
+  Factor, Order and the Touches columns) are hidden with `Sheet.HideColumns`,
+  new in `internal/xlsx`; they are not left out, because every figure is
+  worked out from them and a row has to keep its own when the sheet is sorted,
+  which a copy on another sheet would not. Of the lines above the header, the
+  ones that repeated the Summary sheet go: CIA by weight, threats by weight,
+  threat coverage and the weight of the selection. Two stay, the scope and
+  the selection, so the header is row 5 and the first NFR row 6. The second
+  begins `Exceptions: 2 | Linked Controls: 5 | ...`, where it began `Selected
+  Security NFRs:`. With them go
+  the Summary sheet's working rows and cells that worded those lines. Checked
+  with LibreOffice: ten columns shown, fifteen hidden, and the remaining lines
+  recalculate.
+- **Full and partial exceptions, on the page.** Each selected NFR on
+  `/exceptions` has a Full / Partial choice. The detail view names it beside
+  each NFR, a `partial` parameter carries it in the address of the page and
+  the detail view, and `?partial=` on the workbook download opens the workbook
+  with those exceptions partial.
+- **Weight lines on the page.** `/exceptions` and `/exceptions/detail` show
+  the three lines the workbook has, from one script
+  (`exceptionWeightScript`): the weight of the selection against the scope
+  with its share, the average weight of a selected NFR, and the count at each
+  weight. A partial exception counts half its weight there as in the
+  workbook. Each NFR is listed with its weight. The selected list is shorter
+  by the height of the new box, so the page still ends at the bottom of the
+  window.
+- **Tests:** scope cases in `internal/exceptionbook` (a selected key outside
+  the scope, an empty scope), partial cases (half the weight, a partial key
+  that is not selected), six scoped or partial workbooks added to the
+  LibreOffice comparison, `?scope=` and `?partial=` on the download, and
+  tests that both pages carry the scope, the choice and the weight lines, and
+  that the pages word the weight line and halve a partial exception as the
+  workbook does (`internal/app/exceptions_test.go`).
+
 ## 2026-10-12 (The control table is `nist_controls`; no earlier names, no origins)
 
 The application's texts, its schema and its comments name it and its parts by
