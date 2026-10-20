@@ -143,6 +143,7 @@ Module documents at the repository root go deeper than FEATURES.md:
 | POLICY_STUDIO.md | Policy Studio: design record, threat model, operator guide (1,150 lines) |
 | POLICY_MODULE_FRAMEWORK.md | The research behind policy authoring and AI-assisted drafting |
 | DOCUMENT_TEMPLATES.md | The Typst and LaTeX templates and the JSON contract they render |
+| LETTERS.md | Letters on a client's behalf (to an ECB JST): writing, AI, output, research |
 | CRISIS_EXERCISE.md | Risk & Crisis Exercises |
 | REGULATION_COVERAGE.md | Regulation Coverage |
 | AUDIT_FINDINGS.md | Audit Findings & Remediation |

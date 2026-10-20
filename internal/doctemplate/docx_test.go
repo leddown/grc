@@ -170,3 +170,18 @@ func TestWordBundleCarriesTheGeneratedMarkdown(t *testing.T) {
 		t.Errorf("build.sh does not convert the way the app does:\n%s", script)
 	}
 }
+
+// A pipe-table row is one line: a hard break in a cell must not end it.
+func TestWordTableCellsKeepTheirRow(t *testing.T) {
+	cell := func(runs ...PolicyRun) []PolicyBlock { return []PolicyBlock{{Type: "paragraph", Runs: runs}} }
+	var b strings.Builder
+	mdBlocks(&b, []PolicyBlock{{Type: "table", Rows: []PolicyRow{
+		{Header: true, Cells: [][]PolicyBlock{cell(PolicyRun{Text: "Measure"}), cell(PolicyRun{Text: "Due"})}},
+		{Cells: [][]PolicyBlock{cell(PolicyRun{Text: "1.1 Inventory"}, PolicyRun{Break: true}, PolicyRun{Text: `1.2 Removal \`}),
+			cell(PolicyRun{Text: "31 Dec 2026"}, PolicyRun{Break: true}, PolicyRun{Text: "31 Jan 2027"})}},
+	}}}, "")
+	want := "| Measure | Due |\n| --- | --- |\n| 1\\.1 Inventory; 1\\.2 Removal \\\\ | 31 Dec 2026; 31 Jan 2027 |\n\n"
+	if b.String() != want {
+		t.Errorf("got\n%q\nwant\n%q", b.String(), want)
+	}
+}

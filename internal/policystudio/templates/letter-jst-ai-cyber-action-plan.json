@@ -1,0 +1,126 @@
+{
+  "id": "letter-jst-ai-cyber-action-plan",
+  "version": "1.0.0",
+  "title": "Action plan addressing AI-enabled cybersecurity threats: response to ECB letter SSM-2026-0301",
+  "doc_type": "letter",
+  "frameworks": [],
+  "description": "The covering letter and action plan a significant institution sends its Joint Supervisory Team in answer to the ECB's letter SSM-2026-0301 of 7 July 2026 on AI-enabled cybersecurity threats (due 31 October 2026). The annex follows the six focus areas of that letter's Annex 1.",
+  "review_cadence_months": 12,
+  "classification": "Confidential",
+  "default": false,
+  "facts": [
+    {
+      "key": "legal_entity_name",
+      "label": "Legal name of the institution",
+      "description": "The supervised entity's registered name, as the ECB knows it.",
+      "example": "Example Bank AG",
+      "value_type": "text"
+    },
+    {
+      "key": "sender_address",
+      "label": "Postal address of the institution",
+      "description": "The registered office, on one line.",
+      "example": "Musterstrasse 1, 60311 Frankfurt am Main, Germany",
+      "value_type": "text"
+    },
+    {
+      "key": "jst_coordinator_name",
+      "label": "JST Coordinator",
+      "description": "The full name of the head of the institution's Joint Supervisory Team at the ECB.",
+      "example": "Jane Doe",
+      "value_type": "text"
+    },
+    {
+      "key": "jst_coordinator_salutation",
+      "label": "JST Coordinator, as addressed",
+      "description": "How the letter addresses the JST Coordinator after \"Dear\".",
+      "example": "Ms Doe",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_1_name",
+      "label": "First signatory",
+      "description": "A member of the management body or another authorised signatory.",
+      "example": "John Smith",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_1_function",
+      "label": "First signatory's function",
+      "description": "The first signatory's function, as it appears under the signature.",
+      "example": "Chief Executive Officer",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_2_name",
+      "label": "Second signatory",
+      "description": "The second authorised signatory, where the institution's signing rules require two.",
+      "example": "Maria Rossi",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_2_function",
+      "label": "Second signatory's function",
+      "description": "The second signatory's function, as it appears under the signature.",
+      "example": "Chief Information Security Officer",
+      "value_type": "text"
+    },
+    {
+      "key": "regulatory_contact",
+      "label": "Contact for the JST",
+      "description": "Who answers the JST's questions on the letter: name, function and e-mail address.",
+      "example": "Alex Muster, Head of Regulatory Affairs (alex.muster@example-bank.eu)",
+      "value_type": "text"
+    }
+  ],
+  "sections": [
+    {
+      "uid_seed": "sender",
+      "heading": "Sender",
+      "kind": "sender",
+      "content": "{{fact:sender_address}}",
+      "guidance": "The lines under the institution's name (the document's client) at the head of the first page: the address, and a telephone number or website if the letterhead carries them. Delete this section when the letter goes on the institution's own letterhead.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "addressee",
+      "heading": "Addressee",
+      "kind": "addressee",
+      "content": "{{fact:jst_coordinator_name}}\nJST Coordinator, {{fact:legal_entity_name}}\nEuropean Central Bank\nSonnemannstrasse 20\n60314 Frankfurt am Main\nGermany",
+      "guidance": "The ECB's letter asks for the action plan to go to the institution's Joint Supervisory Team. Submit it the way the JST asked for it (the SSM Portal or e-mail to the JST); the letter is the same either way. Check the JST Coordinator's name before sending.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "letter",
+      "heading": "Letter",
+      "kind": "letter_body",
+      "content": "Dear {{fact:jst_coordinator_salutation}},\n\nIn its letter SSM-2026-0301 of 7 July 2026, the ECB asked significant institutions to assess the effect of AI-enabled cybersecurity threats without delay, and to send their Joint Supervisory Team, by 31 October 2026, an action plan with concrete measures, the resources allocated to them, clear roles and responsibilities and implementation dates. {{fact:legal_entity_name}} (the Bank) submits its action plan with this letter, in Annex 1.\n\n### Approval and resources\n\nThe action plan was approved by [TO DO: the body that approved it, and the date of its decision]. The management body assessed whether the Bank's ICT budget, staffing, tooling and change capacity are sufficient to carry it out, and concluded that [TO DO: its conclusion, and any resources added]. [TO DO: whether the ICT risk tolerance framework and risk appetite metrics, including those for patching frequency, were updated, and when.]\n\n### Short-term measures\n\nThe plan gives priority to the three short-term areas the ECB named: vulnerability and patch management at scale; monitoring, detection and AI-enabled defensive capabilities; and third-party ICT risk management in the light of the current threat landscape. Within them it puts perimeter technologies and internet-facing assets first, including third-party software and open-source components. [TO DO: the most significant short-term measures and their dates, in two or three sentences.]\n\n### Structural measures\n\n[TO DO: the structural measures and their horizon: defence in depth and cyber hygiene, the replacement or shielding of legacy and end-of-life technology, and response, recovery, crisis management and information sharing.]\n\n### Open supervisory findings\n\nThe ECB asked institutions to address without delay the open findings on ICT and security risk from earlier supervisory activities, including on-site inspections, targeted reviews and the 2024 cyber resilience stress test. [TO DO: each open finding in scope by reference with the date by which it will be closed, or a statement that none is open.]\n\n### AI-based tools\n\n[TO DO: where the Bank uses or plans AI-based tools for vulnerability management or defence, how their benefits and risks were assessed before deployment and how human oversight is kept. Delete this sub-section if it uses none.]\n\nThe Bank will report progress against the plan to the Joint Supervisory Team [TO DO: how often] and will inform it without delay if any date in the plan is at risk.\n\nFor any question on this letter or the action plan, please contact {{fact:regulatory_contact}}.\n\nYours sincerely,",
+      "guidance": "Paraphrases the ECB letter SSM-2026-0301 (7 July 2026) and its Annex 1. The JST will discuss the plan with the Bank and monitor it, and the ECB compares all submitted plans across institutions: a measure without an owner, resources or a date stands out. Each [TO DO] blocks approval until it is replaced. The heading of this section is not printed.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "signatories",
+      "heading": "Signatories",
+      "kind": "signatories",
+      "content": "| Name | Function |\n| --- | --- |\n| {{fact:signatory_1_name}} | {{fact:signatory_1_function}} |\n| {{fact:signatory_2_name}} | {{fact:signatory_2_function}} |",
+      "guidance": "The ECB places the responsibility with the management body, so the letter is signed by its members under the institution's signing authorities.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "enclosures",
+      "heading": "Enclosures",
+      "kind": "enclosures",
+      "content": "- Annex 1: Action plan addressing AI-enabled cybersecurity threats",
+      "guidance": "Add the management body's resolution or the detailed plan here if they go with the letter.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "annex-action-plan",
+      "heading": "Annex 1: Action plan addressing AI-enabled cybersecurity threats",
+      "kind": "annex",
+      "content": "The six focus areas follow Annex 1 of the ECB's letter. Areas 1 to 4 are short-term; areas 5 and 6 are structural.\n\n| Focus area | Measures | Accountable function | Resources | Due date |\n| --- | --- | --- | --- | --- |\n| 1. Protecting the attack surface: an inventory of ICT assets, including third-party and open-source components; fewer and monitored internet-facing assets, cloud environments and third-party VPN connections | [TO DO] | [TO DO] | [TO DO] | [TO DO] |\n| 2. Vulnerability and patch management at scale: prioritised scanning, more frequent patching, change management for emergency fixes, matching terms with ICT service providers | [TO DO] | [TO DO] | [TO DO] | [TO DO] |\n| 3. Monitoring and detection: application and access logs, network traffic and indicators of compromise across internet-facing applications, cloud repositories and critical internal systems | [TO DO] | [TO DO] | [TO DO] | [TO DO] |\n| 4. Governance, funding, awareness training and supply-chain assurance, including risk appetite metrics and thresholds | [TO DO] | [TO DO] | [TO DO] | [TO DO] |\n| 5. Defence in depth, cyber hygiene and modernisation: segmentation, zero-trust principles, least privilege, multi-factor authentication, secure development, legacy and end-of-life technology | [TO DO] | [TO DO] | [TO DO] | [TO DO] |\n| 6. Response, recovery, crisis management and information sharing, tested against fast scenarios such as a zero-day compromise | [TO DO] | [TO DO] | [TO DO] | [TO DO] |",
+      "guidance": "One row per focus area; add rows when an area has several measures with different owners or dates. Number the measures so progress reports can refer to them.",
+      "proposed_mappings": []
+    }
+  ]
+}

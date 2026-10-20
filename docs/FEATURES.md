@@ -280,21 +280,27 @@ still counts as linked but not towards the ratings or threats.
 Controlled documents written for clients. Code: `internal/policydocs`;
 research in `POLICY_MODULE_FRAMEWORK.md`.
 
-- **Types:** policy, standard, procedure, work instruction, guideline, and
-  TRA. A document can name a parent, giving the policy → standard → procedure
-  → work instruction hierarchy. The section kinds offered depend on the type.
+- **Types:** policy, standard, procedure, work instruction, guideline, TRA,
+  and letter. A document can name a parent, giving the policy → standard →
+  procedure → work instruction hierarchy. A **letter** is formal
+  correspondence on a client's behalf, such as a letter to an ECB Joint
+  Supervisory Team: it has a date rather than a review cycle, makes no
+  coverage claims (a control cannot be mapped to it) and renders as a letter;
+  see `LETTERS.md`.
 - **Sections** have a heading, a body, a kind (purpose, scope, statements,
   roles, management commitment, coordination, compliance, exceptions,
-  definitions, related documents, procedure steps, other) and a provenance
-  (human, template, ai, imported).
+  definitions, related documents, procedure steps, other, and the parts of a
+  letter: sender, addressee, body, signatories, enclosures, copy to, annex)
+  and a provenance (human, template, ai, imported).
 - **Control mapping:** a section can claim to satisfy controls, each with a
   framework and a coverage level (full, partial, supporting).
 - **Lint** checks a document against rules: it has sections, the sections
   required for its type are present, no section is empty, a statements
   section uses must / shall / should / may, no unresolved fact placeholder
-  remains, no suggestion is still open (Studio documents), declared frameworks
-  have mappings, and no mapped control has left the catalog. Some findings
-  block approval.
+  and no `[TO DO: …]` placeholder remains, no suggestion is still open (Studio
+  documents), declared frameworks have mappings, and no mapped control has
+  left the catalog. A letter is checked for its date and for hedged
+  commitments instead of policy wording. Some findings block approval.
 - **Workflow:** draft → in review → approved → retired, with a return to
   draft. **Approve** needs an approver name, an effective date, an owner role
   and no blocking lint finding. In a multi-user installation the author
@@ -352,7 +358,10 @@ design and operator guide in `POLICY_STUDIO.md`.
 Code: `internal/policystudio` (templates), `internal/clientprofile`.
 
 - **Built-in templates** ship in the binary: the ICT and Information Security
-  Policy, and skeletons for a standard, a procedure and a work instruction.
+  Policy, skeletons for a standard, a procedure and a work instruction, a
+  letter to an ECB Joint Supervisory Team, and the covering letter for the
+  action plan on AI-enabled cyber threats the ECB asked for in its letter
+  SSM-2026-0301.
 - **Templates made in the application** (admin): copy, import, edit, publish,
   retire and restore, and export as JSON. A template can be **drafted from a
   library document**: the model generalises a sample policy, replacing the
@@ -601,12 +610,14 @@ Code: `internal/app/ai_chat.go`, `internal/aiprovider`; setup in
 
 ### Templates (`/templates`) and Template Brand (`/templates/manage`)
 
-Typeset output for policies and reports. Code: `internal/doctemplate`,
-`templates/`; detail in `DOCUMENT_TEMPLATES.md`.
+Typeset output for policies, letters and reports. Code:
+`internal/doctemplate`, `templates/`; detail in `DOCUMENT_TEMPLATES.md`.
 
-Five templates: a policy document in Typst, a business report in Typst, a
-redline in Typst, a policy document in LaTeX, and a policy document in Word
-through Pandoc. The gallery renders a sample or a real policy. The brand page
+Seven templates: a policy document in Typst, a business report in Typst, a
+redline in Typst, a letter in Typst, a letter in Word through Pandoc, a policy
+document in Word through Pandoc, and a policy document in LaTeX. A letter is
+rendered through the letter templates. The gallery renders a sample or a real
+policy. The brand page
 (admin to save) sets the colours, fonts and names the templates use. Where no
 engine is installed, a render returns a zip of the sources and a build script.
 PDF output can target an archival standard.

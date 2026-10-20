@@ -1,8 +1,9 @@
 # Business & Policy Document Templates
 
-Typeset templates for the two document classes this practice produces: **policy
-documents** (ISMS, ISO 27001, NIST, FedRAMP, PCI DSS) and **business reports**
-(assessments, gap analyses, control reviews).
+Typeset templates for the document classes this practice produces: **policy
+documents** (ISMS, ISO 27001, NIST, FedRAMP, PCI DSS), **business reports**
+(assessments, gap analyses, control reviews) and **letters** written on a
+client's behalf (see [`LETTERS.md`](LETTERS.md)).
 
 Everything in `templates/` builds and has been rendered and visually checked.
 This is phase 5 in [`POLICY_MODULE_FRAMEWORK.md`](POLICY_MODULE_FRAMEWORK.md),
@@ -19,6 +20,7 @@ templates/
     policy-document.typ    policy / standard / procedure / work instruction
     business-report.typ    assessment and consulting reports
     policy-redline.typ     the changes between two revisions of a policy
+    letter.typ             a letter on a client's behalf (doc_type letter)
   latex/
     grc.sty           LaTeX equivalent of brand.typ + lib.typ
     policy-document.tex    LaTeX policy document
@@ -26,6 +28,7 @@ templates/
     policy-sample.json     realistic input, matching internal/policydocs
     report-sample.json
     redline-sample.json    a comparison, as GET /policies/:id/compare returns it
+    letter-sample.json     a letter to a JST, in the policy contract
   build.sh
 ```
 
@@ -39,9 +42,10 @@ and:
 
 ```sh
 cd templates
-./build.sh                # both Typst templates, from the sample data
+./build.sh                # the Typst templates, from the sample data
 ./build.sh policy         # just the policy document
 ./build.sh report         # just the report
+./build.sh letter         # just the letter
 ./build.sh latex          # the LaTeX policy document
 ```
 
@@ -94,6 +98,27 @@ and so does **Word** (`template=policy-docx`). The Studio's **Download redline
 PDF** is `GET /policies/:id/compare.pdf?from=&to=`, which renders a comparison
 of two revisions through `policy-redline-typst`.
 
+A document of type `letter` renders as kind `letter`: by default through
+`letter-typst`, and through `letter-docx` for Word. The pages link the policy
+templates by name, so a request for a policy template with a letter is given
+the letter template for the same engine; any other mismatch, such as
+`policy-latex` for a letter, is refused.
+
+### Letters
+
+`letter.typ` reads the policy contract and lays the document out as
+correspondence: the client's name and the sender section at the head, the
+addressee block with *Our reference* and the long-form date beside it, the
+title as the subject line (the first, level-1 heading, which PDF/UA needs),
+the body, a signature line per signatory, enclosures and copies, and each
+annex from a new page. Sections are placed by kind, and only an annex prints
+its heading; a section of a policy kind is set as part of the body. The firm's
+wordmark and footer note are left off: the page is the client's. Until the
+document is approved every page reads **DRAFT — NOT APPROVED**, a missing date
+prints as *Date not set*, and a `[TO DO: …]` placeholder is highlighted. The
+Word path (`letter.go`) writes the same parts in the same order for Pandoc.
+How to write one, and the research behind it, is in [`LETTERS.md`](LETTERS.md).
+
 ### Word, through Pandoc
 
 `policy-docx` produces an editable `.docx` for a client who reviews in Word.
@@ -101,7 +126,8 @@ Like the LaTeX path, its input is generated from the payload: `docxgen.go`
 writes Markdown from the typed blocks (headings, lists, tables, quotes,
 callouts, bold, italic, links on http, https and mailto only). Every string is
 escaped, a legacy section's body included, so nothing in a policy becomes
-markup. Pandoc converts it with
+markup. A pipe-table row is one line, so a hard break inside a table cell is
+written as "; ". Pandoc converts it with
 
 ```sh
 pandoc --sandbox --from gfm-raw_html --to docx --output grc-output.docx policy-document.md

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # build.sh — render the document templates to PDF.
 #
-#   ./build.sh                          both Typst templates, sample data
+#   ./build.sh                          the Typst templates, sample data
 #   ./build.sh policy                   just the policy document
 #   ./build.sh report                   just the business report
+#   ./build.sh letter                   just the letter
 #   ./build.sh latex                    the LaTeX policy document
 #   ./build.sh policy path/to/doc.json  a real document
 #
@@ -93,15 +94,19 @@ case "$target" in
   report)
     build_typst business-report "${data:-../samples/report-sample.json}"
     ;;
+  letter)
+    build_typst letter "${data:-../samples/letter-sample.json}"
+    ;;
   latex)
     build_latex
     ;;
   all)
     build_typst policy-document ../samples/policy-sample.json
     build_typst business-report ../samples/report-sample.json
+    build_typst letter ../samples/letter-sample.json
     ;;
   *)
-    echo "unknown target: $target (expected policy, report, latex or all)" >&2
+    echo "unknown target: $target (expected policy, report, letter, latex or all)" >&2
     exit 2
     ;;
 esac

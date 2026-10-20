@@ -103,7 +103,9 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   `internal/dbsync` — sync between two databases and the JSON snapshot (a new
   table or column goes in `syncOrder`)
 - `internal/policydocs` — the policy library: documents, sections, control
-  mappings, lint, approval, versions, coverage. `internal/doctemplate` —
+  mappings, lint, approval, versions, coverage; and letters (`doc_type`
+  letter), which make no coverage claims and render through `letter.typ` —
+  see `LETTERS.md`. `internal/doctemplate` —
   typeset output through Typst, LaTeX and Pandoc (see `DOCUMENT_TEMPLATES.md`)
 - `internal/aiprovider` — the one way out to a model: the Wintermute client,
   usage logging, and the agent library client. `internal/settings`,

@@ -211,7 +211,7 @@ Code: `internal/policydocs`, `internal/clientprofile`, `internal/doctemplate`.
 
 ### `policy_documents`
 
-A policy, standard, procedure, work instruction, guideline or TRA: type, reference, status (draft, in_review, approved, retired), owner role, approver, classification, declared frameworks, review cadence, parent document, the client profile and template it was started from, `editor_format` (section editor or Studio), the projection bookkeeping, and `ai_policy` (inherit, local only, off).
+A policy, standard, procedure, work instruction, guideline, TRA or letter: type, reference, status (draft, in_review, approved, retired), owner role, approver, classification, declared frameworks, review cadence, parent document, the client profile and template it was started from, `editor_format` (section editor or Studio), the projection bookkeeping, and `ai_policy` (inherit, local only, off).
 
 - **Key:** `id`. **Travels:** merged by key (`id`).
 - **Columns** (text unless a type is given): `id integer`, `client_id integer`, `client_name`, `doc_type`, `reference`, `title`, `status`, `owner_role`, `approver`, `classification`, `frameworks_json`, `effective_date`, `review_cadence_months integer`, `next_review_date`, `parent_document_id integer`, `summary`, `author`, `created_at`, `updated_at`, `editor_format`, `projection_version integer`, `projection_token`, `client_profile_id integer`, `template_id`, `template_version`, `ai_policy`.

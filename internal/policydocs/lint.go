@@ -74,14 +74,24 @@ func PendingSuggestions(contentJSON string) int {
 // with a placeholder in it is worse than one that was never generated.
 var unresolvedPattern = regexp.MustCompile(`\[\[UNRESOLVED:[^\]]*\]\]`)
 
+// placeholderPattern matches a "[TO DO: ...]" a template leaves for what only
+// a person can supply, such as the reference and date of the letter being
+// answered. It blocks approval like an unresolved fact: a placeholder that
+// reaches a supervisor is worse than a letter that was never drafted. The
+// projected Markdown escapes the brackets, hence the optional backslashes.
+var placeholderPattern = regexp.MustCompile(`\\?\[TO DO\b[^\]]*?\\?\]`)
+
+// wordingRule is a phrase lint flags, with the advice it gives.
+type wordingRule struct {
+	pattern *regexp.Regexp
+	advice  string
+}
+
 // weakPhrases are non-testable constructions. An assessor cannot test "the
 // organization will endeavour to" — there is no pass or fail — so these read
 // fine and fail audits. The mandatory vocabulary is must/shall (mandatory),
 // should (expected, deviation needs justification) and may (discretionary).
-var weakPhrases = []struct {
-	pattern *regexp.Regexp
-	advice  string
-}{
+var weakPhrases = []wordingRule{
 	{regexp.MustCompile(`(?i)\bendeavou?rs?\s+to\b`), `"endeavour to" is not testable — use "must" or "should"`},
 	{regexp.MustCompile(`(?i)\bstrives?\s+to\b`), `"strive to" is not testable — use "must" or "should"`},
 	{regexp.MustCompile(`(?i)\bis\s+encouraged\s+to\b`), `"is encouraged to" is not testable — use "should"`},
@@ -92,6 +102,29 @@ var weakPhrases = []struct {
 	{regexp.MustCompile(`(?i)\bif\s+necessary\b`), `"if necessary" leaves the requirement undefined — state the trigger`},
 	{regexp.MustCompile(`(?i)\bbest\s+effort\b`), `"best effort" is not testable — state the actual obligation`},
 	{regexp.MustCompile(`(?i)\bwill\s+be\s+(?:performed|reviewed|conducted|maintained)\b`), `prefer "must be" over "will be" so the obligation is explicit`},
+}
+
+// letterWeakPhrases are the hedges that empty a commitment made to a
+// supervisor. A letter says "will" -- it reports what is planned -- so the
+// policy list does not apply, but a supervisor reads "endeavour to" or "where
+// possible" as no commitment at all, and follows the letter up on exactly that.
+var letterWeakPhrases = []wordingRule{
+	{regexp.MustCompile(`(?i)\bendeavou?rs?\s+to\b`), `"endeavour to" commits to nothing — say what will be done and by when`},
+	{regexp.MustCompile(`(?i)\bstrives?\s+to\b`), `"strive to" commits to nothing — say what will be done and by when`},
+	{regexp.MustCompile(`(?i)\bwhere\s+possible\b`), `"where possible" leaves the commitment open — state the condition or drop it`},
+	{regexp.MustCompile(`(?i)\bwhere\s+practical\b`), `"where practical" leaves the commitment open — state the condition or drop it`},
+	{regexp.MustCompile(`(?i)\bas\s+appropriate\b`), `"as appropriate" leaves the commitment undefined — say who decides and on what basis`},
+	{regexp.MustCompile(`(?i)\bbest\s+efforts?\b`), `"best effort" is not a commitment — state what will be done`},
+	{regexp.MustCompile(`(?i)\bin\s+due\s+course\b`), `"in due course" gives no date — state when`},
+	{regexp.MustCompile(`(?i)\bas\s+soon\s+as\s+(?:possible|practicable)\b`), `"as soon as possible" gives no date — state when`},
+}
+
+// weakPhrasesFor returns the wording checks for a document type.
+func weakPhrasesFor(docType string) []wordingRule {
+	if docType == TypeLetter {
+		return letterWeakPhrases
+	}
+	return weakPhrases
 }
 
 // normativePattern is the vocabulary a policy statement is expected to use.
@@ -108,6 +141,7 @@ var requiredKinds = map[string][]string{
 	TypeWorkInstruction: {KindPurpose, KindProcedureSteps},
 	TypeGuideline:       {KindPurpose, KindScope},
 	TypeTRA:             {KindPurpose, KindScope, KindStatements},
+	TypeLetter:          {KindAddressee, KindLetterBody, KindSignatories},
 }
 
 // RequiredKinds returns the mandatory section kinds for a document type.
@@ -131,6 +165,13 @@ func Lint(doc Document, sections []Section, refs []ControlRef) []Finding {
 	}
 
 	findings = append(findings, lintControlRefs(doc, refs)...)
+
+	if doc.DocType == TypeLetter && strings.TrimSpace(doc.EffectiveDate) == "" {
+		findings = append(findings, Finding{
+			Severity: SeverityWarning,
+			Message:  "the letter has no date — set it as the effective date",
+		})
+	}
 
 	present := make(map[string]bool, len(sections))
 	for _, s := range sections {
@@ -173,6 +214,15 @@ func Lint(doc Document, sections []Section, refs []ControlRef) []Finding {
 			})
 		}
 
+		if n := len(placeholderPattern.FindAllString(s.Body, -1)); n > 0 {
+			findings = append(findings, Finding{
+				Severity:  SeverityError,
+				SectionID: s.ID,
+				Heading:   label,
+				Message:   fmt.Sprintf("%d [TO DO] placeholder(s) left — replace each before approval", n),
+			})
+		}
+
 		if strings.TrimSpace(s.Body) == "" {
 			findings = append(findings, Finding{
 				Severity:  SeverityWarning,
@@ -183,7 +233,7 @@ func Lint(doc Document, sections []Section, refs []ControlRef) []Finding {
 			continue
 		}
 
-		for _, weak := range weakPhrases {
+		for _, weak := range weakPhrasesFor(doc.DocType) {
 			if !weak.pattern.MatchString(s.Body) {
 				continue
 			}
@@ -232,6 +282,16 @@ func BlockingFindings(findings []Finding) []Finding {
 // either block approval would make the linter something authors route around.
 func lintControlRefs(doc Document, refs []ControlRef) []Finding {
 	findings := make([]Finding, 0)
+
+	if doc.DocType == TypeLetter {
+		if len(refs) > 0 {
+			findings = append(findings, Finding{
+				Severity: SeverityWarning,
+				Message:  "a letter makes no coverage claims — its control mappings are not counted; cite a control in the text instead",
+			})
+		}
+		return findings
+	}
 
 	if len(refs) == 0 {
 		// Only worth saying when the document claims a framework: that is a

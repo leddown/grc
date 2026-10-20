@@ -134,6 +134,14 @@ func (s *Service) resolveTemplate(templateID string, kind Kind) (Template, error
 		return Template{}, fmt.Errorf("unknown template %q", templateID)
 	}
 	if kind != "" && tpl.Kind != kind {
+		// A letter is a policydocs document, and the pages that offer "Render
+		// PDF" and "Word" for one name the policy templates: the letter takes
+		// its own template for the same engine.
+		if tpl.Kind == KindPolicy && kind == KindLetter {
+			if letter, ok := templateFor(KindLetter, tpl.Engine); ok {
+				return letter, nil
+			}
+		}
 		return Template{}, fmt.Errorf("template %q renders %s documents, not %s", tpl.ID, tpl.Kind, kind)
 	}
 	return tpl, nil

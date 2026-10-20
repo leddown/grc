@@ -49,6 +49,7 @@ Rules:
 - Keep the sample's structure where it is sound, and add the sections the document type requires. Each section has one kind from the list given.
 - Use normative vocabulary: must or shall for what is mandatory, should for what is expected, may for what is permitted. Never write will, strive, endeavour, where possible, as appropriate or is encouraged. Every statement must be one an assessor could test.
 - Respect the tier. A policy states what and why; tools, products, vendors, ports and operational frequencies belong in standards and procedures.
+- A letter (document type letter) is the exception to the two rules above: it reports what was done and what will be done, so it says "will", but never endeavour, strive, where possible, as appropriate, in due course or as soon as possible. Its sections are its parts by kind (sender, addressee, letter_body, signatories as a Name | Function table, enclosures, copy_to, annex), what only the person sending it can supply is a [TO DO: what is needed] placeholder, and it proposes no mappings.
 - Paraphrase regulation and standards text; never quote it at length.
 - content is Markdown limited to paragraphs, "- " and "1. " lists, "### " sub-headings, pipe tables, **bold**, *italic*, [text](https://...) links, {{fact:key}} and [[control:ID]]. No top-level headings (the section heading is separate), images or HTML.
 - guidance is a short note for the consultant who fills the template in: what to decide, what to ask the client. It never appears in the document.

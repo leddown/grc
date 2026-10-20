@@ -334,14 +334,16 @@ function statusActions(d){
 }
 
 function controlFields(d, editing){
+  // A letter is dated and sent once: no frameworks, no review clock.
+  const letter = d.doc_type === "letter";
   if (!editing) {
     const rows = [
       ["Reference", d.reference], ["Type", titleCase(d.doc_type)], ["Classification", d.classification],
-      ["Owner role", d.owner_role], ["Approver", d.approver], ["Client", d.client_name],
+      ["Owner role", d.owner_role], ["Approver", d.approver], ["Client", d.client_name]
+    ].concat(letter ? [["Letter date", d.effective_date]] : [
       ["Frameworks", (d.frameworks||[]).join(", ")], ["Effective", d.effective_date],
-      ["Review cadence", d.review_cadence_months + " months"], ["Next review", d.next_review_date],
-      ["Parent", d.parent_title]
-    ];
+      ["Review cadence", d.review_cadence_months + " months"], ["Next review", d.next_review_date]
+    ]).concat([["Parent", d.parent_title]]);
     return '<div class="fields">' + rows.map(([k,v]) =>
       '<div class="field"><label>'+esc(k)+'</label><div>'+esc(v || "Not set")+'</div></div>').join("") + '</div>';
   }
@@ -352,21 +354,21 @@ function controlFields(d, editing){
 
   return '<div class="fields">' +
     field("Reference", '<input id="f_reference" value="'+esc(d.reference)+'">') +
-    field("Title", '<input id="f_title" value="'+esc(d.title)+'">') +
+    field(letter ? "Subject" : "Title", '<input id="f_title" value="'+esc(d.title)+'">') +
     field("Type", '<select id="f_doc_type">'+opts(state.meta.doc_types, d.doc_type, titleCase)+'</select>') +
     field("Classification", '<select id="f_classification">'+opts(state.meta.classifications, d.classification)+'</select>') +
     field("Owner role", '<input id="f_owner_role" value="'+esc(d.owner_role)+'" placeholder="e.g. Head of Security">') +
     field("Approver", '<input id="f_approver" value="'+esc(d.approver)+'">') +
-    field("Effective date", '<input id="f_effective_date" type="date" value="'+esc(d.effective_date)+'">') +
-    field("Review cadence (months)", '<input id="f_review_cadence_months" type="number" min="1" max="120" value="'+d.review_cadence_months+'">') +
+    field(letter ? "Letter date" : "Effective date", '<input id="f_effective_date" type="date" value="'+esc(d.effective_date)+'">') +
+    (letter ? "" : field("Review cadence (months)", '<input id="f_review_cadence_months" type="number" min="1" max="120" value="'+d.review_cadence_months+'">')) +
     field("Parent document", '<select id="f_parent_document_id"><option value="0">None</option>' +
       parents.map(p => '<option value="'+p.id+'"'+(p.id===d.parent_document_id?" selected":"")+'>'+
         esc((p.reference?p.reference+" — ":"")+p.title)+'</option>').join("") + '</select>') +
   '</div>' +
   '<div class="field"><label>Summary</label><textarea id="f_summary">'+esc(d.summary)+'</textarea></div>' +
-  '<div class="field" style="margin-top:10px;"><label>Frameworks</label><div class="frameworks">' +
+  (letter ? "" : '<div class="field" style="margin-top:10px;"><label>Frameworks</label><div class="frameworks">' +
     state.meta.frameworks.map(f => '<label><input type="checkbox" class="fw" value="'+esc(f)+'"'+
-      ((d.frameworks||[]).includes(f)?" checked":"")+'> '+esc(f)+'</label>').join("") + '</div></div>' +
+      ((d.frameworks||[]).includes(f)?" checked":"")+'> '+esc(f)+'</label>').join("") + '</div></div>') +
   '<div class="actions"><button id="saveDoc" class="primary" type="button">Save document control</button></div>';
 }
 
@@ -453,7 +455,7 @@ function wireDetail(d, editable){
       owner_role: el("f_owner_role").value,
       approver: el("f_approver").value,
       effective_date: el("f_effective_date").value,
-      review_cadence_months: Number(el("f_review_cadence_months").value) || 12,
+      review_cadence_months: el("f_review_cadence_months") ? Number(el("f_review_cadence_months").value) || 12 : d.review_cadence_months,
       parent_document_id: Number(el("f_parent_document_id").value) || 0,
       summary: el("f_summary").value,
       frameworks: Array.from(document.querySelectorAll(".fw:checked")).map(n => n.value)

@@ -119,7 +119,7 @@ func (s *Service) CreateDocument(d Document) (Document, error) {
 	}
 	d.CreatedAt = nowStamp()
 	d.UpdatedAt = d.CreatedAt
-	d.NextReviewDate = computeNextReview(d.EffectiveDate, d.ReviewCadenceMonths)
+	d.NextReviewDate = nextReview(d)
 	return s.repo.CreateDocument(d)
 }
 
@@ -139,7 +139,7 @@ func (s *Service) UpdateDocument(id int64, d Document) (Document, error) {
 	d.Status = existing.Status
 	d.Author = existing.Author
 	d.UpdatedAt = nowStamp()
-	d.NextReviewDate = computeNextReview(d.EffectiveDate, d.ReviewCadenceMonths)
+	d.NextReviewDate = nextReview(d)
 
 	updated, err := s.repo.UpdateDocument(id, d)
 	return updated, mapNotFound(err)
@@ -335,8 +335,7 @@ func (s *Service) Approve(id int64, approvedBy, changeSummary string) (Document,
 
 	// Approval is what starts the review clock, so the next review date is
 	// recomputed here rather than at edit time.
-	nextReview := computeNextReview(doc.EffectiveDate, doc.ReviewCadenceMonths)
-	if err := s.repo.SetStatus(id, StatusApproved, nextReview, stamp); err != nil {
+	if err := s.repo.SetStatus(id, StatusApproved, nextReview(doc), stamp); err != nil {
 		return Document{}, mapNotFound(err)
 	}
 	approved = true
@@ -742,6 +741,15 @@ func validateSection(s Section) error {
 		return invalid("section heading is required")
 	}
 	return nil
+}
+
+// nextReview is a document's next review date. A letter has none: it is
+// sent once, and a review clock would put it on the due-for-review list.
+func nextReview(d Document) string {
+	if d.DocType == TypeLetter {
+		return ""
+	}
+	return computeNextReview(d.EffectiveDate, d.ReviewCadenceMonths)
 }
 
 // computeNextReview adds the cadence to the effective date. It returns an empty

@@ -67,6 +67,21 @@ func mdRuns(runs []PolicyRun) string {
 	return b.String()
 }
 
+// mdCellRuns sets a table cell's runs. A pipe-table row is one line, so a
+// hard break inside a cell becomes a separator instead of ending the row and
+// spilling the rest of the table out of it.
+func mdCellRuns(runs []PolicyRun) string {
+	var parts []string
+	start := 0
+	for i, r := range runs {
+		if r.Break {
+			parts = append(parts, mdRuns(runs[start:i]))
+			start = i + 1
+		}
+	}
+	return strings.Join(append(parts, mdRuns(runs[start:])), "; ")
+}
+
 func mdBlocks(b *strings.Builder, blocks []PolicyBlock, indent string) {
 	for _, blk := range blocks {
 		switch blk.Type {
@@ -120,7 +135,7 @@ func mdBlocks(b *strings.Builder, blocks []PolicyBlock, indent string) {
 					if i < len(r.Cells) {
 						var parts []string
 						for _, cb := range r.Cells[i] {
-							parts = append(parts, mdRuns(cb.Runs))
+							parts = append(parts, mdCellRuns(cb.Runs))
 						}
 						cells[i] = strings.Join(parts, " ")
 					}

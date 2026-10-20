@@ -198,10 +198,17 @@ func controlRows(doc Document) [][2]string {
 		{"Owner Role", orNone(doc.OwnerRole)},
 		{"Approver", orNone(doc.Approver)},
 		{"Client", orNone(doc.ClientName)},
-		{"Frameworks", frameworks},
-		{"Effective Date", orNone(doc.EffectiveDate)},
-		{"Review Cadence", strconv.Itoa(doc.ReviewCadenceMonths) + " months"},
-		{"Next Review", orNone(doc.NextReviewDate)},
+	}
+	if doc.DocType == TypeLetter {
+		// A letter is dated rather than effective, and is never reviewed.
+		rows = append(rows, [2]string{"Letter Date", orNone(doc.EffectiveDate)})
+	} else {
+		rows = append(rows,
+			[2]string{"Frameworks", frameworks},
+			[2]string{"Effective Date", orNone(doc.EffectiveDate)},
+			[2]string{"Review Cadence", strconv.Itoa(doc.ReviewCadenceMonths) + " months"},
+			[2]string{"Next Review", orNone(doc.NextReviewDate)},
+		)
 	}
 	if doc.ParentTitle != "" {
 		rows = append(rows, [2]string{"Parent Document", doc.ParentTitle})

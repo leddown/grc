@@ -33,10 +33,15 @@ const (
 	// document type rather than a section inside a policy because it carries
 	// its own review cycle.
 	TypeTRA = "tra"
+	// TypeLetter is formal correspondence written on a client's behalf, such
+	// as a letter to a supervisor. It sits outside the hierarchy: it states
+	// what the client has done and commits to, so it makes no control claims
+	// and has no review cycle.
+	TypeLetter = "letter"
 )
 
 // DocTypes is the ordered set offered in the UI.
-var DocTypes = []string{TypePolicy, TypeStandard, TypeProcedure, TypeWorkInstruction, TypeGuideline, TypeTRA}
+var DocTypes = []string{TypePolicy, TypeStandard, TypeProcedure, TypeWorkInstruction, TypeGuideline, TypeTRA, TypeLetter}
 
 // Lifecycle states.
 const (
@@ -66,6 +71,17 @@ const (
 	KindRelatedDocuments     = "related_documents"
 	KindProcedureSteps       = "procedure_steps"
 	KindOther                = "other"
+
+	// The parts of a letter. Each is laid out in its own place on the page,
+	// which is why they are kinds rather than headings: the renderer finds the
+	// addressee by its kind, and only an annex prints its heading.
+	KindSender      = "sender"
+	KindAddressee   = "addressee"
+	KindLetterBody  = "letter_body"
+	KindSignatories = "signatories"
+	KindEnclosures  = "enclosures"
+	KindCopyTo      = "copy_to"
+	KindAnnex       = "annex"
 )
 
 // SectionKinds is the ordered set offered in the UI.
@@ -73,6 +89,7 @@ var SectionKinds = []string{
 	KindPurpose, KindScope, KindStatements, KindRoles, KindManagementCommitment,
 	KindCoordination, KindCompliance, KindExceptions, KindDefinitions,
 	KindRelatedDocuments, KindProcedureSteps, KindOther,
+	KindSender, KindAddressee, KindLetterBody, KindSignatories, KindEnclosures, KindCopyTo, KindAnnex,
 }
 
 // SectionKindLabels renders a kind for display.
@@ -89,6 +106,13 @@ var SectionKindLabels = map[string]string{
 	KindRelatedDocuments:     "Related Documents",
 	KindProcedureSteps:       "Procedure Steps",
 	KindOther:                "Other",
+	KindSender:               "Letter: Sender",
+	KindAddressee:            "Letter: Addressee",
+	KindLetterBody:           "Letter: Body",
+	KindSignatories:          "Letter: Signatories",
+	KindEnclosures:           "Letter: Enclosures",
+	KindCopyTo:               "Letter: Copy To",
+	KindAnnex:                "Letter: Annex",
 }
 
 // Provenance records where a section's text came from. Phase 1 only ever writes

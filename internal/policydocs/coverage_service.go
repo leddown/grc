@@ -49,6 +49,9 @@ func (s *Service) AttachControl(documentID, sectionID int64, ref ControlRef) (Co
 	if err := requireEditable(doc); err != nil {
 		return ControlRef{}, err
 	}
+	if doc.DocType == TypeLetter {
+		return ControlRef{}, invalid("a letter makes no coverage claims — cite the control in the text instead")
+	}
 
 	ref.ControlID = strings.ToUpper(strings.TrimSpace(ref.ControlID))
 	ref.Coverage = strings.ToLower(strings.TrimSpace(ref.Coverage))

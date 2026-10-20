@@ -229,9 +229,14 @@ func buildWorkspace(workspace string, tpl Template, brand Brand, data []byte) er
 		if err != nil {
 			return err
 		}
-		generated := GenerateLaTeX(payload, brand)
-		if tpl.Engine == EnginePandoc {
+		var generated string
+		switch {
+		case tpl.Kind == KindLetter:
+			generated = GenerateLetterMarkdown(payload)
+		case tpl.Engine == EnginePandoc:
 			generated = GenerateMarkdown(payload, brand)
+		default:
+			generated = GenerateLaTeX(payload, brand)
 		}
 		if err := os.WriteFile(filepath.Join(workspace, tpl.Entry), []byte(generated), 0o600); err != nil {
 			return fmt.Errorf("writing generated %s: %w", tpl.Entry, err)

@@ -417,7 +417,7 @@ func pendingIn(sections []*policystudio.Node, scope map[string]bool) []string {
 // at the token limit is never parsed: it may look like the contract and not be
 // it.
 func (e *Engine) ask(ctx context.Context, p prepared, req aiprovider.Request, stream Stream) (Answer, aiprovider.Response, error) {
-	req.System = standingRules
+	req.System = rulesFor(p.pc.doc.DocType)
 	req.OutputSchema = Schema()
 	req.MaxTokens = maxAnswerTokens
 	req.Agent = p.agent
@@ -543,6 +543,9 @@ func (e *Engine) ProposeStream(ctx context.Context, documentID int64, req Reques
 	if err != nil {
 		return Result{}, err
 	}
+	if req.Action == "map_controls" && p.pc.doc.DocType == policydocs.TypeLetter {
+		return Result{}, refuse(http.StatusBadRequest, "a letter makes no coverage claims, so there are no control mappings to suggest")
+	}
 	if req.Action == "from_library" {
 		if err := e.withSource(ctx, &p, req.LibraryDocumentID); err != nil {
 			return Result{}, err
@@ -574,6 +577,9 @@ func (e *Engine) finish(documentID int64, req Request, actor string, p prepared,
 		res.HasProposal = true
 		res.Summary = answer.Proposal.Summary
 		res.Edits, res.Mappings, res.NewFacts = check(answer.Proposal, p.src)
+		if p.pc.doc.DocType == policydocs.TypeLetter {
+			res.Mappings = []CheckedMapping{}
+		}
 		for _, ed := range res.Edits {
 			if ed.Status != EditOK {
 				res.Rejected++

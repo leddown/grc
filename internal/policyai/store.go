@@ -34,7 +34,7 @@ func (e *Engine) save(documentID int64, req Request, actor string, p prepared, r
 		served_by, agent, prompt_sha256, context_fingerprint, status, summary, answer_markdown, mappings_json, new_facts_json,
 		input_tokens, output_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		documentID, actor, req.Action, firstNonEmpty(req.Scope, ScopeDocument), req.Instruction, resp.Provider, resp.Model,
-		resp.Backend, p.agent, hash(standingRules+"\n"+text), hash(p.pc.fingerprint()), status, res.Summary, res.Answer,
+		resp.Backend, p.agent, hash(rulesFor(p.pc.doc.DocType)+"\n"+text), hash(p.pc.fingerprint()), status, res.Summary, res.Answer,
 		mustJSON(res.Mappings), mustJSON(res.NewFacts), resp.Usage.InputTokens, resp.Usage.OutputTokens, e.stamp())
 	if err != nil {
 		return 0, err

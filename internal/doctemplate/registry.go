@@ -37,6 +37,9 @@ const (
 	KindPolicy  Kind = "policy"
 	KindReport  Kind = "report"
 	KindRedline Kind = "redline"
+	// KindLetter is a policydocs document of type letter: the same payload
+	// shape as KindPolicy, laid out as correspondence.
+	KindLetter Kind = "letter"
 )
 
 // Template describes one renderable document template.
@@ -101,6 +104,26 @@ var Templates = []Template{
 		SampleData:  "samples/redline-sample.json",
 	},
 	{
+		ID:          "letter-typst",
+		Name:        "Letter (Typst)",
+		Engine:      EngineTypst,
+		Kind:        KindLetter,
+		Description: "A formal letter written on a client's behalf, such as a letter to a supervisor: sender, addressee, reference and date, subject line, body, signature blocks, enclosures, copy list, and each annex from a new page. Marked as a draft on every page until the letter is approved. Carries no firm branding: the page is the client's.",
+		Sources:     []string{"typst/letter.typ", "typst/brand.typ", "typst/lib.typ"},
+		Entry:       "letter.typ",
+		SampleData:  "samples/letter-sample.json",
+	},
+	{
+		ID:          "letter-docx",
+		Name:        "Letter (Word, Pandoc)",
+		Engine:      EnginePandoc,
+		Kind:        KindLetter,
+		Description: "The letter as an editable Word document, to set on the client's own letterhead template and sign there. Generated from the payload and converted by Pandoc when it is installed on this host; otherwise the sources are returned to convert elsewhere.",
+		Entry:       "letter.md",
+		Generated:   true,
+		SampleData:  "samples/letter-sample.json",
+	},
+	{
 		ID:          "policy-docx",
 		Name:        "Policy document (Word, Pandoc)",
 		Engine:      EnginePandoc,
@@ -127,6 +150,16 @@ var Templates = []Template{
 func Lookup(id string) (Template, bool) {
 	for _, tpl := range Templates {
 		if tpl.ID == id {
+			return tpl, true
+		}
+	}
+	return Template{}, false
+}
+
+// templateFor returns the first template of a kind that runs on an engine.
+func templateFor(kind Kind, engine Engine) (Template, bool) {
+	for _, tpl := range Templates {
+		if tpl.Kind == kind && tpl.Engine == engine {
 			return tpl, true
 		}
 	}

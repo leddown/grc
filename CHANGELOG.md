@@ -3,6 +3,78 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-20 (Letters: a letter document type for correspondence on a client's behalf, two JST letter templates, letter PDF and Word output, letter rules for AI proposals)
+
+Formal letters, first of all from a significant institution to its ECB Joint
+Supervisory Team, are written in the Policy Studio and typeset as letters.
+Operator guide and the research behind it: `LETTERS.md`.
+
+- **Document type `letter`** (`internal/policydocs`). Section kinds for its
+  parts: sender, addressee, letter_body, signatories, enclosures, copy_to,
+  annex (labelled *Letter: …*). A letter needs an addressee, a body and
+  signatories to be approved. It has no review clock (`nextReview`; the
+  approval snapshot and HTML export show *Letter Date* and no frameworks or
+  review rows), makes no coverage claims (`AttachControl` refuses it, the
+  coverage query leaves out `doc_type = 'letter'`, and lint warns when a
+  re-typed document still carries mappings), and is checked for hedged
+  commitments (`letterWeakPhrases`: endeavour, strive, where possible, where
+  practical, as appropriate, best effort, in due course, as soon as possible)
+  instead of policy wording, so *will* is allowed. An undated letter is a lint
+  warning; approval already needs the date. The policy page labels the title
+  *Subject* and the effective date *Letter date*, and hides frameworks and
+  review cadence, for a letter. No schema change: `doc_type` and
+  `section_kind` are free text.
+- **`[TO DO: …]` placeholders block approval** for every document type
+  (`placeholderPattern` in `lint.go`), like an unresolved fact. The letter
+  templates use them for what only a person can supply.
+- **Two built-in templates** (`internal/policystudio/templates/`):
+  `letter-jst` (any letter to a JST, with an annex of commitments, owners,
+  dates and evidence) and `letter-jst-ai-cyber-action-plan` (the covering
+  letter for the action plan the ECB asked for in letter SSM-2026-0301 of
+  7 July 2026, due 31 October 2026; its annex follows the six focus areas of
+  that letter's Annex 1). Template validation is type-aware
+  (`weakWordingFor`): a letter template may say *will*, may not hedge, and
+  may not propose mappings.
+- **AI proposals on a letter** (`internal/policyai`) are sent `letterRules`
+  instead of the policy standing rules: formal register, commitments with
+  what, who and when, nothing invented (a detail only a person can supply
+  stays a `[TO DO: …]`), no mappings. `letterInstructions` give *testable*,
+  *expand*, *review*, *draft_section* and *from_library* their letter
+  meaning; `map_controls` is refused for a letter and any mapping a model
+  returns for one is dropped. The proposal record hashes the rules actually
+  sent. The template drafter is told how a letter template differs.
+- **Letter output** (`internal/doctemplate`, `templates/`): kind `letter`,
+  templates `letter-typst` (`templates/typst/letter.typ`) and `letter-docx`
+  (`letter.go`, `GenerateLetterMarkdown`). `PolicyPayloadSource` reports a
+  letter payload as kind letter, and `resolveTemplate` gives a letter the
+  letter template for the same engine when a page names a policy template
+  (the Studio's and the policy page's **Render PDF** and **Word** links work
+  unchanged); any other mismatch is still refused. The PDF carries no firm
+  branding, marks every page *DRAFT — NOT APPROVED* until approval, prints
+  *Date not set* for an undated letter, highlights `[TO DO]`, keeps the
+  closing formula with the signatures, sets the subject as the level-1
+  heading (PDF/UA-1 passes under Typst 0.15.1) and starts each annex on a new
+  page. `templates/build.sh letter`, sample `templates/samples/letter-sample.json`,
+  reference render `templates/out/letter.pdf`.
+- **Fix, Word export:** a hard break inside a table cell ended the Markdown
+  table row and spilled the rest of the table out of it, in policies as well
+  as letters. A break in a cell is now written as "; " (`mdCellRuns`).
+- **Not changed:** the Studio editor bundle. Its document-control panel still
+  labels a letter's date *Effective date* and offers a review cadence, which
+  a letter ignores; footnotes are not in the editor schema. Both are noted in
+  `LETTERS.md`.
+- Tests: `internal/policydocs/letter_test.go`,
+  `internal/policyai/letter_test.go`, `internal/doctemplate/letter_test.go`
+  (with Typst and Pandoc available, the sample and a hostile payload in every
+  part compile and print literally, and a Word letter is produced),
+  `TestWordTableCellsKeepTheirRow`, `TestLetterTemplatesSayWillButNotHedge`.
+  Verified end to end on a throwaway local-mode server: a letter created from
+  the template with client facts, linted, refused approval while undated, and
+  rendered as PDF and Word through the existing links.
+- Docs: `LETTERS.md` (new), `DOCUMENT_TEMPLATES.md`, `POLICY_STUDIO.md`,
+  `docs/FEATURES.md`, `docs/DATA_MODEL.md`, `docs/PROJECT_OVERVIEW.md`,
+  `README.md`, `Agents.md`.
+
 ## 2026-10-13 (Exceptions: scope first, scope file, full and partial exceptions, weights by rating and threat, Exceptions Report; workbook columns and locked sheets; NFR-Control Links both ways)
 
 The Exceptions page sets a scope before it builds an exception set, and the

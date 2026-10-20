@@ -67,9 +67,11 @@ package and how a request is served. In short:
 - `internal/auditfinding` — Audit Findings & Remediation (see
   [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md))
 - `internal/policydocs` — the policy library: documents, sections, control
-  mappings, lint, approval, versions and the coverage matrix
+  mappings, lint, approval, versions and the coverage matrix; also letters
+  written on a client's behalf (see [LETTERS.md](LETTERS.md))
 - `internal/doctemplate` — typeset output (Typst, LaTeX, Word through Pandoc)
-  for policies and reports (see [DOCUMENT_TEMPLATES.md](DOCUMENT_TEMPLATES.md))
+  for policies, letters and reports (see
+  [DOCUMENT_TEMPLATES.md](DOCUMENT_TEMPLATES.md))
 - `internal/nfrenrich` — NFR Enrichment: propose catalog text from a security
   document in the agent's library, for a person to accept or reject
 - `internal/aiprovider` — the one way out to a model: the Wintermute client,
@@ -150,6 +152,8 @@ Module and operating documents:
   behind policy authoring and AI-assisted drafting
 - [DOCUMENT_TEMPLATES.md](DOCUMENT_TEMPLATES.md) — the Typst and LaTeX
   templates and the JSON they render
+- [LETTERS.md](LETTERS.md) — letters on a client's behalf, such as to an ECB
+  Joint Supervisory Team: writing, AI, output, and the research behind them
 - [CRISIS_EXERCISE.md](CRISIS_EXERCISE.md) — Risk & Crisis Exercises
 - [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) — Audit Findings & Remediation
 - [FAQ.md](FAQ.md) — `security-patches` → `main` merge procedure

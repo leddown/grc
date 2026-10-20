@@ -13,17 +13,48 @@ func TestTemplatesAreValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 4 || templates[0].ID != "ict-infosec-policy" || !templates[0].Default {
-		t.Fatalf("expected the ICT policy first and three skeletons, got %d", len(templates))
+	if len(templates) != 6 || templates[0].ID != "ict-infosec-policy" || !templates[0].Default {
+		t.Fatalf("expected the ICT policy first, three skeletons and two letters, got %d", len(templates))
 	}
 	for _, tpl := range templates {
 		for _, s := range tpl.Sections {
 			lower := strings.ToLower(s.Content)
-			for _, weak := range []string{"will ", "strive", "endeavour", "where possible", "as appropriate", "is encouraged"} {
+			for _, weak := range weakWordingFor(tpl.DocType) {
 				if strings.Contains(lower, weak) {
 					t.Errorf("%s / %s uses %q", tpl.ID, s.Heading, weak)
 				}
 			}
+		}
+	}
+}
+
+func TestLetterTemplatesSayWillButNotHedge(t *testing.T) {
+	letter := func() Template {
+		return Template{ID: "l-one", Version: "1", Title: "L", DocType: policydocs.TypeLetter,
+			Sections: []TemplateSection{
+				{UIDSeed: "a", Heading: "Addressee", Kind: policydocs.KindAddressee, Content: "European Central Bank"},
+				{UIDSeed: "b", Heading: "Letter", Kind: policydocs.KindLetterBody, Content: "The Bank will report by 31 March."},
+				{UIDSeed: "c", Heading: "Signatories", Kind: policydocs.KindSignatories, Content: "| Name | Function |\n| --- | --- |\n| A | CEO |"},
+			}}
+	}
+	if err := letter().validate(); err != nil {
+		t.Fatalf("a letter that says will was refused: %v", err)
+	}
+	cases := map[string]func(*Template){
+		"hedged commitment": func(t *Template) { t.Sections[1].Content = "The Bank will endeavour to report." },
+		"no date":           func(t *Template) { t.Sections[1].Content = "The Bank will report in due course." },
+		"no signatories":    func(t *Template) { t.Sections = t.Sections[:2] },
+		"a coverage claim": func(t *Template) {
+			t.Sections[1].ProposedMappings = []ProposedMapping{{ControlID: "IR-6", Coverage: "partial"}}
+		},
+		"no letter body":     func(t *Template) { t.Sections[1].Kind = policydocs.KindOther },
+		"no addressee block": func(t *Template) { t.Sections = t.Sections[1:] },
+	}
+	for name, mutate := range cases {
+		tpl := letter()
+		mutate(&tpl)
+		if err := tpl.validate(); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }

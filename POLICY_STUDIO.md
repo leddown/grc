@@ -678,6 +678,12 @@ What Phase 1a puts in the hands of a user and an operator.
   Requests run one at a time per person, at most 8 a minute per document,
   time out after 150 s, and are cancelled when the requester navigates away.
   Usage is logged once per model call through the router.
+- **Letters** (`doc_type` letter) get their own standing rules
+  (`letterRules`): formal register, commitments with what, who and when,
+  nothing invented (a detail only a person can supply stays a `[TO DO: …]`),
+  and no control mappings. *Make testable*, *Expand*, *Review section*, *Draft
+  this section* and the library mapping read the letter's way, and *Suggest
+  control mappings* is refused. See [`LETTERS.md`](LETTERS.md).
 - **The live check (Q5)** is `internal/policyai/live_test.go`, behind the
   `live` build tag: one real call through a Wintermute server on synthetic
   text, `WINTERMUTE_URL=... WINTERMUTE_TOKEN=... go test -tags live -run Live -v ./internal/policyai/`.
@@ -907,6 +913,13 @@ tables, `**bold**`, `*italic*`, `` `code` ``, links, `{{fact:key}}` and
 test also refuses a template that says *will*, *strive*, *endeavour*, *where
 possible* or *as appropriate*. Name no tools or vendors, and paraphrase
 regulation text rather than quoting it.
+
+A **letter** template (`"doc_type": "letter"`) is held to its own rules
+instead: it says *will*, but not *strive*, *endeavour*, *where possible*, *as
+appropriate*, *in due course* or *as soon as possible*; it needs the
+addressee, body and signatories kinds; and it proposes no mappings. What only
+the person sending the letter can supply is written `[TO DO: what is needed]`,
+which blocks approval until replaced. See [`LETTERS.md`](LETTERS.md).
 
 ### Templates made in the app
 

@@ -270,8 +270,8 @@ func (r *SQLiteRepository) coverageClaims(clientID int64) ([]coverageEntry, erro
 		FROM policy_section_controls r
 		JOIN policy_sections s ON s.id = r.section_id
 		JOIN policy_documents d ON d.id = s.document_id
-		WHERE d.status <> ?`
-	args := []any{StatusRetired}
+		WHERE d.status <> ? AND d.doc_type <> ?`
+	args := []any{StatusRetired, TypeLetter}
 	if clientID > 0 {
 		sql += ` AND d.client_id = ?`
 		args = append(args, clientID)

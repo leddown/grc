@@ -120,6 +120,17 @@ func (t Template) validate() error {
 // it, and a template repeats it into every document made from it.
 var weakTemplateWording = []string{"will ", "strive", "endeavour", "where possible", "as appropriate", "is encouraged"}
 
+// weakLetterWording is the same rule for a letter, which reports what will be
+// done and so says "will"; what it may not do is hedge a commitment.
+var weakLetterWording = []string{"strive", "endeavour", "where possible", "as appropriate", "in due course", "as soon as possible"}
+
+func weakWordingFor(docType string) []string {
+	if docType == policydocs.TypeLetter {
+		return weakLetterWording
+	}
+	return weakTemplateWording
+}
+
 // Problems lists everything that keeps a template from being offered, in the
 // order a person would fix them. Built-in templates must have none (a build
 // defect otherwise); a template drafted in the app cannot be published until
@@ -178,10 +189,18 @@ func (t Template) Problems() []string {
 			used[m[1]] = true
 		}
 		lower := strings.ToLower(s.Content)
-		for _, weak := range weakTemplateWording {
-			if strings.Contains(lower, weak) {
+		for _, weak := range weakWordingFor(t.DocType) {
+			if !strings.Contains(lower, weak) {
+				continue
+			}
+			if t.DocType == policydocs.TypeLetter {
+				add("section %q says %q, which commits to nothing: say what will be done and by when", name, weak)
+			} else {
 				add("section %q says %q, which an assessor cannot test: use must, shall, should or may", name, strings.TrimSpace(weak))
 			}
+		}
+		if t.DocType == policydocs.TypeLetter && len(s.ProposedMappings) > 0 {
+			add("section %q proposes control mappings; a letter makes no coverage claims", name)
 		}
 		for _, m := range s.ProposedMappings {
 			if m.Coverage != policydocs.CoveragePartial && m.Coverage != policydocs.CoverageSupporting {

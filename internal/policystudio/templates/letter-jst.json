@@ -1,0 +1,141 @@
+{
+  "id": "letter-jst",
+  "version": "1.0.0",
+  "title": "Letter to the ECB Joint Supervisory Team",
+  "doc_type": "letter",
+  "frameworks": [],
+  "description": "A formal letter from a significant institution to its Joint Supervisory Team: sender, addressee, the letter, two signatories, enclosures, a copy to the national authority and an annex that lists every commitment with its owner and date.",
+  "review_cadence_months": 12,
+  "classification": "Confidential",
+  "default": false,
+  "facts": [
+    {
+      "key": "legal_entity_name",
+      "label": "Legal name of the institution",
+      "description": "The supervised entity's registered name, as the ECB knows it.",
+      "example": "Example Bank AG",
+      "value_type": "text"
+    },
+    {
+      "key": "sender_address",
+      "label": "Postal address of the institution",
+      "description": "The registered office, on one line.",
+      "example": "Musterstrasse 1, 60311 Frankfurt am Main, Germany",
+      "value_type": "text"
+    },
+    {
+      "key": "jst_coordinator_name",
+      "label": "JST Coordinator",
+      "description": "The full name of the head of the institution's Joint Supervisory Team at the ECB.",
+      "example": "Jane Doe",
+      "value_type": "text"
+    },
+    {
+      "key": "jst_coordinator_salutation",
+      "label": "JST Coordinator, as addressed",
+      "description": "How the letter addresses the JST Coordinator after \"Dear\".",
+      "example": "Ms Doe",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_1_name",
+      "label": "First signatory",
+      "description": "A member of the management body or another authorised signatory.",
+      "example": "John Smith",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_1_function",
+      "label": "First signatory's function",
+      "description": "The first signatory's function, as it appears under the signature.",
+      "example": "Chief Executive Officer",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_2_name",
+      "label": "Second signatory",
+      "description": "The second authorised signatory, where the institution's signing rules require two.",
+      "example": "Maria Rossi",
+      "value_type": "text"
+    },
+    {
+      "key": "signatory_2_function",
+      "label": "Second signatory's function",
+      "description": "The second signatory's function, as it appears under the signature.",
+      "example": "Chief Risk Officer",
+      "value_type": "text"
+    },
+    {
+      "key": "regulatory_contact",
+      "label": "Contact for the JST",
+      "description": "Who answers the JST's questions on the letter: name, function and e-mail address.",
+      "example": "Alex Muster, Head of Regulatory Affairs (alex.muster@example-bank.eu)",
+      "value_type": "text"
+    },
+    {
+      "key": "nca_name",
+      "label": "National competent authority",
+      "description": "The national authority that takes part in the institution's Joint Supervisory Team.",
+      "example": "Bundesanstalt für Finanzdienstleistungsaufsicht (BaFin)",
+      "value_type": "text"
+    }
+  ],
+  "sections": [
+    {
+      "uid_seed": "sender",
+      "heading": "Sender",
+      "kind": "sender",
+      "content": "{{fact:sender_address}}",
+      "guidance": "The lines under the institution's name (the document's client) at the head of the first page: the address, and a telephone number or website if the letterhead carries them. Delete this section when the letter goes on the institution's own letterhead.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "addressee",
+      "heading": "Addressee",
+      "kind": "addressee",
+      "content": "{{fact:jst_coordinator_name}}\nJST Coordinator, {{fact:legal_entity_name}}\nEuropean Central Bank\nSonnemannstrasse 20\n60314 Frankfurt am Main\nGermany",
+      "guidance": "One line per address line. The ECB's postal address is Sonnemannstrasse 20, 60314 Frankfurt am Main. Check the JST Coordinator's name before every letter: coordinators rotate.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "letter",
+      "heading": "Letter",
+      "kind": "letter_body",
+      "content": "Dear {{fact:jst_coordinator_salutation}},\n\n[TO DO: what this letter answers: the supervisory letter, decision or request, its reference and its date, and what it asked of the institution.]\n\n[TO DO: the answer. One paragraph per point the JST raised, in the order it raised them. Say what has been done, with evidence the JST can check, and what will be done, by whom and by when.]\n\nEach commitment this letter makes is listed in Annex 1 with the function accountable for it and its due date. {{fact:legal_entity_name}} will inform the Joint Supervisory Team without delay if any of these dates is at risk.\n\nFor any question on this letter, please contact {{fact:regulatory_contact}}.\n\nYours sincerely,",
+      "guidance": "The subject line is the document title: name the supervisory letter or decision being answered, with its reference. The heading of this section is not printed. A JST reads a letter for commitments: each one needs an owner and a date, and the annex is where the JST will track them. A [TO DO] blocks approval until it is replaced.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "signatories",
+      "heading": "Signatories",
+      "kind": "signatories",
+      "content": "| Name | Function |\n| --- | --- |\n| {{fact:signatory_1_name}} | {{fact:signatory_1_function}} |\n| {{fact:signatory_2_name}} | {{fact:signatory_2_function}} |",
+      "guidance": "One row per signatory; each gets a signature line. Follow the institution's signing authorities; a letter that commits the management body is signed by its members.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "enclosures",
+      "heading": "Enclosures",
+      "kind": "enclosures",
+      "content": "- Annex 1: Commitments and due dates",
+      "guidance": "Every document sent with the letter, one per item, named as the JST will file it.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "copy-to",
+      "heading": "Copy to",
+      "kind": "copy_to",
+      "content": "- {{fact:nca_name}}",
+      "guidance": "Delete this section when no copy goes to the national authority.",
+      "proposed_mappings": []
+    },
+    {
+      "uid_seed": "annex-commitments",
+      "heading": "Annex 1: Commitments and due dates",
+      "kind": "annex",
+      "content": "| No. | Commitment | Accountable function | Due date | Evidence the JST will receive |\n| --- | --- | --- | --- | --- |\n| 1 | [TO DO] | [TO DO] | [TO DO] | [TO DO] |",
+      "guidance": "One row per commitment made in the letter, numbered so later progress reports can refer to it. Interim dates are welcome: the ECB sets remediation paths with intermediate deadlines.",
+      "proposed_mappings": []
+    }
+  ]
+}

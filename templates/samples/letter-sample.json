@@ -1,0 +1,739 @@
+{
+  "reference": "NWB-REG-2026-041",
+  "title": "Action plan addressing AI-enabled cybersecurity threats: response to ECB letter SSM-2026-0301",
+  "doc_type": "letter",
+  "status": "approved",
+  "classification": "Confidential",
+  "owner_role": "Head of Regulatory Affairs",
+  "approver": "Management Board",
+  "client_name": "Northwind Bank AG",
+  "effective_date": "2026-10-28",
+  "review_cadence_months": 12,
+  "next_review_date": "",
+  "summary": "Covering letter and action plan sent to the Joint Supervisory Team in answer to ECB letter SSM-2026-0301.",
+  "frameworks": [],
+  "sections": [
+    {
+      "heading": "Sender",
+      "section_kind": "sender",
+      "body": "Taunusanlage 9, 60329 Frankfurt am Main, Germany",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Taunusanlage 9, 60329 Frankfurt am Main, Germany"
+            }
+          ]
+        }
+      ],
+      "controls": []
+    },
+    {
+      "heading": "Addressee",
+      "section_kind": "addressee",
+      "body": "Jane Doe\nJST Coordinator, Northwind Bank AG\nEuropean Central Bank\nSonnemannstrasse 20\n60314 Frankfurt am Main\nGermany",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Jane Doe"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "JST Coordinator, Northwind Bank AG"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "European Central Bank"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "Sonnemannstrasse 20"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "60314 Frankfurt am Main"
+            },
+            {
+              "text": "",
+              "break": true
+            },
+            {
+              "text": "Germany"
+            }
+          ]
+        }
+      ],
+      "controls": []
+    },
+    {
+      "heading": "Letter",
+      "section_kind": "letter_body",
+      "body": "Dear Ms Doe,\n\nIn its letter SSM-2026-0301 of 7 July 2026, the ECB asked significant institutions to assess the effect of AI-enabled cybersecurity threats without delay, and to send their Joint Supervisory Team, by 31 October 2026, an action plan with concrete measures, the resources allocated to them, clear roles and responsibilities and implementation dates. Northwind Bank AG (the Bank) submits its action plan with this letter, in Annex 1.\n\n### Approval and resources\n\nThe Management Board approved the action plan on 21 October 2026, after the Risk Committee of the Supervisory Board reviewed it on 16 October 2026. The Management Board assessed whether the Bank's ICT budget, staffing, tooling and change capacity are sufficient to carry it out, and allocated an additional EUR 4.2 million for 2027 and eight full-time positions in vulnerability management and security operations. The ICT risk tolerance framework now carries a patching-latency metric for internet-facing assets, with a tolerance of seven days for critical vulnerabilities.\n\n### Short-term measures\n\nThe plan gives priority to the three short-term areas the ECB named. Within them it puts perimeter technologies and internet-facing assets first, including third-party software and open-source components. The most significant measures are:\n\n- a complete inventory of internet-facing assets and their software components, by 31 December 2026;\n- risk-based scanning of all internet-facing assets daily, from 30 November 2026;\n- a review of the patching terms in the contracts with the Bank's eleven critical ICT service providers, by 31 March 2027.\n\n### Open supervisory findings\n\nTwo findings on ICT and security risk remain open: finding 4 of the 2024 on-site inspection on access management, which will be closed by 31 January 2027, and finding 2 of the 2024 cyber resilience stress test on backup restoration, which will be closed by 31 March 2027. Both are part of the plan.\n\nThe Bank will report progress against the plan to the Joint Supervisory Team quarterly, starting with the fourth quarter of 2026, and will inform it without delay if any date in the plan is at risk.\n\nFor any question on this letter or the action plan, please contact Alex Muster, Head of Regulatory Affairs (alex.muster@northwind-bank.example).\n\nYours sincerely,",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Dear Ms Doe,"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "In its letter SSM-2026-0301 of 7 July 2026, the ECB asked significant institutions to assess the effect of AI-enabled cybersecurity threats without delay, and to send their Joint Supervisory Team, by 31 October 2026, an action plan with concrete measures, the resources allocated to them, clear roles and responsibilities and implementation dates. Northwind Bank AG (the Bank) submits its action plan with this letter, in Annex 1."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": 2,
+          "runs": [
+            {
+              "text": "Approval and resources"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "The Management Board approved the action plan on 21 October 2026, after the Risk Committee of the Supervisory Board reviewed it on 16 October 2026. The Management Board assessed whether the Bank's ICT budget, staffing, tooling and change capacity are sufficient to carry it out, and allocated an additional EUR 4.2 million for 2027 and eight full-time positions in vulnerability management and security operations. The ICT risk tolerance framework now carries a patching-latency metric for internet-facing assets, with a tolerance of seven days for critical vulnerabilities."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": 2,
+          "runs": [
+            {
+              "text": "Short-term measures"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "The plan gives priority to the three short-term areas the ECB named. Within them it puts perimeter technologies and internet-facing assets first, including third-party software and open-source components. The most significant measures are:"
+            }
+          ]
+        },
+        {
+          "type": "bullet_list",
+          "items": [
+            [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "a complete inventory of internet-facing assets and their software components, by 31 December 2026;"
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "risk-based scanning of all internet-facing assets daily, from 30 November 2026;"
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "a review of the patching terms in the contracts with the Bank's eleven critical ICT service providers, by 31 March 2027."
+                  }
+                ]
+              }
+            ]
+          ]
+        },
+        {
+          "type": "heading",
+          "level": 2,
+          "runs": [
+            {
+              "text": "Open supervisory findings"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Two findings on ICT and security risk remain open: finding 4 of the 2024 on-site inspection on access management, which will be closed by 31 January 2027, and finding 2 of the 2024 cyber resilience stress test on backup restoration, which will be closed by 31 March 2027. Both are part of the plan."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "The Bank will report progress against the plan to the Joint Supervisory Team quarterly, starting with the fourth quarter of 2026, and will inform it without delay if any date in the plan is at risk."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "For any question on this letter or the action plan, please contact Alex Muster, Head of Regulatory Affairs (alex.muster@northwind-bank.example)."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "Yours sincerely,"
+            }
+          ]
+        }
+      ],
+      "controls": []
+    },
+    {
+      "heading": "Signatories",
+      "section_kind": "signatories",
+      "body": "| Name | Function |\n|---|---|\n| John Smith | Chief Executive Officer |\n| Maria Rossi | Chief Information Security Officer |",
+      "blocks": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "header": true,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Name"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Function"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "John Smith"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Chief Executive Officer"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Maria Rossi"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Chief Information Security Officer"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "controls": []
+    },
+    {
+      "heading": "Enclosures",
+      "section_kind": "enclosures",
+      "body": "- Annex 1: Action plan addressing AI-enabled cybersecurity threats",
+      "blocks": [
+        {
+          "type": "bullet_list",
+          "items": [
+            [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "Annex 1: Action plan addressing AI-enabled cybersecurity threats"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ],
+      "controls": []
+    },
+    {
+      "heading": "Copy to",
+      "section_kind": "copy_to",
+      "body": "- Bundesanstalt für Finanzdienstleistungsaufsicht (BaFin)",
+      "blocks": [
+        {
+          "type": "bullet_list",
+          "items": [
+            [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "Bundesanstalt für Finanzdienstleistungsaufsicht (BaFin)"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ],
+      "controls": []
+    },
+    {
+      "heading": "Annex 1: Action plan addressing AI-enabled cybersecurity threats",
+      "section_kind": "annex",
+      "body": "The six focus areas follow Annex 1 of the ECB's letter. Areas 1 to 4 are short-term; areas 5 and 6 are structural.\n\n| Focus area | Measures | Accountable function | Due date |\n|---|---|---|---|\n| 1. Protecting the attack surface | 1.1 Inventory of internet-facing assets and software components\n1.2 Removal of 14 unused third-party VPN connections | Head of IT Infrastructure | 31 Dec 2026\n31 Jan 2027 |\n| 2. Vulnerability and patch management | 2.1 Daily risk-based scanning of internet-facing assets\n2.2 Emergency change procedure for critical patches | CISO | 30 Nov 2026\n31 Jan 2027 |\n| 3. Monitoring and detection | 3.1 Log coverage for all internet-facing applications in the SOC | Head of Security Operations | 31 Mar 2027 |\n| 4. Governance, funding and supply chain | 4.1 Patching terms with critical ICT service providers\n4.2 Risk appetite metric for patching latency | CRO | 31 Mar 2027\nDone, 21 Oct 2026 |\n| 5. Defence in depth and modernisation | 5.1 Replacement of the end-of-life payment gateway | CIO | 30 Sep 2027 |\n| 6. Response and recovery | 6.1 Crisis exercise on a zero-day compromise of a perimeter device | Head of Business Continuity | 30 Jun 2027 |",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "runs": [
+            {
+              "text": "The six focus areas follow Annex 1 of the ECB's letter. Areas 1 to 4 are short-term; areas 5 and 6 are structural."
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "rows": [
+            {
+              "header": true,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Focus area"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Measures"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Accountable function"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Due date"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "1. Protecting the attack surface"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "1.1 Inventory of internet-facing assets and software components"
+                      },
+                      {
+                        "text": "",
+                        "break": true
+                      },
+                      {
+                        "text": "1.2 Removal of 14 unused third-party VPN connections"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Head of IT Infrastructure"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "31 Dec 2026"
+                      },
+                      {
+                        "text": "",
+                        "break": true
+                      },
+                      {
+                        "text": "31 Jan 2027"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "2. Vulnerability and patch management"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "2.1 Daily risk-based scanning of internet-facing assets"
+                      },
+                      {
+                        "text": "",
+                        "break": true
+                      },
+                      {
+                        "text": "2.2 Emergency change procedure for critical patches"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "CISO"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "30 Nov 2026"
+                      },
+                      {
+                        "text": "",
+                        "break": true
+                      },
+                      {
+                        "text": "31 Jan 2027"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "3. Monitoring and detection"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "3.1 Log coverage for all internet-facing applications in the SOC"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Head of Security Operations"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "31 Mar 2027"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "4. Governance, funding and supply chain"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "4.1 Patching terms with critical ICT service providers"
+                      },
+                      {
+                        "text": "",
+                        "break": true
+                      },
+                      {
+                        "text": "4.2 Risk appetite metric for patching latency"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "CRO"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "31 Mar 2027"
+                      },
+                      {
+                        "text": "",
+                        "break": true
+                      },
+                      {
+                        "text": "Done, 21 Oct 2026"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "5. Defence in depth and modernisation"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "5.1 Replacement of the end-of-life payment gateway"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "CIO"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "30 Sep 2027"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            },
+            {
+              "header": false,
+              "cells": [
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "6. Response and recovery"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "6.1 Crisis exercise on a zero-day compromise of a perimeter device"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Head of Business Continuity"
+                      }
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "30 Jun 2027"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "controls": []
+    }
+  ],
+  "controls": [],
+  "versions": [
+    {
+      "version_label": "v1.0",
+      "approved_by": "Management Board",
+      "approved_at": "2026-10-27T16:00:00Z",
+      "change_summary": "Approved for submission to the JST."
+    }
+  ]
+}

@@ -225,6 +225,12 @@ func PolicyPayloadSource(export func(id int64) (payload any, baseName string, er
 		if err != nil {
 			return nil, "", "", fmt.Errorf("encoding render payload: %w", err)
 		}
+		var probe struct {
+			DocType string `json:"doc_type"`
+		}
+		if json.Unmarshal(data, &probe) == nil && probe.DocType == string(KindLetter) {
+			return data, baseName, KindLetter, nil
+		}
 		return data, baseName, KindPolicy, nil
 	}
 }
