@@ -3,6 +3,19 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-20 (`verify-install.sh`: check the layout layer, not the removed phone layer)
+
+`./update.sh` ended in `✗ responsive layer missing from the home page` on a
+healthy install. The check looked for `id="global-mobile-style"`, the phone
+layer removed on 2026-10-11 (A dense interface, for a desktop window only),
+whose remaining rules are `layoutStyleTag` with `id="global-layout-style"`.
+
+- **`scripts/verify-install.sh`** now checks for `global-layout-style` and
+  reports "layout layer injected" or "layout layer missing from the home
+  page". No application code changed.
+- Verified by running the script against a temporary instance built from the
+  tree: the check passes, and the theme palette check is unchanged.
+
 ## 2026-10-20 (Render host: `grc-render` typesets for GRC on another machine, such as a Wintermute node)
 
 The host that serves GRC no longer needs Typst or Pandoc: `RENDER_URL` points

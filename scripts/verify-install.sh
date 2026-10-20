@@ -286,17 +286,19 @@ case "$OVERFLOW_CODE" in
 esac
 
 # The theme middleware rewrites every HTML response. If the injection broke, the
-# page still renders but loses its palette and the responsive layer.
+# page still renders but loses its palette and the layout layer (the focus
+# ring, reduced motion and table scrolling; it replaced the phone layer on
+# 2026-10-11, see CHANGELOG.md).
 HOME_HTML="$(curl -s --max-time 10 "${BASE_URL}/" 2>/dev/null)"
 if printf '%s' "$HOME_HTML" | grep -q 'id="global-theme-style"'; then
   ok "theme palette injected"
 else
   bad "theme palette missing from the home page"
 fi
-if printf '%s' "$HOME_HTML" | grep -q 'id="global-mobile-style"'; then
-  ok "responsive/iOS layer injected"
+if printf '%s' "$HOME_HTML" | grep -q 'id="global-layout-style"'; then
+  ok "layout layer injected"
 else
-  bad "responsive layer missing from the home page"
+  bad "layout layer missing from the home page"
 fi
 
 # ---------------------------------------------------------------------------
