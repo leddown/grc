@@ -1,0 +1,32 @@
+[Unit]
+Description=GRC render host (Typst and Pandoc for a GRC installation elsewhere)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=grc-render
+Group=grc-render
+EnvironmentFile=/etc/grc/grc-render.env
+ExecStart=/usr/local/bin/grc-render
+Restart=on-failure
+RestartSec=5
+# Nothing is kept between requests: each job gets a directory under the
+# private /tmp and loses it when it ends. Typst and Pandoc need only their
+# binaries and the system fonts, both readable under ProtectSystem=strict.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

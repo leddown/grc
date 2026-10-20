@@ -44,6 +44,9 @@ func BindFlags() *Options {
 	flag.StringVar(&options.StudioAllowedOrigins, "studio-allowed-origins", envOrDefault("STUDIO_ALLOWED_ORIGINS", ""), "comma-separated origins (scheme://host[:port]), besides the request's own host, that may open the Policy Studio collaboration socket; set it to the external hostname when a proxy serves the app under a different name")
 	flag.IntVar(&options.StudioSnapshotRetention, "studio-snapshot-retention", envIntOrDefault("STUDIO_SNAPSHOT_RETENTION", 50), "how many Policy Studio snapshots to keep per document (the pre-migration copy is always kept)")
 	flag.StringVar(&options.TemplatesDir, "templates-dir", envOrDefault("TEMPLATES_DIR", ""), "directory holding the Typst/LaTeX document templates rendered by /templates; when unset, ./templates, the binary's directory and the share directories are searched")
+	flag.StringVar(&options.RenderURL, "render-url", envOrDefault("RENDER_URL", ""), "address of a grc-render host (e.g. https://coven.l3d.internal:8892) that runs Typst and Pandoc for this installation; when unset they run on this host")
+	flag.StringVar(&options.RenderToken, "render-token", envOrDefault("RENDER_TOKEN", ""), "bearer token the grc-render host was started with; required with -render-url")
+	flag.StringVar(&options.RenderCAFile, "render-ca-file", envOrDefault("RENDER_CA_FILE", ""), "PEM file of the CA that issued the grc-render host's certificate, trusted besides the system roots (https render URLs only)")
 	return &options
 }
 

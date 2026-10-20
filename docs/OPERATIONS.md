@@ -56,6 +56,9 @@ A flag overrides its environment variable.
 | `-trust-proxy` | `TRUST_PROXY` | false | Trust `X-Forwarded-Proto` when deciding whether cookies are `Secure`. Set it behind a proxy that sets the header. |
 | `-docs-dir` | `DOCS_DIR` | search | Where `CHANGELOG.md` and the other served markdown files are. |
 | `-templates-dir` | `TEMPLATES_DIR` | search | Where the Typst and LaTeX templates are. |
+| `-render-url` | `RENDER_URL` | empty | A grc-render host that runs Typst and Pandoc for this installation (`DOCUMENT_TEMPLATES.md`, "Rendering on another host"). Empty renders here. |
+| `-render-token` | `RENDER_TOKEN` | empty | grc-render's token. Required with `-render-url`. |
+| `-render-ca-file` | `RENDER_CA_FILE` | empty | CA certificate (PEM) that issued grc-render's certificate, for an `https` render URL. |
 | `-studio-allowed-origins` | `STUDIO_ALLOWED_ORIGINS` | empty | Extra origins allowed to open the collaboration socket. |
 | `-studio-snapshot-retention` | `STUDIO_SNAPSHOT_RETENTION` | 50 | Snapshots kept per Studio document. |
 | `-sync-to`, `-sync-from` | `SYNC_TO`, `SYNC_FROM` | empty | One-shot database copy; mutually exclusive. |
@@ -127,9 +130,16 @@ guests or users reach the application under a second hostname, add it to
 
 ## Updating
 
-`update.sh` on the host: pull, rebuild with the commit stamped in, reinstall
-the markdown files, restart the service, and run the verification. Schema
-changes apply on start; there is no migration step.
+`update.sh` on the host: fetch and reset the checkout to `origin/main`,
+rebuild with the commit stamped in, reinstall the markdown files, restart the
+service, and run the verification. Schema changes apply on start; there is no
+migration step.
+
+The reset means the host always runs `origin/main`, even after its history has
+been rewritten and force-pushed. Edits to tracked files on the host are
+discarded (the script lists them first); untracked and ignored files such as
+the database, the key files and `config/db.env` are kept. Make changes in a
+development checkout and push them, not on the host.
 
 `scripts/verify-install.sh` checks that the running service reports the
 checkout's commit, that the routes the source registers are served, that the

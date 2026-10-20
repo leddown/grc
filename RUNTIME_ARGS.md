@@ -145,7 +145,24 @@ engine only if you want PDFs produced on the server.
   XeLaTeX, not pdfLaTeX: `grc.sty` uses `fontspec`.
 
 Engines are detected once per process and cached; **Re-check** on the
-Templates page re-probes after an install. Subprocesses run with a minimal
+Templates page re-probes after an install.
+
+To typeset on another host instead (a Wintermute rig node with Typst and
+Pandoc), run `grc-render` there and point this installation at it:
+
+- `-render-url` / `RENDER_URL` — grc-render's address, e.g.
+  `http://coven.l3d.internal:8892`. Typst and Pandoc renders then go there
+  and only there; a host that does not answer gives the source bundle with
+  the reason. LaTeX still runs here.  
+  Default: empty (render on this host)
+- `-render-token` / `RENDER_TOKEN` — the token grc-render was started with.
+  Required with `-render-url`.
+- `-render-ca-file` / `RENDER_CA_FILE` — a PEM CA certificate to trust for an
+  `https` render URL, besides the system roots.
+
+`scripts/install-grc-render.sh` installs grc-render on the render host and
+prints the two lines to add here; `DOCUMENT_TEMPLATES.md` ("Rendering on
+another host") describes what crosses the network. Subprocesses run with a minimal
 environment (`PATH`, `HOME`, `TMPDIR`, locale) rather than the app's own, so
 `ADMIN_TOKEN`, the Jira token and the AI provider key are never visible to a
 typesetter.
@@ -165,6 +182,9 @@ typesetter.
 - `TRUST_PROXY`
 - `DOCS_DIR`
 - `TEMPLATES_DIR`
+- `RENDER_URL`
+- `RENDER_TOKEN`
+- `RENDER_CA_FILE`
 - `STUDIO_ALLOWED_ORIGINS`
 - `STUDIO_SNAPSHOT_RETENTION`
 

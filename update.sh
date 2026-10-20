@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Redeploys grc after a code change: pulls the latest commit,
+# Redeploys grc after a code change: resets the checkout to origin/main,
 # rebuilds the binary, and restarts the systemd service. Run this on the host
 # after `git push`-ing changes, or any time the working tree has commits not
 # yet reflected in the running service. Assumes scripts/setup.sh has already
@@ -14,8 +14,20 @@ SERVICE_NAME="${GRC_SERVICE_NAME:-grc}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "==> Pulling latest changes"
-git -C "$REPO_ROOT" pull --ff-only
+echo "==> Resetting to origin/main"
+# The host runs exactly what is on origin/main; it is not a working copy. A
+# pull refuses to fast-forward once main's history has been rewritten (squashed
+# and force-pushed), and a merge then conflicts with commits that no longer
+# exist upstream, so reset instead. Edits to tracked files here are discarded
+# and listed first; untracked and ignored files (databases, keys,
+# config/db.env) are left alone.
+git -C "$REPO_ROOT" fetch origin
+if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]; then
+  echo "    discarding local changes to tracked files:"
+  git -C "$REPO_ROOT" status --short --untracked-files=no | sed 's/^/      /'
+fi
+git -C "$REPO_ROOT" checkout -q -f -B main origin/main
+echo "    at $(git -C "$REPO_ROOT" log -1 --format='%h %s')"
 
 echo "==> Building grc"
 BUILD_TMP="$(mktemp)"

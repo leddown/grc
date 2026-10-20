@@ -72,6 +72,12 @@ type Options struct {
 	// rendered by /templates. Empty means search (see doctemplate.Dir); as with
 	// DocsDir, a value set here is used as-is.
 	TemplatesDir string
+	// RenderURL, RenderToken and RenderCAFile name a grc-render host that
+	// runs Typst and Pandoc for this installation (see
+	// doctemplate.ConfigureRemote). Empty RenderURL renders here.
+	RenderURL    string
+	RenderToken  string
+	RenderCAFile string
 	// StudioAllowedOrigins is a comma-separated list of origins, besides the
 	// request's own host, allowed to open the Policy Studio collaboration
 	// socket.
@@ -134,6 +140,11 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 	trustProxyHeaders = options.TrustProxyHeaders
 	docsDirOverride = options.DocsDir
 	doctemplate.DirOverride = options.TemplatesDir
+	if err := doctemplate.ConfigureRemote(doctemplate.RemoteConfig{
+		URL: options.RenderURL, Token: options.RenderToken, CAFile: options.RenderCAFile,
+	}); err != nil {
+		return nil, nil, fmt.Errorf("render host: %w", err)
+	}
 
 	userHandler, authService, authHandler, controlHandler, securityNFRHandler, nfrLinkHandler, reportsHandler, riskRegisterHandler, err := buildHandlers(sqliteDB)
 	if err != nil {

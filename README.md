@@ -45,7 +45,9 @@ A clean `go test ./...` is a security gate, not just a unit-test gate.
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes the process, every
 package and how a request is served. In short:
 
-- `main.go` / `cmd/api/main.go` — entrypoints
+- `main.go` / `cmd/api/main.go` — entrypoints; `cmd/grc-render` — a render
+  host that runs Typst and Pandoc for GRC on another machine (see
+  [DOCUMENT_TEMPLATES.md](DOCUMENT_TEMPLATES.md))
 - `internal/app` — Gin route wiring, page HTML handlers, auth/admin middleware,
   login and user-management pages
 - `internal/authn` — password/session auth: bcrypt hashing, sessions, per-user

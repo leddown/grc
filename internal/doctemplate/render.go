@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -132,24 +133,55 @@ func (s *Service) Render(ctx context.Context, req Request) (Result, error) {
 	}
 
 	base := sanitiseBaseName(req.BaseName)
-	status := StatusFor(tpl.Engine)
-
-	if req.Bundle || !status.Available {
+	bundle := func(reason string) (Result, error) {
 		body, err := bundleWorkspace(workspace, tpl, brand, req.PDFStandard)
 		if err != nil {
 			return Result{}, err
 		}
-		result := Result{
+		return Result{
 			ContentType: "application/zip",
 			Filename:    bundleFilename(base, tpl.ID),
 			Body:        body,
 			Bundled:     true,
+			Reason:      reason,
 			Engine:      string(tpl.Engine),
+		}, nil
+	}
+	if req.Bundle {
+		return bundle("")
+	}
+
+	contentType, ext := "application/pdf", ".pdf"
+	if tpl.Engine == EnginePandoc {
+		contentType, ext = docxContentType, ".docx"
+	}
+
+	// With a render host configured, Typst and Pandoc run there and only
+	// there: the same document must not come out of two machines' fonts
+	// depending on which was up. A host that does not answer is handled like
+	// a missing engine.
+	if host := remoteFor(tpl.Engine); host != nil {
+		out, err := host.render(ctx, workspace, tpl, req.PDFStandard)
+		var unreachable errRemoteUnreachable
+		if errors.As(err, &unreachable) {
+			return bundle(fmt.Sprintf("The render host could not render it (%v), so the sources are returned instead. Unzip and run ./build.sh.", err))
 		}
-		if !status.Available {
-			result.Reason = fmt.Sprintf("No %s engine on this host (%s), so the sources are returned instead. Unzip and run ./build.sh.", tpl.Engine, status.Detail)
+		if err != nil {
+			return Result{Log: out.log}, err
 		}
-		return result, nil
+		return Result{
+			ContentType:   contentType,
+			Filename:      base + ext,
+			Body:          out.body,
+			Log:           out.log,
+			Engine:        out.engine + " on " + host.host,
+			EngineVersion: out.version,
+		}, nil
+	}
+
+	status := StatusFor(tpl.Engine)
+	if !status.Available {
+		return bundle(fmt.Sprintf("No %s engine on this host (%s), so the sources are returned instead. Unzip and run ./build.sh.", tpl.Engine, status.Detail))
 	}
 
 	log, err := compile(ctx, workspace, tpl, status, req.PDFStandard)
@@ -157,9 +189,9 @@ func (s *Service) Render(ctx context.Context, req Request) (Result, error) {
 		return Result{Log: log}, err
 	}
 
-	output, contentType, ext := outputName, "application/pdf", ".pdf"
+	output := outputName
 	if tpl.Engine == EnginePandoc {
-		output, contentType, ext = docxOutputName, docxContentType, ".docx"
+		output = docxOutputName
 	}
 	pdf, err := readOutput(filepath.Join(workspace, output))
 	if err != nil {

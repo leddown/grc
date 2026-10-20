@@ -113,7 +113,9 @@ answer to "how was AI used in preparing this letter".
 | Use it for | The letter as approved, for the file and for sending as PDF | Setting the letter on the institution's Word letterhead template, footnotes, a last legal review with tracked changes |
 
 Both are rendered from the same payload (`GET /policies/:id/export.json`, the
-contract in `DOCUMENT_TEMPLATES.md`). The policy page's and the Studio's
+contract in `DOCUMENT_TEMPLATES.md`). They need Typst and Pandoc on the GRC
+host, or on a render host such as a Wintermute node (`RENDER_URL`, see
+"Rendering on another host" in `DOCUMENT_TEMPLATES.md`). The policy page's and the Studio's
 **Render PDF** and **Word** links name the policy templates; a letter is given
 the letter template for the same engine.
 

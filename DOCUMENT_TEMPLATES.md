@@ -164,6 +164,55 @@ Point `TYPST`, `PANDOC`, `TECTONIC` or `LATEXMK` at a binary to override
 the `PATH` lookup. Detection is cached per process; **Re-check** on the gallery re-probes
 after an install.
 
+### Rendering on another host
+
+The host that serves GRC need not have a typesetter. `grc-render`
+(`cmd/grc-render`, `internal/doctemplate/remote.go`) runs Typst and Pandoc on
+another machine, such as a Wintermute rig node, and GRC sends it the work:
+
+| Setting on the GRC host | Meaning |
+|---|---|
+| `-render-url` / `RENDER_URL` | grc-render's address, e.g. `http://coven.l3d.internal:8892`. Unset renders here. |
+| `-render-token` / `RENDER_TOKEN` | The token grc-render was started with. Required with the URL. |
+| `-render-ca-file` / `RENDER_CA_FILE` | The CA that issued grc-render's certificate, trusted besides the system roots, for an `https` URL. |
+
+- **What goes.** GRC builds the workspace as for a local render (the template
+  sources with the brand applied, the generated entry file, `data.json`) and
+  posts it to `POST /v1/render`. grc-render writes it to a fresh temporary
+  directory, runs the same fixed `typst` or `pandoc` command `compile()` runs
+  here, and answers with the PDF or the `.docx` and the engine's log. It
+  holds no templates, brand or database and keeps nothing after a request, so
+  the two hosts cannot disagree about what a document looks like.
+- **What it refuses.** No token or a wrong one; anything but Typst or Pandoc
+  (LaTeX stays local, since tectonic fetches packages from the network); a
+  file name that is not flat (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, no `..`);
+  an entry that is not among the files; more than 32 files or 32 MB; an
+  unknown PDF standard; an unknown JSON field. At most `-concurrency` jobs
+  run at once. It logs each job's shape (engine, file count, bytes, time),
+  never its content.
+- **When it does not answer**, the render returns the source bundle with the
+  reason, as for a missing engine. Typst and Pandoc never fall back to this
+  host: the same document must not come out with two machines' fonts
+  depending on which was up. A compile failure there comes back as an error
+  with the far log, as it would here.
+- **The gallery** shows Typst and Pandoc as the render host reports them
+  (`GET /v1/engines`, "on coven.l3d.internal:8892 through grc-render", or
+  that it is not answering); **Re-check** asks it to probe again.
+- **Installing it** on the render host, from the repository, as a user with
+  sudo: `GRC_HOST_IP=<the GRC host> scripts/install-grc-render.sh`. It copies
+  `typst` and `pandoc` into `/usr/local/bin` when they are only on your own
+  `PATH` (the unit hides home directories), builds and installs
+  `/usr/local/bin/grc-render`, creates the `grc-render` user, writes
+  `/etc/grc/grc-render.env` with a generated token (`deploy/grc-render.env.example`),
+  installs `deploy/grc-render.service`, adds a ufw rule for the GRC host, and
+  prints the `RENDER_URL` and `RENDER_TOKEN` lines for GRC's env file.
+- **Transport.** The job is the document in full. Use HTTPS once the fleet
+  has its internal CA (Wintermute's `docs/transport-security.md`): issue a
+  certificate for the render host, set `GRC_RENDER_TLS_CERT` and
+  `GRC_RENDER_TLS_KEY` there, an `https` `RENDER_URL` and `RENDER_CA_FILE`
+  here. Until then keep the port behind the firewall rule, as for
+  wintermute-ocr.
+
 ### What the app does differently from `build.sh`
 
 - **The compile is rooted at a throwaway workspace**, not at the repository.

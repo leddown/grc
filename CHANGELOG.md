@@ -3,6 +3,79 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-20 (Render host: `grc-render` typesets for GRC on another machine, such as a Wintermute node)
+
+The host that serves GRC no longer needs Typst or Pandoc: `RENDER_URL` points
+it at `grc-render` on a machine that has them (coven, a Wintermute rig node).
+Details: `DOCUMENT_TEMPLATES.md`, "Rendering on another host".
+
+- **`cmd/grc-render`** (new binary), shaped like wintermute-ocr: its own
+  bearer token (at least 32 characters), `POST /v1/render` and `GET
+  /v1/engines`, optional HTTPS (`-tls-cert`, `-tls-key`), at most
+  `-concurrency` jobs at once, server timeouts, graceful stop. It runs only
+  Typst or Pandoc, with the same fixed commands as a local render
+  (`compile()`), in a fresh temporary directory removed after each job; it
+  holds no templates, brand or database and logs each job's shape, never its
+  content. Default address `127.0.0.1:8892`.
+- **What GRC sends** (`internal/doctemplate/remote.go`): the workspace it
+  already builds (template sources with the brand applied, the generated
+  entry, `data.json`), so the two hosts cannot disagree about a document's
+  look. `RemoteJob.Validate` refuses LaTeX, file names that are not flat
+  (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, no `..`), an entry not among the
+  files, more than 32 files or 32 MB, an unknown PDF standard; the server
+  also refuses unknown JSON fields and a missing engine (503).
+- **GRC settings**: `-render-url`/`RENDER_URL`, `-render-token`/`RENDER_TOKEN`,
+  `-render-ca-file`/`RENDER_CA_FILE` (`internal/app/config.go`), checked at
+  start-up by `doctemplate.ConfigureRemote`: an http(s) URL with a host, a
+  token, and a CA file only for https and only if it holds a PEM certificate.
+  With a render host set, Typst and Pandoc run there and only there; one that
+  does not answer gives the source bundle with the reason, never a render on
+  this host; a compile failure there is an error with the far log. LaTeX
+  still runs here. The Templates gallery shows Typst and Pandoc as the render
+  host reports them, or that it is not answering; **Re-check** asks it to
+  probe again (`detectEngines(refresh)`, `remoteStatuses`).
+- **Deploy**: `deploy/grc-render.service` (own user, `ProtectSystem=strict`,
+  `ProtectHome`, `PrivateTmp`, no capabilities, `MemoryMax=2G`),
+  `deploy/grc-render.env.example`, and `scripts/install-grc-render.sh`: copies
+  `typst` and `pandoc` into `/usr/local/bin` when they are only on the
+  user's `PATH`, builds and installs the binary, creates the user, writes
+  `/etc/grc/grc-render.env` with a generated token (kept on re-run), installs
+  and starts the unit, adds a ufw rule for `GRC_HOST_IP`, checks
+  `/v1/engines`, and prints the `RENDER_URL`/`RENDER_TOKEN` lines for GRC.
+- Typst 0.15.1 and Pandoc 3.6.4 were installed on coven, in `~/.local/bin`.
+- Tests: `internal/doctemplate/remote_test.go` (job validation; token, JSON,
+  path, size and missing-engine refusals; the workspace reaching the render
+  host through a stand-in typesetter; a compile failure's log; an unreachable
+  host giving the sources; the gallery's engine statuses; settings refused at
+  start-up; HTTPS trusted through the CA file and refused without it; a real
+  Typst letter through the render host). Verified end to end on coven: GRC
+  with no typesetter on its `PATH`, pointed at a local grc-render, rendered a
+  letter as PDF and Word and a redline; with grc-render stopped it returned
+  the sources with the reason and the gallery said the host was not
+  answering.
+- Docs: `DOCUMENT_TEMPLATES.md`, `RUNTIME_ARGS.md`, `docs/OPERATIONS.md`,
+  `docs/SECURITY.md` (where data leaves the process), `docs/ARCHITECTURE.md`,
+  `Agents.md`, `README.md`, `LETTERS.md`.
+
+## 2026-10-20 (`update.sh` resets the host to `origin/main` instead of pulling)
+
+`main` was squashed into a new root commit and force-pushed, after which
+`./update.sh` on the server stopped at `git pull --ff-only` (*Not possible to
+fast-forward*), and a plain `git pull` produced merge conflicts against
+commits that no longer exist upstream.
+
+- **`update.sh`** now runs `git fetch origin` and `git checkout -f -B main
+  origin/main`: the host runs exactly `origin/main`, on the `main` branch,
+  whatever history or branch the checkout was on before. Edits to tracked
+  files on the host are discarded and listed first (`discarding local changes
+  to tracked files:`); untracked and ignored files (`users.db`, `*.aichat.key`,
+  `config/db.env`) are untouched. The commit it lands on is printed.
+- Verified against a mock host checkout: with upstream history rewritten, a
+  local edit, an ignored database file and a stray branch checked out, the old
+  step fails to fast-forward; the new one lists the edit, switches to `main`
+  tracking `origin/main` at the new root commit, and keeps the database file.
+- `docs/OPERATIONS.md` (Updating) describes the reset and what it keeps.
+
 ## 2026-10-20 (Letters: a letter document type for correspondence on a client's behalf, two JST letter templates, letter PDF and Word output, letter rules for AI proposals)
 
 Formal letters, first of all from a significant institution to its ECB Joint

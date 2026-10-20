@@ -35,7 +35,9 @@ produced by external programs started as child processes.
 
 `main.go` and `cmd/api/main.go` are the same three lines: bind flags, parse,
 `app.Run`. `cmd/userctl` is a separate small program that edits accounts
-directly in the database.
+directly in the database. `cmd/grc-render` is a separate service for another
+host: it runs Typst and Pandoc on workspaces GRC sends it when `RENDER_URL`
+is set (`internal/doctemplate/remote.go`, `DOCUMENT_TEMPLATES.md`).
 
 `app.Run` (`internal/app/app.go`):
 

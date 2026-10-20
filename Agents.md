@@ -35,7 +35,10 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
 
 ## Architecture Overview
 
-- `main.go` / `cmd/api/main.go` — entrypoints
+- `main.go` / `cmd/api/main.go` — entrypoints; `cmd/grc-render` — the render
+  host: Typst and Pandoc on another machine for an installation with
+  `RENDER_URL` set. It typesets workspaces GRC prepared; it is not document
+  ingestion and must not become an upload or extraction endpoint
 - `internal/app` — Gin route wiring (`app.go`), page HTML handlers,
   auth/admin middleware (`auth.go`, `access_control.go`), login and
   user-management pages

@@ -469,3 +469,14 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | POST | `/utilities/import` | admin | `app.utilitiesImport` |
 | GET | `/utilities/integrity-check` | admin | `app.utilitiesIntegrityCheck` |
 | GET | `/utilities/knowledge-export` | admin | `app.utilitiesKnowledgeExport` |
+
+## grc-render (a separate binary)
+
+`cmd/grc-render`, served on the render host, not by GRC; GRC calls it when
+`RENDER_URL` is set (`internal/doctemplate/remote.go`). Every route needs
+`Authorization: Bearer <GRC_RENDER_TOKEN>`.
+
+| Method | Path | Access | Handler |
+|---|---|---|---|
+| POST | `/v1/render` | render token | `doctemplate.(*RemoteServer).render` |
+| GET | `/v1/engines` | render token | `doctemplate.(*RemoteServer).engines` |

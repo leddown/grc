@@ -71,7 +71,7 @@ func EngineStatuses() map[Engine]EngineStatus {
 	engineCacheMu.Lock()
 	defer engineCacheMu.Unlock()
 	if engineCache == nil {
-		engineCache = detectEngines()
+		engineCache = detectEngines(false)
 	}
 	out := make(map[Engine]EngineStatus, len(engineCache))
 	for k, v := range engineCache {
@@ -83,7 +83,7 @@ func EngineStatuses() map[Engine]EngineStatus {
 // RefreshEngines clears the detection cache and probes again.
 func RefreshEngines() map[Engine]EngineStatus {
 	engineCacheMu.Lock()
-	engineCache = detectEngines()
+	engineCache = detectEngines(true)
 	out := make(map[Engine]EngineStatus, len(engineCache))
 	for k, v := range engineCache {
 		out[k] = v
@@ -97,11 +97,15 @@ func StatusFor(engine Engine) EngineStatus {
 	return EngineStatuses()[engine]
 }
 
-func detectEngines() map[Engine]EngineStatus {
+// detectEngines probes this host's engines, then replaces Typst and Pandoc
+// with what the render host reports when one is configured: those are the
+// engines that will run. refresh asks the render host to probe again too.
+func detectEngines(refresh bool) map[Engine]EngineStatus {
 	out := make(map[Engine]EngineStatus, len(engineCandidates))
 	for engine, candidates := range engineCandidates {
 		out[engine] = detectEngine(engine, candidates)
 	}
+	remoteStatuses(out, refresh)
 	return out
 }
 
