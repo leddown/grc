@@ -3,6 +3,25 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-20 (`verify-install.sh`: page checks no longer lose a race with `grep -q`)
+
+After the fix below, `./update.sh` on the server still ended in `✗ layout
+layer missing from the home page`, and the page served there does carry
+`id="global-layout-style"`. The check piped the page into `grep -q` under
+`set -o pipefail`. The home page is about 68 KB, more than a pipe holds: when
+`grep -q` exits at its first match, the `printf` still writing is killed by
+SIGPIPE, the pipeline returns 141, and the check reports the tag as missing.
+Whether that happens depends on timing, so it passed on coven and failed on
+the server. Of 200 runs against a 67,871-byte home page here, the piped form
+failed once for each check, and the here-string form never failed.
+
+- **`scripts/verify-install.sh`**: the theme palette and layout layer checks
+  read the page from a here-string, so no writer can be killed. The
+  `/changelog` check had the same race the other way round, where a lost match
+  turns "the app cannot read CHANGELOG.md" into a pass. It now captures the
+  page first. The other pipes into `grep -q` in the scripts read output far
+  under 64 KB and are left as they are.
+
 ## 2026-10-20 (`verify-install.sh`: check the layout layer, not the removed phone layer)
 
 `./update.sh` ended in `✗ responsive layer missing from the home page` on a

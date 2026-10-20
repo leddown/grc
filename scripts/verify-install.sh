@@ -289,13 +289,16 @@ esac
 # page still renders but loses its palette and the layout layer (the focus
 # ring, reduced motion and table scrolling; it replaced the phone layer on
 # 2026-10-11, see CHANGELOG.md).
+# grep reads a here-string, not a pipe: with pipefail, grep -q exiting at its
+# first match kills a writer still sending a page over 64 KB, and the pipeline
+# then fails as if nothing matched.
 HOME_HTML="$(curl -s --max-time 10 "${BASE_URL}/" 2>/dev/null)"
-if printf '%s' "$HOME_HTML" | grep -q 'id="global-theme-style"'; then
+if grep -q 'id="global-theme-style"' <<<"$HOME_HTML"; then
   ok "theme palette injected"
 else
   bad "theme palette missing from the home page"
 fi
-if printf '%s' "$HOME_HTML" | grep -q 'id="global-layout-style"'; then
+if grep -q 'id="global-layout-style"' <<<"$HOME_HTML"; then
   ok "layout layer injected"
 else
   bad "layout layer missing from the home page"
@@ -344,7 +347,8 @@ fi
 CHANGELOG_CODE="$(status_of "${BASE_URL}/changelog")"
 case "$CHANGELOG_CODE" in
   200)
-    if curl -s --max-time 10 "${BASE_URL}/changelog" 2>/dev/null | grep -q 'No change log entries found.'; then
+    CHANGELOG_HTML="$(curl -s --max-time 10 "${BASE_URL}/changelog" 2>/dev/null)"
+    if grep -q 'No change log entries found.' <<<"$CHANGELOG_HTML"; then
       bad "/changelog renders the empty state — the app cannot read CHANGELOG.md"
     else
       ok "/changelog serves change log content"
