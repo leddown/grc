@@ -3,6 +3,33 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-10-23 (security-patches: toolchain go1.26.9 -> go1.26.10, GO-2026-6809)
+
+`TestGovulncheck` failed on one standard-library advisory reachable from this
+application:
+
+| Advisory | Package | Reached via |
+|---|---|---|
+| GO-2026-6809 | `crypto/x509` (distrust compromised intermediate certificates) | `secrets.Keyring.Seal` -> `io.ReadFull` -> `x509.Certificate.Verify` |
+
+The fixed release is go1.26.10. `go.mod`: `toolchain go1.26.9` -> `go1.26.10`.
+The `go 1.26.0` language directive and every required module are unchanged.
+
+Impacted library: the Go standard library. Remediation status:
+**remediated**, confirmed by `go test ./...` — every package passes,
+`TestGovulncheck` and `TestGosec` among them, and govulncheck reports **0
+vulnerabilities called by this code**. The one advisory it still lists against
+a required module is GO-2026-5932 (`openpgp` in `golang.org/x/crypto`), which
+has no fix and is not imported, as recorded on 2026-10-10. `npm audit
+--omit=dev` in `web/policy-studio` finds 0 vulnerabilities.
+
+- Building needs Go 1.26.10 or later. With the default `GOTOOLCHAIN=auto` the
+  `go` command downloads it; a host with `GOTOOLCHAIN=local` or a distribution
+  Go has to be updated first.
+- No source file changed. `go fmt` and `go vet` are clean.
+- `docs/OPERATIONS.md`, `docs/PROJECT_OVERVIEW.md` and `docs/SECURITY.md`
+  name the new version.
+
 ## 2026-10-20 (`verify-install.sh`: page checks no longer lose a race with `grep -q`)
 
 After the fix below, `./update.sh` on the server still ended in `✗ layout

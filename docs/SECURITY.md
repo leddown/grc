@@ -153,6 +153,8 @@ On 2026-10-10 the module moved to Go 1.26 (toolchain go1.26.9) and
 `golang.org/x/net` v0.60.0 for twelve advisories; govulncheck then reported
 none reachable. One advisory remains against a required module with no fix
 and no call path (the unmaintained `openpgp` package in `golang.org/x/crypto`).
+On 2026-10-23 the toolchain moved to go1.26.10 for GO-2026-6809
+(`crypto/x509`).
 
 ---
 
