@@ -70,7 +70,7 @@ The sidebar groups are the product's own map of itself.
 
 | Layer | Choice |
 |---|---|
-| Language | Go 1.26 (toolchain go1.26.9). Module name `grc`. No cgo. |
+| Language | Go 1.26 (toolchain go1.26.10). Module name `grc`. No cgo. |
 | HTTP | Gin. One process, one listener. |
 | Storage | SQLite through `modernc.org/sqlite` (pure Go), or PostgreSQL through `pgx`. Same logical schema, chosen by configuration. |
 | Pages | Each page is an HTML document held as a Go string literal, with its own CSS and JavaScript. No template engine and no front-end framework. A middleware injects the theme, the sidebar, the command palette and the AI dock into every HTML response. |

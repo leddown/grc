@@ -11,7 +11,7 @@ walkthrough; `DATABASE.md` covers switching and syncing databases.
 go build -o grc ./cmd/api        # or: go build ./...
 ```
 
-Needs Go 1.26.9 or later. With the default `GOTOOLCHAIN=auto` the `go`
+Needs Go 1.26.10 or later. With the default `GOTOOLCHAIN=auto` the `go`
 command fetches that toolchain itself; a host that pins `GOTOOLCHAIN=local`
 or uses a distribution's older Go must be updated first. No C compiler, no
 Node: the editor bundle is committed.

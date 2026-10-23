@@ -2,7 +2,7 @@ module grc
 
 go 1.26.0
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	github.com/chromedp/cdproto v0.0.0-20250120090109-d38428e4d9c8
