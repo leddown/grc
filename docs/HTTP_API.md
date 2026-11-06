@@ -213,9 +213,13 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | PUT | `/assurance-plans/:id` | admin | `assuranceplan.(*Handler).UpdateHeader` |
 | POST | `/assurance-plans/:id/activate` | admin | `assuranceplan.(*Handler).Activate` |
 | POST | `/assurance-plans/:id/approve` | admin | `assuranceplan.(*Handler).Approve` |
+| PUT | `/assurance-plans/:id/attributes` | admin | `assuranceplan.(*Handler).ReplaceAttributes` |
+| POST | `/assurance-plans/:id/attributes/seed` | admin | `assuranceplan.(*Handler).SeedAttributes` |
 | POST | `/assurance-plans/:id/change-request` | admin | `assuranceplan.(*Handler).ChangeRequest` |
 | POST | `/assurance-plans/:id/clone` | admin | `assuranceplan.(*Handler).Clone` |
 | POST | `/assurance-plans/:id/close` | admin | `assuranceplan.(*Handler).Close` |
+| GET | `/assurance-plans/:id/dashboard` | signed in | `assuranceplan.(*Handler).Dashboard` |
+| GET | `/assurance-plans/:id/deviations` | signed in | `assuranceplan.(*Handler).Deviations` |
 | PUT | `/assurance-plans/:id/governance` | admin | `assuranceplan.(*Handler).ReplaceGovernance` |
 | GET | `/assurance-plans/:id/history` | signed in | `assuranceplan.(*Handler).History` |
 | GET | `/assurance-plans/:id/lint` | signed in | `assuranceplan.(*Handler).Lint` |
@@ -229,6 +233,7 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | PUT | `/assurance-plans/:id/quarters` | admin | `assuranceplan.(*Handler).ReplaceQuarters` |
 | POST | `/assurance-plans/:id/quarters/:q/select` | admin | `assuranceplan.(*Handler).SelectQuarter` |
 | POST | `/assurance-plans/:id/quarters/generate` | admin | `assuranceplan.(*Handler).GenerateQuarters` |
+| POST | `/assurance-plans/:id/results/:resultID/finding` | admin | `assuranceplan.(*Handler).RaiseFinding` |
 | POST | `/assurance-plans/:id/return` | admin | `assuranceplan.(*Handler).Return` |
 | GET | `/assurance-plans/:id/sampling` | signed in | `assuranceplan.(*Handler).Sampling` |
 | GET | `/assurance-plans/:id/seed` | admin | `assuranceplan.(*Handler).Seed` |
@@ -237,6 +242,11 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | PATCH | `/assurance-plans/:id/steps/:stepID` | admin | `assuranceplan.(*Handler).UpdateStepStatus` |
 | PUT | `/assurance-plans/:id/strata` | admin | `assuranceplan.(*Handler).ReplaceStrata` |
 | POST | `/assurance-plans/:id/submit` | admin | `assuranceplan.(*Handler).Submit` |
+| GET | `/assurance-plans/:id/tests` | signed in | `assuranceplan.(*Handler).Tests` |
+| POST | `/assurance-plans/:id/tests` | admin | `assuranceplan.(*Handler).CreateTests` |
+| PUT | `/assurance-plans/:id/tests/:testID` | admin | `assuranceplan.(*Handler).SaveTest` |
+| POST | `/assurance-plans/:id/tests/:testID/qa` | admin | `assuranceplan.(*Handler).SignOffQA` |
+| POST | `/assurance-plans/:id/thematic` | admin | `assuranceplan.(*Handler).PushThematic` |
 | GET | `/assurance-plans/:id/versions` | signed in | `assuranceplan.(*Handler).Versions` |
 | GET | `/assurance-plans/:id/versions/:n` | signed in | `assuranceplan.(*Handler).Version` |
 | GET | `/assurance-plans/data` | signed in | `assuranceplan.(*Handler).List` |

@@ -183,10 +183,10 @@ One row per risk: scenario, inherent and residual likelihood and impact (1 to 5)
 
 ### `audit_findings`
 
-One row per finding: the five elements (criteria, condition, cause, effect, recommendation), grading, ownership, management response, due dates and extensions, links to risks, controls and frameworks, validation and closure, risk acceptance, and who changed it.
+One row per finding: the five elements (criteria, condition, cause, effect, recommendation), grading, ownership, management response, due dates and extensions, links to risks, controls and frameworks, validation and closure, risk acceptance, and who changed it. `origin_ref` names what raised the finding (an assurance plan's `AP-2027-001 / T27-Q1-004 / NFR-04`); it is set at creation and never changed by an edit.
 
 - **Key:** `id`. **Travels:** backup only.
-- **Columns** (text unless a type is given): `id integer`, `reference`, `title`, `source`, `engagement`, `auditor`, `finding_type`, `severity`, `deficiency_type`, `criteria`, `condition_text`, `cause`, `effect`, `recommendation`, `root_cause_category`, `business_unit`, `process_area`, `owner`, `management_response`, `management_response_text`, `identified_date`, `report_date`, `original_due_date`, `due_date`, `extension_count integer`, `extension_reason`, `status`, `repeat_finding integer`, `prior_reference`, `linked_risks`, `linked_controls`, `framework_refs`, `validated_by`, `validation_date`, `validation_notes`, `closure_evidence`, `closed_date`, `risk_accepted_by`, `risk_acceptance_rationale`, `risk_acceptance_expiry`, `notes`, `created_at`, `created_by`, `updated_at`, `updated_by`.
+- **Columns** (text unless a type is given): `id integer`, `reference`, `title`, `source`, `engagement`, `auditor`, `finding_type`, `severity`, `deficiency_type`, `criteria`, `condition_text`, `cause`, `effect`, `recommendation`, `root_cause_category`, `business_unit`, `process_area`, `owner`, `management_response`, `management_response_text`, `identified_date`, `report_date`, `original_due_date`, `due_date`, `extension_count integer`, `extension_reason`, `status`, `repeat_finding integer`, `prior_reference`, `linked_risks`, `linked_controls`, `framework_refs`, `origin_ref`, `validated_by`, `validation_date`, `validation_notes`, `closure_evidence`, `closed_date`, `risk_accepted_by`, `risk_acceptance_rationale`, `risk_acceptance_expiry`, `notes`, `created_at`, `created_by`, `updated_at`, `updated_by`.
 
 ### `audit_finding_actions`
 
@@ -260,6 +260,38 @@ The frozen quarterly picks: written once by the selection action and never recom
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id`, `population_id` → `assurance_plan_population.id` (both on delete cascade).
 - **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `quarter integer`, `population_id integer`, `item_ref`, `stratum_code`, `basis`, `rank_order integer`, `rank_hash`, `plan_version integer`, `selected_at`, `selected_by`.
+
+### `assurance_plan_attributes`
+
+The test script: what 2LoD tests on every selected item. One row per attribute (`attr_ref` unique per plan), with its domain, requirement, test procedure, method (Inspection, Inquiry, Observation, Re-performance), evidence requested, pass criteria, the strata it applies to (comma-separated codes; empty = every stratum), regulatory references, 800-53 ids (comma-separated) and the Security NFR key it was copied from (empty = plan-local). Copied onto the plan, so a catalog edit does not change an approved plan; unresolved references are worked out on read.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `ordinal integer`, `attr_ref`, `domain`, `requirement`, `test_procedure`, `method`, `evidence_requested`, `pass_criteria`, `applies_to`, `regulatory_refs`, `control_ids`, `nfr_key`, `ai_generated integer`, `model`, `prompt_hash`.
+
+### `assurance_plan_tests`
+
+One test per frozen pick (`selection_id` unique), with its reference (`T27-Q1-001`, unique per plan), tester, the evidence requested, due (requested + the plan's evidence SLA in business days) and received dates, fieldwork completion, the evidence summary, and the QA sign-off (reviewer, date, and a note when the tester signed off their own test in single-user mode).
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id`, `selection_id` → `assurance_plan_selections.id` (both on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `selection_id integer`, `test_ref`, `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `qa_note`, `notes`, `created_at`, `created_by`, `updated_at`, `updated_by`.
+
+### `assurance_plan_results`
+
+One result per attribute per test (unique on `test_id`, `attribute_id`): Pass, Fail, N/A or empty (pending), a note, and, for a Fail raised in Audit Findings, the finding's id, reference and severity. `finding_id` is not a foreign key: a finding deleted in Audit Findings leaves the result showing it as missing. Indexed on `plan_id`.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id`, `test_id` → `assurance_plan_tests.id`, `attribute_id` → `assurance_plan_attributes.id` (all on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `test_id integer`, `attribute_id integer`, `result`, `note`, `finding_id integer`, `finding_ref`, `severity`.
+
+### `assurance_plan_thematic`
+
+Not-effective conclusions of the deviation rule pushed to the risk register, one per attribute and stratum (unique on `plan_id`, `attribute_id`, `stratum_code`): the risk's id and reference, the deviations counted at the push, the summary, and who pushed it when.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id`, `attribute_id` → `assurance_plan_attributes.id` (both on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `attribute_id integer`, `stratum_code`, `risk_id integer`, `risk_ref`, `deviations integer`, `note`, `pushed_at`, `pushed_by`.
 
 ### `assurance_plan_raci`, `assurance_plan_cadence`, `assurance_plan_escalations`
 

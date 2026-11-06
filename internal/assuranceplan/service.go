@@ -44,6 +44,7 @@ type Service struct {
 	// as in policydocs: in single-user mode the author is necessarily the
 	// approver, and enforcing it would make every plan unapprovable.
 	requireSeparateApprover bool
+	in                      Integrations
 }
 
 func NewService(repo Repository) *Service {
@@ -94,6 +95,10 @@ func (s *Service) Get(id int64) (Plan, error) {
 		return Plan{}, mapNotFound(err)
 	}
 	derive(&p)
+	if p.Attributes == nil {
+		p.Attributes = []Attribute{}
+	}
+	s.resolveAttributes(p.Attributes)
 	return p, nil
 }
 
@@ -178,6 +183,12 @@ func (s *Service) insertNew(p Plan, population []PopulationItem, actor string, c
 		return Plan{}, err
 	}
 	if err := normalizeStrata(p.Strata); err != nil {
+		return Plan{}, err
+	}
+	if p.Attributes == nil {
+		p.Attributes = []Attribute{}
+	}
+	if err := normalizeAttributes(p.Attributes, p.Strata); err != nil {
 		return Plan{}, err
 	}
 	if err := normalizeSteps(p.Steps); err != nil {

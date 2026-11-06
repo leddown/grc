@@ -83,9 +83,12 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   Approved → Active → Closed with an approval gate (422), immutable approval
   snapshots, a locked design after approval that changes only through a change
   request, and clone for next year. The sampling engine is pure functions in
-  `sampling.go`. The scope population is CSV text pasted into the page and
-  posted as JSON. It is structured data, not a document, and there is no
-  upload — see `ASSURANCE_PLANS.md`
+  `sampling.go`, the result and deviation rules in `execution.go`. The scope
+  population is CSV text pasted into the page and posted as JSON. It is
+  structured data, not a document, and there is no upload. A Fail is raised as a
+  finding through `auditfinding.Service` and a thematic conclusion goes to the
+  risk register through `riskregister.Service`; the module keeps no finding or
+  risk register of its own — see `ASSURANCE_PLANS.md`
 - `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
   the exercise arc from red team through incident response, DORA incident
   classification and its notification clocks, crisis and continuity activation,

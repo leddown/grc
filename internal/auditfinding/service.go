@@ -156,6 +156,7 @@ func (s *Service) Update(id int64, f Finding, actor string) (Finding, error) {
 	// row so extensions cannot be hidden by editing the payload.
 	f.OriginalDueDate = prev.OriginalDueDate
 	f.ExtensionCount = prev.ExtensionCount
+	f.OriginRef = prev.OriginRef
 	if f.DueDate == "" {
 		f.DueDate = prev.DueDate
 	}
@@ -451,7 +452,7 @@ func normalize(f *Finding) error {
 		&f.DeficiencyType, &f.Criteria, &f.Condition, &f.Cause, &f.Effect, &f.Recommendation,
 		&f.RootCauseCategory, &f.BusinessUnit, &f.ProcessArea, &f.Owner, &f.ManagementResponse,
 		&f.ManagementResponseText, &f.IdentifiedDate, &f.ReportDate, &f.DueDate, &f.ExtensionReason,
-		&f.Status, &f.PriorReference, &f.LinkedRisks, &f.LinkedControls, &f.FrameworkRefs,
+		&f.Status, &f.PriorReference, &f.LinkedRisks, &f.LinkedControls, &f.FrameworkRefs, &f.OriginRef,
 		&f.ValidatedBy, &f.ValidationDate, &f.ValidationNotes, &f.ClosureEvidence, &f.ClosedDate,
 		&f.RiskAcceptedBy, &f.RiskAcceptanceRationale, &f.RiskAcceptanceExpiry, &f.Notes,
 	} {

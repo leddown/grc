@@ -24,6 +24,14 @@ type Repository interface {
 	UpdatePopulationItem(planID int64, item PopulationItem, history []HistoryEntry) error
 	Selections(planID int64) ([]Selection, error)
 	SaveSelection(planID int64, quarter int, picks []Selection, activate *Plan, history []HistoryEntry) error
+	ReplaceAttributes(planID int64, attrs []Attribute, history []HistoryEntry) error
+	Tests(planID int64) ([]Test, error)
+	CreateTests(planID int64, tests []Test, history []HistoryEntry) error
+	SaveTest(planID int64, t Test, history []HistoryEntry) error
+	LinkFinding(planID, resultID, findingID int64, findingRef, severity string, history []HistoryEntry) error
+	Thematics(planID int64) ([]Thematic, error)
+	AddThematic(planID int64, t Thematic, history []HistoryEntry) error
+	AddHistory(planID int64, history []HistoryEntry) error
 	Delete(id int64) error
 	ReferencesWithPrefix(prefix string) ([]string, error)
 	History(planID int64) ([]HistoryEntry, error)
@@ -208,6 +216,9 @@ func (r *SQLiteRepository) Get(id int64) (Plan, error) {
 	if p.Strata, err = r.strata(id); err != nil {
 		return Plan{}, err
 	}
+	if p.Attributes, err = r.attributes(id); err != nil {
+		return Plan{}, err
+	}
 	if p.RACI, err = r.raci(id); err != nil {
 		return Plan{}, err
 	}
@@ -348,6 +359,9 @@ func (r *SQLiteRepository) Create(p Plan, population []PopulationItem, history [
 		return 0, err
 	}
 	if err := writeStrata(tx, id, p.Strata); err != nil {
+		return 0, err
+	}
+	if err := writeAttributes(tx, id, p.Attributes); err != nil {
 		return 0, err
 	}
 	for _, item := range population {

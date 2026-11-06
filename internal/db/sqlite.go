@@ -773,6 +773,7 @@ func OpenSQLite(path string) (*Conn, error) {
 		linked_risks TEXT NOT NULL DEFAULT '',
 		linked_controls TEXT NOT NULL DEFAULT '',
 		framework_refs TEXT NOT NULL DEFAULT '',
+		origin_ref TEXT NOT NULL DEFAULT '',
 		validated_by TEXT NOT NULL DEFAULT '',
 		validation_date TEXT NOT NULL DEFAULT '',
 		validation_notes TEXT NOT NULL DEFAULT '',
@@ -1053,6 +1054,95 @@ func OpenSQLite(path string) (*Conn, error) {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_assurance_plan_selections_plan ON assurance_plan_selections (plan_id, quarter);
+
+	-- The test script. Attributes are copied onto the plan, so a later catalog
+	-- edit does not change an approved plan; nfr_key is empty for a plan-local
+	-- attribute. A replace keeps each attribute's id by reference, because
+	-- results point at it.
+	CREATE TABLE IF NOT EXISTS assurance_plan_attributes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		plan_id INTEGER NOT NULL,
+		ordinal INTEGER NOT NULL DEFAULT 0,
+		attr_ref TEXT NOT NULL DEFAULT '',
+		domain TEXT NOT NULL DEFAULT '',
+		requirement TEXT NOT NULL DEFAULT '',
+		test_procedure TEXT NOT NULL DEFAULT '',
+		method TEXT NOT NULL DEFAULT '',
+		evidence_requested TEXT NOT NULL DEFAULT '',
+		pass_criteria TEXT NOT NULL DEFAULT '',
+		applies_to TEXT NOT NULL DEFAULT '',
+		regulatory_refs TEXT NOT NULL DEFAULT '',
+		control_ids TEXT NOT NULL DEFAULT '',
+		nfr_key TEXT NOT NULL DEFAULT '',
+		ai_generated INTEGER NOT NULL DEFAULT 0,
+		model TEXT NOT NULL DEFAULT '',
+		prompt_hash TEXT NOT NULL DEFAULT '',
+		UNIQUE (plan_id, attr_ref),
+		FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS assurance_plan_tests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		plan_id INTEGER NOT NULL,
+		selection_id INTEGER NOT NULL UNIQUE,
+		test_ref TEXT NOT NULL DEFAULT '',
+		tester TEXT NOT NULL DEFAULT '',
+		evidence_requested_on TEXT NOT NULL DEFAULT '',
+		evidence_due_on TEXT NOT NULL DEFAULT '',
+		evidence_received_on TEXT NOT NULL DEFAULT '',
+		fieldwork_completed_on TEXT NOT NULL DEFAULT '',
+		evidence_summary TEXT NOT NULL DEFAULT '',
+		qa_reviewer TEXT NOT NULL DEFAULT '',
+		qa_date TEXT NOT NULL DEFAULT '',
+		qa_note TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT '',
+		created_by TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT '',
+		updated_by TEXT NOT NULL DEFAULT '',
+		UNIQUE (plan_id, test_ref),
+		FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+		FOREIGN KEY(selection_id) REFERENCES assurance_plan_selections(id) ON DELETE CASCADE
+	);
+
+	-- finding_id is an audit_findings id but not a foreign key: a finding
+	-- belongs to Audit Findings, and deleting it there must not delete the
+	-- test result that raised it.
+	CREATE TABLE IF NOT EXISTS assurance_plan_results (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		plan_id INTEGER NOT NULL,
+		test_id INTEGER NOT NULL,
+		attribute_id INTEGER NOT NULL,
+		result TEXT NOT NULL DEFAULT '',
+		note TEXT NOT NULL DEFAULT '',
+		finding_id INTEGER NOT NULL DEFAULT 0,
+		finding_ref TEXT NOT NULL DEFAULT '',
+		severity TEXT NOT NULL DEFAULT '',
+		UNIQUE (test_id, attribute_id),
+		FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+		FOREIGN KEY(test_id) REFERENCES assurance_plan_tests(id) ON DELETE CASCADE,
+		FOREIGN KEY(attribute_id) REFERENCES assurance_plan_attributes(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_assurance_plan_results_plan ON assurance_plan_results (plan_id);
+
+	-- A not-effective conclusion pushed to the risk register; risk_id is the
+	-- register's row id, not a foreign key, for the same reason as finding_id.
+	CREATE TABLE IF NOT EXISTS assurance_plan_thematic (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		plan_id INTEGER NOT NULL,
+		attribute_id INTEGER NOT NULL,
+		stratum_code TEXT NOT NULL DEFAULT '',
+		risk_id INTEGER NOT NULL DEFAULT 0,
+		risk_ref TEXT NOT NULL DEFAULT '',
+		deviations INTEGER NOT NULL DEFAULT 0,
+		note TEXT NOT NULL DEFAULT '',
+		pushed_at TEXT NOT NULL DEFAULT '',
+		pushed_by TEXT NOT NULL DEFAULT '',
+		UNIQUE (plan_id, attribute_id, stratum_code),
+		FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+		FOREIGN KEY(attribute_id) REFERENCES assurance_plan_attributes(id) ON DELETE CASCADE
+	);
 
 	-- Policy Studio (internal/policystudio): the live collaborative document
 	-- of a Studio-format policy, as Yjs binary. policy_doc_state is the
@@ -1572,6 +1662,10 @@ func OpenSQLite(path string) (*Conn, error) {
 		return nil, err
 	}
 	if err := ensureColumn(db, "security_risk_register", "notes", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return nil, err
+	}
+	// origin_ref names the assurance plan test a finding was raised from.
+	if err := ensureColumn(db, "audit_findings", "origin_ref", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return nil, err
 	}
 	if err := ensureIndex(db, "idx_nist_controls_control_id", "CREATE INDEX IF NOT EXISTS idx_nist_controls_control_id ON nist_controls(control_id)"); err != nil {

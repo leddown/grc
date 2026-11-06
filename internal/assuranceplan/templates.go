@@ -32,6 +32,7 @@ type PlanTemplate struct {
 	Quarters templateQuarters `json:"quarters"`
 	Steps    []templateStep   `json:"steps"`
 	Strata   []Stratum        `json:"strata"`
+	Attrs    []Attribute      `json:"attributes"`
 	RACI     []RACIRow        `json:"raci"`
 	Cadence  []Cadence        `json:"cadence"`
 	Escal    []Escalation     `json:"escalations"`
@@ -247,6 +248,7 @@ func instantiate(t PlanTemplate, periodStart, periodEnd string, now time.Time) (
 	sortStepsByRef(p.Steps)
 
 	p.Strata = slices.Clone(t.Strata)
+	p.Attributes = slices.Clone(t.Attrs)
 	p.RACI = slices.Clone(t.RACI)
 	p.Cadence = slices.Clone(t.Cadence)
 	p.Escalations = slices.Clone(t.Escal)

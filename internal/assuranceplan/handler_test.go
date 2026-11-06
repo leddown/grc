@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"grc/internal/auditfinding"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -156,6 +158,9 @@ func TestPlanPageRendersEveryTabWithExplicitStatusColours(t *testing.T) {
 func TestStatusPillsAlwaysPrintTheirWord(t *testing.T) {
 	words := append(append([]string{}, Statuses...), StepStatuses...)
 	words = append(append(append(words, DQStatuses...), SelectionBases...), "Selected", "Not selected", "Over threshold", "Within capacity", "Blocking", "Advisory")
+	words = append(append(append(words, Results...), OverallResults...), "Green", "Amber", "Red", "Not due", "Unresolved", "Missing", "Overdue",
+		"Evidence late", "Awaiting QA", "Signed off")
+	words = append(append(words, auditfinding.Severities...), auditfinding.Statuses...)
 	for _, word := range words {
 		pill := statusPill(word)
 		if !strings.Contains(pill, ">"+word+"<") || !strings.Contains(pill, "ap-st-") {

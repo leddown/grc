@@ -38,7 +38,7 @@ const pageStyles = `
          background: var(--surface-2, #1f232c); cursor: pointer; }
   button.primary { background: var(--accent, #6ea8fe); color: var(--on-accent, #0b0d12); border-color: var(--accent, #6ea8fe); }
   button.danger { color: var(--error, #ff8a8a); border-color: var(--error, #ff8a8a); }
-  button.mini { padding: 0 6px; min-height: 20px; font-size: 11px; }
+  button.mini { padding: 0 6px; min-height: 20px; font-size: 11px; white-space: nowrap; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border, #2a2f3a); vertical-align: top; }
   thead th { background: var(--surface-2, #1f232c); color: var(--muted, #8b93a3); font-size: 11px;
@@ -72,7 +72,7 @@ const pageStyles = `
   .edit-table td textarea { min-height: 26px; }
   .edit-table td.ctl { white-space: nowrap; width: 1%; }
   .pre { white-space: pre-wrap; }
-  table.ap-nowrap td, table.ap-nowrap th { white-space: nowrap; }
+  table.ap-nowrap td, table.ap-nowrap th, td.ap-nw { white-space: nowrap; }
   button.link-btn { background: none; border: 0; padding: 0; min-height: 0; color: var(--accent, #6ea8fe); }
   label.ap-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text, #e6e8ec); }
   label.ap-check input { width: auto; min-height: 0; margin: 0; }
@@ -81,17 +81,22 @@ const pageStyles = `
 
   .ap-st { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11px; line-height: 18px;
          border: 1px solid; white-space: nowrap; font-weight: 600; }
-  .ap-st-draft, .ap-st-not-started, .ap-st-closed, .ap-st-none, .ap-st-advisory, .ap-st-not-selected, .ap-st-not-reviewed {
+  .ap-st-draft, .ap-st-not-started, .ap-st-closed, .ap-st-none, .ap-st-advisory, .ap-st-not-selected, .ap-st-not-reviewed,
+  .ap-st-n-a, .ap-st-not-tested, .ap-st-not-due, .ap-st-missing, .ap-st-low, .ap-st-risk-accepted {
          color: var(--muted, #8b93a3); background: var(--surface-2, #1f232c); border-color: var(--border, #2a2f3a); }
-  .ap-st-in-review, .ap-st-in-progress, .ap-st-statistical {
+  .ap-st-in-review, .ap-st-in-progress, .ap-st-statistical, .ap-st-awaiting-qa, .ap-st-open, .ap-st-in-remediation,
+  .ap-st-pending-validation, .ap-st-reopened {
          color: var(--accent, #6ea8fe); background: var(--surface, #171a21);
          background: color-mix(in srgb, var(--accent, #6ea8fe) 14%, var(--surface, #171a21)); border-color: var(--accent, #6ea8fe); }
-  .ap-st-approved, .ap-st-active, .ap-st-complete, .ap-st-selected, .ap-st-within-capacity, .ap-st-accepted, .ap-st-full-coverage {
+  .ap-st-approved, .ap-st-active, .ap-st-complete, .ap-st-selected, .ap-st-within-capacity, .ap-st-accepted, .ap-st-full-coverage,
+  .ap-st-pass, .ap-st-effective, .ap-st-green, .ap-st-signed-off {
          color: var(--gain, #7ddc9a); background: var(--surface, #171a21);
          background: color-mix(in srgb, var(--gain, #7ddc9a) 14%, var(--surface, #171a21)); border-color: var(--gain, #7ddc9a); }
-  .ap-st-at-risk, .ap-st-risk-based-top-up, .ap-st-returned-to-1lod {
+  .ap-st-at-risk, .ap-st-risk-based-top-up, .ap-st-returned-to-1lod, .ap-st-partially-effective, .ap-st-extend, .ap-st-amber,
+  .ap-st-medium, .ap-st-evidence-late, .ap-st-unresolved {
          color: #f5b83d; background: #2a2210; border-color: #f5b83d; }
-  .ap-st-delayed, .ap-st-blocking, .ap-st-over-threshold {
+  .ap-st-delayed, .ap-st-blocking, .ap-st-over-threshold, .ap-st-fail, .ap-st-ineffective, .ap-st-not-effective, .ap-st-red,
+  .ap-st-critical, .ap-st-high, .ap-st-overdue {
          color: var(--error, #ff8a8a); background: var(--surface, #171a21);
          background: color-mix(in srgb, var(--error, #ff8a8a) 14%, var(--surface, #171a21)); border-color: var(--error, #ff8a8a); }
 
@@ -323,6 +328,8 @@ type planPageData struct {
 	Plan        Plan
 	Population  []PopulationItem
 	Sampling    SamplingView
+	Tests       []Test
+	Dashboard   DashboardView
 	Lint        []LintFinding
 	History     []HistoryEntry
 	Versions    []Version
@@ -338,6 +345,9 @@ var planTabs = []struct{ id, label string }{
 	{"quarters", "Quarterly plan"},
 	{"sampling", "Sampling"},
 	{"population", "Scope population"},
+	{"script", "Test script"},
+	{"tests", "Tests"},
+	{"dashboard", "Dashboard"},
 	{"governance", "Governance"},
 	{"history", "History & versions"},
 }
@@ -379,6 +389,9 @@ func planPageHTML(d planPageData) string {
 <section class="tab-panel" id="tab-quarters" hidden>` + quartersHTML(p) + quarterTargetsHTML(d.Sampling) + `</section>
 <section class="tab-panel" id="tab-sampling" hidden>` + samplingHTML(d) + `</section>
 <section class="tab-panel" id="tab-population" hidden>` + populationHTML(d) + `</section>
+<section class="tab-panel" id="tab-script" hidden>` + attributesHTML(d) + `</section>
+<section class="tab-panel" id="tab-tests" hidden>` + testsHTML(d) + `</section>
+<section class="tab-panel" id="tab-dashboard" hidden>` + dashboardHTML(d) + `</section>
 <section class="tab-panel" id="tab-governance" hidden>` + governanceHTML(p) + `</section>
 <section class="tab-panel" id="tab-history" hidden>` + historyHTML(d) + `</section>
 </main>
@@ -386,8 +399,9 @@ func planPageHTML(d planPageData) string {
 <script type="application/json" id="vocab-data">` + jsonData(Vocab()) + `</script>
 <script type="application/json" id="page-data">` + jsonData(map[string]any{"viewer": d.Viewer, "sep_enforced": d.SepEnforced}) + `</script>
 <script type="application/json" id="population-data">` + jsonData(nonNil(d.Population)) + `</script>
+<script type="application/json" id="tests-data">` + jsonData(nonNil(d.Tests)) + `</script>
 <script>
-` + sharedScript + planScript + scopeScript + `
+` + sharedScript + planScript + scopeScript + execScript + `
 </script>
 </body>
 </html>`
@@ -461,6 +475,9 @@ func overviewHTML(d planPageData) string {
 	b.WriteString(card(strconv.Itoa(len(p.Quarters)), "Quarters"))
 	b.WriteString(card(strconv.Itoa(len(d.Population)), "Items in scope"))
 	b.WriteString(card(strconv.Itoa(d.Sampling.TotalTests), "Tests planned"))
+	b.WriteString(card(strconv.Itoa(len(p.Attributes)), "Test attributes"))
+	b.WriteString(card(strconv.Itoa(len(d.Tests)), "Tests opened"))
+	b.WriteString(card(strconv.Itoa(d.Dashboard.TestsDone), "Signed off by QA"))
 	b.WriteString(card(firstNonEmpty(p.LatestVersion, "none"), "Approved version"))
 	b.WriteString(card(strconv.Itoa(blocking), "Blocking issues"))
 	b.WriteString(card(strconv.Itoa(advisory), "Advisory notes"))

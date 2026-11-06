@@ -33,6 +33,11 @@ evidence that the fix was validated before the finding closed. Code:
   (corrective/preventive), owner, due date, status, completed date and evidence.
 - **Links:** risk register IDs, control IDs, framework or regulation
   references, repeat flag, prior reference.
+- **Origin:** what raised the finding, when another module did. "Raise finding"
+  on an assurance plan's failed test attribute sets it to the plan, test and
+  attribute (`AP-2027-001 / T27-Q1-004 / NFR-04`), with source Second Line
+  Review. It is set at creation, an edit never changes it, and the page shows
+  it read-only as "Raised from", linked to the plan.
 - **Closure:** validated by, validation date, closure evidence, validation
   notes, closed date. **Risk acceptance:** approver, rationale, expiry.
 - **Audit trail:** created/updated at and by, and the history table.
@@ -77,7 +82,8 @@ admin, the same split as the risk register.
 
 ## Backup
 
-The findings are part of the JSON snapshot (snapshot version 9). Like Regulation
+The findings are part of the JSON snapshot (snapshot version 9; `origin_ref`
+joined at version 16, and an older snapshot restores with it blank). Like Regulation
 Coverage and the crisis exercises, they are excluded from `-sync-to` /
 `-sync-from`, because their child rows are joined by autoincrement ids.
 

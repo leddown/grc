@@ -19,10 +19,12 @@ governance, lifecycle and approval gate, versions, history, clone, and the
 Controls testing and Blank types with the worked 2027 example. Phase 2
 (sampling and scope) is in: strata, the scope population and its CSV paste
 import, the sampling engine, quarterly allocation and capacity, the freeze and
-the frozen quarterly selection. Test attributes, tests and findings (phase 3),
-exports and documents (phase 4), the other plan types (phase 5) and AI assist
-(phase 6) are described below as designed, and marked with their phase where
-the code does not have them yet.
+the frozen quarterly selection. Phase 3 (execution) is in: the test script and
+its seeding from the catalogs, tests and results with the evidence SLA and QA
+sign-off, the deviation rule, "Raise finding" into Audit Findings, the thematic
+push to the risk register, and the dashboard. Exports and documents (phase 4),
+the other plan types (phase 5) and AI assist (phase 6) are described below as
+designed, and marked with their phase where the code does not have them yet.
 
 The module produces:
 
@@ -109,11 +111,11 @@ which is why the module is excluded from `-sync-to` / `-sync-from` (see
 | `assurance_plan_quarters` | The operating cycle | `plan_id`, `quarter` (1–4), `lod1_window_start`, `lod1_deadline`, `selection_date`, `fieldwork_start`, `fieldwork_end`, `findings_agreed_by`, `report_date`, `committee_label`, `retest_days`, `overhead_days`, `selected_at`, `selected_by` |
 | `assurance_plan_strata` | Strata and their sampling parameters | `plan_id`, `ordinal`, `code` (unique per plan), `name`, `definition`, `sampling_enabled`, `confidence`, `tolerable_rate`, `floor_pct`, `effort_per_test`, `effort_per_review`, `wave_q1`..`wave_q4`, `topup_q1`..`topup_q4`, `planned_size` |
 | `assurance_plan_population` | The scope population | `plan_id`, `item_ref` (unique per plan), `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing`, `owner`, `wave_quarter`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter`, `topup_rationale`, `source_kind`, `source_ref` (for populations proposed from policies or findings, phase 5) |
-| `assurance_plan_attributes` (phase 3) | The test script | `plan_id`, `ordinal`, `attr_ref`, `domain`, `requirement`, `procedure`, `method`, `evidence_requested`, `pass_criteria`, `applies_to` (stratum codes), `regulatory_refs`, `control_ids`, `nfr_key` (empty = plan-local), `unresolved_refs`, AI provenance |
+| `assurance_plan_attributes` | The test script | `plan_id`, `ordinal`, `attr_ref` (unique per plan), `domain`, `requirement`, `test_procedure`, `method` (Inspection / Inquiry / Observation / Re-performance), `evidence_requested`, `pass_criteria`, `applies_to` (stratum codes, comma-separated; empty = every stratum), `regulatory_refs`, `control_ids`, `nfr_key` (empty = plan-local), `ai_generated`, `model`, `prompt_hash`. Unresolved references are worked out on read, not stored. |
 | `assurance_plan_selections` | Frozen picks | `plan_id`, `quarter`, `population_id` (on delete cascade), `item_ref`, `stratum_code`, `basis` (Statistical / Risk-based top-up / Full coverage), `rank_order` (the item's place in its stratum and wave's ranking; 0 for a top-up), `rank_hash`, `plan_version` (the approved version the draw was made under), `selected_at`, `selected_by`; unique (`plan_id`, `population_id`). The seed is on the plan, not on each pick. |
-| `assurance_plan_tests` (phase 3) | One test per selection | `plan_id`, `selection_id` (unique), `test_ref`, `test_type`, `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `notes` |
-| `assurance_plan_results` (phase 3) | One result per attribute per test | `test_id`, `attribute_id` (unique together), `result` (Pass / Fail / N/A / empty), `note`, `finding_id`, `finding_ref`, `severity` |
-| `assurance_plan_thematic` (phase 3) | Not-effective conclusions pushed to the risk register | `plan_id`, `attribute_id`, `stratum_code`, `risk_id`, `pushed_at`, `pushed_by` |
+| `assurance_plan_tests` | One test per selection | `plan_id`, `selection_id` (unique, on delete cascade), `test_ref` (unique per plan), `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `qa_note`, `notes`, `created_*`, `updated_*`. The test type (controls test, policy review, …) comes with the other plan types in phase 5. |
+| `assurance_plan_results` | One result per attribute per test | `plan_id`, `test_id`, `attribute_id` (unique together, both on delete cascade), `result` (Pass / Fail / N/A / empty), `note`, `finding_id`, `finding_ref`, `severity` |
+| `assurance_plan_thematic` | Not-effective conclusions pushed to the risk register | `plan_id`, `attribute_id`, `stratum_code` (unique together), `risk_id`, `risk_ref`, `deviations`, `note`, `pushed_at`, `pushed_by` |
 | `assurance_plan_raci` | RACI rows | `plan_id`, `ordinal`, `activity`, `cells` (JSON object, role → R, A, C, I or A/R). The plan stores the role columns in `raci_roles`. |
 | `assurance_plan_cadence` | Reporting cadence | `plan_id`, `ordinal`, `forum`, `frequency`, `content`, `owner` |
 | `assurance_plan_escalations` | Escalation triggers | `plan_id`, `ordinal`, `trigger_text`, `escalate_to`, `within_text` |
@@ -123,7 +125,9 @@ which is why the module is excluded from `-sync-to` / `-sync-from` (see
 
 Phase 3 adds one column to an existing table: `audit_findings.origin_ref` (for
 example `AP-2027-001 / T27-Q1-004 / NFR-04`). It is the plan side of the
-two-way link. Existing databases get it through `ensureColumn` and
+two-way link. It is set when the finding is created and an edit in Audit
+Findings never changes it; the finding's page shows it as "Raised from", linked
+back to the plan. Existing databases get it through `ensureColumn` and
 `ADD COLUMN IF NOT EXISTS`.
 
 **Plan parameters** (columns on `assurance_plans`, defaults in brackets):
@@ -240,7 +244,10 @@ shape as `policydocs.ApprovalError`.
 - a RACI activity with no Accountable role, or with more than one
 - utilisation above the threshold in any quarter
 - attribute references that do not resolve against the control or NFR
-  catalogs (phase 3)
+  catalogs, one finding per attribute (only when both catalogs are wired in;
+  without them nothing is checked and nothing is claimed)
+- a plan that samples items but has no test attributes
+- an attribute with no pass criteria
 - a stratum with no population yet (the finding says whether it is sized on its
   planned size or at zero)
 - a stratum whose wave counts differ from its wave percentages, giving both
@@ -430,6 +437,29 @@ until about one week after the deadline.
 
 ### Test results and the deviation rule
 
+**Tests.** A test is opened for each pick of a selected quarter ("Open N
+test(s) for Qn" on the Tests tab, or `POST …/tests`), only while the plan is
+Approved or Active. Tests follow the plan of record while a change request is
+open; a closed plan's tests no longer change.
+
+- Test references run per quarter: `T27-Q1-001`, `T27-Q1-002`, … (the period's
+  two-digit year, the quarter, a three-digit number after the highest one
+  already used).
+- The tester defaults to the person opening the tests. Evidence is due
+  `evidence_sla_days` (10) business days after it is requested, counting
+  neither the request day nor the plan's non-working dates; 2 March 2027 gives
+  16 March 2027. Evidence received after the due date, or not received by
+  then, is flagged late.
+- The QA sign-off is four-eyes. It needs the fieldwork completion date and a
+  result for every attribute that applies. When more than one person can sign
+  in (the same switch as the approval gate), the tester cannot sign off their
+  own test (409). In single-user or local mode the sign-off goes through with a
+  warning, stored in `qa_note`.
+- Any change to a signed-off test withdraws the sign-off, and the answer says
+  so (`qa_withdrawn`).
+- A result that has a finding stays a Fail (409): the finding is closed in
+  Audit Findings, not by editing the test.
+
 **Test result.** Each test has one result per attribute that applies to its
 stratum.
 
@@ -451,25 +481,55 @@ year:
 
 | Deviations | Conclusion |
 |---|---|
+| none tested | Not tested |
 | 0 | No deviations / effective |
 | 1 | 1 deviation – extend sample. Suggests +50% of the next quarter's sample for that attribute. |
 | ≥ 2 | Not effective – thematic finding |
+
+The thresholds are `deviation_extend_at` and `deviation_thematic_at`. The
+extension is `extend_pct` of the stratum's planned tests in the quarter after
+the last one tested, rounded up: one Tier 1 deviation in Q1 suggests +7 (half
+of Q2's 13), one Tier 2 deviation +4 (half of 7). A deviation in Q4 has no later
+quarter that year and is carried into next year's sample. The extension is a
+suggestion shown on the dashboard; the frozen selection is not changed.
 
 Every individual Fail is still an asset-level finding.
 
 ### Coverage RAG
 
-Per stratum and quarter, the cumulative planned figure (cum wave % × N) is
-compared with the items actually attested by the calendar quarter end:
+Per stratum and quarter, the cumulative wave target (35 / 70 / 100 / 100% for
+Tier 1) is compared with the share of the stratum's items whose attestation date
+is on or before the calendar quarter end:
 
 | RAG | When |
 |---|---|
 | Green | On or above plan |
 | Amber | Within `rag_amber_points` (10) points below plan |
 | Red | More than that below plan |
-| Not due | Before the quarter end |
+| Not due | Before the quarter end, or the stratum has no items |
 
 The word is always printed next to the colour.
+
+### Dashboard
+
+The Dashboard tab (and `GET …/dashboard`) shows:
+
+- cards: tests planned, items selected, tests opened, signed off by QA,
+  attribute fails, findings raised, open and overdue
+- 1LoD coverage against plan: each stratum's four quarter cells with their RAG,
+  and the year-end tracker (items attested, and data quality accepted, against
+  every item of every stratum)
+- 2LoD testing progress per quarter: planned, selected, opened, fieldwork done,
+  QA signed off, evidence late, and the tests by overall result
+- deviations by attribute and stratum, with the conclusion, the failing tests
+  and the next step (the extension, "Push to risk register", or the risk
+  already raised)
+- findings raised from the plan by severity (raised, draft, open, overdue,
+  closed or risk accepted), and the list of linked findings. These are read
+  from Audit Findings, so their status, due date and overdue flag are that
+  module's. A Draft is not counted as open. A linked finding that was deleted
+  in Audit Findings is shown as Missing, and its Fail can be raised again.
+- utilisation per quarter against the threshold
 
 ### Golden values (Appendix A, the reference plan)
 
@@ -497,47 +557,84 @@ fields:
 
 | Field | Value |
 |---|---|
+| `title` | "NFR-04 Access management & recertification not met on T1-021 Example Core banking ledger 02", unless one is given |
 | `source` | "Second Line Review" |
 | `engagement` | "AP-2027-001 2027 Security NFR Controls Testing Plan" |
 | `origin_ref` | plan / test / attribute reference |
+| `auditor` | the tester |
+| `owner` | the one given, else the item's owner in the population (400 if neither) |
+| `business_unit` | the plan's function |
 | `linked_controls` | the attribute's 800-53 ids |
-| `framework_refs` | the attribute's regulatory references and NFR key |
+| `framework_refs` | the attribute's regulatory references and "Security NFR <key>" |
 | `deficiency_type` | Operating Effectiveness |
 | `condition` | the test's evidence summary and the result note |
 | `criteria` | the attribute's requirement and pass criteria |
-| `severity` | the tester's choice |
+| `severity` | the tester's choice (required) |
+| `identified_date` | the fieldwork completion date, else today |
+| `status` | Open, or Draft |
 
 `source` is a closed vocabulary in Audit Findings, so the plan reference goes in
 `engagement` and `origin_ref` instead. With no due date given, the finding's
-own SLA defaults apply.
+own SLA defaults apply (High: 90 days from the identified date).
 
-The finding's id and reference are stored on the result. The dashboard reads
-open and overdue counts by severity for the findings linked to the plan.
+The finding's id, reference and severity are stored on the result, and the plan
+reference on the finding, so the link runs both ways. A Fail raises one
+finding; a second raise answers 409 unless that finding was deleted. Raising
+needs the plan to be Approved or Active, and records a `finding` event in the
+plan's history.
 
 ### Thematic push to the risk register
 
 A Not effective conclusion can be pushed to the risk register: "Push to risk
-register" creates a `riskregister.Risk`.
+register" creates a `riskregister.Risk` through the register's own service. The
+person pushing names the owner and rates likelihood and impact (1 to 5).
 
-- Title: attribute and stratum.
-- Asset: the stratum.
-- Vulnerability: the deviation summary.
-- Notes: the plan reference.
+- Risk id: plan, attribute and stratum, `AP-2027-001-NFR-04-T1`.
+- Title: "NFR-04 Access management & recertification not effective for Tier 1".
+- Asset: the stratum. Business unit: the plan's function.
+- Vulnerability: the deviation summary, naming the failing tests.
+- Current controls: the attribute's 800-53 ids.
+- Residual likelihood and impact start equal to the inherent ones. The plan
+  does not judge what the controls are worth; the risk's owner does.
+- Notes: the plan reference and the rule that concluded it.
 
-The risk id is stored in `assurance_plan_thematic`. Crisis exercises only cite
-risks and do not create them, so this is a new, small write path through the
-register's existing service.
+Only a Not effective conclusion can be pushed (409 otherwise), and only once:
+the risk's id and reference are stored in `assurance_plan_thematic` and shown on
+the deviation's row. Crisis exercises only cite risks and do not create them,
+so this is a new, small write path through the register's existing service.
 
 ### Test attributes from the catalogs
 
-Attributes are seeded from chosen Security NFRs (`nfr_key` = the NFR's record
-key) or from chosen 800-53 controls. They are copied onto the plan. Control ids
-are checked against `nist_controls`, and any that do not resolve go in
-`unresolved_refs`. They are never presented as resolved.
+Attributes are seeded from chosen Security NFRs or from chosen 800-53 controls
+(the "Copy from the catalogs" box on the Test script tab, or
+`POST …/attributes/seed`). They are copied onto the plan, so a later catalog
+edit does not change an approved plan.
+
+- An NFR is found by its record key, its ID (`0.1`) or `NFR-` and its ID. The
+  attribute's reference is `NFR-0.1` and it keeps the record key in `nfr_key`.
+  The requirement is the NFR's summary (without its ID) and description, the
+  pass criteria its implementation text, the 800-53 ids its NIST mapping.
+- A control becomes an attribute with its id as the reference, its family as
+  the domain, its name as the requirement and its requirement text as the pass
+  criteria.
+- A reference already in the test script is skipped, and one not in the catalog
+  is reported as not found. The answer lists what was added, skipped and not
+  found.
+
+On every read, each attribute's control ids and NFR key are checked against
+`nist_controls` and `security_nfrs`. Any that do not resolve are marked
+Unresolved on the page and in the gate's advisory findings; they are never
+presented as resolved.
+
+The test script is part of the design: it is edited while the design is open
+and locked after approval, like the steps and strata. Under a change request an
+attribute that already has results cannot be removed, nor narrowed off a
+stratum where it has results; editing its text keeps its results attached.
 
 The shipped NFR catalog numbers its entries `0.1`, `1.1` and so on. Appendix A's
-`NFR-01`..`NFR-16` do not exist there, so they are seeded as plan-local
-attributes. A plan-local attribute can be linked to a catalog NFR later.
+`NFR-01`..`NFR-16` do not exist there, so they are plan-local attributes,
+carried by the Controls testing template. A plan-local attribute can be linked
+to a catalog NFR later by setting its NFR key.
 
 ### Proposed populations
 
@@ -628,10 +725,14 @@ spend need admin, the same split as the risk register and Audit Findings.
   capacity, each with its inputs and where N came from; the freeze, the seed
   commitment and each quarter's selection
 - `GET /assurance-plans/:id/selections`: every frozen pick
-- `GET /assurance-plans/:id/tests?quarter=` (phase 3)
+- `GET /assurance-plans/:id/tests?quarter=`: the tests with their item,
+  results, counts, overall result and evidence lateness
+- `GET /assurance-plans/:id/deviations`: the deviation rule per attribute and
+  stratum, with the extension or the risk pushed
 - `GET /assurance-plans/:id/lint`: the approval gate's findings, without
   approving
-- `GET /assurance-plans/:id/dashboard` (phase 3)
+- `GET /assurance-plans/:id/dashboard`: coverage RAG, testing progress,
+  deviations, linked findings and utilisation
 - `GET /assurance-plans/:id/history`, `GET /assurance-plans/:id/versions`,
   `GET /assurance-plans/:id/versions/:n`. A version is served as the bytes
   stored at approval, with their SHA-256 in `X-Snapshot-SHA256`, so a reader
@@ -648,8 +749,8 @@ spend need admin, the same split as the risk register and Audit Findings.
 - `POST /assurance-plans` (`{"type": …}` or `{"example": "appendix-a"}`),
   `PUT /assurance-plans/:id` (the header), `DELETE /assurance-plans/:id` (a
   Draft with no versions only)
-- `PUT /assurance-plans/:id/steps | quarters | governance | strata` (and, in
-  phase 3, `attributes`) replaces the whole list. These answer 409 while the
+- `PUT /assurance-plans/:id/steps | quarters | governance | strata | attributes`
+  replaces the whole list. These answer 409 while the
   design is locked. A quarter keeps its selection stamp across an edit. A
   stratum that still holds items cannot be removed or renamed.
 - `POST /assurance-plans/:id/quarters/generate` (`{"dates": true}`): resets
@@ -668,12 +769,23 @@ spend need admin, the same split as the risk register and Audit Findings.
 - `POST /assurance-plans/:id/quarters/:q/select` (`:q` is `1`..`4` or
   `Q1`..`Q4`): the quarter's picks, shortfalls and warnings
 - `GET /assurance-plans/:id/seed`: the seed, for re-performance
-- Phase 3: `POST /assurance-plans/:id/attributes/seed`
-  (`{"nfr_keys": […], "control_ids": […]}`)
-- `POST /assurance-plans/:id/tests` and `PUT /assurance-plans/:id/tests/:testID`
-  (results included), `POST /assurance-plans/:id/tests/:testID/qa`
-- `POST /assurance-plans/:id/results/:resultID/finding`,
-  `POST /assurance-plans/:id/thematic`
+- `POST /assurance-plans/:id/attributes/seed`
+  (`{"nfr_keys": […], "control_ids": […]}`): 409 while the design is locked
+- `POST /assurance-plans/:id/tests`
+  (`{"quarter", "selection_ids", "tester", "evidence_requested_on"}`; 201):
+  opens a test for each pick of the quarter that has none, or for the listed
+  picks. 409 when every pick already has a test or the quarter is not selected.
+- `PUT /assurance-plans/:id/tests/:testID`: the test's dates, tester, evidence
+  summary and notes, and `results` (`[{"attribute_id", "result", "note"}]`).
+  Results not listed keep their value. The answer carries the test, the changes
+  and whether the QA sign-off was withdrawn.
+- `POST /assurance-plans/:id/tests/:testID/qa`: the signed-in user signs off
+- `POST /assurance-plans/:id/results/:resultID/finding`
+  (`{"severity", "owner", "title", "due_date", "status"}`; 201): raise the Fail
+  as a finding in Audit Findings
+- `POST /assurance-plans/:id/thematic`
+  (`{"attribute_id", "stratum", "owner", "likelihood", "impact"}`; 201): push a
+  Not effective conclusion to the risk register
 - `POST /assurance-plans/:id/submit | return | approve | activate | close | change-request | clone`.
   `approve` records the signed-in user as approver; a name in the body counts
   only when there is no session (local mode). A blocked approval answers 422
@@ -704,7 +816,7 @@ no internal ids: rows refer to each other by `step_ref`, `item_ref`,
 
 ## Knowledge API
 
-There are two read-only kinds:
+Phase 4. There are two read-only kinds:
 
 - `assurance_plan`: the plan with its quarter targets, coverage and
   conclusions
@@ -748,8 +860,10 @@ Rules for every output:
   release bumps the version again.
 - The seed is in the snapshot, because a restored plan must still re-perform
   its draws. A snapshot is an administrator's export.
-- `audit_findings.origin_ref` (phase 3) joins the snapshot's column list for
-  that table. An older backup restores with it blank.
+- Phase 3's attributes, tests, results and thematic pushes joined version 16
+  too, for the same reason. Tests and results are `skipInSync` like the rest.
+- `audit_findings.origin_ref` joins the snapshot's column list for that table.
+  An older backup restores with it blank.
 - The tables are excluded from `-sync-to` / `-sync-from` for the same reason as
   crisis exercises and Audit Findings: each plan is a tree of rows joined by
   autoincrement ids. To move plans between deployments, use the snapshot

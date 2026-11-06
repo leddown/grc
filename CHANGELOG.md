@@ -3,6 +3,198 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-06 (Assurance Plans, phase 3: test script, tests and QA, deviation rule, findings, thematic risks, dashboard)
+
+Third of six phases on `feature/assurance-plans`. A plan now runs: it holds
+the test script, records a test for every frozen pick with a result per
+attribute and a QA sign-off, applies the deviation rule, raises its fails as
+findings in Audit Findings, pushes not-effective conclusions to the risk
+register, and reports coverage and progress on a dashboard. Every feature works
+with no model configured.
+
+- **Result and deviation rules** (`internal/assuranceplan/execution.go`, new).
+  Pure functions:
+  - `OverallResult`: none tested → Not started; 0 fails → Effective; from
+    `result_partial_min` (1) → Partially effective; from
+    `result_ineffective_min` (3) → Ineffective. N/A is not counted as tested.
+  - `Conclude`, per attribute per stratum, cumulative for the year: none tested
+    → Not tested; 0 → "No deviations / effective"; from `deviation_extend_at`
+    (1) → "1 deviation – extend sample"; from `deviation_thematic_at` (2) →
+    "Not effective – thematic finding"
+  - `ExtendBy`: ⌈`extend_pct` × the next quarter's planned tests⌉
+  - `RAG`: Not due before the quarter ends; Green on or above plan; Amber
+    within `rag_amber_points` (10) below; Red beyond
+  - `QuarterEnd`, `EvidenceDue` (requested + `evidence_sla_days` business
+    days, on the plan's calendar), `EvidenceLate`, and the test reference
+    `T27-Q1-001`
+- **Test script** (`assurance_plan_attributes`; `PUT /:id/attributes`,
+  `POST /:id/attributes/seed`). Each attribute has a reference, domain,
+  requirement, procedure, method (Inspection, Inquiry, Observation,
+  Re-performance), evidence requested, pass criteria, the strata it applies to,
+  regulatory references, 800-53 ids and the NFR key it came from.
+  - It is part of the design: edited while the design is open, locked after
+    approval, in the approval snapshot, copied by clone. An edit updates
+    attributes in place by reference, so results stay attached.
+  - Under a change request, an attribute with results cannot be removed or
+    narrowed off a stratum where it has results.
+  - The Controls testing template and the worked example carry Appendix A's
+    sixteen attributes, NFR-01..NFR-16, with their domains, 800-53 ids,
+    procedures, evidence and pass criteria.
+  - Seeding copies Security NFRs (by record key, ID or `NFR-` + ID) and 800-53
+    controls into the script, and reports what was added, skipped (already
+    there) and not found.
+  - On every read, control ids and NFR keys are checked against the catalogs.
+    One that does not resolve is marked Unresolved on the page and listed by
+    the gate. Without the catalogs nothing is checked and nothing is claimed.
+  - New gate advisories: unresolved attribute references, a sampling plan with
+    no attributes, an attribute with no pass criteria.
+- **Tests** (`assurance_plan_tests`, `assurance_plan_results`).
+  - `POST /:id/tests` opens one test per pick of a selected quarter, numbered
+    after the highest reference used. The tester defaults to the person
+    opening them; the evidence due date is computed from the request date.
+    Only for an Approved or Active plan; a closed plan's tests do not change.
+  - `PUT /:id/tests/:testID` saves the dates, tester, evidence summary, notes
+    and results. Results not sent keep their value. The answer lists the
+    changes (`NFR-04 blank → Fail`), which also go to history.
+  - A result with a finding stays a Fail (409); the finding is closed in Audit
+    Findings.
+  - `POST /:id/tests/:testID/qa` signs off. It needs fieldwork completed and
+    no result pending. Under multi-user authentication the tester cannot sign
+    off their own test (409); in single-user mode it goes through with a
+    warning, kept in `qa_note`. Any later change withdraws the sign-off and
+    says so.
+  - The test carries its counts, overall result and evidence lateness,
+    computed on read.
+- **Raise finding** (`POST /:id/results/:resultID/finding`). A Fail becomes a
+  finding through `auditfinding.Service.Create`:
+  - source Second Line Review; engagement = plan reference and title
+  - auditor = tester; owner = the one given, else the item's owner
+  - criteria = requirement and pass criteria; condition = evidence summary and
+    result note
+  - 800-53 ids as linked controls, regulatory references and the NFR key as
+    framework references
+  - deficiency type Operating Effectiveness; identified on the fieldwork date;
+    the due date by the severity's SLA unless given
+  - status Open or Draft
+
+  The finding's id, reference and severity go on the result. The plan, test
+  and attribute go on the finding in a new `audit_findings.origin_ref` column.
+  It is set at creation, an edit never changes it, and the Audit Findings page
+  shows it read-only as "Raised from", linked to the plan. A second raise
+  answers 409, unless the finding was deleted in Audit Findings.
+- **Thematic push** (`POST /:id/thematic`). A Not effective conclusion becomes
+  a risk through `riskregister.Service.Create`, once.
+  - Risk id `AP-2027-001-NFR-04-T1`.
+  - The deviation summary is the vulnerability, the 800-53 ids the current
+    controls, and the plan and rule go in the notes.
+  - The person pushing names the owner and rates likelihood and impact.
+  - The risk id and reference are kept in `assurance_plan_thematic` and shown
+    on the deviation's row.
+- **Dashboard** (`GET /:id/dashboard`, `GET /:id/deviations`, and a tab):
+  - cards for tests, QA, fails and findings
+  - 1LoD coverage against plan, per stratum and quarter, with its RAG, and the
+    year-end tracker (attested and DQ accepted against every item)
+  - 2LoD testing progress per quarter, with evidence late and the tests by
+    result
+  - deviations by attribute and stratum, with the extension or the push
+  - linked findings by severity (raised, draft, open, overdue, closed),
+    read live from Audit Findings, with a deleted finding shown as Missing
+  - utilisation
+- **Wiring.** `assuranceplan.Integrations` (Audit Findings, risk register,
+  control catalog, NFR catalog) is set in `app.go` through
+  `WithIntegrations`. `registerAuditFindingRoutes` now returns its service. A
+  missing member turns its feature off with a 409 that says so.
+- **Pages.** New tabs: **Test script** (the attributes, the editor, "Copy from
+  the catalogs"), **Tests** (open per quarter, filters, the test editor with
+  the result grid, Raise finding and QA) and **Dashboard**. The Overview gains
+  test attributes, tests opened and signed off. New pills (pass, fail, N/A,
+  effective, partially effective, ineffective, extend, not effective, Green,
+  Amber, Red, not due, evidence late, awaiting QA, signed off, unresolved, the
+  finding severities and statuses) use explicit colour pairs and print their
+  word.
+- **Schema.** New tables `assurance_plan_attributes`, `assurance_plan_tests`
+  (cascade from their selection), `assurance_plan_results` (cascade from test
+  and attribute; `finding_id` is deliberately not a foreign key) and
+  `assurance_plan_thematic`, plus `audit_findings.origin_ref` through
+  `ensureColumn` and `ADD COLUMN IF NOT EXISTS`, in `sqlite.go` and
+  `postgres.go`. The PostgreSQL schema was reviewed, not run.
+- **Backup.** The four tables are in the snapshot (`idKeyed`, `skipInSync`),
+  and `origin_ref` joins the `audit_findings` columns. `SnapshotVersion` stays
+  at 16, because no v16 build has been released. The module fixture gained an
+  attribute, a test, a result linked to a finding, and a thematic push; the
+  skip count went 42 → 46. A new test restores a v15 snapshot whose findings
+  have no `origin_ref`.
+- **Where the build differs from the prompt:**
+  - The column is `test_procedure`, because `PROCEDURE` is a reserved word in
+    standard SQL. The JSON field is still `procedure`.
+  - Unresolved references are worked out on read, not stored in an
+    `unresolved_refs` column, so they cannot go stale when the catalog changes.
+  - There is no `test_type` yet; it comes with the other plan types in phase 5.
+  - Results carry `plan_id`; thematic rows carry `risk_ref`, `deviations` and
+    the summary; tests carry `qa_note`.
+  - Audit Findings' `source` is a closed list, so a raised finding's source is
+    Second Line Review. The plan reference goes in `engagement` and
+    `origin_ref`.
+  - A pushed risk's residual rating starts equal to the inherent one. The plan
+    does not judge what the controls are worth; the risk's owner does.
+  - The shipped NFR catalog is keyed `1`, `2`… with IDs `0.1`…, so seeding
+    accepts the key, the ID or `NFR-` + ID.
+  - The extend rule suggests the extension, using the quarter after the last
+    one tested, and leaves the frozen selection unchanged. A deviation in Q4
+    is carried into next year's sample.
+  - Linked findings in Draft are counted separately, not as open.
+- **Fixed during the build:**
+  - Saving a test with only some results dropped the rest from its counts.
+    Results not sent now keep their value.
+  - NFR seeding first matched only the record key, which never matched an ID
+    such as `0.1`.
+  - On the page, the reference columns and small buttons now keep to one line,
+    and the push date shows as a date rather than a clipped timestamp.
+- **Tests.** `exec_test.go` covers:
+  - result thresholds, including custom ones
+  - deviation conclusions for 0, 1 and 2+ and none tested, a custom threshold,
+    `ExtendBy`
+  - RAG at and around the amber band, quarter ends
+  - evidence due 2 → 16 March 2027 and over a holiday, lateness, test refs
+  - the example's sixteen attributes, unresolved marking with and without the
+    catalogs, and the gate
+  - seeding from imported catalogs (added, skipped, not found)
+  - opening Q1's 17 tests, numbering, due dates, and the 409s
+  - results, counts, invalid values, QA preconditions, separation of duties
+    enforced and as a warning, and QA withdrawn by a change
+  - Raise finding's prefilled fields, `origin_ref` surviving edits, the second
+    raise and the stays-a-Fail refusal, the dashboard counting it, a deleted
+    finding shown as Missing and raised again
+  - one deviation extending Q2 by 7 (Tier 1) and 4 (Tier 2), two pushing a
+    risk with residual = inherent, and the second push refused
+  - attributes with results neither removed nor narrowed, and an edit keeping
+    them attached
+  - coverage RAG at 15 April 2027 (Tier 1 Amber at 28.75% against 35%, Tier 2
+    Red), the year-end tracker, testing progress
+  - the snapshot holding the attributes; clone carrying them without tests
+  - the routes (201, 400, 409) and the page's tabs, pills and `<thead>`s
+
+  `modules_test.go` gained the new rows, their join and the v15 restore, and
+  the pill test covers the new words.
+- **Manual check.** On a throwaway server (local mode, temp SQLite seeded with
+  the example plan in its Q1 tests), headless Chrome over DevTools:
+  - opened a test and checked the result grid and linked finding
+  - raised a Medium finding on a Fail; it appeared on the result and the
+    dashboard
+  - signed off QA
+  - pushed NFR-04 / Tier 1 to the risk register
+
+  No page exceptions. Screenshots were checked at 1280 wide and 1024×640. The
+  server, database and screenshots were removed.
+- **Gate.** `go fmt`, `go vet` and `go test ./...` are clean, including
+  TestGosec and TestGovulncheck. `npm audit --omit=dev` in `web/policy-studio`
+  found 0 vulnerabilities.
+- Docs: `ASSURANCE_PLANS.md` (build status, tables as built, tests and QA, the
+  extend rule, the dashboard, the integrations as built, the API),
+  `AUDIT_FINDINGS.md` (origin), FEATURES, HTTP_API (ten routes), DATA_MODEL
+  (four tables and `origin_ref`), ARCHITECTURE, the Help page, README and
+  Agents.md.
+
 ## 2026-11-06 (Assurance Plans, phase 2: strata, scope population, sampling engine, freeze and quarterly selection)
 
 Second of six phases on `feature/assurance-plans`. A plan now sizes its

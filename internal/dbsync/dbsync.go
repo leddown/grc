@@ -472,7 +472,7 @@ var syncOrder = []tableSpec{
 			"recommendation", "root_cause_category", "business_unit", "process_area", "owner",
 			"management_response", "management_response_text", "identified_date", "report_date",
 			"original_due_date", "due_date", "extension_count", "extension_reason", "status",
-			"repeat_finding", "prior_reference", "linked_risks", "linked_controls", "framework_refs",
+			"repeat_finding", "prior_reference", "linked_risks", "linked_controls", "framework_refs", "origin_ref",
 			"validated_by", "validation_date", "validation_notes", "closure_evidence", "closed_date",
 			"risk_accepted_by", "risk_acceptance_rationale", "risk_acceptance_expiry", "notes",
 			"created_at", "created_by", "updated_at", "updated_by",
@@ -571,6 +571,45 @@ var syncOrder = []tableSpec{
 		cols: []string{
 			"id", "plan_id", "quarter", "population_id", "item_ref", "stratum_code", "basis", "rank_order", "rank_hash",
 			"plan_version", "selected_at", "selected_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_attributes",
+		cols: []string{
+			"id", "plan_id", "ordinal", "attr_ref", "domain", "requirement", "test_procedure", "method", "evidence_requested",
+			"pass_criteria", "applies_to", "regulatory_refs", "control_ids", "nfr_key", "ai_generated", "model", "prompt_hash",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_tests",
+		cols: []string{
+			"id", "plan_id", "selection_id", "test_ref", "tester", "evidence_requested_on", "evidence_due_on",
+			"evidence_received_on", "fieldwork_completed_on", "evidence_summary", "qa_reviewer", "qa_date", "qa_note", "notes",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_results",
+		cols: []string{
+			"id", "plan_id", "test_id", "attribute_id", "result", "note", "finding_id", "finding_ref", "severity",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_thematic",
+		cols: []string{
+			"id", "plan_id", "attribute_id", "stratum_code", "risk_id", "risk_ref", "deviations", "note", "pushed_at", "pushed_by",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,

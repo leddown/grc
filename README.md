@@ -71,7 +71,9 @@ package and how a request is served. In short:
 - `internal/assuranceplan` — Assurance Plans: the second line's annual plans,
   from plan type to approved version, quarterly cycle and clone for next year,
   attribute sampling over a pasted scope population and frozen, re-performable
-  quarterly selections (see [ASSURANCE_PLANS.md](ASSURANCE_PLANS.md))
+  quarterly selections, tests with QA sign-off, findings raised into Audit
+  Findings, thematic risks pushed to the risk register, and the dashboard (see
+  [ASSURANCE_PLANS.md](ASSURANCE_PLANS.md))
 - `internal/policydocs` — the policy library: documents, sections, control
   mappings, lint, approval, versions and the coverage matrix; also letters
   written on a client's behalf (see [LETTERS.md](LETTERS.md))

@@ -283,6 +283,12 @@ func helpPage(c *gin.Context) {
               readers only as its hash until the year's draws are done. Each quarter, select the
               sample: the picks are ranked by a hash of the seed, frozen, and can be re-performed
               from the seed.</li>
+            <li>On the Tests tab, open the quarter's tests, record the evidence dates and a Pass,
+              Fail or N/A per attribute of the Test script, and have someone other than the tester
+              sign off QA. "Raise finding" turns a Fail into a finding in
+              <a href="/audit-findings">Audit Findings</a>, linked both ways. The Dashboard shows
+              coverage against plan, testing progress, the deviation rule per attribute and the
+              linked findings; a not-effective attribute can be pushed to the risk register.</li>
             <li>Approval stores an immutable version. After it, step status stays editable and the
               design changes only through a change request with a reason, which is reviewed and
               approved as the next version. Clone a plan to start next year's.</li>
@@ -586,7 +592,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register/manage">/risk-register/manage</a></td><td>Create and edit risk entries.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/audit-findings">/audit-findings</a></td><td>Audit findings, action plans, validation and closure.</td></tr>
-          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections.</td></tr>
+          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections, the test script, tests and QA, findings raised into Audit Findings, and the dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/exceptions">/exceptions</a></td><td>Build an exception set from the requirements catalog.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies">/policies</a></td><td>The policy library and its review states.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/manage">/policies/manage</a></td><td>Write policy sections and cite controls.</td></tr>

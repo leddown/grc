@@ -213,8 +213,13 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
 		router, sqliteDB, knowledgeService, settingsService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
-	registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
-	registerAssurancePlanRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
+	findingService := registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
+	registerAssurancePlanRoutes(router, sqliteDB, authService, assuranceplan.Integrations{
+		Findings: findingService,
+		Risks:    riskregister.NewService(riskregister.NewSQLiteRepository(sqliteDB)),
+		Controls: controlHandler.Service(),
+		NFRs:     securityNFRHandler.Service(),
+	}, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	return router, studioService, nil
@@ -708,9 +713,9 @@ func registerCrisisExerciseRoutes(
 
 // registerAuditFindingRoutes wires Audit Findings & Remediation with the same
 // read-open / write-admin split as the risk register it sits beside.
-func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware gin.HandlerFunc, localMode bool) {
-	handler := auditfinding.NewHandler(
-		auditfinding.NewService(auditfinding.NewSQLiteRepository(sqliteDB)), sessionUsername)
+func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware gin.HandlerFunc, localMode bool) *auditfinding.Service {
+	service := auditfinding.NewService(auditfinding.NewSQLiteRepository(sqliteDB))
+	handler := auditfinding.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)
 
 	admin := r.Group("/")
@@ -718,13 +723,16 @@ func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddlewar
 		admin.Use(adminMiddleware)
 	}
 	handler.RegisterAdminRoutes(admin)
+	return service
 }
 
 // registerAssurancePlanRoutes wires Assurance Plans with the read-open /
 // write-admin split of Audit Findings, and the separation of duties of the
-// policy library: on only when more than one person can sign in.
-func registerAssurancePlanRoutes(r gin.IRouter, sqliteDB *db.Conn, authService *authn.Service, adminMiddleware gin.HandlerFunc, localMode bool) {
-	service := assuranceplan.NewService(assuranceplan.NewSQLiteRepository(sqliteDB))
+// policy library: on only when more than one person can sign in. A failed
+// test raises its finding in Audit Findings and a thematic conclusion goes to
+// the risk register, through those modules' own services and their rules.
+func registerAssurancePlanRoutes(r gin.IRouter, sqliteDB *db.Conn, authService *authn.Service, in assuranceplan.Integrations, adminMiddleware gin.HandlerFunc, localMode bool) {
+	service := assuranceplan.NewService(assuranceplan.NewSQLiteRepository(sqliteDB)).WithIntegrations(in)
 	service.SetRequireSeparateApprover(!localMode && authService != nil && !authService.SingleUserMode())
 	handler := assuranceplan.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)

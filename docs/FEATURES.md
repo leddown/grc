@@ -246,6 +246,31 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
   quarter's allocation plus the flagged top-ups. The picks are frozen,
   written to history, and can be re-performed from the seed. The first
   selection makes the plan Active.
+- **Test script** tab: the attributes 2LoD tests on every selected item
+  (requirement, procedure, method, evidence requested, pass criteria, the
+  strata it applies to, 800-53 ids, regulatory basis). The worked example
+  carries Appendix A's sixteen. Attributes can be copied from the Security NFR
+  and 800-53 catalogs; ids that do not resolve are marked Unresolved. Part of
+  the design: locked after approval.
+- **Tests** tab: "Open N test(s) for Q*n*" opens one test per pick
+  (`T27-Q1-001`…), with the tester, evidence requested, due (10 business days
+  later) and received, fieldwork completed, and Pass / Fail / N/A and a note per
+  attribute. The overall result follows the fails: Effective, Partially
+  effective (1–2), Ineffective (3+). QA sign-off is four-eyes under multi-user
+  authentication (a warning in single-user mode), and a change after it
+  withdraws it.
+  - **Raise finding** on a Fail creates the finding in Audit Findings, written
+    as criteria and condition from the attribute and the test, with the item's
+    owner, the 800-53 ids, source Second Line Review, and the plan, test and
+    attribute as its origin. The result links to the finding and the finding
+    back to the plan.
+- **Dashboard** tab: 1LoD coverage against plan per stratum and quarter with a
+  RAG (Green, Amber within 10 points, Red, Not due) and the year-end tracker;
+  2LoD testing progress; the deviation rule per attribute and stratum (0
+  effective, 1 extend the next quarter's sample by 50%, 2+ not effective); the
+  linked findings by severity, open and overdue, read from Audit Findings; and
+  utilisation. A not-effective conclusion can be pushed to the risk register as
+  a thematic risk, once.
 
 ### Exceptions (`/exceptions`, detail at `/exceptions/detail`)
 

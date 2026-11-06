@@ -2,6 +2,7 @@ package assuranceplan
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -153,6 +154,19 @@ func Lint(p Plan, pop []PopulationItem) []LintFinding {
 				add(LintAdvisory, "utilisation", fmt.Sprintf("Q%d", l.Quarter), "Q%d: effort of %s person-days against a capacity of %s is %s%% utilisation, above the %s%% threshold.",
 					l.Quarter, formatNumber(l.Effort), formatNumber(l.Capacity), formatNumber(l.Utilisation*100), formatNumber(p.Parameters.UtilisationThreshold*100))
 			}
+		}
+	}
+
+	if len(p.Attributes) == 0 && slices.ContainsFunc(p.Strata, func(st Stratum) bool { return st.SamplingEnabled }) {
+		add(LintAdvisory, "no_attributes", "test script", "The plan samples items but has no test attributes, so its tests have nothing to record.")
+	}
+	for _, a := range p.Attributes {
+		subject := "attribute " + a.AttrRef
+		if a.Checked && len(a.Unresolved) > 0 {
+			add(LintAdvisory, "attribute_refs", subject, "Attribute %s: %s not found in the catalogs; they stay marked unresolved.", a.AttrRef, strings.Join(a.Unresolved, ", "))
+		}
+		if a.PassCriteria == "" {
+			add(LintAdvisory, "attribute_criteria", subject, "Attribute %s has no pass criteria.", a.AttrRef)
 		}
 	}
 

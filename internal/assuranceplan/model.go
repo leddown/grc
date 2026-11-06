@@ -8,6 +8,8 @@
 // is the same record with different seeded steps, cycle and governance.
 package assuranceplan
 
+import "grc/internal/auditfinding"
+
 // Plan statuses. Approval is the only edge that runs a gate, and there is no
 // edge from Draft to Approved.
 const (
@@ -58,6 +60,47 @@ const (
 )
 
 var DQStatuses = []string{DQNotReviewed, DQInReview, DQAccepted, DQReturned}
+
+// Assessment methods, as NIST SP 800-53A names them (examine, interview,
+// test) in the terms audit practice uses.
+const (
+	MethodInspection    = "Inspection"
+	MethodInquiry       = "Inquiry"
+	MethodObservation   = "Observation"
+	MethodReperformance = "Re-performance"
+)
+
+var Methods = []string{MethodInspection, MethodInquiry, MethodObservation, MethodReperformance}
+
+// Attribute results. Blank is not yet assessed; N/A is not tested and does
+// not count towards the tests performed.
+const (
+	ResultPass = "Pass"
+	ResultFail = "Fail"
+	ResultNA   = "N/A"
+)
+
+var Results = []string{ResultPass, ResultFail, ResultNA}
+
+// A test's overall result, from its number of fails.
+const (
+	OverallNotStarted  = "Not started"
+	OverallEffective   = "Effective"
+	OverallPartial     = "Partially effective"
+	OverallIneffective = "Ineffective"
+)
+
+var OverallResults = []string{OverallNotStarted, OverallEffective, OverallPartial, OverallIneffective}
+
+// Deviation-rule conclusions per attribute and stratum, for the year.
+const (
+	ConclusionNotTested    = "Not tested"
+	ConclusionEffective    = "No deviations / effective"
+	ConclusionExtend       = "Deviation – extend sample"
+	ConclusionNotEffective = "Not effective – thematic finding"
+)
+
+var Conclusions = []string{ConclusionNotTested, ConclusionEffective, ConclusionExtend, ConclusionNotEffective}
 
 // RACILetters are the values a RACI cell may hold. "A/R" is common practice
 // for the one role that both does and owns an activity.
@@ -119,6 +162,7 @@ type Plan struct {
 	Steps       []Step       `json:"steps"`
 	Quarters    []Quarter    `json:"quarters"`
 	Strata      []Stratum    `json:"strata"`
+	Attributes  []Attribute  `json:"attributes"`
 	RACI        []RACIRow    `json:"raci"`
 	Cadence     []Cadence    `json:"cadence"`
 	Escalations []Escalation `json:"escalations"`
@@ -275,6 +319,115 @@ type Selection struct {
 	SelectedBy  string `json:"selected_by"`
 }
 
+// Attribute is one line of the test script: what is tested, how, on what
+// evidence, and what passes. It is copied onto the plan, so a catalog edit
+// does not change an approved plan.
+type Attribute struct {
+	ID                int64    `json:"id"`
+	Ordinal           int      `json:"ordinal"`
+	AttrRef           string   `json:"attr_ref"`
+	Domain            string   `json:"domain"`
+	Requirement       string   `json:"requirement"`
+	Procedure         string   `json:"procedure"`
+	Method            string   `json:"method"`
+	EvidenceRequested string   `json:"evidence_requested"`
+	PassCriteria      string   `json:"pass_criteria"`
+	AppliesTo         []string `json:"applies_to"`
+	RegulatoryRefs    string   `json:"regulatory_refs"`
+	ControlIDs        []string `json:"control_ids"`
+	NFRKey            string   `json:"nfr_key"`
+	AIGenerated       bool     `json:"ai_generated"`
+	Model             string   `json:"model"`
+	PromptHash        string   `json:"prompt_hash"`
+
+	// Derived on read: the references that do not resolve against the
+	// catalogs, and whether they could be checked at all.
+	Unresolved []string `json:"unresolved_refs"`
+	Checked    bool     `json:"refs_checked"`
+}
+
+// appliesTo reports whether the attribute is tested in a stratum. An empty
+// list means every stratum.
+func (a Attribute) appliesTo(code string) bool {
+	if len(a.AppliesTo) == 0 {
+		return true
+	}
+	for _, c := range a.AppliesTo {
+		if c == code {
+			return true
+		}
+	}
+	return false
+}
+
+// Test is the 2LoD test of one selected item.
+type Test struct {
+	ID                   int64  `json:"id"`
+	SelectionID          int64  `json:"selection_id"`
+	TestRef              string `json:"test_ref"`
+	Tester               string `json:"tester"`
+	EvidenceRequestedOn  string `json:"evidence_requested_on"`
+	EvidenceDueOn        string `json:"evidence_due_on"`
+	EvidenceReceivedOn   string `json:"evidence_received_on"`
+	FieldworkCompletedOn string `json:"fieldwork_completed_on"`
+	EvidenceSummary      string `json:"evidence_summary"`
+	QAReviewer           string `json:"qa_reviewer"`
+	QADate               string `json:"qa_date"`
+	QANote               string `json:"qa_note"`
+	Notes                string `json:"notes"`
+	CreatedAt            string `json:"created_at"`
+	CreatedBy            string `json:"created_by"`
+	UpdatedAt            string `json:"updated_at"`
+	UpdatedBy            string `json:"updated_by"`
+
+	Results []Result `json:"results"`
+
+	// From the selection.
+	Quarter     int    `json:"quarter"`
+	ItemID      int64  `json:"population_id"`
+	ItemRef     string `json:"item_ref"`
+	ItemName    string `json:"item_name"`
+	ItemOwner   string `json:"item_owner"`
+	StratumCode string `json:"stratum"`
+	Basis       string `json:"basis"`
+
+	// Derived on read.
+	Fails         int    `json:"fails"`
+	Passes        int    `json:"passes"`
+	NotApplicable int    `json:"not_applicable"`
+	Tested        int    `json:"tested"`
+	Pending       int    `json:"pending"`
+	Overall       string `json:"overall"`
+	EvidenceLate  bool   `json:"evidence_late"`
+}
+
+// Result is one attribute's outcome on one test.
+type Result struct {
+	ID          int64  `json:"id"`
+	TestID      int64  `json:"test_id"`
+	AttributeID int64  `json:"attribute_id"`
+	AttrRef     string `json:"attr_ref"`
+	Result      string `json:"result"`
+	Note        string `json:"note"`
+	FindingID   int64  `json:"finding_id"`
+	FindingRef  string `json:"finding_ref"`
+	Severity    string `json:"severity"`
+}
+
+// Thematic is a not-effective conclusion pushed to the risk register.
+type Thematic struct {
+	ID          int64  `json:"id"`
+	AttributeID int64  `json:"attribute_id"`
+	AttrRef     string `json:"attr_ref"`
+	StratumCode string `json:"stratum"`
+	RiskID      int64  `json:"risk_id"`
+	RiskRef     string `json:"risk_ref"`
+	Deviations  int    `json:"deviations"`
+	Note        string `json:"note"`
+	PushedAt    string `json:"pushed_at"`
+	PushedBy    string `json:"pushed_by"`
+}
+
 type RACIRow struct {
 	ID       int64             `json:"id"`
 	Ordinal  int               `json:"ordinal"`
@@ -353,11 +506,17 @@ type Vocabulary struct {
 	RACILetters    []string `json:"raci_letters"`
 	DQStatuses     []string `json:"dq_statuses"`
 	SelectionBases []string `json:"selection_bases"`
+	Methods        []string `json:"methods"`
+	Results        []string `json:"results"`
+	OverallResults []string `json:"overall_results"`
+	Conclusions    []string `json:"conclusions"`
+	Severities     []string `json:"severities"`
 }
 
 func Vocab() Vocabulary {
 	return Vocabulary{Statuses: Statuses, StepTypes: StepTypes, StepStatuses: StepStatuses, RACILetters: RACILetters,
-		DQStatuses: DQStatuses, SelectionBases: SelectionBases}
+		DQStatuses: DQStatuses, SelectionBases: SelectionBases, Methods: Methods, Results: Results,
+		OverallResults: OverallResults, Conclusions: Conclusions, Severities: auditfinding.Severities}
 }
 
 // designEditable reports whether the plan's design may change: before its

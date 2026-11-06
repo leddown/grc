@@ -37,6 +37,9 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/assurance-plans/:id/population", h.Population)
 	r.GET("/assurance-plans/:id/population.csv", h.PopulationCSV)
 	r.GET("/assurance-plans/:id/population/example.csv", h.ExamplePopulationCSV)
+	r.GET("/assurance-plans/:id/tests", h.Tests)
+	r.GET("/assurance-plans/:id/deviations", h.Deviations)
+	r.GET("/assurance-plans/:id/dashboard", h.Dashboard)
 }
 
 // RegisterAdminRoutes carries every write, approval included. An approved plan
@@ -65,6 +68,13 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/assurance-plans/:id/population/freeze", h.FreezePopulation)
 	r.POST("/assurance-plans/:id/quarters/:q/select", h.SelectQuarter)
 	r.GET("/assurance-plans/:id/seed", h.Seed)
+	r.PUT("/assurance-plans/:id/attributes", h.ReplaceAttributes)
+	r.POST("/assurance-plans/:id/attributes/seed", h.SeedAttributes)
+	r.POST("/assurance-plans/:id/tests", h.CreateTests)
+	r.PUT("/assurance-plans/:id/tests/:testID", h.SaveTest)
+	r.POST("/assurance-plans/:id/tests/:testID/qa", h.SignOffQA)
+	r.POST("/assurance-plans/:id/results/:resultID/finding", h.RaiseFinding)
+	r.POST("/assurance-plans/:id/thematic", h.PushThematic)
 }
 
 func (h *Handler) actorOf(c *gin.Context) string {
@@ -140,9 +150,19 @@ func (h *Handler) PlanPage(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "failed to size the plan's sample")
 		return
 	}
+	tests, err := h.service.Tests(id, 0)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "failed to load the plan's tests")
+		return
+	}
+	dashboard, err := h.service.Dashboard(id)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "failed to build the plan's dashboard")
+		return
+	}
 	page := planPageHTML(planPageData{
 		Plan: publicPlan(p), Lint: Lint(p, pop), History: history, Versions: versions, Clients: clients,
-		Population: pop, Sampling: sampling,
+		Population: pop, Sampling: sampling, Tests: tests, Dashboard: dashboard,
 		Today: time.Now().UTC().Format(dateLayout), Viewer: h.actorOf(c), SepEnforced: h.service.SeparationEnforced(),
 	})
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(page))

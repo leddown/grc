@@ -13,13 +13,22 @@ import (
 	"grc/internal/db"
 )
 
-func newTestService(t *testing.T) *Service {
+func newTestDB(t *testing.T) *db.Conn {
 	t.Helper()
 	conn, err := db.OpenSQLite(filepath.Join(t.TempDir(), "plans.db"))
 	if err != nil {
 		t.Fatalf("OpenSQLite: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+func newTestService(t *testing.T) *Service {
+	t.Helper()
+	return newTestServiceOn(newTestDB(t))
+}
+
+func newTestServiceOn(conn *db.Conn) *Service {
 	svc := NewService(NewSQLiteRepository(conn))
 	svc.now = func() time.Time { return time.Date(2026, 11, 6, 9, 0, 0, 0, time.UTC) }
 	return svc

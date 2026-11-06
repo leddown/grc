@@ -108,7 +108,7 @@ tests.
 | `internal/exceptionbook` | 2,200 | The Exceptions Workbook, the Exceptions Report's figures and lists, and the DORA sheet and DORA Report (`dora.go`), read from the References of the linked controls. |
 | `internal/riskregister` | 680 | The risk register. |
 | `internal/auditfinding` | 1,800 | Audit findings, action plans, lifecycle rules, dashboard. |
-| `internal/assuranceplan` | 8,400 | Assurance plans: plan types as JSON templates, steps and Gantt, quarterly cycle and business days, governance, lifecycle and approval gate, versions, history, clone; strata, the scope population and its CSV paste import, the sampling engine (`sampling.go`: sizes, allocation, capacity, hash ranking), the population freeze and frozen quarterly selections. |
+| `internal/assuranceplan` | 12,200 | Assurance plans: plan types as JSON templates, steps and Gantt, quarterly cycle and business days, governance, lifecycle and approval gate, versions, history, clone; strata, the scope population and its CSV paste import, the sampling engine (`sampling.go`: sizes, allocation, capacity, hash ranking), the population freeze and frozen quarterly selections; the test script, tests, results and QA, the deviation rule and coverage RAG (`execution.go`, pure functions), the dashboard, and the integrations: findings raised into `auditfinding`, thematic risks pushed into `riskregister`, references checked against `controlcatalog` and `securitynfr` (`service_exec.go`, wired in `app.go`). |
 | `internal/jira` | 480 | A Jira Cloud REST v3 client. |
 
 ### Policy modules

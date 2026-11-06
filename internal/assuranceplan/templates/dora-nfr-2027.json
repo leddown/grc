@@ -135,6 +135,249 @@
       "planned_size": 240
     }
   ],
+  "attributes": [
+    {
+      "attr_ref": "NFR-01",
+      "domain": "Asset identification & classification",
+      "requirement": "The asset is recorded in the ICT asset inventory with a named owner, a classification and the critical or important functions it supports.",
+      "procedure": "Trace the asset from the inventory to its NFR record. Inspect the classification, the CIF mapping and their approval.",
+      "method": "Inspection",
+      "evidence_requested": "Inventory extract for the asset; classification record with its approval.",
+      "pass_criteria": "Inventory entry exists with a named owner; classification approved; CIF mapping agrees with the business impact analysis.",
+      "applies_to": [],
+      "regulatory_refs": "DORA Art. 8(1), 8(4); RTS (EU) 2024/1774 Arts. 4–5",
+      "control_ids": [
+        "CM-8",
+        "RA-2"
+      ]
+    },
+    {
+      "attr_ref": "NFR-02",
+      "domain": "Security requirements specified & approved",
+      "requirement": "The asset's security requirements are specified and approved.",
+      "procedure": "Inspect the asset's security requirements and the record of their approval.",
+      "method": "Inspection",
+      "evidence_requested": "Security requirements or NFR sign-off for the asset.",
+      "pass_criteria": "Requirements are documented and approved by the asset owner and the security function.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "SA-4",
+        "PL-2"
+      ]
+    },
+    {
+      "attr_ref": "NFR-03",
+      "domain": "Identity & authentication",
+      "requirement": "Users authenticate with unique identities, multi-factor authentication is enforced where the standard requires it, and authenticators are managed.",
+      "procedure": "Inspect the authentication configuration and the account list for shared or generic identities.",
+      "method": "Inspection",
+      "evidence_requested": "Authentication configuration export; account list.",
+      "pass_criteria": "Unique identities only, or an approved exception; MFA enforced where required.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "IA-2",
+        "IA-5"
+      ]
+    },
+    {
+      "attr_ref": "NFR-04",
+      "domain": "Access management & recertification",
+      "requirement": "Access is granted on approval, recertified on the defined cycle, and removed for leavers.",
+      "procedure": "Re-perform the latest access recertification on a sample of accounts and trace leavers to removal.",
+      "method": "Re-performance",
+      "evidence_requested": "User list; latest recertification record; leaver report for the period.",
+      "pass_criteria": "Recertification completed within its cycle; no active leaver accounts; no access without approval.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "AC-2",
+        "AC-6"
+      ]
+    },
+    {
+      "attr_ref": "NFR-05",
+      "domain": "Privileged access",
+      "requirement": "Privileged accounts are minimised, individually approved and controlled.",
+      "procedure": "Inspect the privileged account list against approvals and the privileged access management configuration.",
+      "method": "Inspection",
+      "evidence_requested": "Privileged account list; approvals; PAM configuration or session records.",
+      "pass_criteria": "Every privileged account is named and approved; privileged use is vaulted or logged.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "AC-2",
+        "AC-6"
+      ]
+    },
+    {
+      "attr_ref": "NFR-06",
+      "domain": "Encryption at rest & key management",
+      "requirement": "Data at rest is encrypted with approved algorithms, and keys are managed in an approved key management service.",
+      "procedure": "Inspect the storage encryption settings and the key management configuration.",
+      "method": "Inspection",
+      "evidence_requested": "Encryption configuration; key management records (ownership, rotation).",
+      "pass_criteria": "Encryption enabled with approved algorithms; keys held and rotated as the cryptography standard requires.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "SC-28",
+        "SC-12"
+      ]
+    },
+    {
+      "attr_ref": "NFR-07",
+      "domain": "Encryption in transit",
+      "requirement": "Data in transit is protected with approved protocols and cipher suites.",
+      "procedure": "Inspect the interface configuration and a protocol scan of the asset's endpoints.",
+      "method": "Inspection",
+      "evidence_requested": "TLS configuration; scan output for the endpoints.",
+      "pass_criteria": "Only protocols and ciphers the cryptography standard allows.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "SC-8",
+        "SC-13"
+      ]
+    },
+    {
+      "attr_ref": "NFR-08",
+      "domain": "Logging & security monitoring",
+      "requirement": "Security events are logged and forwarded to security monitoring, and alerts are triaged.",
+      "procedure": "Confirm the asset is onboarded as a log source; inspect a sample of its alerts and their triage.",
+      "method": "Inspection",
+      "evidence_requested": "Log source onboarding record; alert sample with triage notes.",
+      "pass_criteria": "Required events are logged and received; sampled alerts were triaged within the monitoring SLA.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "AU-2",
+        "AU-6",
+        "SI-4"
+      ]
+    },
+    {
+      "attr_ref": "NFR-09",
+      "domain": "Vulnerability & patch management",
+      "requirement": "The asset is scanned for vulnerabilities on the defined cadence and findings are remediated within the policy SLA.",
+      "procedure": "Inspect the latest scan and the remediation records for open findings.",
+      "method": "Inspection",
+      "evidence_requested": "Latest vulnerability scan report; remediation tickets.",
+      "pass_criteria": "Scanned within the cadence; no finding open beyond its SLA without an approved exception.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "RA-5",
+        "SI-2"
+      ]
+    },
+    {
+      "attr_ref": "NFR-10",
+      "domain": "Secure configuration & hardening",
+      "requirement": "The asset is configured to the approved hardening baseline, and deviations are approved.",
+      "procedure": "Inspect a configuration compliance scan against the baseline and the approvals for deviations.",
+      "method": "Inspection",
+      "evidence_requested": "Baseline compliance report; approved deviations.",
+      "pass_criteria": "No deviation from the baseline without an approval.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "CM-6",
+        "CM-7"
+      ]
+    },
+    {
+      "attr_ref": "NFR-11",
+      "domain": "Network security & exposure",
+      "requirement": "Network exposure is limited to what is approved, and internet-facing services sit behind the approved controls.",
+      "procedure": "Inspect the firewall rules and an external exposure scan against the approved flows.",
+      "method": "Inspection",
+      "evidence_requested": "Firewall rule set; exposure scan; approved network flows.",
+      "pass_criteria": "No inbound exposure that is not approved.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "SC-7"
+      ]
+    },
+    {
+      "attr_ref": "NFR-12",
+      "domain": "Security testing ≤ 12 months",
+      "requirement": "The asset has been security tested within the last 12 months and the test's findings are tracked.",
+      "procedure": "Inspect the latest security test report and trace its findings to remediation.",
+      "method": "Inspection",
+      "evidence_requested": "Latest penetration test or equivalent report; findings tracker.",
+      "pass_criteria": "A test completed within 12 months; every finding tracked to remediation or accepted.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "CA-8",
+        "SA-11"
+      ]
+    },
+    {
+      "attr_ref": "NFR-13",
+      "domain": "Backup, recovery & RTO/RPO",
+      "requirement": "Backups are taken and restores tested, and the RTO and RPO are defined and met in the latest test.",
+      "procedure": "Inspect backup job results and the latest restore or recovery test against the RTO and RPO.",
+      "method": "Inspection",
+      "evidence_requested": "Backup job report; latest restore test record.",
+      "pass_criteria": "Backups succeed; a restore was tested within the testing cycle and met the RTO and RPO.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "CP-9",
+        "CP-10",
+        "CP-4"
+      ]
+    },
+    {
+      "attr_ref": "NFR-14",
+      "domain": "Change management",
+      "requirement": "Changes to the asset are impact-assessed, approved and tested before release.",
+      "procedure": "Select changes made in the period and trace each to its assessment, approval and testing.",
+      "method": "Inspection",
+      "evidence_requested": "Change log for the period; the selected change records.",
+      "pass_criteria": "Every selected change was assessed, approved and tested before release.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "CM-3",
+        "CM-4"
+      ]
+    },
+    {
+      "attr_ref": "NFR-15",
+      "domain": "Third-party, legacy & end-of-support",
+      "requirement": "Components are vendor-supported or covered by an approved exception, and third-party services are under contract with security terms.",
+      "procedure": "Inspect the component inventory's support dates and the third-party contracts' security clauses.",
+      "method": "Inspection",
+      "evidence_requested": "Component inventory with support dates; contracts or service agreements.",
+      "pass_criteria": "No unsupported component without an approved exception; contracts carry the security terms.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "SA-22",
+        "SA-9"
+      ]
+    },
+    {
+      "attr_ref": "NFR-16",
+      "domain": "Exceptions & risk acceptance",
+      "requirement": "Every NFR the asset does not meet is covered by an approved, time-bound exception or a remediation plan.",
+      "procedure": "Trace each NFR the asset does not meet to an exception or a plan of action.",
+      "method": "Inspection",
+      "evidence_requested": "Exception register entries; plans of action and milestones.",
+      "pass_criteria": "Each gap is covered by an approved, unexpired exception or tracked remediation.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [
+        "CA-5",
+        "RA-7"
+      ]
+    }
+  ],
   "steps": [
     {
       "step_ref": "0.1",
