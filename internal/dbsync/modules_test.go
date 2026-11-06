@@ -81,6 +81,12 @@ func seedModules(t *testing.T, conn *db.Conn) {
 		VALUES (46, 40, 'created', 'Draft')`)
 	mustExec(t, conn, `INSERT INTO assurance_plan_versions (id, plan_id, number, label, snapshot_json)
 		VALUES (47, 40, 1, 'v1', '{}')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_strata (id, plan_id, ordinal, code, name, confidence, tolerable_rate, wave_q1, wave_q2, wave_q3)
+		VALUES (48, 40, 0, 'T1', 'Tier 1', 0.95, 0.05, 0.35, 0.35, 0.30)`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_population (id, plan_id, item_ref, stratum_code, wave_quarter, internet_facing)
+		VALUES (49, 40, 'T1-001', 'T1', 1, 1)`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_selections (id, plan_id, quarter, population_id, item_ref, stratum_code, basis, rank_order)
+		VALUES (50, 40, 1, 49, 'T1-001', 'T1', 'Statistical', 1)`)
 
 	mustExec(t, conn, `INSERT INTO policy_documents (id, title, editor_format, projection_token)
 		VALUES (30, 'ICT and Information Security Policy', 'studio', 'tok-1')`)
@@ -123,6 +129,7 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"assurance_plans": 1, "assurance_plan_steps": 1, "assurance_plan_quarters": 1,
 		"assurance_plan_raci": 1, "assurance_plan_cadence": 1, "assurance_plan_escalations": 1,
 		"assurance_plan_history": 1, "assurance_plan_versions": 1,
+		"assurance_plan_strata": 1, "assurance_plan_population": 1, "assurance_plan_selections": 1,
 	} {
 		if got := count(t, dst, table); got != want {
 			t.Errorf("%s count=%d want %d", table, got, want)
@@ -141,6 +148,13 @@ func checkModules(t *testing.T, dst *db.Conn) {
 	if got := scalar(t, dst, `SELECT p.reference FROM assurance_plan_steps s
 		JOIN assurance_plans p ON p.id = s.plan_id WHERE s.step_ref = '0.1'`); got != "AP-2027-001" {
 		t.Errorf("step's plan reference=%q want AP-2027-001", got)
+	}
+	if got := scalar(t, dst, `SELECT x.item_ref FROM assurance_plan_selections s
+		JOIN assurance_plan_population x ON x.id = s.population_id WHERE s.id = 50`); got != "T1-001" {
+		t.Errorf("selection's population item=%q want T1-001", got)
+	}
+	if got := scalar(t, dst, `SELECT wave_q3 FROM assurance_plan_strata WHERE id = 48`); got != "0.3" {
+		t.Errorf("stratum wave_q3=%q want 0.3", got)
 	}
 	if got := scalar(t, dst, `SELECT overhead_days FROM assurance_plan_quarters WHERE id = 42`); got != "10.5" {
 		t.Errorf("quarter overhead_days=%q want 10.5 (a REAL column must survive the round trip)", got)
@@ -237,10 +251,10 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 39 {
-		t.Errorf("report marks %d tables skipped, want 39", len(skipped))
+	if len(skipped) != 42 {
+		t.Errorf("report marks %d tables skipped, want 42", len(skipped))
 	}
-	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit", "assurance_plans", "assurance_plan_versions"} {
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit", "assurance_plans", "assurance_plan_versions", "assurance_plan_population", "assurance_plan_selections"} {
 		if !skipped[want] {
 			t.Errorf("%s is not reported as skipped", want)
 		}

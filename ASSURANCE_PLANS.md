@@ -16,11 +16,13 @@ Code: `internal/assuranceplan`. Tables: `assurance_plans` and the
 **Build status.** The module is built in phases on `feature/assurance-plans`.
 Phase 1 (core) is in: the plan, its steps and Gantt, the quarterly cycle,
 governance, lifecycle and approval gate, versions, history, clone, and the
-Controls testing and Blank types with the worked 2027 example. Strata, the
-population and sampling (phase 2), test attributes, tests and findings
-(phase 3), exports and documents (phase 4), the other plan types (phase 5) and
-AI assist (phase 6) are described below as designed, and marked with their
-phase where the code does not have them yet.
+Controls testing and Blank types with the worked 2027 example. Phase 2
+(sampling and scope) is in: strata, the scope population and its CSV paste
+import, the sampling engine, quarterly allocation and capacity, the freeze and
+the frozen quarterly selection. Test attributes, tests and findings (phase 3),
+exports and documents (phase 4), the other plan types (phase 5) and AI assist
+(phase 6) are described below as designed, and marked with their phase where
+the code does not have them yet.
 
 The module produces:
 
@@ -81,7 +83,8 @@ The module produces:
   window and deadline, the selection date, fieldwork, the date findings are
   agreed, the report date and the committee date.
 - **Strata**: subdivisions of the population (Tier 1, Tier 2). Each stratum has
-  its own sampling parameters, waves and top-ups.
+  its own sampling parameters, waves and top-ups, and a planned size that sizes
+  it until its population is loaded.
 - **Population**: the items in scope (assets, business units, policies,
   systems, findings), each in one stratum and one 1LoD wave.
 - **Test attributes**: the test script. They are stored on the plan, so a later
@@ -104,10 +107,10 @@ which is why the module is excluded from `-sync-to` / `-sync-from` (see
 | `assurance_plans` | The plan header and its parameters | `reference` (unique), `title`, `plan_type`, `function_name`, `client_profile_id` (0 = none), `period_start`, `period_end`, `mobilise_start`, `closing_date`, `objective`, `decisions_requested`, `owner_role`, `accountable_role`, `approval_forum`, `regulatory_refs`, `status`, `revision`, `revision_status`, `revision_author`, `change_reason`, `author`, `approved_by`, `approved_at`, `activated_at`, `closed_at`, `selection_seed`, `non_working_dates`; the parameters listed below; `ai_generated`, `model`, `prompt_hash`; `created_*`, `updated_*` |
 | `assurance_plan_steps` | Plan steps | `plan_id`, `ordinal`, `step_ref`, `phase`, `title`, `step_type` (activity / milestone / ongoing), `responsible_role`, `accountable_role`, `start_date`, `end_date`, `deliverable`, `refs`, `status`, `quarter` (0 = not tied to a quarter), `generated` |
 | `assurance_plan_quarters` | The operating cycle | `plan_id`, `quarter` (1–4), `lod1_window_start`, `lod1_deadline`, `selection_date`, `fieldwork_start`, `fieldwork_end`, `findings_agreed_by`, `report_date`, `committee_label`, `retest_days`, `overhead_days`, `selected_at`, `selected_by` |
-| `assurance_plan_strata` (phase 2) | Strata and their sampling parameters | `plan_id`, `ordinal`, `code`, `name`, `definition`, `sampling_enabled`, `confidence`, `tolerable_rate`, `floor_pct`, `effort_per_test`, `effort_per_review`, `wave_q1`..`wave_q4`, `topup_q1`..`topup_q4` |
-| `assurance_plan_population` (phase 2) | The scope population | `plan_id`, `item_ref` (unique per plan), `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing`, `owner`, `wave_quarter`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter`, `topup_rationale`, `source_kind`, `source_ref` (for populations proposed from policies or findings) |
+| `assurance_plan_strata` | Strata and their sampling parameters | `plan_id`, `ordinal`, `code` (unique per plan), `name`, `definition`, `sampling_enabled`, `confidence`, `tolerable_rate`, `floor_pct`, `effort_per_test`, `effort_per_review`, `wave_q1`..`wave_q4`, `topup_q1`..`topup_q4`, `planned_size` |
+| `assurance_plan_population` | The scope population | `plan_id`, `item_ref` (unique per plan), `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing`, `owner`, `wave_quarter`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter`, `topup_rationale`, `source_kind`, `source_ref` (for populations proposed from policies or findings, phase 5) |
 | `assurance_plan_attributes` (phase 3) | The test script | `plan_id`, `ordinal`, `attr_ref`, `domain`, `requirement`, `procedure`, `method`, `evidence_requested`, `pass_criteria`, `applies_to` (stratum codes), `regulatory_refs`, `control_ids`, `nfr_key` (empty = plan-local), `unresolved_refs`, AI provenance |
-| `assurance_plan_selections` (phase 2) | Frozen picks | `plan_id`, `quarter`, `population_id`, `item_ref`, `stratum_code`, `basis` (Statistical / Risk-based top-up / Full coverage), `rank_hash`, `seed`, `selected_at`, `selected_by`; unique (`plan_id`, `population_id`) |
+| `assurance_plan_selections` | Frozen picks | `plan_id`, `quarter`, `population_id` (on delete cascade), `item_ref`, `stratum_code`, `basis` (Statistical / Risk-based top-up / Full coverage), `rank_order` (the item's place in its stratum and wave's ranking; 0 for a top-up), `rank_hash`, `plan_version` (the approved version the draw was made under), `selected_at`, `selected_by`; unique (`plan_id`, `population_id`). The seed is on the plan, not on each pick. |
 | `assurance_plan_tests` (phase 3) | One test per selection | `plan_id`, `selection_id` (unique), `test_ref`, `test_type`, `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `notes` |
 | `assurance_plan_results` (phase 3) | One result per attribute per test | `test_id`, `attribute_id` (unique together), `result` (Pass / Fail / N/A / empty), `note`, `finding_id`, `finding_ref`, `severity` |
 | `assurance_plan_thematic` (phase 3) | Not-effective conclusions pushed to the risk register | `plan_id`, `attribute_id`, `stratum_code`, `risk_id`, `pushed_at`, `pushed_by` |
@@ -150,7 +153,7 @@ two-way link. Existing databases get it through `ensureColumn` and
 | Draft → In review | — |
 | In review → Draft | — (returned for changes) |
 | In review → Approved | The approval gate (below) and separation of duties. Writes version *n* and records `approved_by` / `approved_at`. |
-| Approved → Active | Admin action. Execution can start on an Approved plan, and the first selection activates it (phase 2). |
+| Approved → Active | Admin action. Execution can start on an Approved plan, and the first quarterly selection activates it. |
 | Active → Closed | Admin action, refused while a revision is open. After closing, nothing on the plan changes. |
 
 Only a Draft that was never approved can be deleted; an approved plan is
@@ -163,16 +166,35 @@ evidence and is closed instead.
   edit: they are carried from the stored row.
 
 **Design lock.** Once the plan is Approved, its design is locked: steps (other
-than their status), quarters, strata, parameters, attributes, the population's
-design fields (stratum, wave, top-up, identity) and governance. Execution data
-stays editable:
+than their status), quarters, strata (including their planned top-up counts),
+parameters, attributes and governance. Execution data stays editable:
 
 - step status
 - attestation dates and DQ status
+- the top-up flags on items, until their quarter is selected
 - selections
 - tests and results
 - QA sign-off
 - finding links
+
+**The population** follows its own rules, because the reference plan completes
+it after approval and freezes it at step 0.9:
+
+- Membership is adding, removing, or moving an item to another stratum or
+  wave. It is open while the plan is a Draft, closed while the plan or a
+  revision is In review, open again on an approved plan until the freeze, and
+  after the freeze open only while a change request's revision is a Draft.
+- A wave whose quarter has been selected cannot gain, lose or move an item.
+- A selected item stays in the population, and its stratum is fixed.
+- A top-up flag needs its rationale. It cannot be set for a quarter that has
+  been selected, or on an item that is already a pick. A top-up that has been
+  selected cannot be withdrawn.
+- Descriptions (name, CIF, business line, hosting, internet-facing, owner),
+  attestation dates and the DQ review stay editable until the plan is closed.
+
+The approval snapshot records the population at that point. The draw is made
+from the population that was frozen, and the freeze writes that population's
+membership SHA-256 to history.
 
 **Change control.** A design change on an Approved or Active plan starts with
 a change request that gives a reason. The request sets `revision_status` to
@@ -203,8 +225,10 @@ shape as `policydocs.ApprovalError`.
 - owner role, accountable role, approval forum, period start or period end
   missing, or a period that ends before it starts
 - a plan with no steps
-- a sampled stratum's waves (phase 2) do not sum to 100%, or its confidence is outside
-  (0,1), its tolerable rate is outside (0,1), or its floor is outside [0,1]
+- a stratum's waves do not sum to 100%. This applies to every stratum, sampled
+  or not, because the waves also schedule the 1LoD attestations.
+- a sampled stratum's confidence is outside (0,1), its tolerable rate is
+  outside (0,1), or its floor is outside [0,1]
 - a step with no responsible role, with no dates (a milestone needs one
   date), or ending before it starts
 - a quarter missing its 1LoD deadline or its report date
@@ -214,13 +238,17 @@ shape as `policydocs.ApprovalError`.
 - a step outside the plan's span (mobilisation start to closing date)
 - a quarter whose dates are out of order
 - a RACI activity with no Accountable role, or with more than one
-- utilisation above the threshold in any quarter (phase 2)
+- utilisation above the threshold in any quarter
 - attribute references that do not resolve against the control or NFR
   catalogs (phase 3)
-- strata with zero population (phase 2)
-- a population whose wave counts differ from the plan's wave percentages
-  (phase 2)
-- planned top-ups with no items flagged for them (phase 2)
+- a stratum with no population yet (the finding says whether it is sized on its
+  planned size or at zero)
+- a stratum whose wave counts differ from its wave percentages, giving both
+- items with no 1LoD wave, which are never due for attestation or drawn
+
+Planned top-ups with no items flagged for them are not a gate finding. Items are
+flagged for a top-up during the year, so the mismatch is a warning when that
+quarter is selected, in the selection's result and in history.
 
 ### Clone for next year
 
@@ -243,17 +271,20 @@ It also:
   step titles, deliverables and committee labels ("Draft the 2028 plan"
   becomes "Draft the 2029 plan"); a year inside a citation such as
   `2024/1774` is left alone, and regulatory references are not touched
-- keeps the population's design fields (phase 2)
+- keeps the population: reference, name, stratum, wave, CIF, business line,
+  hosting, internet-facing and owner
 
 It drops:
 
 - step status (every step starts Not started)
-- attestation dates and DQ status
+- attestation dates, DQ status and top-up flags (a top-up is a risk call for
+  the year it was made in)
 - selections, tests, results, finding links and thematic pushes
 - history and versions, and the AI provenance
 
 The clone starts in Draft with a new reference (in the new year), a new
-author and no seed: a new seed is drawn when its population is frozen.
+author and no seed: a new seed is drawn when its population is frozen. Its
+history notes how many population items were copied.
 
 ## Sampling method
 
@@ -265,6 +296,11 @@ against the textbook tables.
     n0 = ceil( ln(1 − confidence) / ln(1 − tolerable_rate) )
 
 95%/5% → 59, 95%/10% → 29, 90%/5% → 45, 90%/10% → 22.
+
+**N** is the number of the stratum's population items. Before the population
+is loaded, the stratum's planned size stands in, so a plan can be sized,
+reviewed and approved on the inventory's expected count. The Sampling tab says
+which one each figure uses.
 
 **Finite-population correction:**
 
@@ -286,8 +322,15 @@ the annual figure:
     cum_i = Σ_{k≤i} wave_k
     q_i   = ceil(round(annual × cum_i, 6)) − ceil(round(annual × cum_{i−1}, 6))
 
-The `round(…, 6)` matters. Without it, 0.35 + 0.35 + 0.30 accumulates to
-1.0000000000000002, which rounds up one extra item.
+The last cumulative is taken as exactly 1, so the quarters always sum to the
+annual figure.
+
+The `round(…, 6)` matters. Without it, waves of 20/40/30/10% accumulate to
+1.0000000000000002, so an annual sample of 1 is allocated as 2. Mid-year the
+drift moves items between quarters: 5 × (0.2 + 0.4) is 3.0000000000000004, which
+puts a third item into Q2 that belongs in Q3. The common 35/35/30 split happens
+to sum to exactly 1 in IEEE doubles, so it is not the example the tests use.
+Wave sums are checked with a tolerance of 10⁻⁶.
 
 **1LoD reviews due** use the same scheme over N, with `round` in place of
 `ceil`.
@@ -305,7 +348,8 @@ wave quarter), items are ranked by
 
     SHA-256( seed ‖ 0x1F ‖ stratum_code ‖ 0x1F ‖ item_ref )
 
-and the first `q_i` are taken.
+lowest first, and the first `q_i` that have not already been selected this year
+are taken. The seed enters the hash as its hex text.
 
 - The 0x1F unit separator is there so that `T1`+`0` and `T10`+`` cannot hash
   alike.
@@ -317,17 +361,48 @@ and the first `q_i` are taken.
   and not when the plan is created, means nobody can know the seed while the
   population can still change.
 
+**The freeze** (`POST …/population/freeze`, "Freeze population and record
+seed") happens once. It needs:
+
+- an Approved or Active plan with no revision open
+- a population that is not empty
+- a wave on every item
+- every stratum's waves summing to 100%
+
+It writes a `population frozen` history event with the item count, the
+membership SHA-256 (reference, stratum and wave of every item) and the seed
+commitment.
+
+**Commit, then reveal.** Anyone with access to the page sees the seed's
+commitment, the SHA-256 of its hex text. They see the seed itself only once
+every quarter has been selected or the plan is closed. Until then, every plan
+JSON the module serves (list, plan, mutations, the selection result) leaves the
+seed out. A reader who knew the seed could work out which items the next
+quarter's draw will take. That includes the 1LoD owner of an item, before
+their evidence is requested. Administrators can read the seed at any time
+through `GET …/seed` ("Show seed"). Internal Audit can re-perform a draw, and
+check the revealed seed against the commitment in the freeze event.
+
 The selection itself:
 
-- "Select Q*n* sample" is an explicit admin action. It writes the selections,
-  stamps `selected_at` / `selected_by` on the quarter, and records them in
-  history. After that the quarter is frozen. A second run is refused rather
-  than recomputed.
-- Top-ups are the items flagged with `topup_quarter = n`. A top-up that is
-  already a statistical pick (in any quarter) is refused with a message that
-  names the item and the quarter it was picked in.
+- "Select Q*n* sample" is an explicit admin action on an Approved or Active
+  plan whose population is frozen and which has no revision open. It writes
+  the selections, stamps `selected_at` / `selected_by` on the quarter, and
+  records them in history with the seed commitment and the plan version. After
+  that the quarter is frozen. A second run is refused rather than recomputed.
+  So is a concurrent one: the stamp is only set where it is still empty.
+- Each pick records its basis, its rank in its stratum and wave, its hash and
+  the plan version. A stratum with sampling off takes its whole wave, with
+  basis Full coverage.
+- Top-ups are the items flagged with `topup_quarter = n`, with basis
+  Risk-based top-up. A top-up that is already a pick, from an earlier quarter
+  or from this draw, refuses the whole selection with a message that names the
+  item and its pick.
+- When the planned top-ups differ from the items flagged, the selection still
+  runs and warns.
 - If a wave holds fewer items than `q_i`, the whole wave is taken and the
   shortfall is reported. The selection does not borrow from another wave.
+- The first selection moves an Approved plan to Active.
 
 **Business days** are weekdays that are not in the plan's `non_working_dates`.
 
@@ -477,16 +552,61 @@ before it is applied.
 
 ### Population import
 
-There is no upload. The population is structured data pasted as CSV text into
-a textarea and posted as JSON. The preview step:
+There is no upload. The population is structured data, pasted as CSV text into
+the textarea on the Scope population tab and posted as JSON
+(`{"csv": …, "merge": …, "base": …}`). No file is accepted and nothing is
+extracted from a document, so this is not document ingestion.
 
-- parses the text and validates each row (unknown stratum, duplicate ref,
-  invalid wave or date)
-- returns a diff against the current population: added, changed and removed
-  rows
+**Columns** (in the order the page writes them): `item_ref`, `name`, `stratum`,
+`cif`, `business_line`, `hosting`, `internet_facing`, `owner`, `wave`,
+`attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter`,
+`topup_rationale`.
 
-Nothing is written until the apply step. This is not document ingestion. No
-file is accepted, and nothing is extracted from a document.
+- Headers are matched without regard to case, spaces or punctuation.
+- Common names are accepted: `Asset ID`, `Tier`, `Critical or important
+  function`, `1LoD wave`, `Attestation date`, `Top-up quarter` and others.
+- An unknown column is listed as ignored.
+- Only `item_ref` is required. A column left out of the paste keeps each
+  existing item's value, so a paste of `item_ref,attested_on` records
+  attestations and changes nothing else.
+
+**Delimiter and values:**
+
+- The delimiter is a comma, a semicolon or a tab, whichever the header uses.
+- A leading byte-order mark is dropped.
+- Quarters are written `Q1`..`Q4` or `1`..`4`. Blank, `0`, `-` or `none` means
+  no quarter.
+- Yes/no takes `yes`, `y`, `true`, `1` or `x`, against `no`, `n`, `false`,
+  `0`, `-` or blank.
+- Dates are `YYYY-MM-DD`.
+- DQ status is one of Not reviewed, In review, Accepted or Returned to 1LoD.
+
+**Merge or replace.** Replace (the default) removes the items the paste leaves
+out. Merge keeps them.
+
+**Preview** returns:
+
+- the row count and the columns read and ignored
+- each problem, with its line and reference: an unknown stratum, a duplicate
+  reference, a bad wave, date or yes/no, a top-up with no rationale, or an
+  edit the population rules refuse
+- the added, changed (with the fields) and removed references
+- the unchanged count and the count per stratum
+- `base`, the current population's digest
+
+**Apply** writes nothing while any problem remains. It refuses with 409 when
+`base` no longer matches, because someone changed the population after the
+preview. One history event records the mode and the counts.
+
+**Limits.** A paste is at most 50,000 rows and 16 MiB. The preview lists the
+first 200 problems.
+
+The tab can also download the population as CSV (`population.csv`). It can fill
+the box with the current population, or with an example population built from
+the strata's planned sizes and waves (`population/example.csv`). One item can be
+edited on its own (`PATCH …/population/:itemID`): its description, attestation,
+DQ review and top-up. Stratum, wave and membership change only through an
+import, where the whole diff is visible.
 
 ## API
 
@@ -501,10 +621,14 @@ spend need admin, the same split as the risk register and Audit Findings.
   `GET /assurance-plans/data/:id`. The second returns the plan with steps,
   quarters, strata, attributes, governance and its counts.
 - `GET /assurance-plans/vocabulary` and `GET /assurance-plans/types`
-- `GET /assurance-plans/:id/population` (phase 2),
-  `GET /assurance-plans/:id/tests?quarter=` (phase 3)
-- `GET /assurance-plans/:id/sampling` (phase 2): sizes, allocation, reviews
-  due, capacity, each with its inputs
+- `GET /assurance-plans/:id/population` (JSON, each item with its selection),
+  `GET /assurance-plans/:id/population.csv`,
+  `GET /assurance-plans/:id/population/example.csv`
+- `GET /assurance-plans/:id/sampling`: sizes, allocation, reviews due,
+  capacity, each with its inputs and where N came from; the freeze, the seed
+  commitment and each quarter's selection
+- `GET /assurance-plans/:id/selections`: every frozen pick
+- `GET /assurance-plans/:id/tests?quarter=` (phase 3)
 - `GET /assurance-plans/:id/lint`: the approval gate's findings, without
   approving
 - `GET /assurance-plans/:id/dashboard` (phase 3)
@@ -524,20 +648,26 @@ spend need admin, the same split as the risk register and Audit Findings.
 - `POST /assurance-plans` (`{"type": …}` or `{"example": "appendix-a"}`),
   `PUT /assurance-plans/:id` (the header), `DELETE /assurance-plans/:id` (a
   Draft with no versions only)
-- `PUT /assurance-plans/:id/steps | quarters | governance` (and, in phases 2
-  and 3, `strata | attributes`) replaces the whole list. These answer 409 while
-  the design is locked. A quarter keeps its selection stamp across an edit.
+- `PUT /assurance-plans/:id/steps | quarters | governance | strata` (and, in
+  phase 3, `attributes`) replaces the whole list. These answer 409 while the
+  design is locked. A quarter keeps its selection stamp across an edit. A
+  stratum that still holds items cannot be removed or renamed.
 - `POST /assurance-plans/:id/quarters/generate` (`{"dates": true}`): resets
   the quarters to the default cycle, keeping each quarter's retest and overhead
   days, and with `dates` regenerates the template's quarterly steps from them,
   keeping each step's status by reference
 - `PATCH /assurance-plans/:id/steps/:stepID` (`{"status": …}`): a step's status,
   which can move on a locked design; refused only once the plan is closed
-- Phase 2: `POST /assurance-plans/:id/population/preview` and
-  `POST /assurance-plans/:id/population`: the CSV text as JSON, then apply.
-  `POST /assurance-plans/:id/population/propose?source=policies|findings`.
-- `PATCH /assurance-plans/:id/population/:itemID`: execution fields only.
-- `POST /assurance-plans/:id/quarters/:q/select`
+- `POST /assurance-plans/:id/population/preview` and
+  `POST /assurance-plans/:id/population`: the CSV text as JSON, then apply (see
+  [Population import](#population-import)).
+  Phase 5: `POST /assurance-plans/:id/population/propose?source=policies|findings`.
+- `PATCH /assurance-plans/:id/population/:itemID`: one item's description,
+  attestation, DQ review and top-up
+- `POST /assurance-plans/:id/population/freeze`: freeze and draw the seed
+- `POST /assurance-plans/:id/quarters/:q/select` (`:q` is `1`..`4` or
+  `Q1`..`Q4`): the quarter's picks, shortfalls and warnings
+- `GET /assurance-plans/:id/seed`: the seed, for re-performance
 - Phase 3: `POST /assurance-plans/:id/attributes/seed`
   (`{"nfr_keys": […], "control_ids": […]}`)
 - `POST /assurance-plans/:id/tests` and `PUT /assurance-plans/:id/tests/:testID`
@@ -612,9 +742,12 @@ Rules for every output:
 
 - Every `assurance_plan*` table is in the JSON snapshot, in parent-first order,
   with `idKeyed` and `strat: skipInSync`. `SnapshotVersion` went from 15 to 16
-  with phase 1's eight tables, and a v15-or-older backup restores with the
-  module empty. A later phase that adds tables adds them to the same list and
-  bumps the version again.
+  with the module. Phase 2's strata, population and selections joined the same
+  version, because no build with phase 1 alone was released. A v15-or-older
+  backup restores with the module empty. A phase that adds tables after a
+  release bumps the version again.
+- The seed is in the snapshot, because a restored plan must still re-perform
+  its draws. A snapshot is an administrator's export.
 - `audit_findings.origin_ref` (phase 3) joins the snapshot's column list for
   that table. An older backup restores with it blank.
 - The tables are excluded from `-sync-to` / `-sync-from` for the same reason as

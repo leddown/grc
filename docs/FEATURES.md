@@ -213,7 +213,40 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
   **change request** with a reason opens the next revision, which goes
   through review and approval again while the plan stays Active.
 - **Clone** copies the design for the next year: dates move one year onto
-  business days, years in titles move on, execution data is dropped.
+  business days, years in titles move on, execution data is dropped. The
+  population is copied without its attestations, DQ reviews or top-ups.
+- **Sampling** tab, for each stratum, with the formula and inputs behind each
+  figure:
+  - the sample size: confidence and tolerable rate give n0, then the
+    finite-population correction, the coverage floor and the annual sample
+  - the quarterly allocation of tests (statistical picks plus planned
+    risk-based top-ups) and the 1LoD reviews due
+  - the cumulative coverage target
+  - capacity per quarter against the testers' FTE, flagged in words above the
+    utilisation threshold
+
+  A stratum is sized on its planned size until its population is loaded. The
+  strata (codes, parameters, waves, top-ups, planned size) are edited here
+  while the design is open. The **Quarterly plan** tab carries the
+  quarter-by-quarter targets.
+- **Scope population** tab: the items in scope, each with its stratum, 1LoD
+  wave, CIF, owner, attestation, 2LoD data-quality review and top-up flag.
+  - Counts per stratum and wave, filters, and an editor for one item.
+  - The population is **pasted as CSV text**, not uploaded. Paste the text,
+    choose replace or merge, and preview it. The preview lists every
+    problem by line, and the added, changed and removed items.
+  - Apply writes it in one step, and refuses a paste previewed against a
+    population that has changed since.
+  - The tab can download the population as CSV, or fill the box with it, or
+    with an example built from the planned sizes.
+- **Freeze and select.** After approval, "Freeze population and record seed"
+  fixes the population and draws a random seed. Readers see only the seed's
+  SHA-256 until every quarter is drawn. "Select Q*n* sample" ranks each
+  stratum's wave by a hash of the seed and the item reference, and takes the
+  quarter's allocation plus the flagged top-ups. The picks are frozen,
+  written to history, and can be re-performed from the seed. The first
+  selection makes the plan Active.
+
 ### Exceptions (`/exceptions`, detail at `/exceptions/detail`)
 
 Builds an **exception set**: the Security NFRs a system does not meet. Code:

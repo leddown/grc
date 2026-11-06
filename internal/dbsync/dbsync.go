@@ -545,6 +545,38 @@ var syncOrder = []tableSpec{
 		strat:        skipInSync,
 	},
 	{
+		table: "assurance_plan_strata",
+		cols: []string{
+			"id", "plan_id", "ordinal", "code", "name", "definition", "sampling_enabled", "confidence", "tolerable_rate",
+			"floor_pct", "effort_per_test", "effort_per_review", "wave_q1", "wave_q2", "wave_q3", "wave_q4",
+			"topup_q1", "topup_q2", "topup_q3", "topup_q4", "planned_size",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_population",
+		cols: []string{
+			"id", "plan_id", "item_ref", "name", "stratum_code", "cif", "business_line", "hosting", "internet_facing",
+			"owner", "wave_quarter", "attested_on", "dq_status", "dq_reviewed_on", "topup_quarter", "topup_rationale",
+			"source_kind", "source_ref",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_selections",
+		cols: []string{
+			"id", "plan_id", "quarter", "population_id", "item_ref", "stratum_code", "basis", "rank_order", "rank_hash",
+			"plan_version", "selected_at", "selected_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
 		table:        "assurance_plan_raci",
 		cols:         []string{"id", "plan_id", "ordinal", "activity", "cells"},
 		conflictCols: []string{"id"},

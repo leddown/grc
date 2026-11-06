@@ -3,6 +3,181 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-06 (Assurance Plans, phase 2: strata, scope population, sampling engine, freeze and quarterly selection)
+
+Second of six phases on `feature/assurance-plans`. A plan now sizes its
+samples, allocates them to quarters and loads them against capacity. It holds
+its scope population, and draws each quarter's sample in a way Internal Audit
+can re-perform.
+
+- **Sampling engine** (`internal/assuranceplan/sampling.go`, new). Pure
+  functions:
+  - `StatisticalSize`: n0 = ⌈ln(1−c)/ln(1−t)⌉
+  - `CorrectedSize`: the finite-population correction
+  - `FloorSize`, and `AnnualSample` = min(N, max(n, floor)); with sampling off
+    it is N
+  - `ValidateWaves`: the four wave shares must sum to 100%, ±10⁻⁶
+  - `Allocate`: cumulative ceil allocation, so the quarters always sum to the
+    year
+  - `ReviewsDue`: the same over N, with round
+  - `Rank` / `RankHash`: SHA-256 of seed ‖ 0x1F ‖ stratum ‖ 0x1F ‖ item_ref,
+    lowest first
+  - `Capacity`: effort per quarter from tests, reviews, retest and overhead,
+    against FTE × days, flagged above the threshold
+
+  Each cumulative product is rounded to 6 decimals before the ceiling. Without
+  that, floating-point drift adds or moves an item.
+- **Strata** (`PUT /:id/strata`, editable on the Sampling tab while the design
+  is open). Each stratum has:
+  - a code and name
+  - sampling on or off, confidence, tolerable rate and coverage floor
+  - effort per test and per review
+  - four wave shares and four planned top-up counts
+  - a **planned size**
+
+  N is the stratum's population count, or its planned size until the
+  population is loaded. A plan can be sized and approved on the inventory's
+  expected count. A stratum that still holds items cannot be removed or
+  renamed.
+
+  The Controls testing type seeds Tier 1 and Tier 2 with the reference
+  parameters and no planned size. The worked 2027 example seeds them with
+  planned sizes 80 and 240 and the Appendix A waves and top-ups.
+- **Scope population**, CSV text pasted into a textarea and posted as JSON.
+  There is no upload and no file parsing, in keeping with the no-ingestion
+  rule.
+  - The delimiter (comma, semicolon or tab) is taken from the header, and a
+    BOM is dropped.
+  - Header aliases are accepted (`Asset ID`, `Tier`, `1LoD wave`, `Attestation
+    date`…). Unknown columns are listed as ignored.
+  - Only `item_ref` is required. A column left out of the paste keeps each
+    item's existing value.
+  - Replace (the default) or merge, which keeps items left out of the paste.
+  - `POST /:id/population/preview` returns every problem by line and
+    reference, the added / changed (with fields) / removed / unchanged items,
+    the count per stratum, and a digest of the current population.
+    `POST /:id/population` applies the paste only when there are no problems
+    and the digest still matches. A paste previewed against a population that
+    changed since gets 409.
+  - Limits: 50,000 rows, 16 MiB body, 200 problems listed.
+  - Also `GET /:id/population`, `population.csv`, `population/example.csv` (an
+    example built from the planned sizes and waves), and
+    `PATCH /:id/population/:itemID` for one item's description, attestation,
+    DQ review and top-up.
+- **Population rules**, applied the same way to an import and to an item edit:
+  - Membership (add, remove, or move to another stratum or wave) is closed
+    while the plan or a revision is In review. After the freeze it opens only
+    while a change request's revision is a Draft.
+  - A selected quarter's wave cannot gain, lose or move items.
+  - A selected item stays, and its stratum is fixed.
+  - A top-up flag needs a rationale. It cannot be set for a selected quarter
+    or on an item that is already a pick, and a selected top-up cannot be
+    withdrawn.
+- **Freeze and commit-reveal seed** (`POST /:id/population/freeze`, once,
+  Approved or Active with no open revision). It needs every item in a wave and
+  every stratum's waves summing to 100%. It draws a 32-byte `crypto/rand` seed
+  and writes a `population frozen` event with the membership SHA-256 and the
+  seed's commitment (the SHA-256 of its hex text).
+
+  Readers see only the commitment until every quarter is selected or the plan
+  is closed. Every plan JSON the module serves masks the seed (`publicPlan`).
+  Administrators read it through `GET /:id/seed` ("Show seed"). The reason: the
+  page is open to anyone with page access, including the 1LoD owners whose
+  items are about to be drawn, and the seed predicts every draw.
+- **Quarterly selection** (`POST /:id/quarters/:q/select`, `:q` as `1` or
+  `Q1`).
+  - Each stratum's wave is ranked by hash, and the first q_i items not already
+    picked this year are taken. A stratum with sampling off takes its whole
+    wave as Full coverage.
+  - The flagged top-ups are added as Risk-based top-up. A top-up that
+    duplicates a pick refuses the whole selection and names the item.
+  - Each pick records its basis, rank order, hash and plan version.
+  - A short wave is taken whole and reported, never borrowed from another
+    wave. Planned top-ups that differ from the items flagged give a warning.
+  - The quarter's stamp is set only where it is empty, so a second or
+    concurrent run is refused rather than recomputed.
+  - The first selection moves an Approved plan to Active. Everything is
+    written to history.
+- **Approval gate** (`lint.go`). Now blocking:
+  - a stratum's waves not summing to 100% (every stratum, since the waves also
+    schedule attestations)
+  - a sampled stratum's confidence, tolerable rate or floor out of range
+
+  New advisory findings: a stratum with no population (and what it is sized
+  on), wave counts that differ from the wave shares, items with no wave, and
+  utilisation over the threshold.
+- **Approval snapshot** and **clone**. The snapshot now holds the strata and
+  the population's membership and description, not the seed, the freeze stamps
+  or execution data. Clone copies the strata and the population, without
+  attestations, DQ reviews or top-ups.
+- **Pages.** New tabs:
+  - **Sampling**: sample sizes with each formula and its inputs, the quarterly
+    allocation matrix, capacity per quarter, the strata editor, and the
+    freeze, seed and selection controls with the picks per quarter
+  - **Scope population**: counts per stratum and wave, filters, the item
+    table and editor, and the paste / preview / apply box
+
+  The Quarterly plan tab gains quarter-by-quarter targets, and the Overview
+  gains items in scope and tests planned. New pills (statistical, risk-based
+  top-up, full coverage, selected, within capacity, over threshold, DQ
+  statuses) use explicit colour pairs and print their word.
+- **Schema.** New tables `assurance_plan_strata`, `assurance_plan_population`
+  and `assurance_plan_selections` (selections cascade from their population
+  item; index on plan and quarter), in `sqlite.go` and `postgres.go`. The
+  PostgreSQL schema was reviewed, not run.
+- **Backup.** The three tables are in the snapshot (`idKeyed`, `skipInSync`).
+  `SnapshotVersion` stays at 16: phase 1 has not been released, so no v16
+  backup without these tables exists. The module fixture, the FK join check
+  and the skip count (39 → 42) were updated.
+- **Where the build differs from the prompt:**
+  - `ASSURANCE_PLANS.md`'s float example. 0.35 + 0.35 + 0.30 sums to exactly 1
+    in IEEE doubles. The doc and the test now use 0.2/0.4/0.3/0.1, which does
+    drift.
+  - The seed is committed and revealed (see above), not shown on the page.
+  - Selections store the rank order and plan version, not a copy of the seed.
+  - Strata carry a planned size.
+  - The population can still be completed between approval and the freeze.
+  - The planned-top-ups mismatch moved from the gate to a selection-time
+    warning, because top-ups are flagged during the year.
+- **Fixed during the build:** the preview answered `"errors": null` for a clean
+  paste. It is now always a list.
+- **Tests.** `sampling_test.go` covers:
+  - n0 59/29/45/22
+  - FPC 35 and 21, the floor winning, the cap at N
+  - the Appendix A allocation [13,12,10,0] and [4,6,6,5], and reviews due
+    [28,28,24,0] and [36,72,72,60]
+  - the drift case, failing without the guard, and every 5%-step split
+    summing exactly
+  - wave sums ≠ 100% rejected by the engine, the strata validation and the
+    gate
+  - rank determinism, and adding an item moving no other rank
+  - capacity 74.4 / 81.8 / 76.8 / 47.0 of 100 and 280 of 400 (70%), and the
+    threshold flag
+
+  `scope_test.go` covers:
+  - preview, diff, apply and row errors; a partial-column paste
+  - the stale-preview 409
+  - freeze preconditions and once-only
+  - membership after the freeze and under a change request
+  - the selection's golden picks; re-performance from the seed; all four
+    quarters
+  - a top-up duplicating a pick refused
+  - a selected wave frozen
+  - shortfall and full coverage
+  - strata validation, snapshot contents, clone
+
+  Handler tests cover the population routes round trip, readers seeing only
+  the commitment until the last quarter, and the page's tabs and pills.
+- **Manual check.** On a throwaway server (local mode, temp SQLite), the
+  example plan showed the golden values on the page. A 320-item example
+  population was pasted, previewed and applied, then frozen. The Q1 draw took
+  18 picks and made the plan Active. The Scope population tab was driven in
+  headless Chrome over DevTools: fill, merge-preview-apply, a bad paste listing
+  its problems with Apply disabled, an item edit, and the filters. No page
+  exceptions. Screenshots were checked at 1440 wide and 1024×640.
+- Docs: `ASSURANCE_PLANS.md`, FEATURES, HTTP_API, DATA_MODEL, ARCHITECTURE,
+  the Help page, README and Agents.md.
+
 ## 2026-11-06 (Assurance Plans, phase 1: plans, timeline, quarterly cycle, governance, approval)
 
 A new page, Assurance Plans, under Compliance & Risk (`/assurance-plans`):

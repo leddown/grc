@@ -69,6 +69,11 @@ func derive(p *Plan) {
 	if p.RACIRoles == nil {
 		p.RACIRoles = []string{}
 	}
+	if p.Strata == nil {
+		p.Strata = []Stratum{}
+	}
+	p.SeedCommitment = seedCommitment(p.SelectionSeed)
+	p.SeedRevealed = seedRevealed(*p)
 }
 
 func (s *Service) List(f Filter) ([]Plan, error) {
@@ -118,7 +123,11 @@ func (s *Service) Lint(id int64) ([]LintFinding, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Lint(p), nil
+	pop, err := s.repo.Population(id)
+	if err != nil {
+		return nil, err
+	}
+	return Lint(p, pop), nil
 }
 
 // ---- create ----
@@ -161,11 +170,14 @@ func (s *Service) Create(in CreateInput, actor string) (Plan, error) {
 		p.FunctionName = f
 	}
 	p.ClientProfileID = in.ClientProfileID
-	return s.insertNew(p, actor, HistoryEntry{Event: "created", ToValue: StatusDraft, Note: "from " + tpl.Name})
+	return s.insertNew(p, nil, actor, HistoryEntry{Event: "created", ToValue: StatusDraft, Note: "from " + tpl.Name})
 }
 
-func (s *Service) insertNew(p Plan, actor string, created HistoryEntry) (Plan, error) {
+func (s *Service) insertNew(p Plan, population []PopulationItem, actor string, created HistoryEntry) (Plan, error) {
 	if err := normalizeHeader(&p); err != nil {
+		return Plan{}, err
+	}
+	if err := normalizeStrata(p.Strata); err != nil {
 		return Plan{}, err
 	}
 	if err := normalizeSteps(p.Steps); err != nil {
@@ -195,7 +207,7 @@ func (s *Service) insertNew(p Plan, actor string, created HistoryEntry) (Plan, e
 	p.ApprovedBy, p.ApprovedAt, p.ActivatedAt, p.ClosedAt = "", "", "", ""
 	p.CreatedAt, p.CreatedBy, p.UpdatedAt, p.UpdatedBy = stamp, actor, stamp, actor
 	created.At, created.Actor = stamp, actor
-	id, err := s.repo.Create(p, []HistoryEntry{created})
+	id, err := s.repo.Create(p, population, []HistoryEntry{created})
 	if err != nil {
 		return Plan{}, err
 	}
@@ -981,7 +993,11 @@ func (s *Service) Approve(id int64, approver, note string) (ApprovalResult, erro
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
 			"Approved by its author (%s): separation of duties is not enforced in single-user mode.", author))
 	}
-	findings := Lint(p)
+	pop, err := s.repo.Population(id)
+	if err != nil {
+		return ApprovalResult{}, err
+	}
+	findings := Lint(p, pop)
 	if blocking := BlockingFindings(findings); len(blocking) > 0 {
 		return ApprovalResult{}, ApprovalError{Findings: blocking}
 	}
@@ -1001,7 +1017,7 @@ func (s *Service) Approve(id int64, approver, note string) (ApprovalResult, erro
 	p.ApprovedBy, p.ApprovedAt = approver, stamp
 	p.UpdatedAt, p.UpdatedBy = stamp, approver
 	number := p.VersionCount + 1
-	snapshot, sum, err := snapshotOf(p)
+	snapshot, sum, err := snapshotOf(p, pop)
 	if err != nil {
 		return ApprovalResult{}, err
 	}
@@ -1027,13 +1043,31 @@ func (s *Service) Approve(id int64, approver, note string) (ApprovalResult, erro
 	return result, nil
 }
 
+// planSnapshot is what an approval records: the plan's design and the
+// population it was sized on.
+type planSnapshot struct {
+	Plan
+	Population []PopulationItem `json:"population"`
+}
+
 // snapshotOf is the approved plan as JSON, with the derived fields that
 // describe its state at the time cleared so the snapshot is only the design.
-func snapshotOf(p Plan) (string, string, error) {
+// The seed is not design and stays out; its commitment is kept. Each item
+// keeps its membership and description, not its execution record.
+func snapshotOf(p Plan, pop []PopulationItem) (string, string, error) {
 	p.DesignLocked = true
 	p.VersionCount = 0
 	p.LatestVersion = ""
-	raw, err := json.Marshal(p)
+	p.SelectionSeed = ""
+	p.SeedRevealed = false
+	p.FrozenAt, p.FrozenBy = "", ""
+	p.PopulationSize = len(pop)
+	items := make([]PopulationItem, len(pop))
+	for i, it := range pop {
+		items[i] = designOf(it)
+		items[i].ID = it.ID
+	}
+	raw, err := json.Marshal(planSnapshot{Plan: p, Population: items})
 	if err != nil {
 		return "", "", fmt.Errorf("encode plan snapshot: %w", err)
 	}
@@ -1116,11 +1150,35 @@ func (s *Service) Clone(id int64, title, actor string) (Plan, error) {
 	}
 	gov := stripGovIDs(src)
 	c.RACI, c.Cadence, c.Escalations = gov.RACI, gov.Cadence, gov.Escalations
+	c.Strata = make([]Stratum, len(src.Strata))
+	for i, st := range src.Strata {
+		st.ID = 0
+		c.Strata[i] = st
+	}
+	srcPop, err := s.repo.Population(id)
+	if err != nil {
+		return Plan{}, err
+	}
+	pop := make([]PopulationItem, len(srcPop))
+	for i, it := range srcPop {
+		pop[i] = designOf(it)
+	}
 	note := "cloned from " + src.Reference
 	if c.NonWorkingDates != "" {
 		note += "; non-working dates moved one year: check movable holidays"
 	}
-	return s.insertNew(c, actor, HistoryEntry{Event: "created", ToValue: StatusDraft, Note: note})
+	if len(pop) > 0 {
+		note += fmt.Sprintf("; population of %d items copied without attestations, DQ reviews or top-ups", len(pop))
+	}
+	return s.insertNew(c, pop, actor, HistoryEntry{Event: "created", ToValue: StatusDraft, Note: note})
+}
+
+// designOf is an item's membership and description without its execution
+// record: what a clone carries into next year and an approval snapshots.
+func designOf(it PopulationItem) PopulationItem {
+	return PopulationItem{ItemRef: it.ItemRef, Name: it.Name, StratumCode: it.StratumCode, CIF: it.CIF,
+		BusinessLine: it.BusinessLine, Hosting: it.Hosting, InternetFacing: it.InternetFacing, Owner: it.Owner,
+		WaveQuarter: it.WaveQuarter, SourceKind: it.SourceKind, SourceRef: it.SourceRef}
 }
 
 func shiftYear(d string) string {

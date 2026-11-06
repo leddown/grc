@@ -12,12 +12,18 @@ import (
 type Repository interface {
 	List(filter Filter) ([]Plan, error)
 	Get(id int64) (Plan, error)
-	Create(p Plan, history []HistoryEntry) (int64, error)
+	Create(p Plan, population []PopulationItem, history []HistoryEntry) (int64, error)
 	SaveHeader(p Plan, history []HistoryEntry, version *Version) error
 	ReplaceSteps(planID int64, steps []Step, history []HistoryEntry) error
 	ReplaceQuarters(planID int64, quarters []Quarter, history []HistoryEntry) error
 	ReplaceGovernance(planID int64, roles []string, g Governance, history []HistoryEntry) error
 	UpdateStepStatus(planID, stepID int64, status string, history []HistoryEntry) error
+	ReplaceStrata(planID int64, strata []Stratum, history []HistoryEntry) error
+	Population(planID int64) ([]PopulationItem, error)
+	ApplyPopulation(planID int64, change PopulationChange, history []HistoryEntry) error
+	UpdatePopulationItem(planID int64, item PopulationItem, history []HistoryEntry) error
+	Selections(planID int64) ([]Selection, error)
+	SaveSelection(planID int64, quarter int, picks []Selection, activate *Plan, history []HistoryEntry) error
 	Delete(id int64) error
 	ReferencesWithPrefix(prefix string) ([]string, error)
 	History(planID int64) ([]HistoryEntry, error)
@@ -120,17 +126,25 @@ func scanPlan(s scanner, extra ...any) (Plan, error) {
 
 const planSelect = `SELECT p.id, %s, COALESCE(c.name, ''),
 	(SELECT COUNT(*) FROM assurance_plan_versions v WHERE v.plan_id = p.id),
-	(SELECT COALESCE(MAX(v.number), 0) FROM assurance_plan_versions v WHERE v.plan_id = p.id)
+	(SELECT COALESCE(MAX(v.number), 0) FROM assurance_plan_versions v WHERE v.plan_id = p.id),
+	(SELECT COUNT(*) FROM assurance_plan_population x WHERE x.plan_id = p.id),
+	COALESCE((SELECT h.at FROM assurance_plan_history h WHERE h.plan_id = p.id AND h.event = '` + eventFrozen + `' ORDER BY h.id DESC LIMIT 1), ''),
+	COALESCE((SELECT h.actor FROM assurance_plan_history h WHERE h.plan_id = p.id AND h.event = '` + eventFrozen + `' ORDER BY h.id DESC LIMIT 1), '')
 	FROM assurance_plans p LEFT JOIN client_profiles c ON c.id = p.client_profile_id`
+
+const eventFrozen = "population frozen"
 
 func scanPlanRow(s scanner) (Plan, error) {
 	var client string
-	var count, latest int
-	p, err := scanPlan(s, &client, &count, &latest)
+	var count, latest, popSize int
+	var frozenAt, frozenBy string
+	p, err := scanPlan(s, &client, &count, &latest, &popSize, &frozenAt, &frozenBy)
 	if err != nil {
 		return Plan{}, err
 	}
 	p.ClientName = client
+	p.PopulationSize = popSize
+	p.FrozenAt, p.FrozenBy = frozenAt, frozenBy
 	p.VersionCount = count
 	if latest > 0 {
 		p.LatestVersion = fmt.Sprintf("v%d", latest)
@@ -189,6 +203,9 @@ func (r *SQLiteRepository) Get(id int64) (Plan, error) {
 		return Plan{}, err
 	}
 	if p.Quarters, err = r.quarters(id); err != nil {
+		return Plan{}, err
+	}
+	if p.Strata, err = r.strata(id); err != nil {
 		return Plan{}, err
 	}
 	if p.RACI, err = r.raci(id); err != nil {
@@ -308,7 +325,7 @@ func (r *SQLiteRepository) escalations(planID int64) ([]Escalation, error) {
 	return out, rows.Err()
 }
 
-func (r *SQLiteRepository) Create(p Plan, history []HistoryEntry) (int64, error) {
+func (r *SQLiteRepository) Create(p Plan, population []PopulationItem, history []HistoryEntry) (int64, error) {
 	args, err := planArgs(p)
 	if err != nil {
 		return 0, err
@@ -329,6 +346,14 @@ func (r *SQLiteRepository) Create(p Plan, history []HistoryEntry) (int64, error)
 	}
 	if err := writeQuarters(tx, id, p.Quarters); err != nil {
 		return 0, err
+	}
+	if err := writeStrata(tx, id, p.Strata); err != nil {
+		return 0, err
+	}
+	for _, item := range population {
+		if err := insertPopulationItem(tx, id, item); err != nil {
+			return 0, err
+		}
 	}
 	if err := writeGovernance(tx, id, Governance{RACI: p.RACI, Cadence: p.Cadence, Escalations: p.Escalations}); err != nil {
 		return 0, err

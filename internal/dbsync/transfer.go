@@ -59,9 +59,9 @@ import (
 // v9 added Audit Findings & Remediation (audit_findings, audit_finding_actions,
 // audit_finding_history). A v8-or-older backup restores with those empty.
 //
-// v16 added Assurance Plans (assurance_plans and its steps, quarters, RACI,
-// cadence, escalations, history and versions). A v15-or-older backup restores
-// with the module empty.
+// v16 added Assurance Plans (assurance_plans and its steps, quarters, strata,
+// population, selections, RACI, cadence, escalations, history and versions).
+// A v15-or-older backup restores with the module empty.
 //
 // v15 renamed the control catalog's table to nist_controls. An older backup
 // carries those rows under the table's earlier name, and Import reads them from

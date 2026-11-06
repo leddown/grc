@@ -213,8 +213,10 @@ snapshot only.
 ### `assurance_plans`
 
 One row per plan: identity, period, objective, roles, lifecycle and open
-revision, authorship and approval, the selection seed, non-working dates, the
-RACI role columns (JSON array) and the plan's parameters.
+revision, authorship and approval, the selection seed (drawn at the population
+freeze; readers see only its SHA-256 until every quarter is selected),
+non-working dates, the RACI role columns (JSON array) and the plan's
+parameters.
 
 - **Key:** `id`. **Travels:** backup only.
 - **Columns** (text unless a type is given): `id integer`, `reference`, `title`, `plan_type`, `function_name`, `client_profile_id integer` (0 = none; `client_profiles.id` otherwise, not a foreign key), `period_start`, `period_end`, `mobilise_start`, `closing_date`, `objective`, `decisions_requested`, `regulatory_refs`, `owner_role`, `accountable_role`, `approval_forum`, `status`, `revision integer`, `revision_status`, `revision_author`, `change_reason`, `author`, `approved_by`, `approved_at`, `activated_at`, `closed_at`, `selection_seed`, `non_working_dates`, `raci_roles`, `tester_fte real`, `days_per_fte_quarter real`, `utilisation_threshold real`, `rag_amber_points real`, `result_partial_min integer`, `result_ineffective_min integer`, `deviation_extend_at integer`, `deviation_thematic_at integer`, `extend_pct real`, `evidence_sla_days integer`, `ai_generated integer`, `model`, `prompt_hash`, `created_at`, `created_by`, `updated_at`, `updated_by`.
@@ -235,6 +237,30 @@ The quarterly operating cycle, one row per quarter (unique per plan), with the r
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
 - **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `quarter integer`, `lod1_window_start`, `lod1_deadline`, `selection_date`, `fieldwork_start`, `fieldwork_end`, `findings_agreed_by`, `report_date`, `committee_label`, `retest_days real`, `overhead_days real`, `selected_at`, `selected_by`.
 
+### `assurance_plan_strata`
+
+The population's strata (Tier 1, Tier 2…), one row per code (unique per plan), with the sampling parameters (confidence, tolerable rate, coverage floor, all shares between 0 and 1), effort per test and per review in person-days, the 1LoD wave shares per quarter, the planned risk-based top-ups per quarter, and the planned size that stands in for N until the population is loaded.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `ordinal integer`, `code`, `name`, `definition`, `sampling_enabled integer`, `confidence real`, `tolerable_rate real`, `floor_pct real`, `effort_per_test real`, `effort_per_review real`, `wave_q1 real`..`wave_q4 real`, `topup_q1 integer`..`topup_q4 integer`, `planned_size integer`.
+
+### `assurance_plan_population`
+
+The scope population: one row per item (`item_ref` unique per plan), in a stratum (`stratum_code` matches a stratum's `code`, not a foreign key) and a 1LoD wave (`wave_quarter`, 0 = none), with its description, the 1LoD attestation date, the 2LoD data-quality review, and a risk-based top-up flag (`topup_quarter`, 0 = none) with its rationale. `source_kind` / `source_ref` are for proposed populations (phase 5).
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `item_ref`, `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing integer`, `owner`, `wave_quarter integer`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter integer`, `topup_rationale`, `source_kind`, `source_ref`.
+
+### `assurance_plan_selections`
+
+The frozen quarterly picks: written once by the selection action and never recomputed. An item is picked at most once a year (unique on `plan_id`, `population_id`). Each pick keeps its basis (Statistical, Risk-based top-up, Full coverage), its place in the hash ranking of its stratum and wave (`rank_order`, 0 for a top-up), the hash, and the approved version it was drawn under. Indexed on (`plan_id`, `quarter`).
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id`, `population_id` → `assurance_plan_population.id` (both on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `quarter integer`, `population_id integer`, `item_ref`, `stratum_code`, `basis`, `rank_order integer`, `rank_hash`, `plan_version integer`, `selected_at`, `selected_by`.
+
 ### `assurance_plan_raci`, `assurance_plan_cadence`, `assurance_plan_escalations`
 
 Governance: RACI activities (`cells` is a JSON object, role → R/A/C/I/A/R), the reporting cadence, and the escalation triggers.
@@ -245,7 +271,7 @@ Governance: RACI activities (`cells` is a JSON object, role → R/A/C/I/A/R), th
 
 ### `assurance_plan_history`
 
-Append-only history of design changes (summarised by reference), status and revision moves, change requests, approvals and step-status changes, with the actor.
+Append-only history of design changes (summarised by reference), status and revision moves, change requests, approvals, step-status changes, population imports and item edits, the population freeze (with its membership SHA-256 and the seed commitment) and each quarter's selection, with the actor.
 
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
@@ -253,7 +279,7 @@ Append-only history of design changes (summarised by reference), status and revi
 
 ### `assurance_plan_versions`
 
-Approval snapshots: the plan as approved, as JSON, with its SHA-256. Written once, never updated; unique per plan and number.
+Approval snapshots: the plan as approved, with its strata and the population's membership and description at that point (not the seed, attestations or selections), as JSON, with its SHA-256. Written once, never updated; unique per plan and number.
 
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).

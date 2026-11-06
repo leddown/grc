@@ -38,6 +38,27 @@ const (
 
 var StepStatuses = []string{StepNotStarted, StepInProgress, StepComplete, StepAtRisk, StepDelayed}
 
+// Selection bases. A coverage-only stratum (sampling off) selects every item
+// of its wave as Full coverage, which is how one selection path serves the
+// sampled and the coverage plan types.
+const (
+	BasisStatistical = "Statistical"
+	BasisTopUp       = "Risk-based top-up"
+	BasisFull        = "Full coverage"
+)
+
+var SelectionBases = []string{BasisStatistical, BasisTopUp, BasisFull}
+
+// The 2LoD data-quality review of a 1LoD submission.
+const (
+	DQNotReviewed = "Not reviewed"
+	DQInReview    = "In review"
+	DQAccepted    = "Accepted"
+	DQReturned    = "Returned to 1LoD"
+)
+
+var DQStatuses = []string{DQNotReviewed, DQInReview, DQAccepted, DQReturned}
+
 // RACILetters are the values a RACI cell may hold. "A/R" is common practice
 // for the one role that both does and owns an activity.
 var RACILetters = []string{"R", "A", "C", "I", "A/R"}
@@ -97,14 +118,24 @@ type Plan struct {
 
 	Steps       []Step       `json:"steps"`
 	Quarters    []Quarter    `json:"quarters"`
+	Strata      []Stratum    `json:"strata"`
 	RACI        []RACIRow    `json:"raci"`
 	Cadence     []Cadence    `json:"cadence"`
 	Escalations []Escalation `json:"escalations"`
 
 	// Derived on read.
-	DesignLocked  bool   `json:"design_locked"`
-	VersionCount  int    `json:"version_count"`
-	LatestVersion string `json:"latest_version"`
+	DesignLocked   bool   `json:"design_locked"`
+	VersionCount   int    `json:"version_count"`
+	LatestVersion  string `json:"latest_version"`
+	PopulationSize int    `json:"population_size"`
+	FrozenAt       string `json:"population_frozen_at"`
+	FrozenBy       string `json:"population_frozen_by"`
+	// SeedCommitment is the SHA-256 of the seed. Readers see it from the
+	// freeze on; the seed itself only once the last quarter is selected, so
+	// nobody outside the testers can work out a later quarter's picks while
+	// that wave is still attesting.
+	SeedCommitment string `json:"seed_commitment"`
+	SeedRevealed   bool   `json:"seed_revealed"`
 }
 
 // Parameters are the per-plan thresholds. They are stored on the plan rather
@@ -174,6 +205,74 @@ type Quarter struct {
 	// request: only the selection action writes it.
 	SelectedAt string `json:"selected_at"`
 	SelectedBy string `json:"selected_by"`
+}
+
+// Stratum is a subdivision of the population with its own sampling
+// parameters. Waves are the share of the stratum due for 1LoD attestation in
+// each quarter (fractions adding up to 1); top-ups are the planned risk-based
+// tests per quarter on top of the statistical sample.
+type Stratum struct {
+	ID              int64      `json:"id"`
+	Ordinal         int        `json:"ordinal"`
+	Code            string     `json:"code"`
+	Name            string     `json:"name"`
+	Definition      string     `json:"definition"`
+	SamplingEnabled bool       `json:"sampling_enabled"`
+	Confidence      float64    `json:"confidence"`
+	TolerableRate   float64    `json:"tolerable_rate"`
+	FloorPct        float64    `json:"floor_pct"`
+	EffortPerTest   float64    `json:"effort_per_test"`
+	EffortPerReview float64    `json:"effort_per_review"`
+	Waves           [4]float64 `json:"waves"`
+	TopUps          [4]int     `json:"top_ups"`
+	// PlannedSize sizes the stratum until its population is loaded, so the
+	// sampling can be approved before the inventory extract is final.
+	PlannedSize int `json:"planned_size"`
+}
+
+// PopulationItem is one item in scope. Membership, stratum and wave decide
+// the sampling; the rest describes the item or records its execution.
+type PopulationItem struct {
+	ID             int64  `json:"id"`
+	ItemRef        string `json:"item_ref"`
+	Name           string `json:"name"`
+	StratumCode    string `json:"stratum"`
+	CIF            string `json:"cif"`
+	BusinessLine   string `json:"business_line"`
+	Hosting        string `json:"hosting"`
+	InternetFacing bool   `json:"internet_facing"`
+	Owner          string `json:"owner"`
+	WaveQuarter    int    `json:"wave"`
+	AttestedOn     string `json:"attested_on"`
+	DQStatus       string `json:"dq_status"`
+	DQReviewedOn   string `json:"dq_reviewed_on"`
+	TopUpQuarter   int    `json:"topup_quarter"`
+	TopUpRationale string `json:"topup_rationale"`
+	SourceKind     string `json:"source_kind"`
+	SourceRef      string `json:"source_ref"`
+
+	// Derived on read from the selections.
+	SelectedQuarter int    `json:"selected_quarter"`
+	SelectionBasis  string `json:"selection_basis"`
+}
+
+// Selection is an item picked for 2LoD testing in a quarter. It is written
+// once by the selection action and never recomputed.
+type Selection struct {
+	ID           int64  `json:"id"`
+	Quarter      int    `json:"quarter"`
+	PopulationID int64  `json:"population_id"`
+	ItemRef      string `json:"item_ref"`
+	ItemName     string `json:"item_name"`
+	StratumCode  string `json:"stratum"`
+	Basis        string `json:"basis"`
+	// RankOrder is the item's place in its stratum's wave by rank hash
+	// (1 = lowest hash); 0 for a top-up, which is chosen, not drawn.
+	RankOrder   int    `json:"rank_order"`
+	RankHash    string `json:"rank_hash"`
+	PlanVersion int    `json:"plan_version"`
+	SelectedAt  string `json:"selected_at"`
+	SelectedBy  string `json:"selected_by"`
 }
 
 type RACIRow struct {
@@ -248,14 +347,17 @@ type Governance struct {
 }
 
 type Vocabulary struct {
-	Statuses     []string `json:"statuses"`
-	StepTypes    []string `json:"step_types"`
-	StepStatuses []string `json:"step_statuses"`
-	RACILetters  []string `json:"raci_letters"`
+	Statuses       []string `json:"statuses"`
+	StepTypes      []string `json:"step_types"`
+	StepStatuses   []string `json:"step_statuses"`
+	RACILetters    []string `json:"raci_letters"`
+	DQStatuses     []string `json:"dq_statuses"`
+	SelectionBases []string `json:"selection_bases"`
 }
 
 func Vocab() Vocabulary {
-	return Vocabulary{Statuses: Statuses, StepTypes: StepTypes, StepStatuses: StepStatuses, RACILetters: RACILetters}
+	return Vocabulary{Statuses: Statuses, StepTypes: StepTypes, StepStatuses: StepStatuses, RACILetters: RACILetters,
+		DQStatuses: DQStatuses, SelectionBases: SelectionBases}
 }
 
 // designEditable reports whether the plan's design may change: before its

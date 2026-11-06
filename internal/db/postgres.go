@@ -1008,6 +1008,78 @@ CREATE TABLE IF NOT EXISTS assurance_plan_versions (
 	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS assurance_plan_strata (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	definition TEXT NOT NULL DEFAULT '',
+	sampling_enabled INTEGER NOT NULL DEFAULT 1,
+	confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+	tolerable_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+	floor_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+	effort_per_test DOUBLE PRECISION NOT NULL DEFAULT 0,
+	effort_per_review DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q1 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q2 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q3 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q4 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	topup_q1 INTEGER NOT NULL DEFAULT 0,
+	topup_q2 INTEGER NOT NULL DEFAULT 0,
+	topup_q3 INTEGER NOT NULL DEFAULT 0,
+	topup_q4 INTEGER NOT NULL DEFAULT 0,
+	planned_size INTEGER NOT NULL DEFAULT 0,
+	UNIQUE (plan_id, code),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_population (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	item_ref TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	stratum_code TEXT NOT NULL DEFAULT '',
+	cif TEXT NOT NULL DEFAULT '',
+	business_line TEXT NOT NULL DEFAULT '',
+	hosting TEXT NOT NULL DEFAULT '',
+	internet_facing INTEGER NOT NULL DEFAULT 0,
+	owner TEXT NOT NULL DEFAULT '',
+	wave_quarter INTEGER NOT NULL DEFAULT 0,
+	attested_on TEXT NOT NULL DEFAULT '',
+	dq_status TEXT NOT NULL DEFAULT '',
+	dq_reviewed_on TEXT NOT NULL DEFAULT '',
+	topup_quarter INTEGER NOT NULL DEFAULT 0,
+	topup_rationale TEXT NOT NULL DEFAULT '',
+	source_kind TEXT NOT NULL DEFAULT '',
+	source_ref TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, item_ref),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+-- A selection is the frozen record of a quarter's draw: written once by the
+-- selection action, never recomputed, and an item is selected at most once
+-- a year.
+CREATE TABLE IF NOT EXISTS assurance_plan_selections (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	quarter INTEGER NOT NULL DEFAULT 0,
+	population_id BIGINT NOT NULL,
+	item_ref TEXT NOT NULL DEFAULT '',
+	stratum_code TEXT NOT NULL DEFAULT '',
+	basis TEXT NOT NULL DEFAULT '',
+	rank_order INTEGER NOT NULL DEFAULT 0,
+	rank_hash TEXT NOT NULL DEFAULT '',
+	plan_version INTEGER NOT NULL DEFAULT 0,
+	selected_at TEXT NOT NULL DEFAULT '',
+	selected_by TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, population_id),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+	FOREIGN KEY(population_id) REFERENCES assurance_plan_population(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_selections_plan ON assurance_plan_selections (plan_id, quarter);
+
 
 -- Policy Studio: see internal/db/sqlite.go for what each table holds.
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS editor_format TEXT NOT NULL DEFAULT 'markdown';

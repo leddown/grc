@@ -219,11 +219,23 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | PUT | `/assurance-plans/:id/governance` | admin | `assuranceplan.(*Handler).ReplaceGovernance` |
 | GET | `/assurance-plans/:id/history` | signed in | `assuranceplan.(*Handler).History` |
 | GET | `/assurance-plans/:id/lint` | signed in | `assuranceplan.(*Handler).Lint` |
+| GET | `/assurance-plans/:id/population` | signed in | `assuranceplan.(*Handler).Population` |
+| POST | `/assurance-plans/:id/population` | admin | `assuranceplan.(*Handler).ApplyPopulation` |
+| GET | `/assurance-plans/:id/population.csv` | signed in | `assuranceplan.(*Handler).PopulationCSV` |
+| PATCH | `/assurance-plans/:id/population/:itemID` | admin | `assuranceplan.(*Handler).UpdatePopulationItem` |
+| GET | `/assurance-plans/:id/population/example.csv` | signed in | `assuranceplan.(*Handler).ExamplePopulationCSV` |
+| POST | `/assurance-plans/:id/population/freeze` | admin | `assuranceplan.(*Handler).FreezePopulation` |
+| POST | `/assurance-plans/:id/population/preview` | admin | `assuranceplan.(*Handler).PreviewPopulation` |
 | PUT | `/assurance-plans/:id/quarters` | admin | `assuranceplan.(*Handler).ReplaceQuarters` |
+| POST | `/assurance-plans/:id/quarters/:q/select` | admin | `assuranceplan.(*Handler).SelectQuarter` |
 | POST | `/assurance-plans/:id/quarters/generate` | admin | `assuranceplan.(*Handler).GenerateQuarters` |
 | POST | `/assurance-plans/:id/return` | admin | `assuranceplan.(*Handler).Return` |
+| GET | `/assurance-plans/:id/sampling` | signed in | `assuranceplan.(*Handler).Sampling` |
+| GET | `/assurance-plans/:id/seed` | admin | `assuranceplan.(*Handler).Seed` |
+| GET | `/assurance-plans/:id/selections` | signed in | `assuranceplan.(*Handler).Selections` |
 | PUT | `/assurance-plans/:id/steps` | admin | `assuranceplan.(*Handler).ReplaceSteps` |
 | PATCH | `/assurance-plans/:id/steps/:stepID` | admin | `assuranceplan.(*Handler).UpdateStepStatus` |
+| PUT | `/assurance-plans/:id/strata` | admin | `assuranceplan.(*Handler).ReplaceStrata` |
 | POST | `/assurance-plans/:id/submit` | admin | `assuranceplan.(*Handler).Submit` |
 | GET | `/assurance-plans/:id/versions` | signed in | `assuranceplan.(*Handler).Versions` |
 | GET | `/assurance-plans/:id/versions/:n` | signed in | `assuranceplan.(*Handler).Version` |

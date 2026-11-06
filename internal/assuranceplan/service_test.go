@@ -246,7 +246,7 @@ func TestExamplePlanSeedsAppendixA(t *testing.T) {
 	if len(p.RACIRoles) != 7 || len(p.RACI) == 0 || len(p.Cadence) != 5 || len(p.Escalations) != 4 {
 		t.Errorf("governance roles=%d raci=%d cadence=%d escalations=%d", len(p.RACIRoles), len(p.RACI), len(p.Cadence), len(p.Escalations))
 	}
-	if blocking := BlockingFindings(Lint(p)); len(blocking) != 0 {
+	if blocking := BlockingFindings(Lint(p, nil)); len(blocking) != 0 {
 		t.Errorf("the example should pass the gate, got %+v", blocking)
 	}
 	if p.Parameters != DefaultParameters() {
@@ -280,7 +280,7 @@ func TestControlsTestingTypeComputesDatesFromThePeriod(t *testing.T) {
 			t.Errorf("step %s %s..%s, want %s..%s", ref, s.StartDate, s.EndDate, want[0], want[1])
 		}
 	}
-	if blocking := BlockingFindings(Lint(p)); len(blocking) != 0 {
+	if blocking := BlockingFindings(Lint(p, nil)); len(blocking) != 0 {
 		t.Errorf("a fresh controls testing plan should pass the gate, got %+v", blocking)
 	}
 }
@@ -346,7 +346,7 @@ func TestLintBlocksStepsWithoutRolesOrDatesAndQuartersWithoutDeadlines(t *testin
 		Quarters: []Quarter{{Quarter: 1, LOD1Deadline: "2027-02-26"}, {Quarter: 2, ReportDate: "2027-07-30"}},
 	}
 	got := map[string]int{}
-	for _, f := range BlockingFindings(Lint(p)) {
+	for _, f := range BlockingFindings(Lint(p, nil)) {
 		got[f.Code]++
 	}
 	want := map[string]int{"step_no_responsible": 1, "step_no_dates": 2, "quarter_no_report": 1, "quarter_no_deadline": 1}

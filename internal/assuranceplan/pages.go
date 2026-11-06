@@ -72,20 +72,26 @@ const pageStyles = `
   .edit-table td textarea { min-height: 26px; }
   .edit-table td.ctl { white-space: nowrap; width: 1%; }
   .pre { white-space: pre-wrap; }
+  table.ap-nowrap td, table.ap-nowrap th { white-space: nowrap; }
+  button.link-btn { background: none; border: 0; padding: 0; min-height: 0; color: var(--accent, #6ea8fe); }
+  label.ap-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text, #e6e8ec); }
+  label.ap-check input { width: auto; min-height: 0; margin: 0; }
+  details { margin: 6px 0; }
+  details > summary { cursor: pointer; font-weight: 600; }
 
   .ap-st { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11px; line-height: 18px;
          border: 1px solid; white-space: nowrap; font-weight: 600; }
-  .ap-st-draft, .ap-st-not-started, .ap-st-closed, .ap-st-none, .ap-st-advisory {
+  .ap-st-draft, .ap-st-not-started, .ap-st-closed, .ap-st-none, .ap-st-advisory, .ap-st-not-selected, .ap-st-not-reviewed {
          color: var(--muted, #8b93a3); background: var(--surface-2, #1f232c); border-color: var(--border, #2a2f3a); }
-  .ap-st-in-review, .ap-st-in-progress {
+  .ap-st-in-review, .ap-st-in-progress, .ap-st-statistical {
          color: var(--accent, #6ea8fe); background: var(--surface, #171a21);
          background: color-mix(in srgb, var(--accent, #6ea8fe) 14%, var(--surface, #171a21)); border-color: var(--accent, #6ea8fe); }
-  .ap-st-approved, .ap-st-active, .ap-st-complete {
+  .ap-st-approved, .ap-st-active, .ap-st-complete, .ap-st-selected, .ap-st-within-capacity, .ap-st-accepted, .ap-st-full-coverage {
          color: var(--gain, #7ddc9a); background: var(--surface, #171a21);
          background: color-mix(in srgb, var(--gain, #7ddc9a) 14%, var(--surface, #171a21)); border-color: var(--gain, #7ddc9a); }
-  .ap-st-at-risk {
+  .ap-st-at-risk, .ap-st-risk-based-top-up, .ap-st-returned-to-1lod {
          color: #f5b83d; background: #2a2210; border-color: #f5b83d; }
-  .ap-st-delayed, .ap-st-blocking {
+  .ap-st-delayed, .ap-st-blocking, .ap-st-over-threshold {
          color: var(--error, #ff8a8a); background: var(--surface, #171a21);
          background: color-mix(in srgb, var(--error, #ff8a8a) 14%, var(--surface, #171a21)); border-color: var(--error, #ff8a8a); }
 
@@ -144,6 +150,13 @@ async function act(method, url, body, then) {
 }
 function h(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 `
+
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
 
 func jsonData(v any) string {
 	raw, err := json.Marshal(v)
@@ -308,6 +321,8 @@ document.querySelectorAll('[data-clone]').forEach(b => b.addEventListener('click
 
 type planPageData struct {
 	Plan        Plan
+	Population  []PopulationItem
+	Sampling    SamplingView
 	Lint        []LintFinding
 	History     []HistoryEntry
 	Versions    []Version
@@ -321,6 +336,8 @@ var planTabs = []struct{ id, label string }{
 	{"overview", "Overview"},
 	{"timeline", "Plan & timeline"},
 	{"quarters", "Quarterly plan"},
+	{"sampling", "Sampling"},
+	{"population", "Scope population"},
 	{"governance", "Governance"},
 	{"history", "History & versions"},
 }
@@ -359,15 +376,18 @@ func planPageHTML(d planPageData) string {
   ` + lockNotice(p) + `
   <div id="stepsEditor"></div>
 </section>
-<section class="tab-panel" id="tab-quarters" hidden>` + quartersHTML(p) + `</section>
+<section class="tab-panel" id="tab-quarters" hidden>` + quartersHTML(p) + quarterTargetsHTML(d.Sampling) + `</section>
+<section class="tab-panel" id="tab-sampling" hidden>` + samplingHTML(d) + `</section>
+<section class="tab-panel" id="tab-population" hidden>` + populationHTML(d) + `</section>
 <section class="tab-panel" id="tab-governance" hidden>` + governanceHTML(p) + `</section>
 <section class="tab-panel" id="tab-history" hidden>` + historyHTML(d) + `</section>
 </main>
 <script type="application/json" id="plan-data">` + jsonData(p) + `</script>
 <script type="application/json" id="vocab-data">` + jsonData(Vocab()) + `</script>
 <script type="application/json" id="page-data">` + jsonData(map[string]any{"viewer": d.Viewer, "sep_enforced": d.SepEnforced}) + `</script>
+<script type="application/json" id="population-data">` + jsonData(nonNil(d.Population)) + `</script>
 <script>
-` + sharedScript + planScript + `
+` + sharedScript + planScript + scopeScript + `
 </script>
 </body>
 </html>`
@@ -439,6 +459,8 @@ func overviewHTML(d planPageData) string {
 	b.WriteString(card(strconv.Itoa(counts[StepMilestone]), "Milestones"))
 	b.WriteString(card(strconv.Itoa(counts[StepOngoing]), "Ongoing items"))
 	b.WriteString(card(strconv.Itoa(len(p.Quarters)), "Quarters"))
+	b.WriteString(card(strconv.Itoa(len(d.Population)), "Items in scope"))
+	b.WriteString(card(strconv.Itoa(d.Sampling.TotalTests), "Tests planned"))
 	b.WriteString(card(firstNonEmpty(p.LatestVersion, "none"), "Approved version"))
 	b.WriteString(card(strconv.Itoa(blocking), "Blocking issues"))
 	b.WriteString(card(strconv.Itoa(advisory), "Advisory notes"))
@@ -567,7 +589,7 @@ func quartersHTML(p Plan) string {
 <p class="lede">Default cycle, offset from each quarter's 1LoD deadline (week 0): selection the next business day;
 fieldwork from a week later to +6 weeks; QA four-eyes to +7 weeks; findings agreed by +8 weeks; quarterly report at +9 weeks.
 The 2LoD data-quality review runs from a week after the window opens to a week after the deadline.</p>` + lockNotice(p))
-	b.WriteString(`<div class="table-wrap"><table><thead><tr><th>Q</th><th>1LoD window</th><th>1LoD deadline</th><th>Selection</th><th>Fieldwork</th><th>Findings agreed</th><th>Report</th><th>Committee</th><th class="num">Retest days</th><th class="num">Overhead days</th><th>Sample</th></tr></thead><tbody>`)
+	b.WriteString(`<div class="table-wrap"><table class="ap-nowrap"><thead><tr><th>Q</th><th>1LoD window</th><th>1LoD deadline</th><th>Selection</th><th>Fieldwork</th><th>Findings agreed</th><th>Report</th><th>Committee</th><th class="num">Retest days</th><th class="num">Overhead days</th><th>Sample</th></tr></thead><tbody>`)
 	for _, q := range p.Quarters {
 		frozen := `<span class="muted">not selected</span>`
 		if q.SelectedAt != "" {

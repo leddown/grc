@@ -132,7 +132,7 @@ func TestPlanPageRendersEveryTabWithExplicitStatusColours(t *testing.T) {
 		`<span class="ap-st ap-st-draft">Draft</span>`,
 		`<span class="ap-st ap-st-not-started">Not started</span>`,
 		`.ap-st-draft, .ap-st-not-started`,
-		`.ap-st-at-risk {`, `.ap-st-delayed, .ap-st-blocking {`, `.ap-st-approved, .ap-st-active, .ap-st-complete {`,
+		`.ap-st-at-risk`, `.ap-st-blocking`, `.ap-st-approved, .ap-st-active, .ap-st-complete`,
 		`id="tab-overview"`, `id="tab-timeline"`, `id="tab-quarters"`, `id="tab-governance"`, `id="tab-history"`,
 		`diamond: milestone`, `grey band: ongoing`, `solid bar: activity`,
 		`class="ap-ms"`, `class="ap-band"`, `class="ap-bar"`,
@@ -154,7 +154,9 @@ func TestPlanPageRendersEveryTabWithExplicitStatusColours(t *testing.T) {
 }
 
 func TestStatusPillsAlwaysPrintTheirWord(t *testing.T) {
-	for _, word := range append(append([]string{}, Statuses...), StepStatuses...) {
+	words := append(append([]string{}, Statuses...), StepStatuses...)
+	words = append(append(append(words, DQStatuses...), SelectionBases...), "Selected", "Not selected", "Over threshold", "Within capacity", "Blocking", "Advisory")
+	for _, word := range words {
 		pill := statusPill(word)
 		if !strings.Contains(pill, ">"+word+"<") || !strings.Contains(pill, "ap-st-") {
 			t.Errorf("pill for %q = %s", word, pill)
@@ -177,5 +179,104 @@ func TestListPageFiltersAndOffersTheExample(t *testing.T) {
 	}
 	if !strings.Contains(body, `value="dora-nfr-2027" data-kind="example"`) || !strings.Contains(body, `value="controls-testing" data-kind="type"`) {
 		t.Error("the new-plan form does not offer the type and the example")
+	}
+}
+
+func TestPopulationRoutesPreviewApplyAndRoundTrip(t *testing.T) {
+	r, svc := newTestRouter(t, "alice")
+	p := createExample(t, svc, "alice")
+	id := strconv.FormatInt(p.ID, 10)
+	w := do(t, r, http.MethodGet, "/assurance-plans/"+id+"/population/example.csv", nil)
+	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/csv") {
+		t.Fatalf("example.csv = %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	csvText := w.Body.String()
+	w = do(t, r, http.MethodPost, "/assurance-plans/"+id+"/population/preview", map[string]any{"csv": csvText})
+	var diff PopulationDiff
+	_ = json.Unmarshal(w.Body.Bytes(), &diff)
+	if w.Code != http.StatusOK || len(diff.Added) != 320 || diff.Applied {
+		t.Fatalf("preview = %d, %d added", w.Code, len(diff.Added))
+	}
+	for _, list := range []string{`"errors":[]`, `"changed":[]`, `"removed":[]`, `"ignored_columns":[]`} {
+		if !strings.Contains(w.Body.String(), list) {
+			t.Errorf("a clean preview does not carry %s", list)
+		}
+	}
+	w = do(t, r, http.MethodPost, "/assurance-plans/"+id+"/population", map[string]any{"csv": csvText, "base": diff.Base})
+	if w.Code != http.StatusOK {
+		t.Fatalf("apply = %d %s", w.Code, w.Body.String())
+	}
+	w = do(t, r, http.MethodGet, "/assurance-plans/"+id+"/population.csv", nil)
+	if w.Body.String() != csvText {
+		t.Error("the population does not round-trip through its CSV")
+	}
+	w = do(t, r, http.MethodPost, "/assurance-plans/"+id+"/population/preview", map[string]any{"csv": "name\nx\n"})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "item reference column") {
+		t.Errorf("a paste without references = %d %s", w.Code, w.Body.String())
+	}
+	var items []PopulationItem
+	_ = json.Unmarshal(do(t, r, http.MethodGet, "/assurance-plans/"+id+"/population", nil).Body.Bytes(), &items)
+	w = do(t, r, http.MethodPatch, "/assurance-plans/"+id+"/population/"+strconv.FormatInt(items[0].ID, 10), map[string]any{"attested_on": "2027-02-01", "dq_status": "Accepted"})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"attested_on":"2027-02-01"`) {
+		t.Errorf("patch = %d %s", w.Code, w.Body.String())
+	}
+	w = do(t, r, http.MethodPatch, "/assurance-plans/"+id+"/population/"+strconv.FormatInt(items[0].ID, 10), map[string]any{"dq_status": "Fine"})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("an unknown DQ status = %d", w.Code)
+	}
+}
+
+func TestReadersSeeTheSeedCommitmentUntilTheLastQuarter(t *testing.T) {
+	r, svc := newTestRouter(t, "")
+	p := frozenExample(t, svc)
+	id := strconv.FormatInt(p.ID, 10)
+	var got Plan
+	_ = json.Unmarshal(do(t, r, http.MethodGet, "/assurance-plans/data/"+id, nil).Body.Bytes(), &got)
+	if got.SelectionSeed != "" || got.SeedCommitment == "" {
+		t.Fatalf("data: seed %q, commitment %q", got.SelectionSeed, got.SeedCommitment)
+	}
+	page := do(t, r, http.MethodGet, "/assurance-plans/"+id, nil).Body.String()
+	seed, _ := svc.Seed(p.ID)
+	if strings.Contains(page, seed) {
+		t.Error("the plan page shows the seed before the last quarter is selected")
+	}
+	var adminView struct{ Seed, Commitment string }
+	_ = json.Unmarshal(do(t, r, http.MethodGet, "/assurance-plans/"+id+"/seed", nil).Body.Bytes(), &adminView)
+	if adminView.Seed != seed || adminView.Commitment != got.SeedCommitment {
+		t.Errorf("admin seed route = %+v", adminView)
+	}
+	for q := 1; q <= 4; q++ {
+		if w := do(t, r, http.MethodPost, "/assurance-plans/"+id+"/quarters/Q"+strconv.Itoa(q)+"/select", nil); w.Code != http.StatusOK {
+			t.Fatalf("select Q%d = %d %s", q, w.Code, w.Body.String())
+		}
+	}
+	_ = json.Unmarshal(do(t, r, http.MethodGet, "/assurance-plans/data/"+id, nil).Body.Bytes(), &got)
+	if got.SelectionSeed != seed || !got.SeedRevealed {
+		t.Error("the seed is not shown once every quarter is selected")
+	}
+	if w := do(t, r, http.MethodPost, "/assurance-plans/"+id+"/quarters/1/select", nil); w.Code != http.StatusConflict {
+		t.Errorf("reselecting Q1 = %d, want 409", w.Code)
+	}
+}
+
+func TestPlanPageShowsSamplingAndScope(t *testing.T) {
+	r, svc := newTestRouter(t, "")
+	p := frozenExample(t, svc)
+	body := do(t, r, http.MethodGet, "/assurance-plans/"+strconv.FormatInt(p.ID, 10), nil).Body.String()
+	for _, want := range []string{
+		`id="tab-sampling"`, `id="tab-population"`, `id="population-data"`,
+		`<td class="num"><strong>35</strong></td>`, `<td class="num"><strong>21</strong></td>`,
+		`data-select="1"`, `Select Q1 sample`, `Seed commitment`, `Quarterly targets`,
+		`<span class="ap-st ap-st-within-capacity">Within capacity</span>`,
+		`<span class="ap-st ap-st-not-selected">Not selected</span>`,
+		`no file is uploaded`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("plan page lacks %q", want)
+		}
+	}
+	rendered := body[:strings.Index(body, "<script")]
+	if n := strings.Count(rendered, "<table"); n != strings.Count(rendered, "<thead>") {
+		t.Errorf("%d server-rendered tables but %d explicit <thead>", n, strings.Count(rendered, "<thead>"))
 	}
 }

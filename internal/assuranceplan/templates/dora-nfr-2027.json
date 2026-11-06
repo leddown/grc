@@ -85,6 +85,56 @@
       }
     ]
   },
+  "strata": [
+    {
+      "code": "T1",
+      "name": "Tier 1",
+      "definition": "ICT assets supporting a critical or important function",
+      "sampling_enabled": true,
+      "confidence": 0.95,
+      "tolerable_rate": 0.05,
+      "floor_pct": 0.25,
+      "effort_per_test": 3,
+      "effort_per_review": 0.25,
+      "waves": [
+        0.35,
+        0.35,
+        0.3,
+        0
+      ],
+      "top_ups": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "planned_size": 80
+    },
+    {
+      "code": "T2",
+      "name": "Tier 2",
+      "definition": "Other business-critical ICT assets",
+      "sampling_enabled": true,
+      "confidence": 0.9,
+      "tolerable_rate": 0.1,
+      "floor_pct": 0.05,
+      "effort_per_test": 2,
+      "effort_per_review": 0.15,
+      "waves": [
+        0.15,
+        0.3,
+        0.3,
+        0.25
+      ],
+      "top_ups": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "planned_size": 240
+    }
+  ],
   "steps": [
     {
       "step_ref": "0.1",

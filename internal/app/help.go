@@ -275,6 +275,14 @@ func helpPage(c *gin.Context) {
             <li>Fill the header, steps, quarters and governance, then submit it for review. The
               approval gate lists what blocks approval; the approver cannot be the author when
               more than one person can sign in.</li>
+            <li>On the Sampling tab, set each stratum's confidence, tolerable rate, coverage
+              floor, waves and top-ups; the sample sizes, quarterly allocation and capacity follow,
+              each with its formula. On the Scope population tab, paste the population as CSV
+              text, preview the changes and apply them. Nothing is uploaded.</li>
+            <li>After approval, freeze the population: this records a random seed, shown to
+              readers only as its hash until the year's draws are done. Each quarter, select the
+              sample: the picks are ranked by a hash of the seed, frozen, and can be re-performed
+              from the seed.</li>
             <li>Approval stores an immutable version. After it, step status stays editable and the
               design changes only through a change request with a reason, which is reviewed and
               approved as the next version. Clone a plan to start next year's.</li>
@@ -578,7 +586,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register/manage">/risk-register/manage</a></td><td>Create and edit risk entries.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/audit-findings">/audit-findings</a></td><td>Audit findings, action plans, validation and closure.</td></tr>
-          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions.</td></tr>
+          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/exceptions">/exceptions</a></td><td>Build an exception set from the requirements catalog.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies">/policies</a></td><td>The policy library and its review states.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/manage">/policies/manage</a></td><td>Write policy sections and cite controls.</td></tr>

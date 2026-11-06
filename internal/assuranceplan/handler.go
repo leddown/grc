@@ -2,6 +2,7 @@ package assuranceplan
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,6 +32,11 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/assurance-plans/:id/history", h.History)
 	r.GET("/assurance-plans/:id/versions", h.Versions)
 	r.GET("/assurance-plans/:id/versions/:n", h.Version)
+	r.GET("/assurance-plans/:id/sampling", h.Sampling)
+	r.GET("/assurance-plans/:id/selections", h.Selections)
+	r.GET("/assurance-plans/:id/population", h.Population)
+	r.GET("/assurance-plans/:id/population.csv", h.PopulationCSV)
+	r.GET("/assurance-plans/:id/population/example.csv", h.ExamplePopulationCSV)
 }
 
 // RegisterAdminRoutes carries every write, approval included. An approved plan
@@ -52,6 +58,13 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/assurance-plans/:id/close", h.Close)
 	r.POST("/assurance-plans/:id/change-request", h.ChangeRequest)
 	r.POST("/assurance-plans/:id/clone", h.Clone)
+	r.PUT("/assurance-plans/:id/strata", h.ReplaceStrata)
+	r.POST("/assurance-plans/:id/population/preview", h.PreviewPopulation)
+	r.POST("/assurance-plans/:id/population", h.ApplyPopulation)
+	r.PATCH("/assurance-plans/:id/population/:itemID", h.UpdatePopulationItem)
+	r.POST("/assurance-plans/:id/population/freeze", h.FreezePopulation)
+	r.POST("/assurance-plans/:id/quarters/:q/select", h.SelectQuarter)
+	r.GET("/assurance-plans/:id/seed", h.Seed)
 }
 
 func (h *Handler) actorOf(c *gin.Context) string {
@@ -117,8 +130,19 @@ func (h *Handler) PlanPage(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "failed to list clients")
 		return
 	}
+	pop, err := h.service.Population(id)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "failed to load the plan's population")
+		return
+	}
+	sampling, err := h.service.Sampling(id)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "failed to size the plan's sample")
+		return
+	}
 	page := planPageHTML(planPageData{
-		Plan: p, Lint: Lint(p), History: history, Versions: versions, Clients: clients,
+		Plan: publicPlan(p), Lint: Lint(p, pop), History: history, Versions: versions, Clients: clients,
+		Population: pop, Sampling: sampling,
 		Today: time.Now().UTC().Format(dateLayout), Viewer: h.actorOf(c), SepEnforced: h.service.SeparationEnforced(),
 	})
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(page))
@@ -129,6 +153,9 @@ func (h *Handler) List(c *gin.Context) {
 	if err != nil {
 		writeError(c, err)
 		return
+	}
+	for i := range plans {
+		plans[i] = publicPlan(plans[i])
 	}
 	c.JSON(http.StatusOK, plans)
 }
@@ -143,7 +170,7 @@ func (h *Handler) GetOne(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 func (h *Handler) Types(c *gin.Context) { c.JSON(http.StatusOK, Templates()) }
@@ -221,7 +248,7 @@ func (h *Handler) Create(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, p)
+	c.JSON(http.StatusCreated, publicPlan(p))
 }
 
 func (h *Handler) UpdateHeader(c *gin.Context) {
@@ -239,7 +266,7 @@ func (h *Handler) UpdateHeader(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 func (h *Handler) Delete(c *gin.Context) {
@@ -269,7 +296,7 @@ func (h *Handler) ReplaceSteps(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 func (h *Handler) UpdateStepStatus(c *gin.Context) {
@@ -293,7 +320,7 @@ func (h *Handler) UpdateStepStatus(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 func (h *Handler) ReplaceQuarters(c *gin.Context) {
@@ -311,7 +338,7 @@ func (h *Handler) ReplaceQuarters(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 func (h *Handler) GenerateQuarters(c *gin.Context) {
@@ -328,7 +355,7 @@ func (h *Handler) GenerateQuarters(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 func (h *Handler) ReplaceGovernance(c *gin.Context) {
@@ -346,7 +373,7 @@ func (h *Handler) ReplaceGovernance(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 type noteBody struct {
@@ -367,6 +394,13 @@ func (h *Handler) lifecycle(c *gin.Context, run func(id int64, body noteBody, ac
 	if err != nil {
 		writeError(c, err)
 		return
+	}
+	switch v := out.(type) {
+	case Plan:
+		out = publicPlan(v)
+	case ApprovalResult:
+		v.Plan = publicPlan(v.Plan)
+		out = v
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -419,7 +453,190 @@ func (h *Handler) Clone(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, p)
+	c.JSON(http.StatusCreated, publicPlan(p))
+}
+
+func (h *Handler) Sampling(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	v, err := h.service.Sampling(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
+func (h *Handler) Selections(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	items, err := h.service.Selections(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) Population(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	items, err := h.service.Population(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) PopulationCSV(c *gin.Context) {
+	h.csv(c, "population", h.service.PopulationCSV)
+}
+
+func (h *Handler) ExamplePopulationCSV(c *gin.Context) {
+	h.csv(c, "example-population", h.service.ExamplePopulationCSV)
+}
+
+func (h *Handler) csv(c *gin.Context, name string, build func(int64) (string, error)) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	text, err := build(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="assurance-plan-%d-%s.csv"`, id, name))
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", []byte(text))
+}
+
+// maxPopulationBody caps a pasted population: 50,000 rows of a dozen short
+// columns fit well inside it.
+const maxPopulationBody = 16 << 20
+
+func (h *Handler) populationImport(c *gin.Context) (int64, PopulationImport, bool) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return 0, PopulationImport{}, false
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPopulationBody)
+	var in PopulationImport
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body: expected {\"csv\": \"…\"} of at most 16 MiB"})
+		return 0, PopulationImport{}, false
+	}
+	return id, in, true
+}
+
+func (h *Handler) PreviewPopulation(c *gin.Context) {
+	id, in, ok := h.populationImport(c)
+	if !ok {
+		return
+	}
+	diff, err := h.service.PreviewPopulation(id, in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, diff)
+}
+
+func (h *Handler) ApplyPopulation(c *gin.Context) {
+	id, in, ok := h.populationImport(c)
+	if !ok {
+		return
+	}
+	diff, err := h.service.ApplyPopulation(id, in, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, diff)
+}
+
+func (h *Handler) UpdatePopulationItem(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	itemID, ok := parseID(c, "itemID")
+	if !ok {
+		return
+	}
+	var patch PopulationPatch
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	item, err := h.service.UpdatePopulationItem(id, itemID, patch, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+func (h *Handler) FreezePopulation(c *gin.Context) {
+	h.lifecycle(c, func(id int64, _ noteBody, actor string) (any, error) { return h.service.FreezePopulation(id, actor) })
+}
+
+func (h *Handler) SelectQuarter(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	q, err := strconv.Atoi(strings.TrimPrefix(strings.ToUpper(c.Param("q")), "Q"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid quarter"})
+		return
+	}
+	res, err := h.service.SelectQuarter(id, q, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	res.Plan = publicPlan(res.Plan)
+	c.JSON(http.StatusOK, res)
+}
+
+// Seed is on the admin surface: readers see the commitment until the last
+// quarter is drawn, so a later wave cannot be predicted from it.
+func (h *Handler) Seed(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	seed, err := h.service.Seed(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"seed": seed, "commitment": seedCommitment(seed)})
+}
+
+func (h *Handler) ReplaceStrata(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var strata []Stratum
+	if err := c.ShouldBindJSON(&strata); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body: expected the list of strata"})
+		return
+	}
+	p, err := h.service.ReplaceStrata(id, strata, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, publicPlan(p))
 }
 
 func parseID(c *gin.Context, name string) (int64, bool) {

@@ -82,7 +82,10 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   `internal/assuranceplan/templates/`, not a code path. Draft → In review →
   Approved → Active → Closed with an approval gate (422), immutable approval
   snapshots, a locked design after approval that changes only through a change
-  request, and clone for next year — see `ASSURANCE_PLANS.md`
+  request, and clone for next year. The sampling engine is pure functions in
+  `sampling.go`. The scope population is CSV text pasted into the page and
+  posted as JSON. It is structured data, not a document, and there is no
+  upload — see `ASSURANCE_PLANS.md`
 - `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
   the exercise arc from red team through incident response, DORA incident
   classification and its notification clocks, crisis and continuity activation,

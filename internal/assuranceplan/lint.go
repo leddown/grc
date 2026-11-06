@@ -39,8 +39,8 @@ func BlockingFindings(all []LintFinding) []LintFinding {
 	return out
 }
 
-// Lint is the approval gate over a whole plan.
-func Lint(p Plan) []LintFinding {
+// Lint is the approval gate over a whole plan and its population.
+func Lint(p Plan, pop []PopulationItem) []LintFinding {
 	out := []LintFinding{}
 	add := func(sev, code, subject, format string, args ...any) {
 		out = append(out, LintFinding{Severity: sev, Code: code, Subject: subject, Message: fmt.Sprintf(format, args...)})
@@ -114,6 +114,48 @@ func Lint(p Plan) []LintFinding {
 		}
 	}
 
+	for _, st := range p.Strata {
+		subject := "stratum " + st.Code
+		if err := ValidateWaves(st.Waves); err != nil {
+			add(LintBlocking, "stratum_waves", subject, "Stratum %s: %v.", st.Code, err)
+		}
+		if st.SamplingEnabled {
+			if _, err := StatisticalSize(st.Confidence, st.TolerableRate); err != nil {
+				add(LintBlocking, "stratum_sampling", subject, "Stratum %s: %v.", st.Code, err)
+			}
+			if st.FloorPct < 0 || st.FloorPct > 1 {
+				add(LintBlocking, "stratum_sampling", subject, "Stratum %s: the coverage floor %s%% is not between 0%% and 100%%.", st.Code, formatNumber(st.FloorPct*100))
+			}
+		}
+	}
+	view := computeSampling(p, pop, nil)
+	for _, z := range view.Strata {
+		subject := "stratum " + z.Code
+		if z.NSource != "population" {
+			sized := "so it is sized at zero"
+			if z.NSource == "planned" {
+				sized = fmt.Sprintf("so it is sized on its planned %d", z.N)
+			}
+			add(LintAdvisory, "stratum_empty", subject, "Stratum %s has no population items yet, %s.", z.Code, sized)
+			continue
+		}
+		if z.Error == "" && z.WaveCounts != z.ReviewsDue {
+			add(LintAdvisory, "wave_counts", subject, "Stratum %s: the waves hold %s items; the wave percentages of %d give %s.",
+				z.Code, joinInts(z.WaveCounts), z.N, joinInts(z.ReviewsDue))
+		}
+		if z.NoWave > 0 {
+			add(LintAdvisory, "no_wave", subject, "Stratum %s: %d item(s) have no 1LoD wave, so they are never due for attestation or drawn.", z.Code, z.NoWave)
+		}
+	}
+	if len(p.Strata) > 0 {
+		for _, l := range view.Quarters {
+			if l.Over {
+				add(LintAdvisory, "utilisation", fmt.Sprintf("Q%d", l.Quarter), "Q%d: effort of %s person-days against a capacity of %s is %s%% utilisation, above the %s%% threshold.",
+					l.Quarter, formatNumber(l.Effort), formatNumber(l.Capacity), formatNumber(l.Utilisation*100), formatNumber(p.Parameters.UtilisationThreshold*100))
+			}
+		}
+	}
+
 	for _, row := range p.RACI {
 		accountable := 0
 		for _, v := range row.Cells {
@@ -129,6 +171,14 @@ func Lint(p Plan) []LintFinding {
 		}
 	}
 	return out
+}
+
+func joinInts(v [4]int) string {
+	parts := make([]string, len(v))
+	for i, n := range v {
+		parts[i] = fmt.Sprint(n)
+	}
+	return strings.Join(parts, "/")
 }
 
 func firstNonEmpty(values ...string) string {
