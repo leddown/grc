@@ -200,6 +200,38 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | GET | `/audit-findings/summary` | signed in | `auditfinding.(*Handler).SummaryData` |
 | GET | `/audit-findings/vocabulary` | signed in | `auditfinding.(*Handler).VocabularyData` |
 
+## Assurance plans
+
+`internal/assuranceplan`. See [ASSURANCE_PLANS.md](../ASSURANCE_PLANS.md). Added 2026-11-06, after the route count above was taken.
+
+| Method | Path | Access | Handler |
+|---|---|---|---|
+| GET | `/assurance-plans` | signed in | `assuranceplan.(*Handler).ListPage` |
+| POST | `/assurance-plans` | admin | `assuranceplan.(*Handler).Create` |
+| DELETE | `/assurance-plans/:id` | admin | `assuranceplan.(*Handler).Delete` |
+| GET | `/assurance-plans/:id` | signed in | `assuranceplan.(*Handler).PlanPage` |
+| PUT | `/assurance-plans/:id` | admin | `assuranceplan.(*Handler).UpdateHeader` |
+| POST | `/assurance-plans/:id/activate` | admin | `assuranceplan.(*Handler).Activate` |
+| POST | `/assurance-plans/:id/approve` | admin | `assuranceplan.(*Handler).Approve` |
+| POST | `/assurance-plans/:id/change-request` | admin | `assuranceplan.(*Handler).ChangeRequest` |
+| POST | `/assurance-plans/:id/clone` | admin | `assuranceplan.(*Handler).Clone` |
+| POST | `/assurance-plans/:id/close` | admin | `assuranceplan.(*Handler).Close` |
+| PUT | `/assurance-plans/:id/governance` | admin | `assuranceplan.(*Handler).ReplaceGovernance` |
+| GET | `/assurance-plans/:id/history` | signed in | `assuranceplan.(*Handler).History` |
+| GET | `/assurance-plans/:id/lint` | signed in | `assuranceplan.(*Handler).Lint` |
+| PUT | `/assurance-plans/:id/quarters` | admin | `assuranceplan.(*Handler).ReplaceQuarters` |
+| POST | `/assurance-plans/:id/quarters/generate` | admin | `assuranceplan.(*Handler).GenerateQuarters` |
+| POST | `/assurance-plans/:id/return` | admin | `assuranceplan.(*Handler).Return` |
+| PUT | `/assurance-plans/:id/steps` | admin | `assuranceplan.(*Handler).ReplaceSteps` |
+| PATCH | `/assurance-plans/:id/steps/:stepID` | admin | `assuranceplan.(*Handler).UpdateStepStatus` |
+| POST | `/assurance-plans/:id/submit` | admin | `assuranceplan.(*Handler).Submit` |
+| GET | `/assurance-plans/:id/versions` | signed in | `assuranceplan.(*Handler).Versions` |
+| GET | `/assurance-plans/:id/versions/:n` | signed in | `assuranceplan.(*Handler).Version` |
+| GET | `/assurance-plans/data` | signed in | `assuranceplan.(*Handler).List` |
+| GET | `/assurance-plans/data/:id` | signed in | `assuranceplan.(*Handler).GetOne` |
+| GET | `/assurance-plans/types` | signed in | `assuranceplan.(*Handler).Types` |
+| GET | `/assurance-plans/vocabulary` | signed in | `assuranceplan.(*Handler).Vocabulary` |
+
 ## Policy library (documents, sections, mappings, coverage)
 
 `internal/policydocs`; `compare.pdf` is wired in `internal/app/app.go` over `internal/doctemplate`.

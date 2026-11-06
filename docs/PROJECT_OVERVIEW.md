@@ -57,7 +57,7 @@ The sidebar groups are the product's own map of itself.
 | Group | Pages |
 |---|---|
 | Catalog | Controls, Control Editor, Hierarchy, Family Filters, Security NFRs, Security NFR Editor, NFR-Control Links, NFR Enrichment, Asset Types |
-| Compliance & Risk | Risk Register, Risk Register Editor, Audit Findings, Exceptions, Policy Library, Policy Editor, Policy Templates, Policy Coverage, Regulation Coverage, Wiz Rules |
+| Compliance & Risk | Risk Register, Risk Register Editor, Audit Findings, Assurance Plans, Exceptions, Policy Library, Policy Editor, Policy Templates, Policy Coverage, Regulation Coverage, Wiz Rules |
 | Crisis Exercises | Crisis Exercises |
 | Reporting & Data | Reports, Exceptions Workbook, Exceptions Report, DORA Report, JSON_view, Jira JSON, Jira Reports, Change Log |
 | AI Chat | AI Chat |
@@ -147,6 +147,7 @@ Module documents at the repository root go deeper than FEATURES.md:
 | CRISIS_EXERCISE.md | Risk & Crisis Exercises |
 | REGULATION_COVERAGE.md | Regulation Coverage |
 | AUDIT_FINDINGS.md | Audit Findings & Remediation |
+| ASSURANCE_PLANS.md | Assurance Plans: practice, data model, lifecycle, sampling method |
 | RISK_REGISTER_FRAMEWORK.md | The risk register's model and scoring |
 | JIRA_CONNECTOR.md | The Jira Cloud client |
 | AI_AGENT.md | The knowledge API and the Wintermute agent |
@@ -186,7 +187,7 @@ Add to the project's knowledge, in this order of value:
 
 1. All ten files in `docs/` (about 3,000 lines).
 2. `AI_AGENT.md`, `RUNTIME_ARGS.md`, `REGULATION_COVERAGE.md`,
-   `AUDIT_FINDINGS.md`, `CRISIS_EXERCISE.md`, `RISK_REGISTER_FRAMEWORK.md`,
+   `AUDIT_FINDINGS.md`, `ASSURANCE_PLANS.md`, `CRISIS_EXERCISE.md`, `RISK_REGISTER_FRAMEWORK.md`,
    `JIRA_CONNECTOR.md`, `DOCUMENT_TEMPLATES.md`.
 3. `POLICY_STUDIO.md` and `POLICY_MODULE_FRAMEWORK.md` when the question is
    about policy authoring. They are long.

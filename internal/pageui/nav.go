@@ -47,6 +47,7 @@ var navGroups = []NavGroup{
 			{Path: "/risk-register", Label: "Risk Register"},
 			{Path: "/risk-register/manage", Label: "Risk Register Editor"},
 			{Path: "/audit-findings", Label: "Audit Findings"},
+			{Path: "/assurance-plans", Label: "Assurance Plans"},
 			{Path: "/exceptions", Label: "Exceptions"},
 			{Path: "/policies", Label: "Policy Library"},
 			{Path: "/policies/manage", Label: "Policy Editor"},

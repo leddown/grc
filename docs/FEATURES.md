@@ -186,6 +186,34 @@ close. Code: `internal/auditfinding`; detail in `AUDIT_FINDINGS.md`.
   expired ones) and closures in the last 90 days, and groups open findings by
   age.
 
+
+### Assurance Plans (`/assurance-plans`)
+
+The second line's annual plans: a controls testing plan, and (later) a risk
+assessment cycle, policy review, resilience testing and a remediation roadmap.
+Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
+
+- A plan is created **from a plan type** (Controls testing, Blank) or from the
+  **worked 2027 example**. Types are JSON templates in
+  `internal/assuranceplan/templates/`: they seed the steps, the default
+  quarterly cycle, the RACI, the reporting cadence and the escalation
+  triggers. Template dates are expressions on the period and the quarters
+  (`period_start-53d`, `lod1_deadline+5bd`), rolled onto business days.
+- **Plan & timeline**: the steps with a server-rendered Gantt (bars,
+  milestone diamonds, grey bands for ongoing items, a legend in words).
+  **Quarterly plan**: the cycle's dates, with a reset to the default cycle
+  and a regeneration of the per-quarter steps. **Governance**: RACI, cadence,
+  escalation. **History & versions**.
+- **Lifecycle:** Draft → In review → Approved → Active → Closed, with no
+  edge from Draft to Approved. Approval runs a gate (422 with the findings)
+  and stores an immutable JSON snapshot with its SHA-256. The approver cannot
+  be the author of the revision under multi-user authentication; in
+  single-user mode it is a warning.
+- After approval the design is locked; step status stays editable. A
+  **change request** with a reason opens the next revision, which goes
+  through review and approval again while the plan stays Active.
+- **Clone** copies the design for the next year: dates move one year onto
+  business days, years in titles move on, execution data is dropped.
 ### Exceptions (`/exceptions`, detail at `/exceptions/detail`)
 
 Builds an **exception set**: the Security NFRs a system does not meet. Code:

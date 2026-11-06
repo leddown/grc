@@ -498,6 +498,90 @@ var syncOrder = []tableSpec{
 		idKeyed:      true,
 		strat:        skipInSync,
 	},
+
+	// ---- Assurance Plans (internal/assuranceplan) ----
+	//
+	// A plan is the parent of every row below it, joined on plan_id, so these
+	// travel in the snapshot and are skipped by Sync for the same reason as the
+	// crisis exercises and Audit Findings.
+	{
+		table: "assurance_plans",
+		cols: []string{
+			"id", "reference", "title", "plan_type", "function_name", "client_profile_id",
+			"period_start", "period_end", "mobilise_start", "closing_date",
+			"objective", "decisions_requested", "regulatory_refs",
+			"owner_role", "accountable_role", "approval_forum",
+			"status", "revision", "revision_status", "revision_author", "change_reason",
+			"author", "approved_by", "approved_at", "activated_at", "closed_at",
+			"selection_seed", "non_working_dates", "raci_roles",
+			"tester_fte", "days_per_fte_quarter", "utilisation_threshold", "rag_amber_points",
+			"result_partial_min", "result_ineffective_min", "deviation_extend_at", "deviation_thematic_at",
+			"extend_pct", "evidence_sla_days", "ai_generated", "model", "prompt_hash",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_steps",
+		cols: []string{
+			"id", "plan_id", "ordinal", "step_ref", "phase", "title", "step_type", "responsible_role",
+			"accountable_role", "start_date", "end_date", "deliverable", "refs", "status", "quarter", "generated", "notes",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_quarters",
+		cols: []string{
+			"id", "plan_id", "quarter", "lod1_window_start", "lod1_deadline", "selection_date",
+			"fieldwork_start", "fieldwork_end", "findings_agreed_by", "report_date", "committee_label",
+			"retest_days", "overhead_days", "selected_at", "selected_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_raci",
+		cols:         []string{"id", "plan_id", "ordinal", "activity", "cells"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_cadence",
+		cols:         []string{"id", "plan_id", "ordinal", "forum", "frequency", "content", "owner"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_escalations",
+		cols:         []string{"id", "plan_id", "ordinal", "trigger_text", "escalate_to", "within_text"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_history",
+		cols:         []string{"id", "plan_id", "at", "actor", "event", "subject", "from_value", "to_value", "note"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_versions",
+		cols: []string{
+			"id", "plan_id", "number", "label", "approved_by", "approved_at", "change_reason",
+			"snapshot_json", "snapshot_sha256",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
 	// ---- Policy Studio (internal/policystudio) ----
 	//
 	// The live collaborative document of each Studio policy, as Yjs binary.

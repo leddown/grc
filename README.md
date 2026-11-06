@@ -68,6 +68,9 @@ package and how a request is served. In short:
   snapshot
 - `internal/auditfinding` — Audit Findings & Remediation (see
   [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md))
+- `internal/assuranceplan` — Assurance Plans: the second line's annual plans,
+  from plan type to approved version, quarterly cycle and clone for next year
+  (see [ASSURANCE_PLANS.md](ASSURANCE_PLANS.md))
 - `internal/policydocs` — the policy library: documents, sections, control
   mappings, lint, approval, versions and the coverage matrix; also letters
   written on a client's behalf (see [LETTERS.md](LETTERS.md))
@@ -159,5 +162,6 @@ Module and operating documents:
   Joint Supervisory Team: writing, AI, output, and the research behind them
 - [CRISIS_EXERCISE.md](CRISIS_EXERCISE.md) — Risk & Crisis Exercises
 - [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) — Audit Findings & Remediation
+- [ASSURANCE_PLANS.md](ASSURANCE_PLANS.md) — Assurance Plans
 - [FAQ.md](FAQ.md) — `security-patches` → `main` merge procedure
 - [CHANGELOG.md](CHANGELOG.md) — change history / rollback reference

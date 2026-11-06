@@ -852,6 +852,163 @@ CREATE TABLE IF NOT EXISTS audit_finding_history (
 CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
 	ON audit_finding_history (finding_id, id);
 
+-- Assurance Plans: see internal/db/sqlite.go and ASSURANCE_PLANS.md.
+CREATE TABLE IF NOT EXISTS assurance_plans (
+	id BIGSERIAL PRIMARY KEY,
+	reference TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL DEFAULT '',
+	plan_type TEXT NOT NULL DEFAULT '',
+	function_name TEXT NOT NULL DEFAULT '',
+	client_profile_id BIGINT NOT NULL DEFAULT 0,
+	period_start TEXT NOT NULL DEFAULT '',
+	period_end TEXT NOT NULL DEFAULT '',
+	mobilise_start TEXT NOT NULL DEFAULT '',
+	closing_date TEXT NOT NULL DEFAULT '',
+	objective TEXT NOT NULL DEFAULT '',
+	decisions_requested TEXT NOT NULL DEFAULT '',
+	regulatory_refs TEXT NOT NULL DEFAULT '',
+	owner_role TEXT NOT NULL DEFAULT '',
+	accountable_role TEXT NOT NULL DEFAULT '',
+	approval_forum TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'Draft',
+	revision INTEGER NOT NULL DEFAULT 1,
+	revision_status TEXT NOT NULL DEFAULT '',
+	revision_author TEXT NOT NULL DEFAULT '',
+	change_reason TEXT NOT NULL DEFAULT '',
+	author TEXT NOT NULL DEFAULT '',
+	approved_by TEXT NOT NULL DEFAULT '',
+	approved_at TEXT NOT NULL DEFAULT '',
+	activated_at TEXT NOT NULL DEFAULT '',
+	closed_at TEXT NOT NULL DEFAULT '',
+	selection_seed TEXT NOT NULL DEFAULT '',
+	non_working_dates TEXT NOT NULL DEFAULT '',
+	raci_roles TEXT NOT NULL DEFAULT '[]',
+	tester_fte DOUBLE PRECISION NOT NULL DEFAULT 0,
+	days_per_fte_quarter DOUBLE PRECISION NOT NULL DEFAULT 0,
+	utilisation_threshold DOUBLE PRECISION NOT NULL DEFAULT 0,
+	rag_amber_points DOUBLE PRECISION NOT NULL DEFAULT 0,
+	result_partial_min INTEGER NOT NULL DEFAULT 0,
+	result_ineffective_min INTEGER NOT NULL DEFAULT 0,
+	deviation_extend_at INTEGER NOT NULL DEFAULT 0,
+	deviation_thematic_at INTEGER NOT NULL DEFAULT 0,
+	extend_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+	evidence_sla_days INTEGER NOT NULL DEFAULT 0,
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plans_status ON assurance_plans (status);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_steps (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	step_ref TEXT NOT NULL DEFAULT '',
+	phase TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	step_type TEXT NOT NULL DEFAULT 'activity',
+	responsible_role TEXT NOT NULL DEFAULT '',
+	accountable_role TEXT NOT NULL DEFAULT '',
+	start_date TEXT NOT NULL DEFAULT '',
+	end_date TEXT NOT NULL DEFAULT '',
+	deliverable TEXT NOT NULL DEFAULT '',
+	refs TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'Not started',
+	quarter INTEGER NOT NULL DEFAULT 0,
+	generated INTEGER NOT NULL DEFAULT 0,
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_steps_plan ON assurance_plan_steps (plan_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_quarters (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	quarter INTEGER NOT NULL DEFAULT 0,
+	lod1_window_start TEXT NOT NULL DEFAULT '',
+	lod1_deadline TEXT NOT NULL DEFAULT '',
+	selection_date TEXT NOT NULL DEFAULT '',
+	fieldwork_start TEXT NOT NULL DEFAULT '',
+	fieldwork_end TEXT NOT NULL DEFAULT '',
+	findings_agreed_by TEXT NOT NULL DEFAULT '',
+	report_date TEXT NOT NULL DEFAULT '',
+	committee_label TEXT NOT NULL DEFAULT '',
+	retest_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+	overhead_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+	selected_at TEXT NOT NULL DEFAULT '',
+	selected_by TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, quarter),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_raci (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	activity TEXT NOT NULL DEFAULT '',
+	cells TEXT NOT NULL DEFAULT '{}',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_cadence (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	forum TEXT NOT NULL DEFAULT '',
+	frequency TEXT NOT NULL DEFAULT '',
+	content TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_escalations (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	trigger_text TEXT NOT NULL DEFAULT '',
+	escalate_to TEXT NOT NULL DEFAULT '',
+	within_text TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_history (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	at TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	event TEXT NOT NULL DEFAULT '',
+	subject TEXT NOT NULL DEFAULT '',
+	from_value TEXT NOT NULL DEFAULT '',
+	to_value TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_history_plan ON assurance_plan_history (plan_id, id);
+
+-- An approval snapshot is evidence of what the committee approved, so a row
+-- is written once and never updated; the sha256 lets a reader confirm it.
+CREATE TABLE IF NOT EXISTS assurance_plan_versions (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	number INTEGER NOT NULL DEFAULT 0,
+	label TEXT NOT NULL DEFAULT '',
+	approved_by TEXT NOT NULL DEFAULT '',
+	approved_at TEXT NOT NULL DEFAULT '',
+	change_reason TEXT NOT NULL DEFAULT '',
+	snapshot_json TEXT NOT NULL DEFAULT '{}',
+	snapshot_sha256 TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, number),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+
 -- Policy Studio: see internal/db/sqlite.go for what each table holds.
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS editor_format TEXT NOT NULL DEFAULT 'markdown';
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS projection_version INTEGER NOT NULL DEFAULT 0;

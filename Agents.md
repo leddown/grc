@@ -76,6 +76,13 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   management response and dated action plan, extensions that are counted, and
   closure only on independent validation or an expiring risk acceptance — see
   `AUDIT_FINDINGS.md`
+- `internal/assuranceplan` — Assurance Plans: the second line's annual plans
+  (controls testing, risk assessment cycle, policy review, resilience testing,
+  remediation roadmap). A plan type is a JSON template in
+  `internal/assuranceplan/templates/`, not a code path. Draft → In review →
+  Approved → Active → Closed with an approval gate (422), immutable approval
+  snapshots, a locked design after approval that changes only through a change
+  request, and clone for next year — see `ASSURANCE_PLANS.md`
 - `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
   the exercise arc from red team through incident response, DORA incident
   classification and its notification clocks, crisis and continuity activation,

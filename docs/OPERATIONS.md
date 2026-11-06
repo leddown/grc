@@ -180,7 +180,7 @@ exists because a stale binary still answers `/health` with 200.
 | A complete copy of a SQLite installation | Utilities → Backup (a `VACUUM INTO` copy). Also keep the master key file; it is not in the copy. |
 | A PostgreSQL installation | `pg_dump`. The in-app raw backup is SQLite only. |
 | A portable copy of the data, or moving between installations | Utilities → Export, then Import on the other side. One JSON file; import replaces everything in one transaction. Leaves out settings, stored credentials, sessions and guest links. |
-| Merging catalogs and policies from a laptop into a server | `scripts/db-sync.sh push` (or `-sync-to`). Merges by key. Skips regulation reports, exercises, audit findings and live Studio state; move those with Export / Import. |
+| Merging catalogs and policies from a laptop into a server | `scripts/db-sync.sh push` (or `-sync-to`). Merges by key. Skips regulation reports, exercises, audit findings, assurance plans and live Studio state; move those with Export / Import. |
 | Checking a database | Utilities → Integrity check. |
 | Giving an AI agent the data as a file | Utilities → Export for the AI agent. |
 

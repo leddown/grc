@@ -8,16 +8,17 @@ import (
 )
 
 var markdownKnowledgeDocs = map[string]string{
-	"agents":         "Agents.md",
-	"changelog":      "CHANGELOG.md",
-	"runtime":        "RUNTIME_ARGS.md",
-	"faq":            "FAQ.md",
-	"jira":           "JIRA_CONNECTOR.md",
-	"risk-register":  "RISK_REGISTER_FRAMEWORK.md",
-	"audit-findings": "AUDIT_FINDINGS.md",
-	"policy-module":  "POLICY_MODULE_FRAMEWORK.md",
-	"policy-studio":  "POLICY_STUDIO.md",
-	"templates":      "DOCUMENT_TEMPLATES.md",
+	"agents":          "Agents.md",
+	"changelog":       "CHANGELOG.md",
+	"runtime":         "RUNTIME_ARGS.md",
+	"faq":             "FAQ.md",
+	"jira":            "JIRA_CONNECTOR.md",
+	"risk-register":   "RISK_REGISTER_FRAMEWORK.md",
+	"audit-findings":  "AUDIT_FINDINGS.md",
+	"assurance-plans": "ASSURANCE_PLANS.md",
+	"policy-module":   "POLICY_MODULE_FRAMEWORK.md",
+	"policy-studio":   "POLICY_STUDIO.md",
+	"templates":       "DOCUMENT_TEMPLATES.md",
 }
 
 func markdownKnowledgeDocPage(c *gin.Context) {

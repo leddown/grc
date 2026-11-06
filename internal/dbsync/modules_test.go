@@ -65,6 +65,23 @@ func seedModules(t *testing.T, conn *db.Conn) {
 	mustExec(t, conn, `INSERT INTO audit_finding_history (id, finding_id, event, to_value)
 		VALUES (21, 19, 'created', 'Open')`)
 
+	mustExec(t, conn, `INSERT INTO assurance_plans (id, reference, title, plan_type, status, raci_roles)
+		VALUES (40, 'AP-2027-001', '2027 Security NFR Controls Testing Plan', 'controls-testing', 'Approved', '["CISO"]')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_steps (id, plan_id, ordinal, step_ref, title, step_type, start_date, end_date)
+		VALUES (41, 40, 0, '0.1', 'Confirm mandate, scope and independence', 'activity', '2026-11-09', '2026-11-13')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_quarters (id, plan_id, quarter, lod1_deadline, report_date, retest_days, overhead_days)
+		VALUES (42, 40, 1, '2027-02-26', '2027-04-30', 0, 10.5)`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_raci (id, plan_id, ordinal, activity, cells)
+		VALUES (43, 40, 0, 'Approve the plan', '{"CISO":"A"}')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_cadence (id, plan_id, ordinal, forum, frequency)
+		VALUES (44, 40, 0, 'ICT Risk Committee', 'Quarterly')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_escalations (id, plan_id, ordinal, trigger_text, escalate_to)
+		VALUES (45, 40, 0, 'Coverage more than 10 points behind plan', 'CISO and CIO')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_history (id, plan_id, event, to_value)
+		VALUES (46, 40, 'created', 'Draft')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_versions (id, plan_id, number, label, snapshot_json)
+		VALUES (47, 40, 1, 'v1', '{}')`)
+
 	mustExec(t, conn, `INSERT INTO policy_documents (id, title, editor_format, projection_token)
 		VALUES (30, 'ICT and Information Security Policy', 'studio', 'tok-1')`)
 	mustExec(t, conn, `INSERT INTO policy_doc_state (document_id, state, projection_token) VALUES (30, ?, 'tok-1')`, yjsBytes)
@@ -103,6 +120,9 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"policy_doc_state": 1, "policy_doc_updates": 1, "policy_doc_snapshots": 1,
 		"policy_comment_threads": 1, "policy_comments": 1, "policy_studio_audit": 1,
 		"policy_ai_proposals": 1, "policy_ai_edits": 1,
+		"assurance_plans": 1, "assurance_plan_steps": 1, "assurance_plan_quarters": 1,
+		"assurance_plan_raci": 1, "assurance_plan_cadence": 1, "assurance_plan_escalations": 1,
+		"assurance_plan_history": 1, "assurance_plan_versions": 1,
 	} {
 		if got := count(t, dst, table); got != want {
 			t.Errorf("%s count=%d want %d", table, got, want)
@@ -117,6 +137,13 @@ func checkModules(t *testing.T, dst *db.Conn) {
 	if got := scalar(t, dst, `SELECT i.title FROM crisis_ex_responses r
 		JOIN crisis_ex_injects i ON i.id = r.inject_id`); got != "Payments queue stalls" {
 		t.Errorf("response's inject title=%q want 'Payments queue stalls'", got)
+	}
+	if got := scalar(t, dst, `SELECT p.reference FROM assurance_plan_steps s
+		JOIN assurance_plans p ON p.id = s.plan_id WHERE s.step_ref = '0.1'`); got != "AP-2027-001" {
+		t.Errorf("step's plan reference=%q want AP-2027-001", got)
+	}
+	if got := scalar(t, dst, `SELECT overhead_days FROM assurance_plan_quarters WHERE id = 42`); got != "10.5" {
+		t.Errorf("quarter overhead_days=%q want 10.5 (a REAL column must survive the round trip)", got)
 	}
 	if got := scalar(t, dst, `SELECT rationale FROM crisis_ex_classification WHERE exercise_id = 4`); got == "" {
 		t.Error("classification rationale is empty")
@@ -210,10 +237,10 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 31 {
-		t.Errorf("report marks %d tables skipped, want 31", len(skipped))
+	if len(skipped) != 39 {
+		t.Errorf("report marks %d tables skipped, want 39", len(skipped))
 	}
-	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit"} {
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit", "assurance_plans", "assurance_plan_versions"} {
 		if !skipped[want] {
 			t.Errorf("%s is not reported as skipped", want)
 		}

@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"grc/internal/aiprovider"
+	"grc/internal/assuranceplan"
 	"grc/internal/auditfinding"
 	"grc/internal/authn"
 	"grc/internal/controlcatalog"
@@ -213,6 +214,7 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 	registerCrisisExerciseRoutes(
 		router, sqliteDB, knowledgeService, settingsService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 	registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
+	registerAssurancePlanRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	return router, studioService, nil
@@ -709,6 +711,22 @@ func registerCrisisExerciseRoutes(
 func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware gin.HandlerFunc, localMode bool) {
 	handler := auditfinding.NewHandler(
 		auditfinding.NewService(auditfinding.NewSQLiteRepository(sqliteDB)), sessionUsername)
+	handler.RegisterRoutes(r)
+
+	admin := r.Group("/")
+	if !localMode {
+		admin.Use(adminMiddleware)
+	}
+	handler.RegisterAdminRoutes(admin)
+}
+
+// registerAssurancePlanRoutes wires Assurance Plans with the read-open /
+// write-admin split of Audit Findings, and the separation of duties of the
+// policy library: on only when more than one person can sign in.
+func registerAssurancePlanRoutes(r gin.IRouter, sqliteDB *db.Conn, authService *authn.Service, adminMiddleware gin.HandlerFunc, localMode bool) {
+	service := assuranceplan.NewService(assuranceplan.NewSQLiteRepository(sqliteDB))
+	service.SetRequireSeparateApprover(!localMode && authService != nil && !authService.SingleUserMode())
+	handler := assuranceplan.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)
 
 	admin := r.Group("/")

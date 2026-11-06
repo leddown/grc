@@ -108,6 +108,7 @@ tests.
 | `internal/exceptionbook` | 2,200 | The Exceptions Workbook, the Exceptions Report's figures and lists, and the DORA sheet and DORA Report (`dora.go`), read from the References of the linked controls. |
 | `internal/riskregister` | 680 | The risk register. |
 | `internal/auditfinding` | 1,800 | Audit findings, action plans, lifecycle rules, dashboard. |
+| `internal/assuranceplan` | 5,200 | Assurance plans: plan types as JSON templates, steps and Gantt, quarterly cycle and business days, governance, lifecycle and approval gate, versions, history, clone. |
 | `internal/jira` | 480 | A Jira Cloud REST v3 client. |
 
 ### Policy modules

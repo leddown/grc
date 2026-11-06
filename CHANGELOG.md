@@ -3,6 +3,102 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-06 (Assurance Plans, phase 1: plans, timeline, quarterly cycle, governance, approval)
+
+A new page, Assurance Plans, under Compliance & Risk (`/assurance-plans`):
+the second line's annual plans, starting with a 2nd-line controls testing plan.
+This is the first of six phases on `feature/assurance-plans`; sampling, test
+execution, documents, the other plan types and AI assist follow.
+
+- Design: `ASSURANCE_PLANS.md` (new, served at `/knowledge/assurance-plans`)
+  sets out the practice it follows (IIA Global Internal Audit Standards 2024,
+  AICPA attribute sampling, DORA Art. 6 and 24 and RTS 2024/1774), the data
+  model for all six phases, the lifecycle, the approval gate, clone, the
+  sampling method and the API. Each section says which phase builds it.
+- `internal/assuranceplan` (new): model, calendar, cycle, templates, lint,
+  repository, service, handler, Gantt and pages.
+  - A plan type is a JSON template in `internal/assuranceplan/templates/`,
+    embedded: Controls testing (2nd line), Blank, and the worked DORA NFR
+    controls testing plan for 2027 as an example with fixed dates. Template
+    dates are expressions against the period and quarters
+    (`period_start-53d`, `lod1_deadline+5bd`, `q3.report_date`) rolled onto
+    business days; quarterly steps are repeated per quarter (`{q}.3`).
+  - Business days: weekends and the plan's own non-working dates.
+  - The default quarterly cycle: the 1LoD window opens on the quarter's first
+    business day, attestations are due the last Friday of its second month,
+    selection the next business day, fieldwork from a week later to six weeks
+    after the deadline, findings agreed at +8 weeks, report at +9, committee
+    the month after. It reproduces the example's Q1–Q3 dates.
+  - Lifecycle Draft → In review → Approved → Active → Closed; Return sends a
+    plan in review back with a note. There is no edge from Draft to Approved.
+    Status, revision, approval fields and the author come from the server,
+    never the request body.
+  - The approval gate (`Lint`, `GET /:id/lint`) has blocking findings (owner,
+    accountable, forum, period, no steps, a step with no responsible role, no
+    dates or ending before it starts, a quarter with no deadline or report
+    date) and advisory ones (a step outside the plan's span, quarter dates out
+    of order, a RACI activity without exactly one Accountable). A blocked
+    approval answers 422 with the findings.
+  - Separation of duties as in the policy library: with more than one user,
+    whoever submitted the revision cannot approve it; single-user and local
+    mode approve with a warning. The approver is the signed-in user.
+  - Approval writes an immutable version: the plan as JSON with its SHA-256,
+    served back as the stored bytes with `X-Snapshot-SHA256`.
+  - After approval the design is locked (409 on steps, quarters, governance
+    and the header); step status still moves. A change request with a reason
+    opens revision n+1 on the approved plan (`revision_status` Draft → In
+    review → approved as the next version) without taking the plan's status
+    backwards.
+  - Every change is written to `assurance_plan_history` with the actor: header
+    fields old → new, step edits summarised ("added O.5; changed 0.2"),
+    lifecycle moves with their notes.
+  - Clone for next year: new reference, period +1 year, working dates rolled to
+    business days (back, not forward, at the year end), years in titles and
+    labels moved on (citations such as 2024/1774 left alone), steps reset,
+    history, versions and AI provenance not copied, a note to check movable
+    holidays.
+  - Pages: the list with filters (type, status, year, client, text) and a new
+    plan form; the plan with tabs Overview, Plan & timeline, Quarterly plan,
+    Governance, History & versions. The timeline is a server-rendered Gantt
+    against months: a bar for an activity, a diamond for a milestone, a grey
+    band for ongoing work, an outline for at risk or delayed, a today line,
+    and a legend in words; each row also prints its dates and status. Steps,
+    quarters, RACI, cadence and escalations are edited in place.
+  - Status pills are the module's own `ap-st` classes with an explicit colour
+    pair per status, because the theme layer forces `.pill`'s colours; every
+    pill prints its word. Every table has an explicit `<thead>`.
+- Routes (`internal/app/app.go`, `registerAssurancePlanRoutes`): reads behind
+  page access, writes admin, the same split as Audit Findings. Added to
+  `protectedPrefixes`, the user-management page list, the sidebar, the Help
+  page, the knowledge documents, `Agents.md` and `README.md`.
+- Schema (`internal/db/sqlite.go`, `internal/db/postgres.go`): new tables
+  `assurance_plans`, `assurance_plan_steps`, `assurance_plan_quarters`,
+  `assurance_plan_raci`, `assurance_plan_cadence`,
+  `assurance_plan_escalations`, `assurance_plan_history`,
+  `assurance_plan_versions`. The PostgreSQL schema was reviewed, not run.
+- Backup (`internal/dbsync`): the eight tables are in the snapshot,
+  `SnapshotVersion` bumped to 16; v15 and older backups restore with them
+  empty. They are excluded from `-sync-to/-sync-from` like the other modules
+  whose records are trees of rows. The module fixture and the skip count were
+  updated.
+- Where the build differs from the prompt it came from: the client is a
+  `client_profiles` row (there is no `crm_clients` table); the themes are
+  dark, matrix, chaos and 40k (there is no light theme); the selection seed is
+  drawn when the population is frozen (phase 2), not at creation; a change
+  request is a revision on the approved plan, not a return to Draft.
+- Tests: `internal/assuranceplan` covers business days and holidays, the
+  default cycle against the example's dates, date expressions, every template
+  instantiating, the example's 53 steps and key dates, references, the
+  lifecycle edges, the gate, separation of duties, the design lock, change
+  requests and snapshot immutability, step and governance validation, history,
+  clone (dates, rolls, years) and delete; handlers: a client-sent status
+  ignored, 409 then 422 on approve, the approver from the session, the
+  snapshot hash, 409 on a locked design, the page's tabs, pills, legend and
+  table heads, and the list filters. `internal/dbsync` round-trips the eight
+  tables; `internal/app` checks the nav link.
+- Docs: FEATURES, HTTP_API, DATA_MODEL, DATABASE, OPERATIONS, ARCHITECTURE,
+  PROJECT_OVERVIEW, README and Agents.md.
+
 ## 2026-11-06 (Exceptions: go_rcsa's exception-management changes brought in, and a DORA Report)
 
 The exceptions feature here came from go_rcsa and had fallen behind it. This

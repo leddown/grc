@@ -204,6 +204,61 @@ Append-only history of status, due-date, owner, severity and action-plan changes
 - **References:** `finding_id` → `audit_findings.id` (on delete cascade).
 - **Columns** (text unless a type is given): `id integer`, `finding_id integer`, `at`, `actor`, `event`, `from_value`, `to_value`, `note`.
 
+## Assurance plans
+
+Code: `internal/assuranceplan`. See `ASSURANCE_PLANS.md`. Every child row
+joins its plan on `plan_id` (on delete cascade), so the module travels in the
+snapshot only.
+
+### `assurance_plans`
+
+One row per plan: identity, period, objective, roles, lifecycle and open
+revision, authorship and approval, the selection seed, non-working dates, the
+RACI role columns (JSON array) and the plan's parameters.
+
+- **Key:** `id`. **Travels:** backup only.
+- **Columns** (text unless a type is given): `id integer`, `reference`, `title`, `plan_type`, `function_name`, `client_profile_id integer` (0 = none; `client_profiles.id` otherwise, not a foreign key), `period_start`, `period_end`, `mobilise_start`, `closing_date`, `objective`, `decisions_requested`, `regulatory_refs`, `owner_role`, `accountable_role`, `approval_forum`, `status`, `revision integer`, `revision_status`, `revision_author`, `change_reason`, `author`, `approved_by`, `approved_at`, `activated_at`, `closed_at`, `selection_seed`, `non_working_dates`, `raci_roles`, `tester_fte real`, `days_per_fte_quarter real`, `utilisation_threshold real`, `rag_amber_points real`, `result_partial_min integer`, `result_ineffective_min integer`, `deviation_extend_at integer`, `deviation_thematic_at integer`, `extend_pct real`, `evidence_sla_days integer`, `ai_generated integer`, `model`, `prompt_hash`, `created_at`, `created_by`, `updated_at`, `updated_by`.
+
+### `assurance_plan_steps`
+
+The plan's steps: activities, milestones and ongoing items, with roles, dates, deliverable and status. `quarter` and `generated` mark steps built from a quarter's cycle.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `ordinal integer`, `step_ref`, `phase`, `title`, `step_type`, `responsible_role`, `accountable_role`, `start_date`, `end_date`, `deliverable`, `refs`, `status`, `quarter integer`, `generated integer`, `notes`.
+
+### `assurance_plan_quarters`
+
+The quarterly operating cycle, one row per quarter (unique per plan), with the retest and overhead allowances and the stamp that freezes the quarter's sample.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `quarter integer`, `lod1_window_start`, `lod1_deadline`, `selection_date`, `fieldwork_start`, `fieldwork_end`, `findings_agreed_by`, `report_date`, `committee_label`, `retest_days real`, `overhead_days real`, `selected_at`, `selected_by`.
+
+### `assurance_plan_raci`, `assurance_plan_cadence`, `assurance_plan_escalations`
+
+Governance: RACI activities (`cells` is a JSON object, role → R/A/C/I/A/R), the reporting cadence, and the escalation triggers.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns:** raci `id`, `plan_id`, `ordinal`, `activity`, `cells`; cadence `id`, `plan_id`, `ordinal`, `forum`, `frequency`, `content`, `owner`; escalations `id`, `plan_id`, `ordinal`, `trigger_text`, `escalate_to`, `within_text`.
+
+### `assurance_plan_history`
+
+Append-only history of design changes (summarised by reference), status and revision moves, change requests, approvals and step-status changes, with the actor.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `at`, `actor`, `event`, `subject`, `from_value`, `to_value`, `note`.
+
+### `assurance_plan_versions`
+
+Approval snapshots: the plan as approved, as JSON, with its SHA-256. Written once, never updated; unique per plan and number.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `number integer`, `label`, `approved_by`, `approved_at`, `change_reason`, `snapshot_json`, `snapshot_sha256`.
+
 
 ## Policy library
 
