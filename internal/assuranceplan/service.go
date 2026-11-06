@@ -197,11 +197,11 @@ func (s *Service) insertNew(p Plan, population []PopulationItem, actor string, c
 	if err := normalizeQuarters(p.Quarters); err != nil {
 		return Plan{}, err
 	}
-	g := Governance{RACIRoles: p.RACIRoles, RACI: p.RACI, Cadence: p.Cadence, Escalations: p.Escalations}
+	g := Governance{RACIRoles: p.RACIRoles, RACI: p.RACI, Cadence: p.Cadence, Escalations: p.Escalations, Basis: p.Basis}
 	if err := normalizeGovernance(&g); err != nil {
 		return Plan{}, err
 	}
-	p.RACIRoles, p.RACI, p.Cadence, p.Escalations = g.RACIRoles, g.RACI, g.Cadence, g.Escalations
+	p.RACIRoles, p.RACI, p.Cadence, p.Escalations, p.Basis = g.RACIRoles, g.RACI, g.Cadence, g.Escalations, g.Basis
 
 	ref, err := s.nextReference(p.PeriodStart)
 	if err != nil {
@@ -593,17 +593,20 @@ func (s *Service) ReplaceGovernance(id int64, g Governance, actor string) (Plan,
 	if err != nil {
 		return Plan{}, err
 	}
+	if g.Basis == nil {
+		g.Basis = prev.Basis
+	}
 	if err := normalizeGovernance(&g); err != nil {
 		return Plan{}, err
 	}
-	before, _ := json.Marshal(Governance{RACIRoles: prev.RACIRoles, RACI: stripGovIDs(prev).RACI, Cadence: stripGovIDs(prev).Cadence, Escalations: stripGovIDs(prev).Escalations})
+	before, _ := json.Marshal(stripGovIDs(prev))
 	after, _ := json.Marshal(g)
 	if string(before) == string(after) {
 		return prev, nil
 	}
 	h := HistoryEntry{At: s.stamp(), Actor: actor, Event: "design", Subject: "governance",
-		Note: fmt.Sprintf("%d RACI activities × %d roles, %d cadence rows, %d escalation triggers",
-			len(g.RACI), len(g.RACIRoles), len(g.Cadence), len(g.Escalations))}
+		Note: fmt.Sprintf("%d RACI activities × %d roles, %d cadence rows, %d escalation triggers, %d regulatory basis rows",
+			len(g.RACI), len(g.RACIRoles), len(g.Cadence), len(g.Escalations), len(g.Basis))}
 	if err := s.repo.ReplaceGovernance(id, g.RACIRoles, g, []HistoryEntry{h}); err != nil {
 		return Plan{}, err
 	}
@@ -623,6 +626,10 @@ func stripGovIDs(p Plan) Governance {
 		e.ID, e.Ordinal = 0, i
 		g.Escalations = append(g.Escalations, e)
 	}
+	for i, b := range p.Basis {
+		b.ID, b.Ordinal = 0, i
+		g.Basis = append(g.Basis, b)
+	}
 	if g.RACI == nil {
 		g.RACI = []RACIRow{}
 	}
@@ -631,6 +638,9 @@ func stripGovIDs(p Plan) Governance {
 	}
 	if g.Escalations == nil {
 		g.Escalations = []Escalation{}
+	}
+	if g.Basis == nil {
+		g.Basis = []BasisRow{}
 	}
 	return g
 }
@@ -845,6 +855,21 @@ func normalizeGovernance(g *Governance) error {
 		escalations = append(escalations, e)
 	}
 	g.Escalations = escalations
+	basis := []BasisRow{}
+	for _, b := range g.Basis {
+		b = BasisRow{Requirement: strings.TrimSpace(b.Requirement), Reference: strings.TrimSpace(b.Reference), How: strings.TrimSpace(b.How)}
+		if b.Requirement == "" && b.Reference == "" && b.How == "" {
+			continue
+		}
+		for _, f := range []string{b.Requirement, b.Reference, b.How} {
+			if len(f) > maxFieldLength {
+				return invalid("regulatory basis row %d: a field is longer than %d characters", len(basis)+1, maxFieldLength)
+			}
+		}
+		b.Ordinal = len(basis)
+		basis = append(basis, b)
+	}
+	g.Basis = basis
 	return nil
 }
 
@@ -1160,7 +1185,7 @@ func (s *Service) Clone(id int64, title, actor string) (Plan, error) {
 		}
 	}
 	gov := stripGovIDs(src)
-	c.RACI, c.Cadence, c.Escalations = gov.RACI, gov.Cadence, gov.Escalations
+	c.RACI, c.Cadence, c.Escalations, c.Basis = gov.RACI, gov.Cadence, gov.Escalations, gov.Basis
 	c.Strata = make([]Stratum, len(src.Strata))
 	for i, st := range src.Strata {
 		st.ID = 0

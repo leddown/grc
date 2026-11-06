@@ -166,6 +166,7 @@ type Plan struct {
 	RACI        []RACIRow    `json:"raci"`
 	Cadence     []Cadence    `json:"cadence"`
 	Escalations []Escalation `json:"escalations"`
+	Basis       []BasisRow   `json:"regulatory_basis"`
 
 	// Derived on read.
 	DesignLocked   bool   `json:"design_locked"`
@@ -492,11 +493,24 @@ type Client struct {
 
 // Governance is the three governance lists, saved together because the page
 // edits them as one tab.
+// BasisRow is one regulatory requirement the plan answers, and how. It is
+// what the committee pack's regulatory slide is made of.
+type BasisRow struct {
+	ID          int64  `json:"id"`
+	Ordinal     int    `json:"ordinal"`
+	Requirement string `json:"requirement"`
+	Reference   string `json:"reference"`
+	How         string `json:"how"`
+}
+
+// Governance is replaced as a whole. A request without regulatory_basis keeps
+// the plan's rows rather than clearing them.
 type Governance struct {
 	RACIRoles   []string     `json:"raci_roles"`
 	RACI        []RACIRow    `json:"raci"`
 	Cadence     []Cadence    `json:"cadence"`
 	Escalations []Escalation `json:"escalations"`
+	Basis       []BasisRow   `json:"regulatory_basis"`
 }
 
 type Vocabulary struct {

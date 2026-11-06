@@ -980,6 +980,16 @@ CREATE TABLE IF NOT EXISTS assurance_plan_escalations (
 	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS assurance_plan_basis (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	requirement TEXT NOT NULL DEFAULT '',
+	reference TEXT NOT NULL DEFAULT '',
+	how_met TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS assurance_plan_history (
 	id BIGSERIAL PRIMARY KEY,
 	plan_id BIGINT NOT NULL,

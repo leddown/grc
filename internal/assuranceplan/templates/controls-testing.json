@@ -601,5 +601,32 @@
       "escalate_to": "CISO (resource request)",
       "within": "Before the quarter's fieldwork starts"
     }
+  ],
+  "regulatory_basis": [
+    {
+      "requirement": "Assign the management and oversight of ICT risk to a control function with an appropriate level of independence, segregated from the first line and from internal audit.",
+      "reference": "DORA Art. 6(4)",
+      "how": "The 2LoD CISO Office plans, tests and concludes; asset owners (1LoD) attest their own data; Internal Audit (3LoD) is informed and not part of the testing."
+    },
+    {
+      "requirement": "Identify, classify and document the ICT assets that support the business functions, and review the classification at least yearly.",
+      "reference": "DORA Art. 8(1)",
+      "how": "Every Tier 1 and Tier 2 asset's Security NFR data is attested by its owner and data-quality reviewed by 2LoD within the year, in quarterly waves."
+    },
+    {
+      "requirement": "Identify all ICT assets, map those considered critical and their interdependencies, under an ICT asset management policy and procedure.",
+      "reference": "DORA Art. 8(4); RTS (EU) 2024/1774 Arts. 4–5",
+      "how": "The scope population is extracted from the ICT asset inventory, reconciled to the critical or important function mapping, and frozen before the first draw."
+    },
+    {
+      "requirement": "Test the ICT systems and applications that support critical or important functions at least yearly.",
+      "reference": "DORA Art. 24(6)",
+      "how": "Tier 1 assets support a critical or important function and are sample-tested against the Security NFRs every quarter. This complements the resilience testing programme; it does not replace it."
+    },
+    {
+      "requirement": "Review the ICT risk management framework at least yearly, and report on the review to the competent authority on request.",
+      "reference": "DORA Art. 6(5); RTS (EU) 2024/1774 Art. 27",
+      "how": "The annual conclusion goes to the ICT Risk Committee and the management body as an input to the framework review report."
+    }
   ]
 }

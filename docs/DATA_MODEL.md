@@ -301,6 +301,14 @@ Governance: RACI activities (`cells` is a JSON object, role → R/A/C/I/A/R), th
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
 - **Columns:** raci `id`, `plan_id`, `ordinal`, `activity`, `cells`; cadence `id`, `plan_id`, `ordinal`, `forum`, `frequency`, `content`, `owner`; escalations `id`, `plan_id`, `ordinal`, `trigger_text`, `escalate_to`, `within_text`.
 
+### `assurance_plan_basis`
+
+The regulatory basis: what the regulation asks of the control function, its reference, and how the plan meets it. It is saved with the governance tables and is the approval pack's regulatory slide.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `ordinal integer`, `requirement`, `reference`, `how_met`.
+
 ### `assurance_plan_history`
 
 Append-only history of design changes (summarised by reference), status and revision moves, change requests, approvals, step-status changes, population imports and item edits, the population freeze (with its membership SHA-256 and the seed commitment) and each quarter's selection, with the actor.

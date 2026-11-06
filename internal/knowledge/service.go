@@ -38,6 +38,17 @@ type Service struct {
 	// case the policy corpora are read fresh like exercises: the section rows
 	// are being rewritten by the second.
 	livePolicies func() bool
+	// assurance supplies the assurance plan corpora; nil means the module is
+	// not wired and the kinds are empty.
+	assurancePlans, assuranceTests func() ([]Item, error)
+}
+
+// WithAssurancePlans installs the assurance plan corpora. Coverage against
+// plan and the deviation rule are worked out by internal/assuranceplan, not
+// stored, so that module supplies the records rather than this package's SQL.
+func (s *Service) WithAssurancePlans(plans, tests func() ([]Item, error)) *Service {
+	s.assurancePlans, s.assuranceTests = plans, tests
+	return s
 }
 
 // WithLivePolicies installs the Policy Studio's "is anything open" check.
@@ -91,9 +102,20 @@ func (s *Service) loader(kind string) (func() ([]Item, error), error) {
 		return s.store.Exercises, nil
 	case KindExerciseFinding:
 		return s.store.ExerciseFindings, nil
+	case KindAssurancePlan:
+		return orEmpty(s.assurancePlans), nil
+	case KindAssuranceTest:
+		return orEmpty(s.assuranceTests), nil
 	default:
 		return nil, invalidf("unknown kind %q (known kinds: %s)", kind, strings.Join(Kinds(), ", "))
 	}
+}
+
+func orEmpty(load func() ([]Item, error)) func() ([]Item, error) {
+	if load == nil {
+		return func() ([]Item, error) { return []Item{}, nil }
+	}
+	return load
 }
 
 // Items returns one corpus, from cache when it is fresh.
@@ -105,8 +127,10 @@ func (s *Service) Items(kind string) ([]Item, error) {
 
 	// Exercises are read fresh every time. They are edited while an agent is
 	// asked about them — someone building one asks about the inject they wrote
-	// a moment ago — and an installation holds only a handful.
-	live := kind == KindExercise || kind == KindExerciseFinding
+	// a moment ago — and an installation holds only a handful. Assurance plans
+	// likewise: "what's due this quarter?" asked after a test is signed off
+	// must count it.
+	live := kind == KindExercise || kind == KindExerciseFinding || kind == KindAssurancePlan || kind == KindAssuranceTest
 	if (kind == KindPolicy || kind == KindPolicyClause) && s.livePolicies != nil && s.livePolicies() {
 		live = true
 	}
@@ -180,7 +204,7 @@ func (s *Service) Index(kind string) ([]Item, error) {
 	// a handful per year, and "how many exercises have we run, and how many
 	// reached the board phase" is answered by reading all of them and counting,
 	// which no top-k search can promise.
-	case KindNFR, KindControl, KindRegulation, KindPolicy, KindRisk, KindExercise:
+	case KindNFR, KindControl, KindRegulation, KindPolicy, KindRisk, KindExercise, KindAssurancePlan:
 	default:
 		return nil, invalidf("no compact index for kind %q; use search instead", kind)
 	}

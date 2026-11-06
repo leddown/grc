@@ -14,6 +14,7 @@ import (
 type Handler struct {
 	service *Service
 	actor   func(*gin.Context) string
+	render  Renderer
 }
 
 func NewHandler(service *Service, actor func(*gin.Context) string) *Handler {
@@ -40,6 +41,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/assurance-plans/:id/tests", h.Tests)
 	r.GET("/assurance-plans/:id/deviations", h.Deviations)
 	r.GET("/assurance-plans/:id/dashboard", h.Dashboard)
+	h.registerDocumentRoutes(r)
 }
 
 // RegisterAdminRoutes carries every write, approval included. An approved plan

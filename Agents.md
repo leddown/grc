@@ -88,7 +88,12 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   structured data, not a document, and there is no upload. A Fail is raised as a
   finding through `auditfinding.Service` and a thematic conclusion goes to the
   risk register through `riskregister.Service`; the module keeps no finding or
-  risk register of its own — see `ASSURANCE_PLANS.md`
+  risk register of its own. The approval pack (`assurance-plan-pack.typ`) and
+  the quarterly and annual reports render through a `Renderer` that `app.go`
+  builds on `doctemplate`; the module does not import it. A payload change
+  means regenerating `templates/samples/assurance-*.json` with
+  `GRC_UPDATE_SAMPLES=1 go test ./internal/assuranceplan -run Payload` — see
+  `ASSURANCE_PLANS.md`
 - `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
   the exercise arc from red team through incident response, DORA incident
   classification and its notification clocks, crisis and continuity activation,

@@ -637,6 +637,13 @@ var syncOrder = []tableSpec{
 		strat:        skipInSync,
 	},
 	{
+		table:        "assurance_plan_basis",
+		cols:         []string{"id", "plan_id", "ordinal", "requirement", "reference", "how_met"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
 		table:        "assurance_plan_history",
 		cols:         []string{"id", "plan_id", "at", "actor", "event", "subject", "from_value", "to_value", "note"},
 		conflictCols: []string{"id"},

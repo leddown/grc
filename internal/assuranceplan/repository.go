@@ -225,6 +225,9 @@ func (r *SQLiteRepository) Get(id int64) (Plan, error) {
 	if p.Cadence, err = r.cadence(id); err != nil {
 		return Plan{}, err
 	}
+	if p.Basis, err = r.basis(id); err != nil {
+		return Plan{}, err
+	}
 	if p.Escalations, err = r.escalations(id); err != nil {
 		return Plan{}, err
 	}
@@ -318,6 +321,24 @@ func (r *SQLiteRepository) cadence(planID int64) ([]Cadence, error) {
 	return out, rows.Err()
 }
 
+func (r *SQLiteRepository) basis(planID int64) ([]BasisRow, error) {
+	rows, err := r.db.Query(`SELECT id, ordinal, requirement, reference, how_met FROM assurance_plan_basis
+		WHERE plan_id = ? ORDER BY ordinal, id`, planID)
+	if err != nil {
+		return nil, fmt.Errorf("load plan regulatory basis: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []BasisRow{}
+	for rows.Next() {
+		var b BasisRow
+		if err := rows.Scan(&b.ID, &b.Ordinal, &b.Requirement, &b.Reference, &b.How); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
 func (r *SQLiteRepository) escalations(planID int64) ([]Escalation, error) {
 	rows, err := r.db.Query(`SELECT id, ordinal, trigger_text, escalate_to, within_text FROM assurance_plan_escalations
 		WHERE plan_id = ? ORDER BY ordinal, id`, planID)
@@ -369,7 +390,7 @@ func (r *SQLiteRepository) Create(p Plan, population []PopulationItem, history [
 			return 0, err
 		}
 	}
-	if err := writeGovernance(tx, id, Governance{RACI: p.RACI, Cadence: p.Cadence, Escalations: p.Escalations}); err != nil {
+	if err := writeGovernance(tx, id, Governance{RACI: p.RACI, Cadence: p.Cadence, Escalations: p.Escalations, Basis: p.Basis}); err != nil {
 		return 0, err
 	}
 	if err := writeHistory(tx, id, history); err != nil {
@@ -477,7 +498,7 @@ func (r *SQLiteRepository) ReplaceGovernance(planID int64, roles []string, g Gov
 		if _, err := tx.Exec(`UPDATE assurance_plans SET raci_roles = ? WHERE id = ?`, string(rolesJSON), planID); err != nil {
 			return fmt.Errorf("update raci roles: %w", err)
 		}
-		for _, table := range []string{"assurance_plan_raci", "assurance_plan_cadence", "assurance_plan_escalations"} {
+		for _, table := range []string{"assurance_plan_raci", "assurance_plan_cadence", "assurance_plan_escalations", "assurance_plan_basis"} {
 			// #nosec G202 -- the table names are the literals above.
 			if _, err := tx.Exec(`DELETE FROM `+table+` WHERE plan_id = ?`, planID); err != nil {
 				return fmt.Errorf("clear %s: %w", table, err)
@@ -553,6 +574,12 @@ func writeGovernance(tx *db.Tx, planID int64, g Governance) error {
 		if _, err := tx.Exec(`INSERT INTO assurance_plan_escalations (plan_id, ordinal, trigger_text, escalate_to, within_text)
 			VALUES (?, ?, ?, ?, ?)`, planID, i, e.Trigger, e.EscalateTo, e.Within); err != nil {
 			return fmt.Errorf("insert escalation row: %w", err)
+		}
+	}
+	for i, b := range g.Basis {
+		if _, err := tx.Exec(`INSERT INTO assurance_plan_basis (plan_id, ordinal, requirement, reference, how_met)
+			VALUES (?, ?, ?, ?, ?)`, planID, i, b.Requirement, b.Reference, b.How); err != nil {
+			return fmt.Errorf("insert regulatory basis row: %w", err)
 		}
 	}
 	return nil

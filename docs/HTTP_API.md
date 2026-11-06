@@ -204,6 +204,14 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 
 `internal/assuranceplan`. See [ASSURANCE_PLANS.md](../ASSURANCE_PLANS.md). Added 2026-11-06, after the route count above was taken.
 
+The documents and exports (phase 4):
+
+- `export/:file` takes `steps.csv`, `quarters.csv`, `population.csv`,
+  `tests.csv` or `deviations.csv`.
+- `report/quarter/:q` takes `1`..`4` or `Q1`..`Q4`, with or without `.pdf`.
+- The three PDF routes take `?bundle=1`, `?inline=1` and `?format=json` (the
+  payload, not rendered).
+
 | Method | Path | Access | Handler |
 |---|---|---|---|
 | GET | `/assurance-plans` | signed in | `assuranceplan.(*Handler).ListPage` |
@@ -220,9 +228,12 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | POST | `/assurance-plans/:id/close` | admin | `assuranceplan.(*Handler).Close` |
 | GET | `/assurance-plans/:id/dashboard` | signed in | `assuranceplan.(*Handler).Dashboard` |
 | GET | `/assurance-plans/:id/deviations` | signed in | `assuranceplan.(*Handler).Deviations` |
+| GET | `/assurance-plans/:id/export.json` | signed in | `assuranceplan.(*Handler).ExportJSON` |
+| GET | `/assurance-plans/:id/export/:file` | signed in | `assuranceplan.(*Handler).ExportCSV` |
 | PUT | `/assurance-plans/:id/governance` | admin | `assuranceplan.(*Handler).ReplaceGovernance` |
 | GET | `/assurance-plans/:id/history` | signed in | `assuranceplan.(*Handler).History` |
 | GET | `/assurance-plans/:id/lint` | signed in | `assuranceplan.(*Handler).Lint` |
+| GET | `/assurance-plans/:id/pack.pdf` | signed in | `assuranceplan.(*Handler).Pack` |
 | GET | `/assurance-plans/:id/population` | signed in | `assuranceplan.(*Handler).Population` |
 | POST | `/assurance-plans/:id/population` | admin | `assuranceplan.(*Handler).ApplyPopulation` |
 | GET | `/assurance-plans/:id/population.csv` | signed in | `assuranceplan.(*Handler).PopulationCSV` |
@@ -233,6 +244,8 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | PUT | `/assurance-plans/:id/quarters` | admin | `assuranceplan.(*Handler).ReplaceQuarters` |
 | POST | `/assurance-plans/:id/quarters/:q/select` | admin | `assuranceplan.(*Handler).SelectQuarter` |
 | POST | `/assurance-plans/:id/quarters/generate` | admin | `assuranceplan.(*Handler).GenerateQuarters` |
+| GET | `/assurance-plans/:id/report/annual.pdf` | signed in | `assuranceplan.(*Handler).AnnualReportPDF` |
+| GET | `/assurance-plans/:id/report/quarter/:q` | signed in | `assuranceplan.(*Handler).QuarterReportPDF` |
 | POST | `/assurance-plans/:id/results/:resultID/finding` | admin | `assuranceplan.(*Handler).RaiseFinding` |
 | POST | `/assurance-plans/:id/return` | admin | `assuranceplan.(*Handler).Return` |
 | GET | `/assurance-plans/:id/sampling` | signed in | `assuranceplan.(*Handler).Sampling` |

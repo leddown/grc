@@ -292,6 +292,10 @@ func helpPage(c *gin.Context) {
             <li>Approval stores an immutable version. After it, step status stays editable and the
               design changes only through a change request with a reason, which is reviewed and
               approved as the next version. Clone a plan to start next year's.</li>
+            <li>The Overview tab's Documents and exports table downloads the committee approval
+              pack, each quarter's progress report and the annual conclusion as PDFs (or their
+              sources and data), and the plan as JSON or one CSV per table. The pack's regulatory
+              slide is the Governance tab's regulatory basis.</li>
           </ol>
           <p class="note">Practice, lifecycle and sampling method are in
           <a href="/knowledge/assurance-plans">ASSURANCE_PLANS.md</a>.</p>
@@ -592,7 +596,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register/manage">/risk-register/manage</a></td><td>Create and edit risk entries.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/audit-findings">/audit-findings</a></td><td>Audit findings, action plans, validation and closure.</td></tr>
-          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections, the test script, tests and QA, findings raised into Audit Findings, and the dashboard.</td></tr>
+          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections, the test script, tests and QA, findings raised into Audit Findings, the dashboard, and the approval pack, quarterly and annual reports and exports.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/exceptions">/exceptions</a></td><td>Build an exception set from the requirements catalog.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies">/policies</a></td><td>The policy library and its review states.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/manage">/policies/manage</a></td><td>Write policy sections and cite controls.</td></tr>

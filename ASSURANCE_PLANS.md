@@ -22,9 +22,11 @@ import, the sampling engine, quarterly allocation and capacity, the freeze and
 the frozen quarterly selection. Phase 3 (execution) is in: the test script and
 its seeding from the catalogs, tests and results with the evidence SLA and QA
 sign-off, the deviation rule, "Raise finding" into Audit Findings, the thematic
-push to the risk register, and the dashboard. Exports and documents (phase 4),
-the other plan types (phase 5) and AI assist (phase 6) are described below as
-designed, and marked with their phase where the code does not have them yet.
+push to the risk register, and the dashboard. Phase 4 (outputs) is in: the
+regulatory basis, the JSON and CSV exports, the committee approval pack, the
+quarterly and annual reports, and the knowledge kinds. The other plan types
+(phase 5) and AI assist (phase 6) are described below as designed, and marked
+with their phase where the code does not have them yet.
 
 The module produces:
 
@@ -94,7 +96,12 @@ The module produces:
 - **Selections**: the items picked for 2LoD testing in a quarter, frozen when
   picked.
 - **Tests**: one per selection, with one result per applicable attribute.
-- **Governance**: a RACI matrix, a reporting cadence and escalation triggers.
+- **Governance**: a RACI matrix, a reporting cadence, escalation triggers and
+  the regulatory basis. The regulatory basis is a table of what the
+  regulation asks of the control function, its reference, and how the plan
+  meets it. It is the approval pack's regulatory slide. The two built-in types
+  carry five DORA rows; they paraphrase the articles and are no substitute for
+  the text.
 - **History** and **versions**: an append-only event log, and an immutable JSON
   snapshot at each approval.
 
@@ -119,6 +126,7 @@ which is why the module is excluded from `-sync-to` / `-sync-from` (see
 | `assurance_plan_raci` | RACI rows | `plan_id`, `ordinal`, `activity`, `cells` (JSON object, role → R, A, C, I or A/R). The plan stores the role columns in `raci_roles`. |
 | `assurance_plan_cadence` | Reporting cadence | `plan_id`, `ordinal`, `forum`, `frequency`, `content`, `owner` |
 | `assurance_plan_escalations` | Escalation triggers | `plan_id`, `ordinal`, `trigger_text`, `escalate_to`, `within_text` |
+| `assurance_plan_basis` | Regulatory basis (phase 4) | `plan_id`, `ordinal`, `requirement`, `reference`, `how_met` |
 | `assurance_plan_history` | Every design, status, selection and result change | `plan_id`, `at`, `actor`, `event`, `subject`, `from_value`, `to_value`, `note` |
 | `assurance_plan_versions` | Approval snapshots, immutable | `plan_id`, `number`, `label`, `approved_by`, `approved_at`, `change_reason`, `snapshot_json`, `snapshot_sha256` |
 | `assurance_plan_ai_proposals` | AI proposals and their decisions (phase 6) | `plan_id`, `kind`, `model`, `prompt_hash`, `payload_json`, `status` (proposed / accepted / rejected), `created_*`, `decided_by`, `decided_at` |
@@ -633,8 +641,10 @@ stratum where it has results; editing its text keeps its results attached.
 
 The shipped NFR catalog numbers its entries `0.1`, `1.1` and so on. Appendix A's
 `NFR-01`..`NFR-16` do not exist there, so they are plan-local attributes,
-carried by the Controls testing template. A plan-local attribute can be linked
-to a catalog NFR later by setting its NFR key.
+carried by the worked example. A plan from the Controls testing type starts
+with no attributes (the gate says so) and is seeded from the catalogs. A
+plan-local attribute can be linked to a catalog NFR later by setting its NFR
+key.
 
 ### Proposed populations
 
@@ -737,12 +747,24 @@ spend need admin, the same split as the risk register and Audit Findings.
   `GET /assurance-plans/:id/versions/:n`. A version is served as the bytes
   stored at approval, with their SHA-256 in `X-Snapshot-SHA256`, so a reader
   can check the copy against the hash.
-- Phase 4: `GET /assurance-plans/:id/export.json` and
-  `GET /assurance-plans/:id/export/:table.csv` (steps, quarters, population,
-  tests, deviations)
-- `GET /assurance-plans/:id/pack.pdf`, `GET /assurance-plans/:id/report/quarter/:q.pdf`
-  and `GET /assurance-plans/:id/report/annual.pdf`. With `?bundle=1`, or when no
-  Typst engine is found, these return the sources zip instead.
+- `GET /assurance-plans/:id/export.json`: the whole plan (see below)
+- `GET /assurance-plans/:id/export/:file`: one table as CSV. `:file` is
+  `steps.csv`, `quarters.csv`, `population.csv`, `tests.csv` or
+  `deviations.csv`; any other name ending in `.csv` answers 400, and one that
+  does not end in `.csv` answers 404.
+- `GET /assurance-plans/:id/pack.pdf`, `GET /assurance-plans/:id/report/quarter/:q`
+  and `GET /assurance-plans/:id/report/annual.pdf`. `:q` is `1`..`4` or
+  `Q1`..`Q4`, with or without `.pdf`, so `/report/quarter/Q2.pdf` works. Gin
+  matches a parameter to a whole path segment, so a route cannot be
+  `:table.csv` or `:q.pdf`; the handler strips the suffix instead.
+
+  These render through `internal/doctemplate` (see [Documents](#documents)).
+  With `?bundle=1`, or when no Typst engine is found here or on the render
+  host, they return the sources zip instead. `?inline=1` asks the browser to
+  show the PDF. With `?format=json` they return the payload the template would
+  receive, without rendering. A compile failure answers 422 with
+  `{"error", "log"}`, like the redline. With no renderer wired (a test
+  harness), the PDF routes answer 503 and `?format=json` still works.
 
 **Admin**
 
@@ -751,7 +773,8 @@ spend need admin, the same split as the risk register and Audit Findings.
   Draft with no versions only)
 - `PUT /assurance-plans/:id/steps | quarters | governance | strata | attributes`
   replaces the whole list. These answer 409 while the
-  design is locked. A quarter keeps its selection stamp across an edit. A
+  design is locked. A governance body without `regulatory_basis` keeps the
+  plan's rows; an empty list clears them. A quarter keeps its selection stamp across an edit. A
   stratum that still holds items cannot be removed or renamed.
 - `POST /assurance-plans/:id/quarters/generate` (`{"dates": true}`): resets
   the quarters to the default cycle, keeping each quarter's retest and overhead
@@ -794,37 +817,229 @@ spend need admin, the same split as the risk register and Audit Findings.
 - AI (phase 6): `POST /assurance-plans/:id/ai/draft | attributes | narrative`
   and `POST /assurance-plans/:id/ai/proposals/:pid/decide`
 
-The JSON export is a dedicated type in the `TemplateExport` style. It carries
-no internal ids: rows refer to each other by `step_ref`, `item_ref`,
-`attr_ref` and `test_ref`. Its collections are never null.
+The JSON export is a dedicated type in the `TemplateExport` style
+(`PlanExport` in `export.go`), so renaming an internal JSON tag cannot silently
+blank a field in the pack. The export:
+
+- carries `format_version` (1), which is bumped when a field is renamed or
+  removed
+- carries no internal ids: rows refer to each other by `step_ref`, `item_ref`,
+  `attr_ref` and `test_ref`
+- has collections that are never null
+- has, besides the design, what is computed from it:
+  - each stratum's sizes (n0, FPC, floor, annual sample, tests per quarter,
+    cumulative targets)
+  - the capacity per quarter
+  - each population item's selection: quarter, basis, rank, test and result
+  - the tests with their results
+  - the deviation conclusions, coverage, testing progress and findings
+  - the approved versions with their SHA-256
+  - the gate's findings
+  - totals
+- has `seed` only once every quarter is drawn or the plan is closed, as on the
+  page; `seed_commitment` is always there.
+
+Every CSV data cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage
+return is prefixed with `'`. A spreadsheet then reads the cell as text, not as
+a formula. Names and notes come from pasted CSV and from testers, so a cell
+like `=HYPERLINK(…)` is not trusted. The header row is fixed and is not
+prefixed.
 
 ## Documents
 
-- **Committee approval pack.** `templates/typst/assurance-plan-pack.typ`, built
-  from `lib.typ` and `brand.typ`, 16:9 landscape. It is registered in
-  `internal/doctemplate` as a new kind, `assurance_pack`. The slides, in order:
-  cover; decisions requested; what DORA asks of the control function; objective;
-  scope; approach; sampling and deviation rule; roadmap; quarterly targets;
-  operating cycle; governance; resourcing and delivery risks; next steps.
-- **Quarterly progress report** and **annual conclusion**. Both use
-  `business-report.typ` (kind `report`), with the basis-of-reporting and
-  limitations section. The annual conclusion is labelled "Input to the ICT
-  risk management framework review report (RTS (EU) 2024/1774 Art. 27)".
-- **Samples**: `templates/samples/assurance-plan-sample.json` and the two
-  report samples are generated from Appendix A and included in
-  `templates/build.sh`.
+Three documents render through `internal/doctemplate`, with its engine
+discovery, the render host and the sources-zip fallback:
+
+- the approval pack
+- the quarterly progress report
+- the annual conclusion
+
+The module does not import `doctemplate`. `internal/app` passes it a
+`Renderer` (`Handler.WithRenderer`) that answers like the redline does. The
+**Documents and exports** table on the Overview tab links each document with
+its sources and its data, and links the JSON and CSV exports.
+
+**Committee approval pack** (`pack.pdf`)
+
+- Template `assurance-pack-typst`, kind `assurance_pack`, file
+  `templates/typst/assurance-plan-pack.typ`. It is built from `lib.typ` and
+  `brand.typ` on the `presentation-16-9` paper size.
+- Its payload is the export without the population and the test log, plus a
+  `pack` object:
+  - `as_of`
+  - `roadmap`: a Mobilise card, then one card per quarter with the wave, the
+    tests, the milestones and the report date
+  - `next_steps`: up to six steps not complete and not past their end date, in
+    date order
+  - `delivery_risks`: the gate's blocking findings and the advisories that
+    bear on delivery (empty strata, wave counts, items without a wave, no
+    attributes, quarter dates out of order), and any quarter over the
+    utilisation threshold
+  - `peak_quarter`
+- The slides, in order:
+  1. cover
+  2. decisions requested
+  3. the regulatory basis: what the regulation asks and how the plan meets it.
+     A plan with no basis rows lists its regulatory references instead.
+  4. objective
+  5. scope: strata and their counts, the attribute list
+  6. approach: the 100% coverage track and the sample-testing track
+  7. sampling table and deviation rule
+  8. roadmap
+  9. quarterly targets
+  10. the operating cycle
+  11. governance: cadence and escalation
+  12. resourcing and delivery risks. With none, the slide says "No delivery
+      risk flagged by the plan's checks."
+  13. next steps
+- A long list is cut on its slide and says how many more are in the export.
+
+**Quarterly progress report** (`report/quarter/:q`) and **annual conclusion**
+(`report/annual.pdf`)
+
+Both are `business-report.typ` (template `report-typst`). They fill its
+contract, including the limitations and basis-of-reporting section. Phase 4
+added optional `tables` (`[{caption, columns, rows}]`) to a section and an
+appendix; see DOCUMENT_TEMPLATES.md.
+
+Findings are read back from Audit Findings, so the report states what that
+module holds:
+
+| Report field | Audit Findings field |
+|---|---|
+| observation | Condition |
+| risk | Effect |
+| recommendation | Recommendation |
+| management response | the response, then its text |
+| owner | Owner |
+| target date | the due date |
+| control | the linked controls |
+
+A finding deleted there is left out, and the report says how many were.
+
+The quarterly report is as at its quarter:
+
+- Coverage and DQ accepted count only items dated by the quarter end.
+- The test table holds that quarter's tests.
+- The deviation rule is applied to the tests of quarters 1 to q, with the
+  thematic risks pushed by that quarter's report date.
+
+So the Q1 report downloaded in October says what it said in April. The
+exception is the findings' status, which is Audit Findings' current status. Its
+sections:
+
+1. Coverage against plan, with RAG
+2. Testing in the quarter
+3. Deviations so far this year
+4. Resourcing
+5. Next quarter
+
+The appendix is the test attributes.
+
+The **annual conclusion**:
+
+- is subtitled "Input to the ICT risk management framework review report
+  (RTS (EU) 2024/1774 Art. 27)"
+- states:
+  - the population and the coverage achieved
+  - the tests performed, by quarter and by stratum
+  - the results per attribute and stratum, with the risk raised
+  - the findings by severity and in full
+  - the conclusion
+- has the test attributes and the regulatory basis as appendices
+
+The conclusion's wording is generated per stratum from the deviation rule:
+
+- effective, with no deviations
+- effective, with the attributes whose sample was extended
+- effective except for the attributes concluded not effective
+
+It also says plainly when a stratum had no tests, or when testing is
+incomplete. The wording is what the data supports. The control function signs
+it off and may reword it in the sources (`?bundle=1`).
+
+The limitations state:
+
+- the records' date
+- that sampling gives reasonable, not absolute, assurance
+- that results not signed off by QA are provisional
+
+The annual's limitations add that the conclusion does not replace the
+resilience testing programme or internal audit's work.
+
+**Samples**
+
+`templates/samples/assurance-plan-sample.json`,
+`assurance-quarterly-sample.json` and `assurance-annual-sample.json` are the
+Appendix A plan run through a sample year by `documents_test.go`:
+
+- every quarter drawn and tested
+- the waves attested, one item in nine left out
+- an NFR-04 fail in Tier 1 in Q1, raised as a finding, and another in Q3,
+  pushed as a thematic risk
+- an NFR-11 fail in Tier 2 that extends the sample
+- the last two Q4 tests still in fieldwork
+
+Each sample's shape is checked on every `go test`. To write them afresh, run
+`GRC_UPDATE_SAMPLES=1 go test ./internal/assuranceplan -run 'Payload'`. The
+values (finding references carry the current year) vary from run to run; the
+shape does not.
+
+`templates/build.sh pack | quarterly | annual` renders them (they are also part
+of `all`). The reference renders are in `templates/out/`.
+`internal/doctemplate` compiles all three with Typst when it is installed:
+from the samples, and from the same payloads with every string replaced by
+Typst code, which must print rather than run.
 
 ## Knowledge API
 
-Phase 4. There are two read-only kinds:
+There are two read-only kinds in `internal/knowledge`, both in
+`/api/knowledge/export`:
 
-- `assurance_plan`: the plan with its quarter targets, coverage and
-  conclusions
-- `assurance_plan_test`: one per test, with item, stratum, quarter, the
-  per-attribute results and the finding references
+- `assurance_plan`: one record per plan, ref `AP-2027-001`.
+- `assurance_plan_test`: one per test, ref `AP-2027-001/T27-Q1-001`.
 
-Both are read fresh, like exercises, because they change during execution.
-Both are included in `/api/knowledge/export`.
+The plan record's body opens with **On plan**, **Behind plan: …** or **Not
+started**, then gives:
+
+- the plan's stage (mobilisation, Q1 to Q4 of the period, after the period
+  ends)
+- each quarter's dates, marking the current quarter
+- coverage against plan per stratum and quarter, with RAG
+- testing per quarter
+- the steps past their end date, and the steps under way or starting within
+  30 days
+- the deviations with their conclusion and risk
+- the findings with status and due date
+
+"Behind" means at least one of these:
+
+- a due coverage cell is Amber or Red
+- a quarter's fieldwork has closed with tests not opened or not signed off
+- a step is past its end date
+- a finding is overdue
+
+The record's fields carry the same figures for counting: `current_quarter`,
+`behind_plan`, `coverage_<stratum>_pct`, `tests_planned`, `tests_opened`,
+`tests_signed_off`, `attribute_fails`, `not_effective`, `findings_open` and
+`findings_overdue`. The plan kind has a compact index.
+
+A test record has:
+
+- the item, its stratum, CIF and business line
+- the quarter, the tester, the evidence dates and the QA sign-off
+- each attribute's result, with its note and finding reference
+
+Its fields are `stratum`, `item_ref`, `overall`, `fails`, `failed_attributes`
+and `findings`, and its related refs are the failed attributes and the
+findings. So "which Tier 1 assets failed NFR-04?" is a search, or a filter on
+those fields. The test kind is searched; it has no index.
+
+Coverage and the deviation rule are computed, not stored, so the module
+supplies the records (`Service.KnowledgePlans` and `KnowledgeTests`). The
+knowledge service takes them through `WithAssurancePlans`, and does not read
+the tables with its own SQL. Both kinds are read fresh, like exercises, and not
+from the 45-second cache: they change while the year runs.
 
 ## AI assist (optional)
 
@@ -864,6 +1079,8 @@ Rules for every output:
   too, for the same reason. Tests and results are `skipInSync` like the rest.
 - `audit_findings.origin_ref` joins the snapshot's column list for that table.
   An older backup restores with it blank.
+- Phase 4's `assurance_plan_basis` joins version 16 too, `idKeyed` and
+  `skipInSync`, for the same reason: no build with the module has been released.
 - The tables are excluded from `-sync-to` / `-sync-from` for the same reason as
   crisis exercises and Audit Findings: each plan is a tree of rows joined by
   autoincrement ids. To move plans between deployments, use the snapshot

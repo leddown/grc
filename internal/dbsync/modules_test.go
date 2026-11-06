@@ -77,6 +77,8 @@ func seedModules(t *testing.T, conn *db.Conn) {
 		VALUES (44, 40, 0, 'ICT Risk Committee', 'Quarterly')`)
 	mustExec(t, conn, `INSERT INTO assurance_plan_escalations (id, plan_id, ordinal, trigger_text, escalate_to)
 		VALUES (45, 40, 0, 'Coverage more than 10 points behind plan', 'CISO and CIO')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_basis (id, plan_id, ordinal, requirement, reference, how_met)
+		VALUES (55, 40, 0, 'Review the ICT risk management framework yearly', 'DORA Art. 6(5)', 'Annual conclusion')`)
 	mustExec(t, conn, `INSERT INTO assurance_plan_history (id, plan_id, event, to_value)
 		VALUES (46, 40, 'created', 'Draft')`)
 	mustExec(t, conn, `INSERT INTO assurance_plan_versions (id, plan_id, number, label, snapshot_json)
@@ -136,7 +138,7 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"policy_ai_proposals": 1, "policy_ai_edits": 1,
 		"assurance_plans": 1, "assurance_plan_steps": 1, "assurance_plan_quarters": 1,
 		"assurance_plan_raci": 1, "assurance_plan_cadence": 1, "assurance_plan_escalations": 1,
-		"assurance_plan_history": 1, "assurance_plan_versions": 1,
+		"assurance_plan_basis": 1, "assurance_plan_history": 1, "assurance_plan_versions": 1,
 		"assurance_plan_strata": 1, "assurance_plan_population": 1, "assurance_plan_selections": 1,
 		"assurance_plan_attributes": 1, "assurance_plan_tests": 1, "assurance_plan_results": 1, "assurance_plan_thematic": 1,
 	} {
@@ -270,8 +272,8 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 46 {
-		t.Errorf("report marks %d tables skipped, want 46", len(skipped))
+	if len(skipped) != 47 {
+		t.Errorf("report marks %d tables skipped, want 47", len(skipped))
 	}
 	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit", "assurance_plans", "assurance_plan_versions", "assurance_plan_population", "assurance_plan_selections", "assurance_plan_tests", "assurance_plan_results"} {
 		if !skipped[want] {

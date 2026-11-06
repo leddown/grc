@@ -271,6 +271,24 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
   linked findings by severity, open and overdue, read from Audit Findings; and
   utilisation. A not-effective conclusion can be pushed to the risk register as
   a thematic risk, once.
+- **Documents and exports** (Overview tab):
+  - the **committee approval pack**: thirteen 16:9 slides, typeset by Typst
+    from `templates/typst/assurance-plan-pack.typ`
+  - a **quarterly progress report** for each quarter, stated as at that
+    quarter
+  - the **annual conclusion**, labelled as an input to the ICT risk
+    management framework review report (RTS (EU) 2024/1774 Art. 27)
+  - the whole plan as **JSON**
+  - one **CSV** per table (steps, quarters, population, tests, deviations),
+    with formula-like cells prefixed so a spreadsheet reads them as text
+
+  Each PDF also comes as its sources and as its data (`?format=json`).
+- **Regulatory basis** (Governance tab): what the regulation asks of the
+  control function and how the plan meets it. It is the pack's regulatory
+  slide; the built-in types carry five DORA rows.
+- **Knowledge API**: the kinds `assurance_plan` and `assurance_plan_test`, read
+  fresh. An agent can answer "what's due this quarter?", "are we behind
+  plan?" and "which Tier 1 assets failed NFR-04?".
 
 ### Exceptions (`/exceptions`, detail at `/exceptions/detail`)
 

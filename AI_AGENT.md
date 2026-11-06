@@ -127,9 +127,21 @@ write path here to secure, forget to secure, or be talked into using.
 | `GET /export` | Everything, in one document — see below |
 
 Kinds: `nfr`, `control`, `regulation_clause`, `regulation`, `policy_clause`,
-`policy`, `risk`, `exercise`, `exercise_finding`. Exceptions are absent because
-that page is a saved view over the NFR catalog rather than a record set of its
-own.
+`policy`, `risk`, `exercise`, `exercise_finding`, `assurance_plan`,
+`assurance_plan_test`. Exceptions are absent because that page is a saved view
+over the NFR catalog rather than a record set of its own.
+
+The two assurance plan kinds are for the control function's questions:
+
+| Question | Where the answer is |
+|---|---|
+| What's due this quarter? | The `assurance_plan` record's quarter dates and steps |
+| Are we behind plan? | The `assurance_plan` record opens with On plan, Behind plan: … or Not started, and its `behind_plan` field says the same |
+| Which Tier 1 assets failed NFR-04? | Search `assurance_plan_test`, or filter on its `stratum` and `failed_attributes` fields |
+
+Plans have an index; tests are searched. Both are worked out by the Assurance
+Plans module and read fresh, like exercises. See ASSURANCE_PLANS.md,
+"Knowledge API".
 
 Authenticate with `X-Knowledge-Token` or `Authorization: Bearer`.
 

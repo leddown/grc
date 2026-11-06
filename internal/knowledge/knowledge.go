@@ -53,6 +53,8 @@ const (
 	KindRisk             = "risk"
 	KindExercise         = "exercise"
 	KindExerciseFinding  = "exercise_finding"
+	KindAssurancePlan    = "assurance_plan"
+	KindAssuranceTest    = "assurance_plan_test"
 )
 
 // Kinds lists every searchable kind, in the order the overview reports them.
@@ -67,10 +69,15 @@ const (
 // "have we ever exercised our major-incident classification, and how did it
 // go?" needs the exercise record, and without it will answer from the control
 // catalog — which describes an intention, not an outcome.
+//
+// Assurance plans and their tests answer the control function's own
+// questions: what is due this quarter, which assets failed an attribute, and
+// whether the year is behind plan.
 func Kinds() []string {
 	return []string{
 		KindNFR, KindControl, KindRegulationClause, KindRegulation,
 		KindPolicyClause, KindPolicy, KindRisk, KindExercise, KindExerciseFinding,
+		KindAssurancePlan, KindAssuranceTest,
 	}
 }
 

@@ -535,7 +535,37 @@ func overviewHTML(d planPageData) string {
 		b.WriteString(`</ul>`)
 	}
 
+	b.WriteString(documentsHTML(p))
 	b.WriteString(`<h2>Plan header and parameters</h2>` + lockNotice(p) + headerForm(p, d.Clients))
+	return b.String()
+}
+
+// documentsHTML lists the plan's deliverables. Each PDF has its data beside
+// it (?format=json), which is what an engine-less host can still serve.
+func documentsHTML(p Plan) string {
+	base := "/assurance-plans/" + strconv.FormatInt(p.ID, 10)
+	link := func(href, label string) string { return `<a href="` + esc(href) + `">` + esc(label) + `</a>` }
+	pdf := func(path string) string {
+		return link(base+path, "PDF") + ` · ` + link(base+path+"?bundle=1", "sources") + ` · ` + link(base+path+"?format=json", "data")
+	}
+	var b strings.Builder
+	b.WriteString(`<h2>Documents and exports</h2><p class="lede">PDFs are typeset with Typst on this host or the render host; where neither is available the download is the sources to build elsewhere. A quarter's report states coverage and deviations as at that quarter.</p>
+<div class="table-wrap"><table class="ap-docs"><thead><tr><th>Document</th><th>For</th><th>Download</th></tr></thead><tbody>`)
+	row := func(name, purpose, links string) {
+		b.WriteString(`<tr><td class="ap-nw">` + esc(name) + `</td><td>` + esc(purpose) + `</td><td class="ap-nw">` + links + `</td></tr>`)
+	}
+	row("Approval pack", "The "+firstNonEmpty(p.ApprovalForum, "approval forum")+": 13 slides, 16:9", pdf("/pack.pdf"))
+	for q := 1; q <= 4; q++ {
+		row(fmt.Sprintf("Q%d progress report", q), "Coverage, testing, deviations and findings for the quarter", pdf(fmt.Sprintf("/report/quarter/%d.pdf", q)))
+	}
+	row("Annual conclusion", "Input to the ICT risk management framework review report (RTS (EU) 2024/1774 Art. 27)", pdf("/report/annual.pdf"))
+	row("Plan export", "The whole plan as one JSON file, without database ids", link(base+"/export.json", "JSON"))
+	tables := []string{}
+	for _, t := range ExportTables {
+		tables = append(tables, link(base+"/export/"+t+".csv", t))
+	}
+	row("Tables", "One CSV per table, for a spreadsheet", strings.Join(tables, ` · `))
+	b.WriteString(`</tbody></table></div>`)
 	return b.String()
 }
 
@@ -667,6 +697,16 @@ func governanceHTML(p Plan) string {
 	}
 	if len(p.Escalations) == 0 {
 		b.WriteString(`<tr><td colspan="3" class="muted">No escalation triggers yet.</td></tr>`)
+	}
+	b.WriteString(`</tbody></table></div>`)
+
+	b.WriteString(`<h2>Regulatory basis</h2><p class="lede">What the regulation asks of the control function and how this plan meets it: the committee pack's regulatory slide.</p>
+<div class="table-wrap"><table><thead><tr><th>Requirement</th><th>Reference</th><th>How the plan meets it</th></tr></thead><tbody>`)
+	for _, r := range p.Basis {
+		fmt.Fprintf(&b, `<tr><td>%s</td><td class="ap-nw">%s</td><td>%s</td></tr>`, esc(r.Requirement), esc(r.Reference), esc(r.How))
+	}
+	if len(p.Basis) == 0 {
+		b.WriteString(`<tr><td colspan="3" class="muted">No regulatory basis yet; the pack lists the plan's regulatory references instead.</td></tr>`)
 	}
 	b.WriteString(`</tbody></table></div>`)
 	if !p.DesignLocked {
@@ -868,9 +908,14 @@ if (gHost) {
   const escEd = editor(escHost, [
     { key: 'trigger', label: 'Trigger', type: 'textarea' }, { key: 'escalate_to', label: 'Escalate to' }, { key: 'within', label: 'Within' },
   ], PLAN.escalations, () => ({}));
+  const basisHost = document.createElement('div'); basisHost.innerHTML = '<h3>Regulatory basis</h3>'; gHost.appendChild(basisHost);
+  const basisEd = editor(basisHost, [
+    { key: 'requirement', label: 'Requirement', type: 'textarea' }, { key: 'reference', label: 'Reference' },
+    { key: 'how', label: 'How the plan meets it', type: 'textarea' },
+  ], PLAN.regulatory_basis, () => ({}));
   document.getElementById('saveGov').addEventListener('click', () => {
     readRaci();
-    act('PUT', base + '/governance', { raci_roles: roles, raci: raci, cadence: cad.rows(), escalations: escEd.rows() },
+    act('PUT', base + '/governance', { raci_roles: roles, raci: raci, cadence: cad.rows(), escalations: escEd.rows(), regulatory_basis: basisEd.rows() },
       () => { location.hash = 'governance'; location.reload(); });
   });
 }

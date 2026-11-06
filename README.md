@@ -72,8 +72,9 @@ package and how a request is served. In short:
   from plan type to approved version, quarterly cycle and clone for next year,
   attribute sampling over a pasted scope population and frozen, re-performable
   quarterly selections, tests with QA sign-off, findings raised into Audit
-  Findings, thematic risks pushed to the risk register, and the dashboard (see
-  [ASSURANCE_PLANS.md](ASSURANCE_PLANS.md))
+  Findings, thematic risks pushed to the risk register, the dashboard, and the
+  committee approval pack, quarterly and annual reports and JSON/CSV exports
+  (see [ASSURANCE_PLANS.md](ASSURANCE_PLANS.md))
 - `internal/policydocs` — the policy library: documents, sections, control
   mappings, lint, approval, versions and the coverage matrix; also letters
   written on a client's behalf (see [LETTERS.md](LETTERS.md))

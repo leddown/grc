@@ -36,6 +36,7 @@ type PlanTemplate struct {
 	RACI     []RACIRow        `json:"raci"`
 	Cadence  []Cadence        `json:"cadence"`
 	Escal    []Escalation     `json:"escalations"`
+	Basis    []BasisRow       `json:"regulatory_basis"`
 }
 
 type templatePlan struct {
@@ -252,6 +253,7 @@ func instantiate(t PlanTemplate, periodStart, periodEnd string, now time.Time) (
 	p.RACI = slices.Clone(t.RACI)
 	p.Cadence = slices.Clone(t.Cadence)
 	p.Escalations = slices.Clone(t.Escal)
+	p.Basis = slices.Clone(t.Basis)
 	return p, nil
 }
 
