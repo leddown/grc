@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"grc/internal/controlcatalog"
 	"grc/internal/nfrenrich"
 	"grc/internal/regmap/nist"
 	"grc/internal/securitynfr"
@@ -29,6 +30,12 @@ type NFRLister interface {
 	List(search, domain string) ([]securitynfr.NFR, error)
 }
 
+// ControlLister is the slice of the control catalog service this module needs:
+// the imported 800-53 controls, read and never edited.
+type ControlLister interface {
+	List(search, baseline, cia string) ([]controlcatalog.Control, error)
+}
+
 // Catalog is the candidate corpus, loaded once per analysis run.
 type Catalog struct {
 	Candidates []Candidate
@@ -39,13 +46,30 @@ type Catalog struct {
 	Controls *nist.Catalog
 }
 
-// LoadCatalog builds the corpus from the Security NFR catalog and the embedded
-// 800-53 dataset — the same controls the rest of the app serves, so a mapping
-// names something the reader can click through to.
-func LoadCatalog(nfrs NFRLister) (*Catalog, error) {
-	controls, err := nist.LoadEmbedded(false)
+// LoadCatalog builds the corpus from the Security NFR catalog and the 800-53
+// controls in the database — the same controls the rest of the app serves, so
+// a mapping names something the reader can click through to.
+func LoadCatalog(nfrs NFRLister, controlSource ControlLister) (*Catalog, error) {
+	if controlSource == nil {
+		return nil, invalid("no NIST 800-53 catalog is available; import one on the Control Editor page")
+	}
+	imported, err := controlSource.List("", "", "")
 	if err != nil {
 		return nil, fmt.Errorf("load 800-53 catalog: %w", err)
+	}
+	list := make([]nist.Control, 0, len(imported))
+	for _, c := range imported {
+		list = append(list, nist.Control{
+			ID:          c.ID,
+			Family:      c.Family,
+			Title:       c.Name,
+			ControlText: c.Requirements,
+			Enhancement: c.Type == "Control Enhancement",
+		})
+	}
+	controls, err := nist.FromControls(list, false, "grc NIST 800-53 catalog (base controls)")
+	if err != nil {
+		return nil, invalid("the NIST 800-53 catalog is empty; import it on the Control Editor page before analysing a regulation")
 	}
 
 	cat := &Catalog{byRef: map[string]Candidate{}, Controls: controls}

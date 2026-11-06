@@ -106,6 +106,7 @@ The home page, sign-in, build information and the in-app documentation.
 |---|---|---|---|
 | GET | `/controls` | signed in | `controlcatalog.(*Handler).Page` |
 | DELETE | `/controls/:controlID` | admin | `controlcatalog.(*Handler).DeleteControl` |
+| POST | `/controls/import` | admin | `controlcatalog.(*Handler).ImportControls` |
 | PUT | `/controls/:controlID` | admin | `controlcatalog.(*Handler).UpdateControl` |
 | GET | `/controls/data` | signed in | `controlcatalog.(*Handler).ListControls` |
 | GET | `/controls/data/:controlID` | signed in | `controlcatalog.(*Handler).GetControl` |
@@ -128,6 +129,7 @@ The home page, sign-in, build information and the in-app documentation.
 |---|---|---|---|
 | GET | `/security-nfrs` | signed in | `securitynfr.(*Handler).Page` |
 | DELETE | `/security-nfrs/:key` | admin | `securitynfr.(*Handler).DeleteNFR` |
+| POST | `/security-nfrs/import` | admin | `securitynfr.(*Handler).ImportNFRs` |
 | PUT | `/security-nfrs/:key` | admin | `securitynfr.(*Handler).UpdateNFR` |
 | PUT | `/security-nfrs/:key/weight` | admin | `securitynfr.(*Handler).SetNFRWeight` |
 | GET | `/security-nfrs/data` | signed in | `securitynfr.(*Handler).ListNFRs` |
@@ -410,6 +412,8 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | GET | `/reports/exceptions-workbook/download` | signed in | `app.exceptionsWorkbookDownload` |
 | POST | `/reports/exceptions-workbook/download` | signed in | `app.exceptionsWorkbookDownload` |
 | GET | `/reports/exceptions-report` | signed in | `app.exceptionsReportPage` |
+| GET | `/reports/dora` | signed in | `app.doraReportPage` — the DORA and RTS articles cited in the References of controls linked to NFRs in scope, with the exceptions against each (`?scope=`, `?key=`, `?partial=` as on the Exceptions page) |
+| GET | `/reports/dora/detail` | signed in | `app.doraDetailPage` — the NFRs (`?show=nfrs`) or controls (`?show=controls`) in scope behind one row (`?regulation=`, `?article=`, and the exercise as above); 404 for a row the report does not have |
 | GET | `/reports/risk-assessment.pdf` | signed in | `reporting.(*Handler).SampleRiskAssessmentPDF` |
 
 ## Jira and stored JSON

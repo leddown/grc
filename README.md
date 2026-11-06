@@ -85,7 +85,8 @@ package and how a request is served. In short:
   clocks to the board and the supervisor, with everything referenceable back to
   controls and frameworks (see [CRISIS_EXERCISE.md](CRISIS_EXERCISE.md))
 - `internal/pageui` — shared side-nav tab rendering
-- `internal/data` — embedded seed JSON for the control and NFR catalogs
+- `internal/data` — the control and NFR catalog JSON files, shipped for import
+  on the editor pages (not compiled into the binary)
 - `internal/regmap` — the framework profiles that cut a regulation into its
   articles, and the segmenter that applies them; used by Regulation Coverage
 - `internal/knowledge` — read-only, machine-facing query surface over this

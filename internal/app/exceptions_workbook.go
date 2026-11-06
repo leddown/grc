@@ -107,8 +107,9 @@ func exceptionsWorkbookPage(c *gin.Context) {
     <h1>Exceptions Workbook</h1>
     <p class="lead">The <a href="/exceptions">Exceptions</a> page as an Excel workbook that works on its own. It
       holds the Security NFR catalog with its weights, the NIST controls and the links between them, and its
-      formulas redo what the page does: mark the requirements in the scope of an exercise and the ones of them in the exception set, and the linked controls, the
-      confidentiality, integrity and availability counts, the threat coverage and the detail view follow.</p>
+      formulas redo what the page does: mark the NFRs in the scope of an exercise and the ones of them in the exception set, and the linked controls, the
+      confidentiality, integrity and availability counts, the threat coverage, the weight of the selection and
+      the detail view follow.</p>
     <div class="actions">
       <a class="download" href="/reports/exceptions-workbook/download">Download the workbook (.xlsx)</a>
       <span id="counts" class="muted"></span>
@@ -126,9 +127,10 @@ func exceptionsWorkbookPage(c *gin.Context) {
           <tr><td>How to use</td><td>The steps, and where each button of the Exceptions page is in the workbook.</td></tr>
           <tr><td>Exceptions</td><td>Every Security NFR with its weight. Choose Yes in the Scope column (A) for the NFRs the exercise covers, and Full or Partial in the Exception column (B) to put one of them in the exception set; a partial exception counts half its weight. The summary lines at the top follow.</td></tr>
           <tr><td>Summary</td><td>The scope, the selection, the linked controls, the C / I / A counts, the threat coverage, and the weight of the selection against the scope.</td></tr>
-          <tr><td>Selected NFRs</td><td>The detail view: each selected requirement in full.</td></tr>
-          <tr><td>Selected controls</td><td>The detail view: each selected requirement's linked controls, with their ratings and threats.</td></tr>
-          <tr><td>Links</td><td>Which NIST control each requirement's NIST mapping resolves to.</td></tr>
+          <tr><td>Selected NFRs</td><td>The detail view: each selected NFR in full.</td></tr>
+          <tr><td>Selected controls</td><td>The detail view: each selected NFR's linked controls, with their ratings and threats.</td></tr>
+          <tr><td>DORA</td><td>The DORA and RTS articles the controls linked to NFRs in scope cite, with the exceptions against each. The DORA data sheet holds its working columns.</td></tr>
+          <tr><td>Links</td><td>Which NIST control each NFR's NIST mapping resolves to.</td></tr>
           <tr><td>Controls</td><td>The NIST controls, their ratings and the threats each addresses.</td></tr>
         </tbody>
       </table>
@@ -139,7 +141,7 @@ func exceptionsWorkbookPage(c *gin.Context) {
       <ul>
         <li>The file is .xlsx, for Excel 2010 or later and LibreOffice Calc. It has no macros.</li>
         <li>It is a snapshot of the catalogs as they are now. Download it again after the catalogs change.</li>
-        <li>Every figure in it is one the <a href="/reports/exceptions-report">Exceptions Report</a> shows, worked out the same way.</li>
+        <li>Every figure in it is one the <a href="/reports/exceptions-report">Exceptions Report</a> shows, worked out the same way; the DORA sheet's, the <a href="/reports/dora">DORA Report</a>.</li>
         <li>The first download has nothing selected in it: the Scope and Exception columns are empty, and that is where to start. It is otherwise the same workbook as the second.</li>
         <li>The second download opens with the scope and the exceptions set on the Exceptions page in this browser tab. They are kept in the browser for the tab's session; the application does not store them.</li>
         <li>What was typed there of a partial exception is in the Comments column of that NFR's row. It is sent with the request for the workbook, in its body and not in its address, and the application does not keep it.</li>
@@ -207,11 +209,11 @@ func exceptionsWorkbookPage(c *gin.Context) {
 
 // exceptionsWorkbookDownload reads what the Exceptions page reads -- the same
 // three lists, with the same filters -- so the workbook and the page start
-// from the same data. ?scope= names the requirements in the scope of the
-// exercise and ?key= the ones of them in the exception set, as the Exceptions
-// page's own address does: no scope parameter means the whole catalog is in
-// scope. ?partial= names the selected ones whose exception is partial. With
-// none of the three the workbook is the same one with nothing selected in it.
+// from the same data. ?scope= names the NFRs in the scope of the exercise and
+// ?key= the ones of them in the exception set, as the Exceptions page's own
+// address does: no scope parameter means the whole catalog is in scope.
+// ?partial= names the selected ones whose exception is partial. With none of
+// the three the workbook is the same one with nothing selected in it.
 //
 // A POST is the same request with what is said of the partial exceptions in
 // its body; see exceptionDescriptions. Nothing of it is stored.
@@ -223,10 +225,10 @@ func exceptionsWorkbookDownload(nfrs *securitynfr.Handler, links *nfrlink.Handle
 			return
 		}
 
-		// Downloaded with no selections at all, the workbook has none: no
-		// requirement in scope and none excepted, the same workbook otherwise.
-		// With selections it is read as the Exceptions page's address is, where
-		// no scope parameter means the whole catalog.
+		// Downloaded with no selections at all, the workbook has none: no NFR
+		// in scope and none excepted, the same workbook otherwise. With
+		// selections it is read as the Exceptions page's address is, where no
+		// scope parameter means the whole catalog.
 		query := c.Request.URL.Query()
 		scoped := query.Has("scope") || !(query.Has("key") || query.Has("partial"))
 

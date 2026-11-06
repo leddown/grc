@@ -22,6 +22,7 @@ type LibraryFunc func() (aiprovider.Library, error)
 type Service struct {
 	repo      Repository
 	nfrs      NFRLister
+	controls  ControlLister
 	asker     Asker
 	retriever Retriever
 	renderer  Renderer
@@ -38,6 +39,12 @@ func NewService(repo Repository, nfrs NFRLister, asker Asker, library LibraryFun
 		library:   library,
 		now:       time.Now,
 	}
+}
+
+// WithControls sets where the 800-53 catalog is read from.
+func (s *Service) WithControls(controls ControlLister) *Service {
+	s.controls = controls
+	return s
 }
 
 // Configured reports whether analysis can run. Importing, browsing and PDF
@@ -300,7 +307,7 @@ func (s *Service) Analyze(ctx context.Context, id int64, actor string) (*Analysi
 		return nil, invalid("this regulation has no sections to analyse")
 	}
 
-	cat, err := LoadCatalog(s.nfrs)
+	cat, err := LoadCatalog(s.nfrs, s.controls)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,10 +21,10 @@ import (
 	"grc/internal/xlsx"
 )
 
-// fixture holds the cases the page's logic turns on: a requirement that
-// reaches one control through two mappings, a mapping that matched nothing, a
-// control two requirements share, a linked control the catalog does not list,
-// a link whose requirement is gone, keys that differ only as text, a threat
+// fixture holds the cases the page's logic turns on: an NFR that reaches one
+// control through two mappings, a mapping that matched nothing, a
+// control two NFRs share, a linked control the catalog does not list,
+// a link whose NFR is gone, keys that differ only as text, a threat
 // outside the usual six, and text a spreadsheet could mistake for a formula.
 func fixture() Data {
 	link := func(key, mapping, control string, matched bool) nfrlink.LinkRow {
@@ -86,6 +87,18 @@ func TestEvaluateFollowsThePage(t *testing.T) {
 	if want := "Scope: 5 of 5 Security NFRs"; got.ScopeLine() != want {
 		t.Errorf("scope line = %q, want %q", got.ScopeLine(), want)
 	}
+	if want := "Weight of the selection: 9 of 15 (60%)"; got.WeightLine() != want {
+		t.Errorf("weight line = %q, want %q", got.WeightLine(), want)
+	}
+	if average, ok := got.AverageWeight(); !ok || average != 4.5 {
+		t.Errorf("average weight = %v (%v), want 4.5", average, ok)
+	}
+	// One NFR at each weight in the catalog; the two selected carry 4
+	// and 5.
+	wantByWeight := []WeightCount{{1, 1, 0}, {2, 1, 0}, {3, 1, 0}, {4, 1, 1}, {5, 1, 1}}
+	if !reflect.DeepEqual(got.ByWeight, wantByWeight) {
+		t.Errorf("by weight = %+v, want %+v", got.ByWeight, wantByWeight)
+	}
 	if want := "Linked Controls: 4 | C: 2 | I: 2 | A: 2"; got.CIALine() != want {
 		t.Errorf("CIA line = %q, want %q", got.CIALine(), want)
 	}
@@ -106,6 +119,12 @@ func TestEvaluateFollowsThePage(t *testing.T) {
 	}
 	if want := "Threat coverage: no linked threat mappings"; none.ThreatLine() != want {
 		t.Errorf("threat line = %q, want %q", none.ThreatLine(), want)
+	}
+	if want := "Weight of the selection: 0 of 15 (0%)"; none.WeightLine() != want {
+		t.Errorf("weight line = %q, want %q", none.WeightLine(), want)
+	}
+	if average, ok := none.AverageWeight(); ok {
+		t.Errorf("an empty selection has an average weight: %v", average)
 	}
 	if len(none.Threats) != 7 || none.Threats[0].Threat != "Spoofing" || none.Threats[6].Threat != "Lateral Movement" {
 		t.Errorf("threats = %+v, want the six in the page's order and then Lateral Movement", none.Threats)
@@ -130,14 +149,18 @@ func TestEvaluateMeasuresAgainstTheScope(t *testing.T) {
 	if got.LinkedControls != 2 {
 		t.Errorf("linked controls = %d, want 2 (PL-8, CM-8)", got.LinkedControls)
 	}
-	if got.SelectedWeight != 5 || got.ScopeWeight != 8 {
-		t.Errorf("weight = %v of %d, want 5 of 8", got.SelectedWeight, got.ScopeWeight)
+	if want := "Weight of the selection: 5 of 8 (63%)"; got.WeightLine() != want {
+		t.Errorf("weight line = %q, want %q", got.WeightLine(), want)
+	}
+	wantByWeight := []WeightCount{{1, 1, 0}, {2, 1, 0}, {3, 0, 0}, {4, 0, 0}, {5, 1, 1}}
+	if !reflect.DeepEqual(got.ByWeight, wantByWeight) {
+		t.Errorf("by weight = %+v, want %+v", got.ByWeight, wantByWeight)
 	}
 
 	// A scope that was given and is empty has nothing in it; that is not the
 	// same as no scope.
 	empty := Evaluate(fixture(), Options{Scoped: true, Selected: []string{"1"}})
-	if empty.ScopeNFRs != 0 || empty.SelectedNFRs != 0 || empty.ScopeWeight != 0 {
+	if empty.ScopeNFRs != 0 || empty.SelectedNFRs != 0 || empty.ScopeWeight != 0 || empty.WeightShare() != 0 {
 		t.Errorf("an empty scope is not empty: %+v", empty)
 	}
 }
@@ -237,8 +260,21 @@ func TestEvaluateCountsAPartialExceptionAsHalfItsWeight(t *testing.T) {
 
 	// Key 1 in part: 2.5 + 4 of 15.
 	half := Evaluate(fixture(), Options{Selected: []string{"1", "10"}, Partial: []string{"1"}})
+	if want := "Weight of the selection: 7 of 15 (47%)"; got.WeightLine() != want {
+		t.Errorf("weight line = %q, want %q", got.WeightLine(), want)
+	}
 	if half.SelectedWeight != 6.5 {
 		t.Errorf("weight = %v, want 6.5 (half of 5 + 4)", half.SelectedWeight)
+	}
+	if want := "Weight of the selection: 6.5 of 15 (43%)"; half.WeightLine() != want {
+		t.Errorf("weight line = %q, want %q", half.WeightLine(), want)
+	}
+	if average, ok := half.AverageWeight(); !ok || average != 3.25 {
+		t.Errorf("average weight = %v (%v), want 3.25", average, ok)
+	}
+	// The count at each weight is of NFRs, whole: a partial one is one NFR.
+	if wantByWeight := []WeightCount{{1, 1, 0}, {2, 1, 0}, {3, 1, 0}, {4, 1, 1}, {5, 1, 1}}; !reflect.DeepEqual(half.ByWeight, wantByWeight) {
+		t.Errorf("by weight = %+v, want %+v", half.ByWeight, wantByWeight)
 	}
 
 	book, _ := Build(fixture(), Options{Selected: []string{"1", "10"}, Partial: []string{"1"}})
@@ -333,14 +369,14 @@ func TestBuildWritesTheWorkbook(t *testing.T) {
 	for _, sheet := range book.Sheets() {
 		names = append(names, sheet.Name())
 	}
-	want := []string{SheetGuide, SheetExceptions, SheetSummary, SheetNFRDetail, SheetControlDetail, SheetLinks, SheetControls}
+	want := []string{SheetGuide, SheetExceptions, SheetSummary, SheetNFRDetail, SheetControlDetail, SheetDORA, SheetLinks, SheetControls, SheetDORAData}
 	if strings.Join(names, "|") != strings.Join(want, "|") {
 		t.Fatalf("sheets = %q, want %q", names, want)
 	}
-	// The two sheets that hold what the application exported are locked; the
+	// The sheets that hold what the application exported are locked; the
 	// ones a person works on are not.
 	for _, sheet := range book.Sheets() {
-		locked := sheet.Name() == SheetLinks || sheet.Name() == SheetControls
+		locked := sheet.Name() == SheetLinks || sheet.Name() == SheetControls || sheet.Name() == SheetDORAData
 		if sheet.Protected() != locked {
 			t.Errorf("sheet %q: protected = %v, want %v", sheet.Name(), sheet.Protected(), locked)
 		}
@@ -368,7 +404,7 @@ func TestBuildWritesTheWorkbook(t *testing.T) {
 		}
 	}
 	if first, _, _ := exceptions.Stored(exKey, exFirstRow); first != "1" {
-		t.Errorf("the first requirement is key %q, want key 1 (NFR id 0.1)", first)
+		t.Errorf("the first NFR is key %q, want key 1 (NFR id 0.1)", first)
 	}
 	if marks["1"] != FullMark || marks["10"] != FullMark || marks["2"] != "" || marks["01"] != "" {
 		t.Errorf("Exception column = %v, want only keys 1 and 10 marked, in full", marks)
@@ -508,7 +544,7 @@ func TestSummaryIsTheSummarySheet(t *testing.T) {
 		// are empty.
 		l := layout{threats: len(result.Threats)}
 		var onSheet [][5]string
-		for row := smCatalog - 1; row <= l.smLastRow(); row++ {
+		for row := smScope - 1; row <= l.smLastRow(); row++ {
 			line := [5]string{}
 			for col := range line {
 				line[col] = shown(sheet, col+1, row)
@@ -546,10 +582,126 @@ func TestSummaryIsTheSummarySheet(t *testing.T) {
 	}
 }
 
+// The catalog's count comes last of its section, and a coverage table gives
+// the scope's weight before the excepted weight.
+func TestSummaryOrder(t *testing.T) {
+	_, result := Build(fixture(), Options{Selected: []string{"1"}})
+	sections := result.Summary()
+
+	labels := []string{}
+	for _, row := range sections[0].Rows {
+		labels = append(labels, row.Label)
+	}
+	want := "Security NFRs in scope|Exceptions|Missed Controls|Security NFRs in Catalog"
+	if got := strings.Join(labels, "|"); got != want {
+		t.Errorf("scope and selection lists %q, want %q", got, want)
+	}
+
+	for _, section := range sections[1:3] {
+		if got := strings.Join(section.Columns, "|"); got != "Scope weight|Excepted weight|Share|Missed Controls" {
+			t.Errorf("%s has the columns %q", section.Title, got)
+		}
+	}
+	confidentiality := sections[1].Rows[0].Values
+	if confidentiality[0] != strconv.Itoa(result.ConfidentialityWeight.Scope) || confidentiality[1] != weightText(result.ConfidentialityWeight.Excepted) {
+		t.Errorf("the values do not follow the columns: %q for %+v", confidentiality, result.ConfidentialityWeight)
+	}
+}
+
+// The report lists the exceptions heaviest first and each control they
+// miss once, the ones the catalog does not hold among them.
+func TestReportListsTheExceptionsAndWhatTheyMiss(t *testing.T) {
+	// Keys 2 (weight 1), 10 (4), 1 (5) and 01 (2); key 10 in part, and key 3
+	// out of scope although it is selected.
+	report := ReportFor(fixture(), Options{
+		Scope: []string{"1", "2", "10", "01"}, Scoped: true,
+		Selected: []string{"2", "10", "1", "01", "3"}, Partial: []string{"10"},
+	})
+
+	var order []string
+	for _, exception := range report.Exceptions {
+		order = append(order, exception.Key+":"+strconv.Itoa(exception.Weight))
+		if exception.Partial != (exception.Key == "10") {
+			t.Errorf("key %s: partial = %v", exception.Key, exception.Partial)
+		}
+	}
+	if want := []string{"1:5", "10:4", "01:2", "2:1"}; !reflect.DeepEqual(order, want) {
+		t.Errorf("exceptions = %v, want them heaviest first: %v", order, want)
+	}
+	if len(report.Exceptions) != report.Result.SelectedNFRs {
+		t.Errorf("%d exceptions listed, and the result counts %d", len(report.Exceptions), report.Result.SelectedNFRs)
+	}
+
+	// AC-99 is linked from key 10 and is not in the catalog; CM-8 is reached
+	// twice by key 1 and SC-7 by three NFRs, and each is listed once.
+	var missed []string
+	for _, control := range report.Missed {
+		ratings := ""
+		for letter, carried := range map[string]bool{"C": control.Confidentiality, "I": control.Integrity, "A": control.Availability} {
+			if carried {
+				ratings += letter
+			}
+		}
+		letters := []byte(ratings)
+		sort.Slice(letters, func(i, j int) bool {
+			return strings.IndexByte("CIA", letters[i]) < strings.IndexByte("CIA", letters[j])
+		})
+		missed = append(missed, control.ID+"["+string(letters)+"]"+strconv.FormatBool(control.Listed))
+	}
+	want := []string{"AC-2[CI]true", "AC-99[]false", "CM-8[IA]true", "PL-8[C]true", "SC-7[CIA]true"}
+	if !reflect.DeepEqual(missed, want) {
+		t.Errorf("missed controls = %v, want %v", missed, want)
+	}
+	if len(report.Missed) != report.Result.LinkedControls {
+		t.Errorf("%d controls listed, and the result counts %d", len(report.Missed), report.Result.LinkedControls)
+	}
+	if report.Missed[1].Name != "Name of AC-99" {
+		t.Errorf("a control the catalog does not hold is named %q, want the name its link gives", report.Missed[1].Name)
+	}
+
+	if !reflect.DeepEqual(report.Result, Evaluate(fixture(), Options{
+		Scope: []string{"1", "2", "10", "01"}, Scoped: true,
+		Selected: []string{"2", "10", "1", "01", "3"}, Partial: []string{"10"},
+	})) {
+		t.Error("the report's figures are not Evaluate's")
+	}
+	if empty := ReportFor(fixture(), Options{}); len(empty.Exceptions) != 0 || len(empty.Missed) != 0 {
+		t.Errorf("a report with nothing selected lists %d exceptions and %d controls", len(empty.Exceptions), len(empty.Missed))
+	}
+}
+
+// The share is a whole percentage and a half rounds up: 1 of 8 is 12.5%.
+func TestWeightShareRoundsAHalfUp(t *testing.T) {
+	for _, tc := range []struct{ selected, catalog, want int }{
+		{1, 8, 13},
+		{1, 3, 33},
+		{2, 3, 67},
+		{8, 329, 2},
+		{5, 5, 100},
+		{0, 5, 0},
+		{0, 0, 0},
+	} {
+		got := Result{SelectedWeight: float64(tc.selected), ScopeWeight: tc.catalog}.WeightShare()
+		if got != tc.want {
+			t.Errorf("share of %d in %d = %d%%, want %d%%", tc.selected, tc.catalog, got, tc.want)
+		}
+	}
+	// To two places, a half rounding up: 11 over 3 is 3.67, 1 over 8 is 0.13.
+	if average, _ := (Result{SelectedWeight: 11, SelectedNFRs: 3}).AverageWeight(); average != 3.67 {
+		t.Errorf("average of 11 over 3 = %v, want 3.67", average)
+	}
+	if average, _ := (Result{SelectedWeight: 1, SelectedNFRs: 8}).AverageWeight(); average != 0.13 {
+		t.Errorf("average of 1 over 8 = %v, want 0.13", average)
+	}
+}
+
 func TestBuildWithNothingInTheCatalogs(t *testing.T) {
 	book, result := Build(Data{}, Options{})
 	if result.SelectedNFRs != 0 || result.ScopeWeight != 0 {
 		t.Errorf("an empty catalog gave %+v", result)
+	}
+	if want := "Weight of the selection: 0 of 0 (0%)"; result.WeightLine() != want {
+		t.Errorf("weight line = %q, want %q", result.WeightLine(), want)
 	}
 	if err := book.Write(&bytes.Buffer{}); err != nil {
 		t.Fatalf("write: %v", err)
@@ -576,14 +728,19 @@ func TestFormulasInLibreOffice(t *testing.T) {
 	}
 
 	catalog := seededCatalog(t)
-	keys, scope := []string{}, []string{}
+	keys, scope, laterKeys := []string{}, []string{}, []string{}
 	for i, nfr := range catalog.NFRs {
 		// A spread of weights, so the weight figures are not all threes.
 		catalog.NFRs[i].Weight = 1 + i%5
 		if i%9 == 0 {
 			keys = append(keys, nfr.Key)
 		}
-		// Two of every three NFRs, so the scope is not the whole catalog.
+		// Leaves out the first NFR, so neither the first NFR nor the first
+		// link is an exception: the first detail line has to look past them.
+		if i%9 == 4 {
+			laterKeys = append(laterKeys, nfr.Key)
+		}
+		// Two of every three NFRs, so some selected keys fall outside it.
 		if i%3 != 1 {
 			scope = append(scope, nfr.Key)
 		}
@@ -598,7 +755,10 @@ func TestFormulasInLibreOffice(t *testing.T) {
 		Descriptions: map[string]string{"10": "Filtered at the edge, not between zones.\nReview due in March.", "2": `=HYPERLINK("http://example.test","a formula?")`}})
 	books["fixture-partial"], _ = Build(fixture(), Options{Selected: []string{"1", "10", "2"}, Partial: []string{"1", "2"}})
 	books["fixture-scope-partial"], _ = Build(fixture(), Options{Scope: []string{"1", "2", "01"}, Scoped: true, Selected: []string{"1", "10", "2"}, Partial: []string{"2", "10"}})
+	books["dora"], _ = Build(doraFixture(), Options{Scope: []string{"1", "2", "4"}, Scoped: true, Selected: []string{"1", "2", "3"}, Partial: []string{"2"}})
+	books["dora-none"], _ = Build(doraFixture(), Options{})
 	books["catalog"], _ = Build(catalog, Options{Selected: keys})
+	books["catalog-later"], _ = Build(catalog, Options{Selected: laterKeys})
 	books["catalog-scope"], _ = Build(catalog, Options{Scope: scope, Scoped: true, Selected: keys})
 	books["catalog-partial"], _ = Build(catalog, Options{Scope: scope, Scoped: true, Selected: keys, Partial: keys[:len(keys)/2]})
 
@@ -713,8 +873,17 @@ func sameCell(shown, text string, number float64, isNumber bool) bool {
 	return math.Abs(parsed/scale-number) < 1e-9
 }
 
-// seededCatalog is the catalog a new installation starts with, linked the way
-// the application links it.
+func readBundled(t *testing.T, name string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "data", name))
+	if err != nil {
+		t.Fatalf("read bundled %s: %v", name, err)
+	}
+	return raw
+}
+
+// seededCatalog is the shipped catalog files imported into a new installation,
+// linked the way the application links them.
 func seededCatalog(t *testing.T) Data {
 	t.Helper()
 	conn, err := db.OpenSQLite(filepath.Join(t.TempDir(), "catalog.db"))
@@ -724,12 +893,12 @@ func seededCatalog(t *testing.T) Data {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	controls := controlcatalog.NewService(controlcatalog.NewSQLiteRepository(conn), "")
-	if _, err := controls.Seed(); err != nil {
-		t.Fatalf("seed controls: %v", err)
+	if _, err := controls.Import(readBundled(t, "merged_nist_controls_master_replaced_from_controls_all.json"), true); err != nil {
+		t.Fatalf("import controls: %v", err)
 	}
 	nfrs := securitynfr.NewService(securitynfr.NewSQLiteRepository(conn), "")
-	if _, err := nfrs.Seed(); err != nil {
-		t.Fatalf("seed NFRs: %v", err)
+	if _, err := nfrs.Import(readBundled(t, "NFR_incremental_keys_with_domain.json"), true); err != nil {
+		t.Fatalf("import NFRs: %v", err)
 	}
 	links := nfrlink.NewService(conn)
 	if err := links.Rebuild(); err != nil {

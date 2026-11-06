@@ -73,9 +73,10 @@ func TestPageFiguresAreTheWorkbooksUnderNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildHandlers: %v", err)
 	}
+	importBundledCatalogs(t, controlHandler, nfrHandler)
 	catalog, err := loadExceptionsWorkbookData(nfrHandler.Service(), linkHandler.Service(), controlHandler.Service())
 	if err != nil || len(catalog.NFRs) < 30 {
-		t.Fatalf("no seeded catalog: %v", err)
+		t.Fatalf("no imported catalog: %v", err)
 	}
 
 	// A spread of weights, so that no figure is a multiple of three.

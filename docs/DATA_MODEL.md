@@ -17,9 +17,9 @@ same logical schema for PostgreSQL).
   documents.
 - SQLite runs in WAL mode. Queries are written with `?` placeholders and
   rewritten to `$1, $2` for PostgreSQL by `db.Conn`.
-- The two catalogs are seeded from JSON embedded in the binary
-  (`internal/data`). A hash of the seed is kept in `app_state`; when it changes
-  the catalog is reseeded and the NFR-control links are rebuilt.
+- The two catalogs start empty and are filled by importing JSON files
+  (`POST /controls/import`, `POST /security-nfrs/import`). Every import, edit
+  and delete rebuilds the NFR-control links, and so does every start.
 
 ## How tables travel
 
@@ -48,7 +48,7 @@ Code: `internal/db`, `internal/authn`, `internal/settings`, `internal/user`.
 
 ### `app_state`
 
-Key-value store. Holds the seed hashes (`seed.control_catalog_hash`, `seed.security_nfr_hash`) that decide whether a catalog is reseeded at startup, and every Settings preference under a `setting.` prefix (Wintermute URL, backend, model, the three agents, the guest-link switch).
+Key-value store. Holds every Settings preference under a `setting.` prefix (Wintermute URL, backend, model, the three agents, the guest-link switch). A database created before catalogs were imported may still hold `seed.control_catalog_hash` and `seed.security_nfr_hash`; nothing reads them.
 
 - **Key:** `key`. **Travels:** not transferred.
 - **Columns** (text unless a type is given): `key`, `value`.

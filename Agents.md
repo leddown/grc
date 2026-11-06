@@ -56,7 +56,10 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   that redo the page's logic. The page's logic is JavaScript in
   `internal/app/exceptions.go`; change it there and in
   `internal/exceptionbook` together. `internal/xlsx` is the small writer
-  behind it — there is no spreadsheet library in the module
+  behind it — there is no spreadsheet library in the module. The same package
+  works out the Exceptions Report (`/reports/exceptions-report`) and, in
+  `dora.go`, the DORA Report (`/reports/dora`) and the workbook's DORA sheets
+  from the References text the imported controls carry
 - `internal/jira` — Jira Cloud REST connector (issues/projects/search)
 - `internal/regcoverage` — Regulation Coverage: imports an EU regulation from
   the AI agent's library on the Wintermute server, maps every article to
@@ -116,8 +119,9 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   credentials
 - `internal/reporting` — HTML/CSS to PDF through headless Chrome
 - `internal/pageui` — shared side-nav tab rendering used across pages
-- `internal/data` — embedded/static seed JSON for the control and NFR
-  catalogs
+- `internal/data` — the control and NFR catalog JSON files shipped for
+  import; nothing loads them at startup. The catalogs start empty and are
+  filled through `POST /controls/import` and `POST /security-nfrs/import`
 - **No document ingestion here.** This application does not accept document
   uploads and does not extract text from PDFs, DOCX or images. Documents are
   uploaded to an agent's library on the Wintermute server, which owns the

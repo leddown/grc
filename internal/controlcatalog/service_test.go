@@ -1,6 +1,8 @@
 package controlcatalog
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -161,6 +163,84 @@ func TestServiceSaveToJSONWritesCurrentControls(t *testing.T) {
 	}
 	if !entry.NIST.CIA.Confidentiality {
 		t.Fatalf("expected confidentiality flag to be written: %+v", entry.NIST.CIA)
+	}
+}
+
+func TestImportBundledCatalog(t *testing.T) {
+	repo := openControlCatalogRepo(t)
+	svc := NewService(repo, "")
+	raw, err := os.ReadFile("../data/merged_nist_controls_master_replaced_from_controls_all.json")
+	if err != nil {
+		t.Fatalf("read bundled catalog: %v", err)
+	}
+	result, err := svc.Import(raw, true)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Imported < 1000 || result.Removed != 0 {
+		t.Fatalf("Import=%+v want the full catalog and nothing removed", result)
+	}
+	control, err := svc.Get("ac-2(1)")
+	if err != nil {
+		t.Fatalf("Get AC-2(1): %v", err)
+	}
+	if control.Family != "AC" || control.Type != "Control Enhancement" || control.Name == "" {
+		t.Fatalf("AC-2(1) imported as %+v", control)
+	}
+}
+
+func TestImportMergeAndReplace(t *testing.T) {
+	repo := openControlCatalogRepo(t)
+	svc := NewService(repo, "")
+	if err := repo.Upsert(Control{SourceKey: "9", ID: "PE-1", Name: "Physical", Family: "PE"}); err != nil {
+		t.Fatalf("Upsert PE-1: %v", err)
+	}
+	file := []byte(`{
+		"AC-1": {"nist": {"control_id": "AC-1", "name": "Policy", "baselines": {"low": true}}},
+		"AU-2": {"nist": {"control_id": "au-2", "name": "Event Logging"}}
+	}`)
+
+	result, err := svc.Import(file, false)
+	if err != nil || result != (ImportResult{Imported: 2}) {
+		t.Fatalf("merge Import=%+v,%v want 2 imported", result, err)
+	}
+	if _, err := svc.Get("PE-1"); err != nil {
+		t.Fatalf("merge removed PE-1: %v", err)
+	}
+	ac1, err := svc.Get("AC-1")
+	if err != nil || !reflect.DeepEqual(ac1.Baselines, []string{"Low"}) {
+		t.Fatalf("AC-1 = %+v,%v want Low baseline", ac1, err)
+	}
+
+	result, err = svc.Import(file, true)
+	if err != nil || result != (ImportResult{Imported: 2, Removed: 1}) {
+		t.Fatalf("replace Import=%+v,%v want 2 imported, 1 removed", result, err)
+	}
+	if _, err := svc.Get("PE-1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replace kept PE-1: %v", err)
+	}
+}
+
+func TestImportRefusesABadFileWithoutWriting(t *testing.T) {
+	repo := openControlCatalogRepo(t)
+	svc := NewService(repo, "")
+	if err := repo.Upsert(Control{SourceKey: "1", ID: "AC-1", Name: "Policy", Family: "AC"}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	for name, body := range map[string]string{
+		"not json":     `not json`,
+		"empty object": `{}`,
+		"no name":      `{"AC-2": {"nist": {"control_id": "AC-2"}}}`,
+		"duplicate":    `{"a": {"nist": {"control_id": "AC-2", "name": "x"}}, "b": {"nist": {"control_id": "ac-2", "name": "y"}}}`,
+		"wrong shape":  `[{"nist": {"control_id": "AC-2", "name": "x"}}]`,
+	} {
+		if _, err := svc.Import([]byte(body), true); !errors.Is(err, ErrInvalidImport) {
+			t.Fatalf("%s: err=%v want ErrInvalidImport", name, err)
+		}
+	}
+	controls, err := repo.List("", "", "")
+	if err != nil || len(controls) != 1 || controls[0].ID != "AC-1" {
+		t.Fatalf("a refused import changed the catalog: %+v (%v)", controls, err)
 	}
 }
 

@@ -21,8 +21,10 @@ Three patterns hold almost everywhere, so they are stated once:
 
 ### Controls (`/controls`)
 
-The NIST SP 800-53 Rev 5 catalog: 1,193 controls and enhancements, seeded from
-JSON embedded in the binary. Code: `internal/controlcatalog`.
+The NIST SP 800-53 Rev 5 catalog, held in the database and filled by importing
+a JSON file. A new installation starts with an empty catalog; the file shipped
+in `internal/data/merged_nist_controls_master_replaced_from_controls_all.json`
+holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
 
 - **List and detail.** Search by text, filter by baseline (low, moderate,
   high, privacy) and by rating (confidentiality, integrity, availability).
@@ -33,10 +35,19 @@ JSON embedded in the binary. Code: `internal/controlcatalog`.
   its own, linked from everywhere a control id is shown.
 - **Export** (`/controls/export?format=csv|excel`): the filtered list as CSV
   or as Excel 2003 XML.
+- **Import** (`POST /controls/import`, admin; "Import JSON" on the Control
+  Editor): loads a catalog file in the shape of the shipped one, keyed by
+  record, with the control under `nist` (the older flat shape is read too).
+  Entries are inserted or updated by control id; with `?replace=true`
+  ("Replace" ticked) controls the file does not carry are deleted. A file
+  that does not parse, holds nothing, repeats a control id or has a control
+  with no name is refused before anything is written. Every import rebuilds
+  the NFR-control links. `GET /controls/family-json/data` returns the catalog
+  in the same shape, so an export imports back.
 - **Control Editor** (`/controls/manage`, admin to save): edit any field of a
   control or delete one. A save or delete rebuilds the NFR-control links.
-  With `ALLOW_JSON_SAVE=true`, "Rewrite JSON" writes the catalog back to the
-  JSON file it was seeded from.
+  With `ALLOW_JSON_SAVE=true`, "Rewrite JSON" writes the catalog to
+  `internal/data/merged_nist_controls_master_replaced_from_controls_all.json`.
 - **Hierarchy** (`/controls/hierarchy`): family → control → enhancement, with
   an RTF export of the selected control.
 - **Family Filters** (`/controls/family-visibility`, admin to change): switch
@@ -52,8 +63,10 @@ such as Lateral Movement.
 
 ### Security NFRs (`/security-nfrs`)
 
-The practice's catalog of security non-functional requirements: 109 records in
-the seed. Code: `internal/securitynfr`.
+The practice's catalog of security non-functional requirements, held in the
+database and filled by importing a JSON file. A new installation starts empty;
+the shipped `internal/data/NFR_incremental_keys_with_domain.json` holds 109
+records. Code: `internal/securitynfr`.
 
 - **List and detail panel.** Search by key, id or summary; filter by domain.
   The NIST mapping is shown as links to the control detail pages.
@@ -63,9 +76,13 @@ the seed. Code: `internal/securitynfr`.
   3. The editor's list has a 1-5 control on each row that saves on click
   (`PUT /security-nfrs/:key/weight`), and the form has a Weight field. The
   Exceptions page and the Exceptions Workbook compute with the weight.
-- **Reseeding.** When the embedded NFR file changes, the catalog is replaced
-  from it and rows no longer in the file are deleted. A weight set in the
-  application survives unless the file carries its own.
+- **Import** (`POST /security-nfrs/import`, admin; "Import JSON" on the
+  editor): loads an NFR file keyed by record key, in the shape of the shipped
+  one and of `GET /security-nfrs/json/data`. Entries are inserted or updated
+  by key; with `?replace=true` NFRs the file does not carry are deleted. A
+  weight set in the application survives unless the file carries its own; a
+  file whose weight is outside 1-5, or with an NFR without a summary, is
+  refused before anything is written. Every import rebuilds the links.
 
 An NFR has a `record_key` (the stable identity), an NFR id such as `1.4`, a
 summary, an issue type, a domain, description, additional details,
@@ -82,8 +99,8 @@ Shows the links both ways, switched by two buttons. Code: `internal/nfrlink`.
   when a mapping of some NFR matched it, which is what the Exceptions page
   counts, so the list is what no exception can reach. It is worked out in the
   browser from the link rows and the control list the Controls page reads, so
-  a control in a hidden family is not in it. With the seed, 1,090 of the
-  1,193 controls are unlinked.
+  a control in a hidden family is not in it. With both shipped files
+  imported, 1,090 of the 1,193 controls are unlinked.
 
 The search box searches the view that is shown.
 
@@ -178,7 +195,12 @@ The page has two steps, switched by two buttons above the catalog list:
 
 1. **Scope.** Tick the Security NFRs the exercise covers. The page opens with
    the whole catalog in scope, and a line beside the buttons reads
-   `Scope: 40 of 109 Security NFRs`.
+   `Scope: 40 of 109 Security NFRs`. Clicking an NFR shows it in the panel
+   beside the list, one at a time: its NIST mapping, description, additional
+   details, implementation and linked controls. Only the checkbox changes the
+   scope, so reading an NFR does not take it out. On this step the panel does
+   not show the exception set, and its count and Clear All are hidden, so the
+   set cannot be cleared out of sight.
 2. **Exceptions.** The list holds the NFRs in scope only; tick the ones the
    system does not meet. Taking an NFR out of scope takes it out of the
    exception set. Each selected NFR has a Full / Partial choice beside it:
@@ -202,12 +224,18 @@ The page builds the exception set and does not report on it. The figures of
 the set are on the Exceptions Report ([Exceptions Report](#exceptions-report-reportsexceptions-report)), which opens from the menu with the
 scope and the exceptions of the browser tab: the weight that touches each
 rating and each threat, the counts of controls, and, as a minor figure, the
-total weight. An NFR *touches* a rating or a threat when a control it is
+total weight, with the exceptions and the controls they miss listed under
+them; the DORA and RTS articles behind the set are on the DORA Report
+([DORA Report](#dora-report-reportsdora)). An NFR *touches* a rating or a threat when a control it is
 linked to carries it, and then counts its whole weight once; a partial
 exception counts half. Each NFR is listed here with its weight.
 
 A linked control's card shows the letters of the ratings it carries, `C`, `I`
-or `A`, and leaves out the ones it does not.
+or `A`, and leaves out the ones it does not, and under them the control's
+text (its NIST requirements).
+
+With either catalog empty the page says which to import, and where, instead
+of showing an empty list.
 
 "Select All" and "Clear Filtered" act on the current search and domain
 filter, in the step the list is on. The detail page shows the scope line, the
@@ -497,17 +525,30 @@ application. Code: `internal/exceptionbook`, `internal/xlsx`.
   is the same download with the tab's `scope`, `key` and `partial` parameters.
   What was typed on the Exceptions page of the partial exceptions goes with
   it, in the body of the request and not in its address.
-- The Links and Controls sheets are locked, without a password: they hold
-  what the application exported, and a link or a rating is changed in the
-  application. Their formulas still calculate and the filter on Controls
-  still works. The other sheets are open.
+- The Links, Controls and DORA data sheets are locked, without a password:
+  they hold what the application exported, and a link or a rating is changed
+  in the application. Their formulas still calculate and the filter on
+  Controls still works. The other sheets are open.
+- The Summary sheet calls the selected NFRs Exceptions and the controls they
+  are linked to Missed Controls. Scope and selection lists the NFRs in scope,
+  the exceptions, the missed controls and, last, the NFRs in the catalog; the
+  coverage tables give the scope's weight before the excepted weight.
+- The DORA sheet is the [DORA Report](#dora-report-reportsdora): the DORA and
+  RTS articles the controls linked to NFRs in scope cite in their References,
+  with the NFRs in scope, the controls in scope, the exceptions and the missed
+  controls of each, as formulas over the DORA data sheet, so they follow the
+  Scope and Exception columns.
 - The weight lines are the page's, with the same sums, the same rounding and
   the same wording: the weight of the selection, the weight of the scope, the
   share, the average, and a count at each weight, measured against the NFRs
   in scope. A partial exception counts half its NFR's weight, and in every
   other figure counts as any exception does.
-- Seven sheets: How to use, Exceptions, Summary, Selected NFRs, Selected
-  controls, Links, Controls.
+- Nine sheets: How to use, Exceptions, Summary, Selected NFRs, Selected
+  controls, DORA, Links, Controls, DORA data.
+- A detail sheet finds the row each of its lines reads with `SUMPRODUCT`, not
+  `MATCH`: LibreOffice 26.2's threaded calculation of a workbook with no
+  stored results gave the first line of Selected controls the wrong row when
+  the first link was not an exception.
 - Formulas use only functions Excel 2010 and LibreOffice share. Each is stored
   with its result, so a preview shows numbers before recalculating.
 - `?scope=`, `?key=` and `?partial=` on the download open the workbook with
@@ -531,13 +572,15 @@ the workbook and compares every cell.
 ### Exceptions Report (`/reports/exceptions-report`)
 
 The Summary sheet of the Exceptions Workbook, on a page: five tables for a
-scope and an exception set. Code: `internal/app/exceptions_report.go`, over
-`Result.Summary` in `internal/exceptionbook`.
+scope and an exception set, and under them two lists. Code:
+`internal/app/exceptions_report.go`, over `ReportFor` and `Result.Summary` in
+`internal/exceptionbook`.
 
-- **Scope and selection**: the Security NFRs in the catalog, in scope and
-  selected, and the linked controls.
-- **CIA coverage**: for each rating, the excepted weight that touches it, the
-  scope's weight that does, the share, and how many of the linked controls
+- **Scope and selection**: the Security NFRs in scope, the exceptions (the
+  selected NFRs), the missed controls (the controls they are linked to) and
+  the Security NFRs in the catalog.
+- **CIA coverage**: for each rating, the scope's weight that touches it, the
+  excepted weight that does, the share, and how many of the missed controls
   carry it.
 - **Threat coverage**: the same four figures for every threat in the catalog,
   zero included.
@@ -546,6 +589,11 @@ scope and an exception set. Code: `internal/app/exceptions_report.go`, over
   selected NFR. Shown smaller, as the minor figure it is.
 - **Weight**: for each weight from 1 to 5, the NFRs in the scope and in the
   selection. Minor as well.
+- **Exceptions, by weight**: each exception, heaviest first, with its NFR id,
+  summary (a link to the NFR), domain, weight and Full or Partial.
+- **Missed controls**: each control the exceptions are linked to, once, in
+  the order of its id, with name, family and the letters of its ratings. A
+  control a link names but the catalog does not hold is listed with no link.
 
 The figures are worked out on the server by the code that writes the sheet
 (`exceptionbook.Evaluate`), so the page and the sheet cannot differ; a test
@@ -556,6 +604,41 @@ page writes them (`scope`, `key`, `partial`). Opened from the menu, the page
 goes to the exercise of the browser tab if there is one; without one it
 reports on the whole catalog with nothing selected. Like the Exceptions page,
 it needs a signed-in user and stores nothing.
+
+### DORA Report (`/reports/dora`)
+
+The DORA sheet of the Exceptions Workbook, on a page: the DORA and RTS
+articles that the controls linked to Security NFRs in scope cite in their
+References (the `References` field of the control's appendix in the imported
+catalog), and the exceptions against each. Code:
+`internal/app/reports_dora.go`, over `DORAReportFor` and `DORADetailFor` in
+`internal/exceptionbook/dora.go`.
+
+- An NFR counts against an article when a control it is linked to cites that
+  article, once however many such controls it has. One NFR can count against
+  several articles, so the Exceptions column does not add up to the number of
+  exceptions. A partial exception counts as one.
+- An RTS article is its own row: it is not the DORA article of the same
+  number. A citation is an article, a section, a chapter (with its range of
+  articles where the text gives one) or, for an RTS, the RTS as a whole. The
+  RTS on the ICT risk management framework is written several ways in the
+  catalog and is read as one.
+- A summary table counts the NFRs in scope, the exceptions, and the DORA and
+  RTS references in scope and with exceptions. Under it each article reached
+  has its NFRs in scope, controls in scope, exceptions and missed controls,
+  DORA first.
+- The NFRs in scope and controls in scope of a row are links to
+  `/reports/dora/detail`, which lists the NFRs (with Full or Partial for an
+  exception) or the controls (with whether each is missed) that the figure
+  counts, for the same exercise, and links back with it. A row the report does
+  not have is a 404 that shows nothing of the address.
+- The scope and the exceptions are read from the address as on the Exceptions
+  Report, and a plain address goes to the exercise of the browser tab. It
+  reads the catalog and stores nothing. This is not Regulation Coverage: it
+  reads only the citations the catalog already carries, with no model.
+- The shipped control catalog file carries References on 714 controls. A
+  catalog imported before 2026-11-06 has them on 155 only; import the shipped
+  file again to get the rest.
 
 ### JSON_view (`/JSON_view`)
 

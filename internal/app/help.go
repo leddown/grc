@@ -269,15 +269,17 @@ func helpPage(c *gin.Context) {
           notes.</p>
           <ol>
             <li>At <a href="/exceptions">Exceptions</a>, step 1 sets the scope of the exercise: tick
-              the requirements it covers. The page opens with the whole catalog in scope.</li>
-            <li>Step 2 lists the requirements in scope: search, filter and select the ones the
+              the Security NFRs it covers. The page opens with the whole catalog in scope. Click an
+              NFR to read its detail, with the text of each linked control, in the panel beside the
+              list, one at a time; only the checkbox changes the scope.</li>
+            <li>Step 2 lists the NFRs in scope: search, filter and select the ones the
               exception covers, each in full or in part: the choice is beside the checkbox and on the
-              requirement's card. A partial exception has a description box on its card, for what is
-              met and what is not; what you type there is the requirement's Comments cell in the
+              NFR's card. A partial exception has a description box on its card, for what is
+              met and what is not; what you type there is the NFR's Comments cell in the
               workbook. The figures of the set are on the
               <a href="/reports/exceptions-report">Exceptions Report</a>, which follows what you set
               here.</li>
-            <li>Open the detail view for the set: every selected requirement with its linked
+            <li>Open the detail view for the set: every selected NFR with its linked
               controls, their CIA classification and threat mapping — a printable page for the
               approval record.</li>
             <li>To work on a set outside the application, download the
@@ -285,7 +287,11 @@ func helpPage(c *gin.Context) {
               controls and weights in an Excel file whose formulas do what the page does.</li>
             <li>For the figures of the set on one page, open the
               <a href="/reports/exceptions-report">Exceptions Report</a>: the workbook's Summary sheet
-              for the scope and the exceptions you have set.</li>
+              for the scope and the exceptions you have set, and under it the exceptions, heaviest
+              first, and the controls they miss.</li>
+            <li>The <a href="/reports/dora">DORA Report</a> lists the DORA and RTS articles that the
+              controls linked to NFRs in scope cite in their References, and how many exceptions fall
+              against each; a figure opens the NFRs and controls it counts.</li>
           </ol>
         </div>
       </article>
@@ -560,6 +566,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports">/reports</a></td><td>Operational reporting over the catalogs.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports/exceptions-workbook">/reports/exceptions-workbook</a></td><td>Download the Exceptions page as a working Excel workbook.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports/exceptions-report">/reports/exceptions-report</a></td><td>The workbook's Summary sheet for the scope and the exceptions you have set.</td></tr>
+          <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/reports/dora">/reports/dora</a></td><td>The DORA and RTS articles in scope, and the number of exceptions against each.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/JSON_view">/JSON_view</a></td><td>One panel for requirement, family and stored JSON.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/jira/json">/jira/json</a></td><td>Inspect Jira project, issue and search JSON.</td></tr>
           <tr><td class="section">Reporting &amp; Data</td><td class="page"><a href="/jira/reports">/jira/reports</a></td><td>Read-only Jira report and search presets.</td></tr>

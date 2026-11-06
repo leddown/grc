@@ -3,6 +3,115 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-06 (Exceptions: go_rcsa's exception-management changes brought in, and a DORA Report)
+
+The exceptions feature here came from go_rcsa and had fallen behind it. This
+brings in what go_rcsa changed in it since, translated to this application's
+names (a NIST entry is a control here, a requirement there).
+
+- **Exceptions page, scope step.** Clicking an NFR shows it in the right-hand
+  panel, one at a time: NIST mapping, description, additional details,
+  implementation and linked controls. Only the checkbox changes the scope (a
+  click on the label used to untick it, and so drop it from the exception
+  set). On this step the panel's count and Clear All are hidden, so the
+  exception set cannot be cleared out of sight. A linked control's card shows
+  the control's text. With either catalog empty the status line says which to
+  import. The detail view counts a key named twice in its address once.
+- **Exceptions Report.** Under the summary, the exceptions heaviest first and
+  each missed control once, with name, family and rating letters
+  (`exceptionbook.ReportFor`, `Report`, `Exception`, `MissedControl`). The
+  summary calls the selected NFRs Exceptions and their linked controls Missed
+  Controls, lists the catalog count last, and gives the scope's weight before
+  the excepted weight; the workbook's Summary sheet is the same.
+- **DORA Report** (`/reports/dora`, `/reports/dora/detail`, Reporting & Data
+  menu). The DORA and RTS articles that the controls linked to NFRs in scope
+  cite in their References, with the NFRs and controls in scope, exceptions
+  and missed controls of each; each figure opens what it counts. New
+  `internal/exceptionbook/dora.go` and `internal/app/reports_dora.go`. It
+  reads only citations the catalog already carries and stores nothing; it is
+  separate from Regulation Coverage.
+- **Workbook.** Two more sheets, DORA and DORA data (locked), whose formulas
+  follow the Scope and Exception columns. The detail sheets find their source
+  row with `SUMPRODUCT` instead of `MATCH`, which LibreOffice 26.2's threaded
+  calculation got wrong when the first link was not an exception.
+  `Result.WeightShare`, `AverageWeight` and `WeightLine` are back.
+- **Wording.** The workbook's How to use sheet, the Exceptions Workbook page
+  and the Help page's Exceptions section said "requirement" where they meant a
+  Security NFR (an earlier blanket rename); they say NFR again.
+- **Shipped control catalog.** `internal/data/merged_nist_controls_master_replaced_from_controls_all.json`
+  takes go_rcsa's References text: 559 controls that had no appendix now have
+  one with `References`, so 714 carry DORA/RTS citations instead of 155.
+  Nothing else in the file changed (`related_controls` stays). An existing
+  database keeps the old text until the file is imported again.
+- **NFR-control links on PostgreSQL.** `nfrlink.Rebuild` read the NFRs while
+  running other statements in the same transaction, which PostgreSQL refuses
+  ("conn busy"). It now reads each set of rows to the end first.
+- **Not brought in.** go_rcsa's themes (Appearance page, `--well` colour
+  tokens), its self-update, its removal of `related_controls`, and its
+  replacement of `/reports` by the exceptions summary: here `/reports` stays
+  the linked/unlinked controls report and the summary stays at
+  `/reports/exceptions-report`.
+- **Tests.** exceptionbook: DORA parsing, counts, details against every row,
+  every References citation of the shipped catalog read, summary order, the
+  report lists, weight share rounding, and LibreOffice recalculation of the
+  DORA sheets and of a selection whose first link is not an exception. app:
+  the scope-step panel, the report's two lists, the DORA page and its detail
+  pages (404s and escaping included), the DORA sheets in the download, and the
+  DORA entry in the navigation.
+- **Docs.** FEATURES, HTTP_API, ARCHITECTURE, PROJECT_OVERVIEW, Agents.md and
+  the Help and Home pages.
+
+## 2026-10-23 (Catalogs start empty and are filled by JSON import)
+
+The NIST 800-53 catalog and the Security NFR catalog were loaded into the
+database at every start from JSON compiled into the binary (or from
+`internal/data/` when the working directory had it), reseeded whenever the
+file's SHA-256 differed from the one in `app_state`. Reseeding replaced the
+catalog and deleted rows the file no longer carried, so an edit made in the
+application to a control or an NFR the file also held was overwritten the next
+time the file changed. The catalogs now live only in the database, and an
+administrator fills them by importing a file.
+
+- **Import endpoints.** `POST /controls/import` and `POST /security-nfrs/import`
+  (admin) take a JSON file as a multipart `file` field or as the raw body.
+  Entries are inserted or updated by control id / record key; `?replace=true`
+  also deletes entries the file does not carry. A file that does not parse,
+  holds nothing, repeats a control id, has a control with no name, an NFR with
+  no summary or a weight outside 1-5 is refused with a 400 before anything is
+  written. Each import rebuilds the NFR-control links. Bodies are capped (32
+  MiB controls, 8 MiB NFRs; the shipped files are 2.1 MB and 110 KB).
+  `apiutil.ReadUpload` reads either form of body for both.
+- **Editor pages.** `/controls/manage` and `/security-nfrs/manage` have an
+  "Import JSON" button and a "Replace" box (a replace asks first). An empty
+  catalog says to import a file instead of "no matches".
+- **Startup.** `buildHandlers` no longer seeds. It rebuilds the link table
+  from whatever the database holds, every start, so the links stay true after
+  a sync or a restore. `syncSeedState`, `loadAppState`, `saveAppState`,
+  `tableHasRows` and both services' `Seed`/`SourceHash` are gone; existing
+  databases keep their rows, and their old `seed.*` keys in `app_state` are
+  left unread.
+- **No embed.** `internal/data/assets.go` is removed; the two JSON files stay
+  in `internal/data/` as the files to import (the release archive already
+  ships them beside the binary).
+- **Regulation Coverage reads the imported controls.** It built its 800-53
+  corpus from the embedded file, not from the database the rest of the
+  application serves, so a control edited, deleted or hidden in the app was
+  still offered to the model. `regcoverage.LoadCatalog` now takes a
+  `ControlLister` (the control catalog service, wired with `WithControls`),
+  and `regmap/nist.LoadEmbedded` is replaced by `nist.FromControls`. Analysis
+  on an empty control catalog is refused with a message to import it.
+- **`scripts/verify-install.sh`** warns, rather than failing, when AC-1 is
+  404 — on a new install that is a catalog not yet imported.
+- **Tests.** Import, merge, replace and refusal tests for both services and
+  for the NFR handler; `TestCatalogsStartEmptyAndImportLinksThem` checks a new
+  database starts with empty catalogs and that importing both files through
+  the routes links them. The Exceptions, Exceptions Workbook, exceptionbook,
+  regcoverage and regmap/nist tests import the shipped files instead of
+  relying on the seed.
+- **Docs.** FEATURES, ARCHITECTURE, DATA_MODEL, DATABASE, OPERATIONS (first
+  start: import the two files, with curl examples), HTTP_API, DEVELOPMENT,
+  PROJECT_OVERVIEW, README and Agents.md.
+
 ## 2026-10-23 (security-patches: toolchain go1.26.9 -> go1.26.10, GO-2026-6809)
 
 `TestGovulncheck` failed on one standard-library advisory reachable from this
@@ -29,6 +138,7 @@ has no fix and is not imported, as recorded on 2026-10-10. `npm audit
 - No source file changed. `go fmt` and `go vet` are clean.
 - `docs/OPERATIONS.md`, `docs/PROJECT_OVERVIEW.md` and `docs/SECURITY.md`
   name the new version.
+
 
 ## 2026-10-20 (`verify-install.sh`: page checks no longer lose a race with `grep -q`)
 

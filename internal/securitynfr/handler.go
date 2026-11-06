@@ -195,6 +195,40 @@ func (h *Handler) DeleteNFR(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// maxImportBytes bounds an uploaded security NFR catalog. The full catalog is a small
+// fraction of this, so the limit only stops an unbounded upload.
+const maxImportBytes = 8 << 20
+
+// ImportNFRs loads a security NFR catalog JSON file into the database and relinks NFRs
+// to controls. ?replace=true also deletes entries the file does not carry.
+func (h *Handler) ImportNFRs(c *gin.Context) {
+	raw, err := apiutil.ReadUpload(c, maxImportBytes)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, apiutil.ErrUploadTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := h.service.Import(raw, apiutil.BoolParam(c, "replace"))
+	if err != nil {
+		if errors.Is(err, ErrInvalidImport) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to import security NFRs"})
+		return
+	}
+	if h.linkBuilder != nil {
+		if err := h.linkBuilder.Rebuild(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "imported, but failed to rebuild NFR-control links"})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *Handler) SaveNFRsToJSON(c *gin.Context) {
 	total, path, err := h.service.SaveToJSON()
 	if err != nil {
@@ -607,7 +641,7 @@ func (h *Handler) Page(c *gin.Context) {
   <main>
 	    ` + pageui.Nav("/security-nfrs") + `
     <h1>Security NFRs</h1>
-    <p>SQLite-backed view of <code>internal/data/NFR_incremental_keys_with_domain.json</code>.</p>
+    <p>The Security NFR catalog in the database. Import or edit it on the <a href="/security-nfrs/manage">editor page</a>.</p>
 
     <section id="filters" class="filters">
       <button id="filtersToggle" class="filters-header" type="button" aria-expanded="true" aria-controls="filtersBody">
@@ -942,10 +976,19 @@ func (h *Handler) ManagePage(c *gin.Context) {
     p { color: var(--muted); }
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) auto auto;
+      grid-template-columns: minmax(260px, 1fr) auto auto auto auto;
       gap: 12px;
       margin: 22px 0 18px;
     }
+    label.import-replace {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    label.import-replace input { width: auto; }
     input, textarea, select {
       width: 100%;
       padding: 12px 14px;
@@ -1071,11 +1114,14 @@ func (h *Handler) ManagePage(c *gin.Context) {
   <main>
 	    ` + pageui.Nav("/security-nfrs/manage") + `
     <h1>Security NFR Editor</h1>
-    <p>Edit Security NFR rows in SQLite, then write them back to <code>internal/data/NFR_incremental_keys_with_domain.json</code>.</p>
+    <p>Import a Security NFR JSON file into the database, then edit it here. Every import relinks the NFRs to the NIST controls.</p>
 
     <section class="toolbar">
       <input id="searchInput" type="search" placeholder="Search by key, ID, summary, or domain">
       <button id="reloadBtn" class="secondary" type="button">Reload DB</button>
+      <label class="import-replace" title="Delete entries the file does not carry"><input id="importReplace" type="checkbox"> Replace</label>
+      <button id="importBtn" class="secondary" type="button">Import JSON</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
       <button id="exportBtn" type="button">Rewrite JSON</button>
     </section>
 
@@ -1168,6 +1214,9 @@ func (h *Handler) ManagePage(c *gin.Context) {
     const searchInput = document.getElementById('searchInput');
     const reloadBtn = document.getElementById('reloadBtn');
     const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+    const importReplace = document.getElementById('importReplace');
     const deleteBtn = document.getElementById('deleteBtn');
     const editorForm = document.getElementById('editorForm');
 
@@ -1202,7 +1251,9 @@ func (h *Handler) ManagePage(c *gin.Context) {
 
     function renderRows() {
       if (!state.filtered.length) {
-        rows.innerHTML = '<div class="empty">No security NFRs match the current search.</div>';
+        rows.innerHTML = state.items.length
+          ? '<div class="empty">No security NFRs match the current search.</div>'
+          : '<div class="empty">The Security NFR catalog is empty. Import an NFR JSON file to fill it.</div>';
         return;
       }
       rows.innerHTML = state.filtered.map((item) => {
@@ -1460,6 +1511,35 @@ func (h *Handler) ManagePage(c *gin.Context) {
         applySearch();
       } catch (err) {
         formMessage.textContent = 'Delete failed: ' + err.message;
+        formMessage.className = 'status error';
+      }
+    });
+
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', async () => {
+      const file = importFile.files[0];
+      importFile.value = '';
+      if (!file) return;
+      const replace = importReplace.checked;
+      if (replace && !window.confirm('Replace the Security NFR catalog with ' + file.name + '? Entries the file does not carry are deleted.')) {
+        formMessage.textContent = 'Import canceled.';
+        formMessage.className = 'status warn';
+        return;
+      }
+
+      formMessage.textContent = 'Importing ' + file.name + '...';
+      formMessage.className = 'status warn';
+      try {
+        const body = new FormData();
+        body.append('file', file);
+        const resp = await fetch('/security-nfrs/import?replace=' + replace, { method: 'POST', body });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        await loadNFRs();
+        formMessage.textContent = 'Imported ' + data.imported + (replace ? ', removed ' + data.removed : '') + ' from ' + file.name + '. NFR-control links rebuilt.';
+        formMessage.className = 'status success';
+      } catch (err) {
+        formMessage.textContent = 'Import failed: ' + err.message;
         formMessage.className = 'status error';
       }
     });

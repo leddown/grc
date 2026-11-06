@@ -8,7 +8,7 @@ process, and what runs in the background. Checked against the code on
 ## The shape in one paragraph
 
 One Go binary. It opens one database (SQLite file or PostgreSQL), creates or
-upgrades the schema, seeds the two catalogs if their embedded source changed,
+upgrades the schema, rebuilds the NFR-control links from the catalogs it holds,
 builds a Gin router with two global middlewares, and serves HTTP on one
 address. Every page is rendered on the server as a complete HTML document and
 then fetches its data from JSON routes in the same process. The only network
@@ -47,10 +47,11 @@ is set (`internal/doctemplate/remote.go`, `DOCUMENT_TEMPLATES.md`).
 2. If `-sync-to` or `-sync-from` is set, copies data between two databases and
    exits without serving.
 3. `buildRouter`:
-   - `buildHandlers` constructs the catalog services and seeds them. A SHA-256
-     of each embedded catalog file is compared with the one stored in
-     `app_state`; on a difference (or an empty table) the catalog is reseeded,
-     and if either catalog changed the NFR-control link table is rebuilt.
+   - `buildHandlers` constructs the catalog services and rebuilds the
+     NFR-control link table. Nothing is loaded into the catalogs at startup:
+     a new database has empty catalogs until an administrator imports the
+     800-53 and Security NFR JSON files (`POST /controls/import`,
+     `POST /security-nfrs/import`), and each import rebuilds the links.
    - `gin.Default()` plus `themeMiddleware`, plus `pageAccessMiddleware`
      unless in local mode.
    - Registers the core routes, then each module's routes through a
@@ -93,7 +94,7 @@ tests.
 | `internal/knowledge` | 2,200 | The read-only query surface over the installation's data, and the export bundle. |
 | `internal/xlsx` | 730 | Writes `.xlsx` workbooks. |
 | `internal/reporting` | 1,800 | HTML and CSS to PDF through headless Chrome; two sample reports. |
-| `internal/data` | 40 | The two catalogs as embedded JSON. |
+| `internal/data` | — | The two catalog files shipped for import (JSON, not compiled into the binary). |
 
 ### Catalog and register modules
 
@@ -104,7 +105,7 @@ tests.
 | `internal/securitynfr`, `internal/nfrfile` | 2,200 | Security NFRs: list, detail, editor, weights; the NFR JSON file format. |
 | `internal/nfrlink` | 930 | Derives NFR-control links from the NIST mapping text; overrides. |
 | `internal/reports` | 1,200 | The linked / unlinked controls report. |
-| `internal/exceptionbook` | 1,300 | The Exceptions Workbook. |
+| `internal/exceptionbook` | 2,200 | The Exceptions Workbook, the Exceptions Report's figures and lists, and the DORA sheet and DORA Report (`dora.go`), read from the References of the linked controls. |
 | `internal/riskregister` | 680 | The risk register. |
 | `internal/auditfinding` | 1,800 | Audit findings, action plans, lifecycle rules, dashboard. |
 | `internal/jira` | 480 | A Jira Cloud REST v3 client. |

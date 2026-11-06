@@ -160,3 +160,25 @@ func TestWorkbookPageOffersTheSessionsSelections(t *testing.T) {
 		}
 	}
 }
+
+// On the scope step the panel shows the one NFR last clicked, not the exception
+// set, and a click on a row reads that NFR without changing the scope.
+func TestScopeStepShowsOneNFRInThePanel(t *testing.T) {
+	router := newNavigationTestRouter(t)
+	page := getPageBody(t, router, "/exceptions")
+	for _, want := range []string{
+		"function renderViewed()",
+		"state.viewing = row.getAttribute('data-key') || '';",
+		"if (!event.target.classList.contains('nfr-check')) event.preventDefault();",
+		"selectedBar.hidden = state.step === 'scope';",
+		`id="selectedBar"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("/exceptions is missing %q", want)
+		}
+	}
+	viewed := page[strings.Index(page, "function renderViewed()"):strings.Index(page, "function renderSelected()")]
+	if strings.Contains(viewed, "state.selected") || strings.Contains(viewed, "selectedItemsSorted") {
+		t.Error("the scope step's panel must show one NFR, not the exception set")
+	}
+}

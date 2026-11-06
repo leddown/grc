@@ -259,7 +259,13 @@ esac
 
 echo
 echo "==> Control catalog detail endpoint"
-route_reachable /controls/data/AC-1 "per-control record"
+# The catalog starts empty and is filled by an import, so a 404 here is most
+# likely a catalog nobody has imported yet rather than a missing route.
+AC1_CODE="$(status_of "${BASE_URL}/controls/data/AC-1")"
+case "$AC1_CODE" in
+  404) warn "AC-1 is not in the control catalog (/controls/data/AC-1 → 404): import the 800-53 JSON on /controls/manage" ;;
+  *)   route_reachable /controls/data/AC-1 "per-control record" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Behavioural checks — things a route-existence probe would not catch

@@ -153,10 +153,10 @@ row count and exits non-zero on the first error.
   copied.
 - **Login sessions are skipped.** `auth_sessions` is ephemeral and never synced.
 
-> **Tip:** the catalogs (`nist_controls`, `security_nfrs`) are seeded from
-> embedded data the first time the app *serves*. If you push a brand-new local
-> DB that has never been run as a server, those tables may be empty. Run the app
-> once (`scripts/run-app.sh`) to seed/populate before pushing.
+> **Tip:** the catalogs (`nist_controls`, `security_nfrs`) start empty and are
+> filled by importing their JSON files on `/controls/manage` and
+> `/security-nfrs/manage`. A brand-new local DB pushed before that carries no
+> catalog rows.
 
 ---
 

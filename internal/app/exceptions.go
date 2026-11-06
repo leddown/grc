@@ -464,6 +464,7 @@ func exceptionsPage(c *gin.Context) {
     }
     .selected-list {
       display: grid;
+      grid-template-columns: minmax(0, 1fr);
       gap: 8px;
       max-height: max(240px, calc(100vh - 256px));
       overflow: auto;
@@ -480,6 +481,21 @@ func exceptionsPage(c *gin.Context) {
       align-items: flex-start;
     }
     .selected-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+    .selected-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+    .selected-bar[hidden] { display: none; }
+    .nfr-detail-text {
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      margin-top: 4px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .exception-description { display: grid; gap: 4px; margin-top: 8px; }
     .exception-description[hidden] { display: none; }
     .exception-description span {
@@ -534,6 +550,12 @@ func exceptionsPage(c *gin.Context) {
       font-size: 12px;
       margin-top: 4px;
     }
+    .linked-control-text {
+      font-size: 12px;
+      margin-top: 4px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .nfr-row .nfr-meta,
     .selected-item .nfr-meta {
       color: #c8c8c8;
@@ -581,7 +603,7 @@ func exceptionsPage(c *gin.Context) {
       <aside class="panel">
         <div class="panel-header">Selected Security NFRs</div>
         <div class="panel-body">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;">
+          <div id="selectedBar" class="selected-bar">
             <strong id="selectedCount">0 selected</strong>
             <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
               <button id="openDetailsBtn" class="secondary" type="button">Open Details</button>
@@ -612,6 +634,8 @@ func exceptionsPage(c *gin.Context) {
       descriptions: new Map(),
       query: '',
       domain: '',
+      // The key of the one NFR the panel shows on the scope step.
+      viewing: '',
       linksByNFRKey: new Map(),
       controlsByID: new Map(),
       dataLoaded: false
@@ -632,6 +656,7 @@ func exceptionsPage(c *gin.Context) {
     const clearAllBtn = document.getElementById('clearAllBtn');
     const status = document.getElementById('status');
     const nfrList = document.getElementById('nfrList');
+    const selectedBar = document.getElementById('selectedBar');
     const selectedCount = document.getElementById('selectedCount');
     const selectedList = document.getElementById('selectedList');
 
@@ -717,6 +742,7 @@ func exceptionsPage(c *gin.Context) {
           return {
             id: controlID,
             name: control && control.name ? control.name : '',
+            description: control && control.requirements ? control.requirements : '',
             confidentiality: control && control.confidentiality ? control.confidentiality : '',
             integrity: control && control.integrity ? control.integrity : '',
             availability: control && control.availability ? control.availability : ''
@@ -783,7 +809,7 @@ func exceptionsPage(c *gin.Context) {
       if (!state.dataLoaded) return;
       scopeSummary.textContent = scopeLine(state.scope, state.items);
       status.textContent = state.step === 'scope'
-        ? 'Step 1 of 2: tick the Security NFRs the exercise covers.'
+        ? 'Step 1 of 2: tick the Security NFRs the exercise covers. Click one to see its detail.'
         : 'Step 2 of 2: tick the Security NFRs of the scope that the system does not meet.';
     }
 
@@ -847,7 +873,60 @@ func exceptionsPage(c *gin.Context) {
         : read.unlisted + ' Security NFRs of the catalog are not in the file and are out of scope.');
     }
 
+    function linkedControlsHTML(item) {
+      const linkedControls = linkedControlsForNFR(item);
+      if (!linkedControls.length) {
+        return '<div class="linked-controls">' +
+            '<div class="linked-controls-title">Linked Controls</div>' +
+            '<div class="linked-control-card"><strong>None</strong><div class="linked-control-meta">No linked controls found for this Security NFR.</div></div>' +
+          '</div>';
+      }
+      return '<div class="linked-controls">' +
+          '<div class="linked-controls-title">Linked Controls</div>' +
+          linkedControls.map((control) => {
+            return '<a class="linked-control-card" href="/controls/detail/' + encodeURIComponent(control.id) + '" target="_blank" rel="noopener noreferrer">' +
+              '<strong>' + esc(control.id || 'N/A') + '</strong> - ' + esc(control.name || 'No control name') +
+              (ciaLetters(control) ? '<div class="linked-control-meta">' + esc(ciaLetters(control)) + '</div>' : '') +
+              (control.description ? '<div class="linked-control-text">' + esc(control.description) + '</div>' : '') +
+            '</a>';
+          }).join('') +
+        '</div>';
+    }
+
+    // The scope step shows the one NFR last clicked, in place of the exception
+    // set: what a click on the list selects here is what to read, not a set.
+    function renderViewed() {
+      const item = state.items.find((it) => String(it.key || '') === state.viewing);
+      if (!item) {
+        selectedList.innerHTML = '<div class="muted">Click a Security NFR in the list to see its detail here.</div>';
+        return;
+      }
+      const section = (title, text) => '<div class="linked-controls">' +
+          '<div class="linked-controls-title">' + title + '</div>' +
+          '<div class="nfr-detail-text">' + esc(String(text || '').trim() || 'N/A') + '</div>' +
+        '</div>';
+      selectedList.innerHTML = '<div class="selected-item">' +
+        '<div class="selected-main">' +
+          '<a class="nfr-detail-link" href="/security-nfrs/detail/' + encodeURIComponent(String(item.key || '')) + '" target="_blank" rel="noopener noreferrer">' + esc(item.summary || 'No summary') + '</a>' +
+          '<div class="nfr-meta">Key: ' + esc(item.key || 'N/A') + ' | Type: ' + esc(item.issue_type || 'N/A') + ' | Domain: ' + esc(item.domain || 'N/A') + ' | Weight: ' + esc(String(nfrWeight(item))) + '</div>' +
+          section('NIST Mapping', item.nist_mapping) +
+          section('Description', item.description) +
+          section('Additional Details', item.additional_details) +
+          section('Implementation', item.implementation) +
+          linkedControlsHTML(item) +
+        '</div>' +
+      '</div>';
+    }
+
     function renderSelected() {
+      // The count and its buttons are about the exception set, which the scope
+      // step does not show: Clear All must not empty a set out of sight.
+      selectedBar.hidden = state.step === 'scope';
+      if (state.step === 'scope') {
+        renderViewed();
+        return;
+      }
+
       const items = selectedItemsSorted();
 
       selectedCount.textContent = items.length + ' selected';
@@ -858,21 +937,6 @@ func exceptionsPage(c *gin.Context) {
 
       selectedList.innerHTML = items.map((item) => {
         const key = String(item.key || '');
-        const linkedControls = linkedControlsForNFR(item);
-        const linkedControlsHTML = linkedControls.length
-          ? '<div class="linked-controls">' +
-              '<div class="linked-controls-title">Linked Controls</div>' +
-              linkedControls.map((control) => {
-                return '<a class="linked-control-card" href="/controls/detail/' + encodeURIComponent(control.id) + '" target="_blank" rel="noopener noreferrer">' +
-                  '<strong>' + esc(control.id || 'N/A') + '</strong> - ' + esc(control.name || 'No control name') +
-                  (ciaLetters(control) ? '<div class="linked-control-meta">' + esc(ciaLetters(control)) + '</div>' : '') +
-                '</a>';
-              }).join('') +
-            '</div>'
-          : '<div class="linked-controls">' +
-              '<div class="linked-controls-title">Linked Controls</div>' +
-              '<div class="linked-control-card"><strong>None</strong><div class="linked-control-meta">No linked controls found for this Security NFR.</div></div>' +
-            '</div>';
         return '<div class="selected-item">' +
           '<div class="selected-main">' +
             '<a class="nfr-detail-link" href="/security-nfrs/detail/' + encodeURIComponent(key) + '" target="_blank" rel="noopener noreferrer">' + esc(item.summary || 'No summary') + '</a>' +
@@ -883,7 +947,7 @@ func exceptionsPage(c *gin.Context) {
               '<textarea class="exception-note" data-key="' + esc(key) + '" rows="3" maxlength="' + DESCRIPTION_MAX + '" placeholder="What is met and what is not. It goes into the Comments column of the workbook.">\n' +
                 esc(state.descriptions.get(key.trim()) || '') + '</textarea>' +
             '</label>' +
-            linkedControlsHTML +
+            linkedControlsHTML(item) +
           '</div>' +
           '<div class="selected-actions">' +
             '<select class="exception-kind" data-key="' + esc(key) + '" aria-label="Exception: full or partial">' +
@@ -963,7 +1027,7 @@ func exceptionsPage(c *gin.Context) {
       nfrList.innerHTML = items.map((item) => {
         const key = String(item.key || '');
         const checked = (scoping ? state.scope.has(nfrKey(item)) : state.selected.has(key)) ? 'checked' : '';
-        return '<div class="nfr-row">' +
+        return '<div class="nfr-row" data-key="' + esc(key) + '">' +
           '<label>' +
             '<input class="nfr-check" type="checkbox" data-key="' + esc(key) + '" ' + checked + '>' +
             (scoping ? '' : rowKindHTML(key, checked !== '')) +
@@ -974,6 +1038,19 @@ func exceptionsPage(c *gin.Context) {
           '</label>' +
         '</div>';
       }).join('');
+
+      // On the scope step a click on a row shows that NFR and only the checkbox
+      // changes the scope. The whole catalog starts in scope, so if the label
+      // ticked as well, reading an NFR would take it out, and out of the
+      // exception set with it.
+      nfrList.querySelectorAll('.nfr-row').forEach((row) => {
+        row.addEventListener('click', (event) => {
+          if (!scoping) return;
+          if (!event.target.classList.contains('nfr-check')) event.preventDefault();
+          state.viewing = row.getAttribute('data-key') || '';
+          renderSelected();
+        });
+      });
 
       nfrList.querySelectorAll('.nfr-check').forEach((check) => {
         check.addEventListener('change', () => {
@@ -1081,6 +1158,12 @@ func exceptionsPage(c *gin.Context) {
         state.dataLoaded = true;
         renderDomainOptions();
         render();
+        const missing = [];
+        if (!nfrItems.length) missing.push('the Security NFRs (in the Security NFR Editor)');
+        if (!controls.length) missing.push('the NIST controls (in the Control Editor)');
+        if (missing.length) {
+          status.textContent = 'Nothing to analyse yet. Import ' + missing.join(' and ') + ' with Import JSON.';
+        }
       } catch (error) {
         status.textContent = 'Failed to load Exceptions datasets: ' + error.message;
         state.dataLoaded = true;
@@ -1428,9 +1511,12 @@ func exceptionsDetailPage(c *gin.Context) {
     }
 
     function selectedKeys() {
-      return Array.from(new URLSearchParams(window.location.search).getAll('key'))
-        .map((key) => String(key || '').trim())
-        .filter((key) => key !== '');
+      // A key named twice in the address is one NFR.
+      return Array.from(new Set(
+        new URLSearchParams(window.location.search).getAll('key')
+          .map((key) => String(key || '').trim())
+          .filter((key) => key !== '')
+      ));
     }
 
     function orderedThreatSummaryEntries(controls) {

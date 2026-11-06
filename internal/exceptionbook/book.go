@@ -1,8 +1,9 @@
 // Package exceptionbook writes the Exceptions page as a workbook that works on
 // its own: the Security NFR catalog with its weights, the NIST controls, the
 // links between them, and formulas that redo what the page does when
-// requirements are selected -- the linked controls, the confidentiality,
-// integrity and availability counts, the threat coverage and the detail view.
+// NFRs are selected -- the linked controls, the confidentiality,
+// integrity and availability counts, the threat coverage, the weight of the
+// selection and the detail view.
 //
 // The page's logic lives in its JavaScript (internal/app/exceptions.go). This
 // package states it twice more: as spreadsheet formulas, and in Go (evaluate),
@@ -30,9 +31,11 @@ const (
 	SheetControlDetail = "Selected controls"
 	SheetLinks         = "Links"
 	SheetControls      = "Controls"
+	SheetDORA          = "DORA"
+	SheetDORAData      = "DORA data"
 )
 
-// SelectedMark is what the Scope column holds for a requirement in the scope of the
+// SelectedMark is what the Scope column holds for an NFR in the scope of the
 // exercise.
 const SelectedMark = "Yes"
 
@@ -64,7 +67,7 @@ const (
 	exSelected
 	exFactor
 	exOrder
-	// What the row's NFR touches: 1 when a requirement it is linked to carries
+	// What the row's NFR touches: 1 when a control it is linked to carries
 	// the rating. The threats follow exTouchA, a column for each.
 	exTouchC
 	exTouchI
@@ -92,7 +95,7 @@ const (
 	lkI
 	lkA
 	lkThreats
-	// A column for each threat: 1 when the link's requirement addresses it.
+	// A column for each threat: 1 when the link's control addresses it.
 	lkFirstThreat
 
 	lkFirstRow = 2
@@ -117,16 +120,16 @@ const (
 // below them moves down with their number.
 const (
 	// The columns of the lines for a rating or a threat.
-	smColExcepted = 2
-	smColScope    = 3
+	smColScope    = 2
+	smColExcepted = 3
 	smColShare    = 4
 	smColCount    = 5
 	smColumns     = 5
 
-	smCatalog     = 5
-	smScope       = 6
-	smSelected    = 7
-	smControls    = 8
+	smScope       = 5
+	smSelected    = 6
+	smControls    = 7
+	smCatalog     = 8
 	smC           = 11
 	smI           = 12
 	smA           = 13
@@ -162,12 +165,12 @@ type Data struct {
 }
 
 type Options struct {
-	// Selected is the keys of the requirements the workbook opens with in the
+	// Selected is the keys of the NFRs the workbook opens with in the
 	// exception set. Keys that are not in the catalog are ignored, and so are
-	// keys outside the scope: a requirement out of scope cannot be excepted.
+	// keys outside the scope: an NFR out of scope cannot be excepted.
 	Selected []string
-	// Scope is the keys of the requirements in the scope of the exercise. It
-	// is read only when Scoped is true; otherwise the whole catalog is in scope.
+	// Scope is the keys of the NFRs in the scope of the exercise. It is read
+	// only when Scoped is true; otherwise the whole catalog is in scope.
 	Scope  []string
 	Scoped bool
 	// Partial is the keys of the selected ones whose exception is partial.
@@ -179,20 +182,19 @@ type Options struct {
 	GeneratedAt  time.Time
 }
 
-// ThreatCount is one threat: how many of the linked controls address it, and
-// the weight of the requirements that reach it.
+// ThreatCount is one threat: how many of the linked controls address it,
+// and the weight of the NFRs that reach it.
 type ThreatCount struct {
 	Threat   string
 	Controls int
 	Weight   WeightedCoverage
 }
 
-// WeightedCoverage is how much weight touches one rating or one threat. A
-// requirement touches it when a control it is linked to carries it, and then
-// counts its whole weight once, however many such controls it has. Excepted
-// is the weight of the excepted requirements that touch it, a partial
-// exception counting half; Scope is the weight of the requirements in scope
-// that do.
+// WeightedCoverage is how much weight touches one rating or one threat. An
+// NFR touches it when a control it is linked to carries it, and then
+// counts its whole weight once, however many such controls it has.
+// Excepted is the weight of the excepted NFRs that touch it, a partial
+// exception counting half; Scope is the weight of the NFRs in scope that do.
 type WeightedCoverage struct {
 	Excepted float64
 	Scope    int
@@ -210,6 +212,14 @@ func (w WeightedCoverage) Share() int {
 // text is the coverage as the application's pages word it.
 func (w WeightedCoverage) text() string {
 	return weightText(w.Excepted) + " of " + strconv.Itoa(w.Scope) + " (" + strconv.Itoa(w.Share()) + "%)"
+}
+
+// WeightCount is how many NFRs carry one weight: in the scope and in the
+// selection.
+type WeightCount struct {
+	Weight   int
+	Scope    int
+	Selected int
 }
 
 // Result is what the workbook shows for the selection it was written with.
@@ -230,21 +240,31 @@ type Result struct {
 	Threats               []ThreatCount
 	SelectedWeight        float64
 	ScopeWeight           int
-	// ByWeight has one entry for each weight a requirement can carry, lowest
+	// ByWeight has one entry for each weight an NFR can carry, lowest
 	// first.
 	ByWeight []WeightCount
 }
 
-// WeightCount is how many requirements carry one weight: in the scope and in
-// the selection.
-type WeightCount struct {
-	Weight   int
-	Scope    int
-	Selected int
+// WeightShare is the selection's share of the scope's weight as a whole
+// percentage, a half rounding up. An empty scope has no share.
+func (r Result) WeightShare() int {
+	if r.ScopeWeight <= 0 {
+		return 0
+	}
+	return roundHalfUp(r.SelectedWeight * 100 / float64(r.ScopeWeight))
 }
 
-// ScopeLine, CIAWeightLine, ThreatWeightLine, CIALine and ThreatLine are the
-// summary lines exactly as the application words them: the
+// AverageWeight is the weight of a selected NFR on average, to two
+// places. ok is false when nothing is selected.
+func (r Result) AverageWeight() (average float64, ok bool) {
+	if r.SelectedNFRs <= 0 {
+		return 0, false
+	}
+	return float64(roundHalfUp(r.SelectedWeight*100/float64(r.SelectedNFRs))) / 100, true
+}
+
+// ScopeLine, CIAWeightLine, ThreatWeightLine, CIALine, ThreatLine and
+// WeightLine are the summary lines exactly as the application words them: the
 // Exceptions sheet has them at its top.
 func (r Result) ScopeLine() string {
 	return "Scope: " + strconv.Itoa(r.ScopeNFRs) + " of " + strconv.Itoa(r.CatalogNFRs) + " Security NFRs"
@@ -289,6 +309,12 @@ func (r Result) ThreatLine() string {
 	return "Threat coverage: " + strings.Join(parts, " | ")
 }
 
+func (r Result) WeightLine() string {
+	return "Weight of the selection: " + weightText(r.SelectedWeight) +
+		" of " + strconv.Itoa(r.ScopeWeight) +
+		" (" + strconv.Itoa(r.WeightShare()) + "%)"
+}
+
 // SummarySection is one block of the Summary sheet: its title, the headings
 // of its value columns where it has them, and its lines.
 type SummarySection struct {
@@ -314,9 +340,9 @@ func (r Result) Summary() []SummarySection {
 	count := func(n int) []string { return []string{strconv.Itoa(n)} }
 	// The weight that touches a rating or a threat, and then the number of
 	// linked controls that carry it.
-	coverageColumns := []string{"Excepted weight", "Scope weight", "Share", "Controls"}
+	coverageColumns := []string{"Scope weight", "Excepted weight", "Share", "Missed Controls"}
 	coverage := func(w WeightedCoverage, n int) []string {
-		return []string{weightText(w.Excepted), strconv.Itoa(w.Scope), strconv.Itoa(w.Share()) + "%", strconv.Itoa(n)}
+		return []string{strconv.Itoa(w.Scope), weightText(w.Excepted), strconv.Itoa(w.Share()) + "%", strconv.Itoa(n)}
 	}
 
 	threats := make([]SummaryRow, 0, len(r.Threats))
@@ -335,10 +361,10 @@ func (r Result) Summary() []SummarySection {
 
 	return []SummarySection{
 		{Title: "Scope and selection", Rows: []SummaryRow{
-			{Label: "Security NFRs in the catalog", Values: count(r.CatalogNFRs)},
 			{Label: "Security NFRs in scope", Values: count(r.ScopeNFRs)},
-			{Label: "Selected Security NFRs", Values: count(r.SelectedNFRs)},
-			{Label: "Linked Controls", Values: count(r.LinkedControls)},
+			{Label: "Exceptions", Values: count(r.SelectedNFRs)},
+			{Label: "Missed Controls", Values: count(r.LinkedControls)},
+			{Label: "Security NFRs in Catalog", Values: count(r.CatalogNFRs)},
 		}},
 		{Title: "CIA coverage", Columns: coverageColumns, Rows: []SummaryRow{
 			{Label: "Confidentiality (C)", Values: coverage(r.ConfidentialityWeight, r.Confidentiality)},
@@ -356,8 +382,8 @@ func (r Result) Summary() []SummarySection {
 	}
 }
 
-// weightRows is the table of the Summary sheet that counts the requirements at
-// each weight.
+// weightRows is the table of the Summary sheet that counts the NFRs at each
+// weight.
 func (r Result) weightRows() []SummaryRow {
 	rows := make([]SummaryRow, 0, len(r.ByWeight))
 	for _, count := range r.ByWeight {
@@ -378,13 +404,13 @@ type nfrRow struct {
 	linked   int
 	// note is what is said of a partial exception.
 	note string
-	// What the requirement touches: the ratings and the threats that the
-	// controls it is linked to carry.
+	// What the NFR touches: the ratings and the threats that the controls
+	// it is linked to carry.
 	touchC, touchI, touchA bool
 	touchThreats           map[string]bool
 }
 
-// touch records what a control the requirement is linked to carries.
+// touch records what a control the NFR is linked to carries.
 func (n *nfrRow) touch(control controlRow) {
 	n.touchC = n.touchC || strings.TrimSpace(control.Confidentiality) != ""
 	n.touchI = n.touchI || strings.TrimSpace(control.Integrity) != ""
@@ -397,9 +423,8 @@ func (n *nfrRow) touch(control controlRow) {
 	}
 }
 
-// add counts the requirement's weight in w: in the scope's when it is in
-// scope, and in the excepted weight, halved for a partial exception, when it
-// is excepted.
+// add counts the NFR's weight in w: in the scope's when it is in scope, and
+// in the excepted weight, halved for a partial exception, when it is excepted.
 func (n nfrRow) add(w *WeightedCoverage) {
 	if !n.inScope {
 		return
@@ -543,7 +568,7 @@ func evaluate(data Data, opts Options) model {
 			control: strings.TrimSpace(link.ControlID),
 		})
 	}
-	// In the order the detail view reads them: by requirement, then control.
+	// In the order the detail view reads them: by NFR, then control.
 	sort.SliceStable(m.links, func(i, j int) bool {
 		a, b := m.links[i], m.links[j]
 		pa, oka := position[a.key]
@@ -563,7 +588,7 @@ func evaluate(data Data, opts Options) model {
 		return naturalLess(a.MappingControlID, b.MappingControlID)
 	})
 
-	// A link counts when the mapping matched a control; a requirement that
+	// A link counts when the mapping matched a control; an NFR that
 	// reaches the same control through two mappings is linked to it once.
 	pairs := map[[2]string]bool{}
 	exceptedControls := map[string]bool{}
@@ -686,19 +711,98 @@ func evaluate(data Data, opts Options) model {
 		if !nfr.selected {
 			continue
 		}
-		if counted {
-			m.result.ByWeight[at].Selected++
-		}
 		rank++
 		nfr.order = rank
 		m.result.SelectedNFRs++
 		m.result.SelectedWeight += float64(nfr.Weight) * nfr.factor()
+		if counted {
+			m.result.ByWeight[at].Selected++
+		}
 	}
 	return m
 }
 
 // Evaluate is the result for a scope and a selection without the workbook.
 func Evaluate(data Data, opts Options) Result { return evaluate(data, opts).result }
+
+// Exception is a Security NFR in the exception set.
+type Exception struct {
+	Key     string
+	ID      string
+	Summary string
+	Domain  string
+	Weight  int
+	Partial bool
+}
+
+// MissedControl is a control that an exception is linked to. Listed
+// is false for one the catalog does not hold: a link can name it, and it is
+// counted, but it has no ratings.
+type MissedControl struct {
+	ID              string
+	Name            string
+	Family          string
+	Confidentiality bool
+	Integrity       bool
+	Availability    bool
+	Listed          bool
+}
+
+// Report is what the Exceptions Report shows: the Summary sheet's figures, the
+// exceptions, and the controls they miss.
+type Report struct {
+	Result Result
+	// Exceptions is heaviest first; among NFRs of one weight, in the order
+	// the Exceptions page lists them.
+	Exceptions []Exception
+	// Missed has each control once, in the order of its id. It has as
+	// many entries as Result.LinkedControls counts.
+	Missed []MissedControl
+}
+
+// ReportFor is the report for a scope and a selection.
+func ReportFor(data Data, opts Options) Report {
+	m := evaluate(data, opts)
+	report := Report{Result: m.result}
+
+	for _, nfr := range m.nfrs {
+		if nfr.selected {
+			report.Exceptions = append(report.Exceptions, Exception{
+				Key:     nfr.Key,
+				ID:      strings.TrimSpace(nfr.ID),
+				Summary: nfr.Summary,
+				Domain:  strings.TrimSpace(nfr.Domain),
+				Weight:  nfr.Weight,
+				Partial: nfr.partial,
+			})
+		}
+	}
+	sort.SliceStable(report.Exceptions, func(i, j int) bool {
+		return report.Exceptions[i].Weight > report.Exceptions[j].Weight
+	})
+
+	for _, link := range m.links {
+		// isNew marks the first excepted link to reach a control.
+		if !link.isNew {
+			continue
+		}
+		missed := MissedControl{ID: link.control, Name: link.ControlName, Family: link.ControlFamily}
+		if index, listed := m.byID[link.control]; listed {
+			control := m.controls[index]
+			missed.Listed = true
+			missed.Name = control.Name
+			missed.Family = control.Family
+			missed.Confidentiality = strings.TrimSpace(control.Confidentiality) != ""
+			missed.Integrity = strings.TrimSpace(control.Integrity) != ""
+			missed.Availability = strings.TrimSpace(control.Availability) != ""
+		}
+		report.Missed = append(report.Missed, missed)
+	}
+	sort.SliceStable(report.Missed, func(i, j int) bool {
+		return naturalLess(report.Missed[i].ID, report.Missed[j].ID)
+	})
+	return report
+}
 
 // nfrLess is the order the page lists a selection in: by NFR id as a number
 // where it is one, then as text with its digits read as numbers.
@@ -796,8 +900,8 @@ func (l layout) smLastRow() int {
 // exLastCol is the last column of the Exceptions sheet: the last threat's.
 func (l layout) exLastCol() int { return exFirstTouchThreat + l.threats - 1 }
 
-// Build writes the workbook for data with the given scope and the given
-// requirements selected.
+// Build writes the workbook for data with the given scope and the given NFRs
+// selected.
 func Build(data Data, opts Options) (*xlsx.Workbook, Result) {
 	m := evaluate(data, opts)
 	l := layout{
@@ -814,8 +918,11 @@ func Build(data Data, opts Options) (*xlsx.Workbook, Result) {
 	writeSummary(book.AddSheet(SheetSummary), m, l)
 	writeNFRDetail(book.AddSheet(SheetNFRDetail), m, l)
 	writeControlDetail(book.AddSheet(SheetControlDetail), m, l)
+	dora := doraOf(m)
+	writeDORA(book.AddSheet(SheetDORA), dora)
 	writeLinks(book.AddSheet(SheetLinks), m, l)
 	writeControls(book.AddSheet(SheetControls), m, l)
+	writeDORAData(book.AddSheet(SheetDORAData), dora, l)
 	book.Active = 1
 	return book, m.result
 }
@@ -848,8 +955,8 @@ func writeGuide(s *xlsx.Sheet, m model, opts Options) {
 
 	line("Building an exception set", xlsx.Section)
 	line("1. Open the Exceptions sheet. Each row is a Security NFR.", xlsx.Wrap)
-	line("2. Set the scope of the exercise first: "+SelectedMark+" in the Scope column ("+xlsx.Col(exScope)+") for every requirement the exercise covers. Clear the cell to take one out of scope. The workbook opens with the scope it was downloaded with. Downloaded with no selections, the column is empty and no requirement is in scope yet: this is where to start.", xlsx.Wrap)
-	line("3. Choose "+FullMark+" or "+PartialMark+" in the Exception column ("+xlsx.Col(exSel)+") for every requirement of the scope in the exception set: "+FullMark+" when it is not met at all, "+PartialMark+" when it is met in part. Clear the cell to take one out. A requirement outside the scope is not counted, whatever its Exception cell holds.", xlsx.Wrap)
+	line("2. Set the scope of the exercise first: "+SelectedMark+" in the Scope column ("+xlsx.Col(exScope)+") for every NFR the exercise covers. Clear the cell to take one out of scope. The workbook opens with the scope it was downloaded with. Downloaded with no selections, the column is empty and no NFR is in scope yet: this is where to start.", xlsx.Wrap)
+	line("3. Choose "+FullMark+" or "+PartialMark+" in the Exception column ("+xlsx.Col(exSel)+") for every NFR of the scope in the exception set: "+FullMark+" when it is not met at all, "+PartialMark+" when it is met in part. Clear the cell to take one out. An NFR outside the scope is not counted, whatever its Exception cell holds.", xlsx.Wrap)
 	line("4. Describe every partial exception in the Comments column ("+xlsx.Col(exComments)+"): what is met and what is not. A partial exception should not be left without a description. One typed on the Exceptions page of the application comes with the workbook.", xlsx.Wrap)
 	line("5. The two lines at the top of the sheet say how many NFRs are in scope and how many are excepted. The figures are on the Summary sheet and change as you go: the weight that touches each of confidentiality, integrity and availability and each threat, the counts, and the total weight.", xlsx.Wrap)
 	line("6. Selected NFRs and Selected controls are the detail view of the selection, ready to print.", xlsx.Wrap)
@@ -868,19 +975,22 @@ func writeGuide(s *xlsx.Sheet, m model, opts Options) {
 	line("The sheets", xlsx.Section)
 	line(SheetExceptions+": the Security NFR catalog with its weights, and the Scope and Exception columns. The columns after Implementation are working columns and are hidden: the formulas of the other sheets read them.", xlsx.Wrap)
 	line(SheetSummary+": the scope, the selection, the linked controls, the C / I / A counts, the threat coverage and the weights.", xlsx.Wrap)
-	line(SheetNFRDetail+": each selected requirement in full.", xlsx.Wrap)
-	line(SheetControlDetail+": each selected requirement's linked controls, with their ratings and threats.", xlsx.Wrap)
-	line(SheetLinks+": which NIST control each requirement's NIST mapping resolves to. Columns I to L, and the columns after Threats, are working columns.", xlsx.Wrap)
+	line(SheetNFRDetail+": each selected NFR in full.", xlsx.Wrap)
+	line(SheetControlDetail+": each selected NFR's linked controls, with their ratings and threats.", xlsx.Wrap)
+	line(SheetDORA+": the DORA and RTS articles that the controls linked to NFRs in scope cite in their References, with the exceptions against each.", xlsx.Wrap)
+	line(SheetLinks+": which NIST control each NFR's NIST mapping resolves to. Columns I to L, and the columns after Threats, are working columns.", xlsx.Wrap)
 	line(SheetControls+": the NIST controls, their ratings and the threats each addresses. The last column marks the controls in the exception set.", xlsx.Wrap)
+	line(SheetDORAData+": the citations read from the controls' References, and the working columns of the "+SheetDORA+" sheet. Which NFRs and controls stand behind a citation is in its tables: a citation's # is the Cites # column there.", xlsx.Wrap)
 	row++
 
 	line("How the numbers are worked out", xlsx.Section)
-	line("Linked Controls: the distinct controls that the selected requirements are linked to. A link counts when the requirement's NIST mapping matched a control.", xlsx.Wrap)
+	line("Linked Controls: the distinct controls that the selected NFRs are linked to. A link counts when the NFR's NIST mapping matched a control. The Summary sheet calls the selected NFRs Exceptions and these controls Missed Controls.", xlsx.Wrap)
 	line("C, I and A by weight, and each threat by weight: the figures to read the exception set by. An NFR touches a rating or a threat when one of the controls it is linked to carries it, and then counts its whole weight once, however many of them carry it. The figure is the weight of the excepted NFRs that touch it, a partial exception counting half, of the weight of the NFRs in scope that touch it.", xlsx.Wrap)
 	line("C, I and A: how many of those controls have a confidentiality, integrity or availability rating.", xlsx.Wrap)
 	line("Threat coverage: for each threat, how many of those controls address it.", xlsx.Wrap)
-	line("Total weight, a minor figure: each requirement's weight is 1 (lowest) to 5 (highest). The weight of the selection is the sum of the weights of the selected requirements, a partial exception counting half its requirement's weight; its share is that sum over the sum for the requirements in scope. The Exceptions Report of the application shows the same figures.", xlsx.Wrap)
-	line("A weight can be edited on the Exceptions sheet, and the numbers follow. The "+SheetLinks+" and "+SheetControls+" sheets are locked: they hold what the application exported. A link or a rating is changed in the application, and a new workbook is downloaded. Review > Unprotect Sheet lifts the lock; there is no password.", xlsx.Wrap)
+	line("Total weight, a minor figure: each NFR's weight is 1 (lowest) to 5 (highest). The weight of the selection is the sum of the weights of the selected NFRs, a partial exception counting half its NFR's weight; its share is that sum over the sum for the NFRs in scope. The Exceptions Report of the application shows the same figures.", xlsx.Wrap)
+	line("DORA: an NFR counts against an article when a control it is linked to cites that article in its References, and counts once however many such controls it has. An RTS article is its own row: it is not the DORA article of the same number. The DORA Report of the application shows the same figures.", xlsx.Wrap)
+	line("A weight can be edited on the Exceptions sheet, and the numbers follow. The "+SheetLinks+", "+SheetControls+" and "+SheetDORAData+" sheets are locked: they hold what the application exported. A link or a rating is changed in the application, and a new workbook is downloaded. Review > Unprotect Sheet lifts the lock; there is no password.", xlsx.Wrap)
 }
 
 func writeExceptions(s *xlsx.Sheet, m model, l layout) {
@@ -957,8 +1067,8 @@ func writeExceptions(s *xlsx.Sheet, m model, l layout) {
 			"IF("+selectedCell+"=1,SUM("+xlsx.Col(exSelected)+"$"+strconv.Itoa(exFirstRow)+":"+selectedCell+"),0)",
 			float64(nfr.order)))
 
-		// What the requirement touches, over the rows of the Links sheet that
-		// are its own and count as links.
+		// What the NFR touches, over the rows of the Links sheet that are its
+		// own and count as links.
 		linkedTo := "(" + l.lk(lkKey) + "=" + xlsx.Ref(exKey, row) + ")*" + l.lk(lkLinked)
 		touches := func(col int, carried string, touched bool) {
 			s.Set(col, row, xlsx.FormulaNumber("IF(SUMPRODUCT("+linkedTo+"*"+carried+")>0,1,0)", flag(touched)))
@@ -985,7 +1095,7 @@ func writeExceptions(s *xlsx.Sheet, m model, l layout) {
 }
 
 func writeSummary(s *xlsx.Sheet, m model, l layout) {
-	s.Widths(36, 16, 16, 10, 16)
+	s.Widths(36, 16, 16, 10, 22)
 	r := m.result
 	selected := l.ex(exSelected)
 	factor := l.ex(exFactor)
@@ -1004,10 +1114,9 @@ func writeSummary(s *xlsx.Sheet, m model, l layout) {
 		}
 	}
 	// weighted writes the weight that touches a rating or a threat: the
-	// excepted requirements', the scope's, and the share. touch is the column
-	// of the Exceptions sheet that marks the requirements touching it. The
-	// Factor column is 1 for a full exception, a half for a partial one and 0
-	// for the rest.
+	// scope's, the excepted NFRs', and the share. touch is the column of the
+	// Exceptions sheet that marks the NFRs touching it. The Factor column is
+	// 1 for a full exception, a half for a partial one and 0 for the rest.
 	weighted := func(row, touch int, w WeightedCoverage) {
 		touches := l.ex(touch)
 		s.Set(smColExcepted, row, xlsx.FormulaNumber("SUMPRODUCT("+factor+"*"+weights+"*"+touches+")", w.Excepted).With(xlsx.Left))
@@ -1024,17 +1133,19 @@ func writeSummary(s *xlsx.Sheet, m model, l layout) {
 	s.Set(1, 1, xlsx.Text("Exception set summary").With(xlsx.Title))
 	s.Set(1, 2, xlsx.Text("Follows the Scope and Exception columns of the Exceptions sheet.").With(xlsx.Muted))
 
-	section(smCatalog-1, "Scope and selection")
-	label(smCatalog, "Security NFRs in the catalog")
-	s.Set(2, smCatalog, xlsx.FormulaNumber("SUMPRODUCT((LEN("+l.ex(exKey)+")>0)*1)", float64(r.CatalogNFRs)).With(xlsx.Left))
+	section(smScope-1, "Scope and selection")
 	label(smScope, "Security NFRs in scope")
 	s.Set(2, smScope, xlsx.FormulaNumber("SUM("+inScope+")", float64(r.ScopeNFRs)).With(xlsx.Left))
-	label(smSelected, "Selected Security NFRs")
+	// The Summary sheet names the selected NFRs by what they are, exceptions,
+	// and the controls they are linked to by what that makes them, missed.
+	label(smSelected, "Exceptions")
 	s.Set(2, smSelected, xlsx.FormulaNumber("SUM("+selected+")", float64(r.SelectedNFRs)).With(xlsx.Left))
-	label(smControls, "Linked Controls")
+	label(smControls, "Missed Controls")
 	s.Set(2, smControls, xlsx.FormulaNumber("SUM("+l.lk(lkNew)+")", float64(r.LinkedControls)).With(xlsx.Left))
+	label(smCatalog, "Security NFRs in Catalog")
+	s.Set(2, smCatalog, xlsx.FormulaNumber("SUMPRODUCT((LEN("+l.ex(exKey)+")>0)*1)", float64(r.CatalogNFRs)).With(xlsx.Left))
 
-	section(smC-1, "CIA coverage", "Excepted weight", "Scope weight", "Share", "Controls")
+	section(smC-1, "CIA coverage", "Scope weight", "Excepted weight", "Share", "Missed Controls")
 	rated := func(row int, text string, col, touch, count int, w WeightedCoverage) {
 		label(row, text)
 		weighted(row, touch, w)
@@ -1044,7 +1155,7 @@ func writeSummary(s *xlsx.Sheet, m model, l layout) {
 	rated(smI, "Integrity (I)", ctI, exTouchI, r.Integrity, r.IntegrityWeight)
 	rated(smA, "Availability (A)", ctA, exTouchA, r.Availability, r.AvailabilityWeight)
 
-	section(smFirstThreat-1, "Threat coverage", "Excepted weight", "Scope weight", "Share", "Controls")
+	section(smFirstThreat-1, "Threat coverage", "Scope weight", "Excepted weight", "Share", "Missed Controls")
 	for i, threat := range r.Threats {
 		row := smFirstThreat + i
 		label(row, threat.Threat)
@@ -1070,11 +1181,10 @@ func writeSummary(s *xlsx.Sheet, m model, l layout) {
 		share).With(xlsx.Percent))
 	label(l.smAverage(), "Average weight of a selected NFR")
 	average := "IF(" + xlsx.Ref(2, smSelected) + `=0,"",ROUND(` + xlsx.Ref(2, weightRow) + "/" + xlsx.Ref(2, smSelected) + ",2))"
-	if r.SelectedNFRs == 0 {
-		s.Set(2, l.smAverage(), xlsx.FormulaText(average, "").With(xlsx.Decimal))
-	} else {
-		value := float64(roundHalfUp(r.SelectedWeight*100/float64(r.SelectedNFRs))) / 100
+	if value, ok := r.AverageWeight(); ok {
 		s.Set(2, l.smAverage(), xlsx.FormulaNumber(average, value).With(xlsx.Decimal))
+	} else {
+		s.Set(2, l.smAverage(), xlsx.FormulaText(average, "").With(xlsx.Decimal))
 	}
 
 	table := l.smWeightTable()
@@ -1089,10 +1199,14 @@ func writeSummary(s *xlsx.Sheet, m model, l layout) {
 
 // detailLine writes the counter in column A of a detail sheet and the source
 // row in its last column, and reports whether the line is filled as written.
-func detailLine(s *xlsx.Sheet, row, sourceCol int, count string, orderRange string, filled bool, sourceRow int) {
+// The source row is not found with MATCH: LibreOffice 26.2's threaded
+// calculation of a workbook with no stored results gives the first line of the
+// Selected controls sheet the wrong row when the first link is not an
+// exception.
+func detailLine(s *xlsx.Sheet, row, sourceCol int, count string, orderRange string, orderFirstRow int, filled bool, sourceRow int) {
 	number := row - detailHeaderRow
 	counter := "IF(ROW()-" + strconv.Itoa(detailHeaderRow) + "<=" + count + ",ROW()-" + strconv.Itoa(detailHeaderRow) + `,"")`
-	source := "IF(" + xlsx.Ref(1, row) + `="","",MATCH(` + xlsx.Ref(1, row) + "," + orderRange + ",0))"
+	source := "IF(" + xlsx.Ref(1, row) + `="","",SUMPRODUCT((` + orderRange + "=" + xlsx.Ref(1, row) + ")*(ROW(" + orderRange + ")-" + strconv.Itoa(orderFirstRow-1) + ")))"
 	if filled {
 		s.Set(1, row, xlsx.FormulaNumber(counter, float64(number)).With(xlsx.Center))
 		s.Set(sourceCol, row, xlsx.FormulaNumber(source, float64(sourceRow)).With(xlsx.Muted))
@@ -1127,7 +1241,7 @@ func writeNFRDetail(s *xlsx.Sheet, m model, l layout) {
 	s.Set(1, 1, xlsx.Text("Exception detail: the selected Security NFRs").With(xlsx.Title))
 	// The long text is on one line: a spreadsheet does not make a row taller
 	// when the text a formula gives it grows.
-	s.Set(1, 2, xlsx.Text("Filled from the Exceptions sheet. A requirement appears here when it is in scope and its Exception cell is "+FullMark+" or "+PartialMark+
+	s.Set(1, 2, xlsx.Text("Filled from the Exceptions sheet. An NFR appears here when it is in scope and its Exception cell is "+FullMark+" or "+PartialMark+
 		". To read or print the long text in full, select the rows, turn on Wrap Text and AutoFit Row Height.").With(xlsx.Muted))
 
 	headers := []string{"#", "Key", "Summary", "Domain", "Weight", "Exception", "Linked Controls",
@@ -1174,7 +1288,7 @@ func writeNFRDetail(s *xlsx.Sheet, m model, l layout) {
 		if filled {
 			at = selected[i]
 		}
-		detailLine(s, row, nfrDetailSource, summaryCell(smSelected), l.ex(exOrder), filled, at+1)
+		detailLine(s, row, nfrDetailSource, summaryCell(smSelected), l.ex(exOrder), exFirstRow, filled, at+1)
 		for _, c := range text {
 			value := ""
 			if filled {
@@ -1206,7 +1320,7 @@ func writeControlDetail(s *xlsx.Sheet, m model, l layout) {
 	s.Freeze(0, detailHeaderRow)
 	s.FitPageWidth()
 	s.Set(1, 1, xlsx.Text("Exception detail: the linked controls of each selected Security NFR").With(xlsx.Title))
-	s.Set(1, 2, xlsx.Text("One line for each control a selected requirement is linked to. TRUE means the control carries that rating.").With(xlsx.Muted))
+	s.Set(1, 2, xlsx.Text("One line for each control a selected NFR is linked to. TRUE means the control carries that rating.").With(xlsx.Muted))
 
 	headers := []string{"#", "NFR Key", "NFR ID", "NFR Summary", "Weight", "Control ID", "Control Name", "Family",
 		"C", "I", "A", "Threats", "Row"}
@@ -1242,7 +1356,7 @@ func writeControlDetail(s *xlsx.Sheet, m model, l layout) {
 				control = m.controls[index]
 			}
 		}
-		detailLine(s, row, detailSource, "MAX("+l.lk(lkOrder)+")", l.lk(lkOrder), filled, at+1)
+		detailLine(s, row, detailSource, "MAX("+l.lk(lkOrder)+")", l.lk(lkOrder), lkFirstRow, filled, at+1)
 		source := "$" + xlsx.Col(detailSource) + strconv.Itoa(row)
 
 		text := func(col, from int, fallback, value string) {

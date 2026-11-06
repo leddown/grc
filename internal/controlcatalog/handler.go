@@ -306,6 +306,40 @@ func (h *Handler) UpdateControl(c *gin.Context) {
 	c.JSON(http.StatusOK, updated)
 }
 
+// maxImportBytes bounds an uploaded control catalog. The full catalog is a small
+// fraction of this, so the limit only stops an unbounded upload.
+const maxImportBytes = 32 << 20
+
+// ImportControls loads a control catalog JSON file into the database and relinks NFRs
+// to controls. ?replace=true also deletes entries the file does not carry.
+func (h *Handler) ImportControls(c *gin.Context) {
+	raw, err := apiutil.ReadUpload(c, maxImportBytes)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, apiutil.ErrUploadTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := h.service.Import(raw, apiutil.BoolParam(c, "replace"))
+	if err != nil {
+		if errors.Is(err, ErrInvalidImport) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to import controls"})
+		return
+	}
+	if h.linkBuilder != nil {
+		if err := h.linkBuilder.Rebuild(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "imported, but failed to rebuild NFR-control links"})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *Handler) SaveControlsToJSON(c *gin.Context) {
 	total, path, err := h.service.SaveToJSON()
 	if err != nil {
@@ -2506,7 +2540,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
     p { color: var(--muted); }
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) auto auto;
+      grid-template-columns: minmax(260px, 1fr) auto auto auto auto;
       gap: 12px;
       margin: 22px 0 18px;
     }
@@ -2518,6 +2552,15 @@ func (h *Handler) ManagePage(c *gin.Context) {
       background: var(--bg);
       font: inherit;
     }
+    label.import-replace {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    label.import-replace input { width: auto; }
     textarea { min-height: 96px; resize: vertical; }
 	    button {
 	      padding: 12px 16px;
@@ -2642,11 +2685,14 @@ func (h *Handler) ManagePage(c *gin.Context) {
   <main>
 	    ` + pageui.Nav("/controls/manage") + `
     <h1>Control Editor</h1>
-    <p>Edit the SQLite-backed control catalog, then write the updated records back to <code>internal/data/merged_nist_controls_master_replaced_from_controls_all.json</code>.</p>
+    <p>Import a NIST 800-53 catalog JSON file into the database, then edit it here. Every import relinks the Security NFRs to the controls.</p>
 
     <section class="toolbar">
       <input id="searchInput" type="search" placeholder="Search control id, name, or family">
       <button id="reloadBtn" class="secondary" type="button">Reload DB</button>
+      <label class="import-replace" title="Delete entries the file does not carry"><input id="importReplace" type="checkbox"> Replace</label>
+      <button id="importBtn" class="secondary" type="button">Import JSON</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
       <button id="exportBtn" type="button">Rewrite JSON</button>
     </section>
 
@@ -2779,6 +2825,9 @@ func (h *Handler) ManagePage(c *gin.Context) {
     const exportBtn = document.getElementById('exportBtn');
     const deleteBtn = document.getElementById('deleteBtn');
     const editorForm = document.getElementById('editorForm');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+    const importReplace = document.getElementById('importReplace');
 
     const controlId = document.getElementById('controlId');
     const sourceKey = document.getElementById('sourceKey');
@@ -2911,7 +2960,9 @@ func (h *Handler) ManagePage(c *gin.Context) {
 
     function renderRows() {
       if (!state.filtered.length) {
-        rows.innerHTML = '<div class="empty">No controls match the current search.</div>';
+        rows.innerHTML = state.controls.length
+          ? '<div class="empty">No controls match the current search.</div>'
+          : '<div class="empty">The control catalog is empty. Import a NIST 800-53 JSON file to fill it.</div>';
         rows.style.removeProperty('min-height');
         return;
       }
@@ -3123,6 +3174,35 @@ func (h *Handler) ManagePage(c *gin.Context) {
         applySearch();
       } catch (err) {
         formMessage.textContent = 'Delete failed: ' + err.message;
+        formMessage.className = 'status error';
+      }
+    });
+
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', async () => {
+      const file = importFile.files[0];
+      importFile.value = '';
+      if (!file) return;
+      const replace = importReplace.checked;
+      if (replace && !window.confirm('Replace the control catalog with ' + file.name + '? Entries the file does not carry are deleted.')) {
+        formMessage.textContent = 'Import canceled.';
+        formMessage.className = 'status warn';
+        return;
+      }
+
+      formMessage.textContent = 'Importing ' + file.name + '...';
+      formMessage.className = 'status warn';
+      try {
+        const body = new FormData();
+        body.append('file', file);
+        const resp = await fetch('/controls/import?replace=' + replace, { method: 'POST', body });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        await loadControls();
+        formMessage.textContent = 'Imported ' + data.imported + (replace ? ', removed ' + data.removed : '') + ' from ' + file.name + '. NFR-control links rebuilt.';
+        formMessage.className = 'status success';
+      } catch (err) {
+        formMessage.textContent = 'Import failed: ' + err.message;
         formMessage.className = 'status error';
       }
     });

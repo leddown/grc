@@ -86,13 +86,14 @@ func TestExceptionsWorkbookDownloadTakesDescriptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildHandlers: %v", err)
 	}
+	importBundledCatalogs(t, controlHandler, nfrHandler)
 	router := gin.New()
 	registerRoutes(router, userHandler, authHandler, controlHandler, nfrHandler, linkHandler, reportsHandler, riskHandler,
 		noAuthMiddleware, false, true)
 
 	nfrs, err := nfrHandler.Service().List("", "")
 	if err != nil || len(nfrs) < 4 {
-		t.Fatalf("no seeded NFRs: %v", err)
+		t.Fatalf("no imported NFRs: %v", err)
 	}
 	full, partial, other := nfrs[0].Key, nfrs[1].Key, nfrs[2].Key
 	query := "?" + url.Values{"key": {full, partial}, "partial": {partial}}.Encode()

@@ -45,17 +45,18 @@ func (s *Service) Rebuild() error {
 		return err
 	}
 
-	rows, err := tx.Query(`SELECT record_key, nfr_id, summary, domain, nist_mapping FROM security_nfrs`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
+	// Each set of rows is read to the end before the next statement runs: on
+	// PostgreSQL a transaction is one connection, and it runs one statement at
+	// a time ("conn busy" otherwise).
 	controlsByID, err := loadControlsByID(tx)
 	if err != nil {
 		return err
 	}
 	overrides, err := loadOverrides(tx)
+	if err != nil {
+		return err
+	}
+	nfrs, err := loadNFRMappings(tx)
 	if err != nil {
 		return err
 	}
@@ -71,15 +72,8 @@ func (s *Service) Rebuild() error {
 	}
 	defer insertStmt.Close()
 
-	for rows.Next() {
-		var nfrKey string
-		var nfrID string
-		var summary string
-		var domain string
-		var mappingRaw string
-		if err := rows.Scan(&nfrKey, &nfrID, &summary, &domain, &mappingRaw); err != nil {
-			return err
-		}
+	for _, nfr := range nfrs {
+		nfrKey, nfrID, summary, domain, mappingRaw := nfr.Key, nfr.ID, nfr.Summary, nfr.Domain, nfr.MappingRaw
 
 		tokens := extractMappingTokens(mappingRaw)
 		if len(tokens) == 0 {
@@ -141,10 +135,6 @@ func (s *Service) Rebuild() error {
 		}
 	}
 
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
 	return tx.Commit()
 }
 
@@ -168,6 +158,35 @@ func loadControlsByID(tx *db.Tx) (map[string]controlLookup, error) {
 			return nil, err
 		}
 		out[item.ID] = item
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type nfrMapping struct {
+	Key        string
+	ID         string
+	Summary    string
+	Domain     string
+	MappingRaw string
+}
+
+func loadNFRMappings(tx *db.Tx) ([]nfrMapping, error) {
+	rows, err := tx.Query(`SELECT record_key, nfr_id, summary, domain, nist_mapping FROM security_nfrs`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []nfrMapping
+	for rows.Next() {
+		var item nfrMapping
+		if err := rows.Scan(&item.Key, &item.ID, &item.Summary, &item.Domain, &item.MappingRaw); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

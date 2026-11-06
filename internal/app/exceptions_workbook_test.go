@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,13 +25,14 @@ func TestExceptionsWorkbookDownload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildHandlers: %v", err)
 	}
+	importBundledCatalogs(t, controlHandler, nfrHandler)
 	router := gin.New()
 	registerRoutes(router, userHandler, authHandler, controlHandler, nfrHandler, linkHandler, reportsHandler, riskHandler,
 		noAuthMiddleware, false, true)
 
 	nfrs, err := nfrHandler.Service().List("", "")
 	if err != nil || len(nfrs) == 0 {
-		t.Fatalf("no seeded NFRs: %v", err)
+		t.Fatalf("no imported NFRs: %v", err)
 	}
 
 	download := func(query string) map[string]string {
@@ -69,7 +71,8 @@ func TestExceptionsWorkbookDownload(t *testing.T) {
 
 	empty := download("")
 	for _, name := range []string{exceptionbook.SheetGuide, exceptionbook.SheetExceptions, exceptionbook.SheetSummary,
-		exceptionbook.SheetNFRDetail, exceptionbook.SheetControlDetail, exceptionbook.SheetLinks, exceptionbook.SheetControls} {
+		exceptionbook.SheetNFRDetail, exceptionbook.SheetControlDetail, exceptionbook.SheetDORA, exceptionbook.SheetLinks,
+		exceptionbook.SheetControls, exceptionbook.SheetDORAData} {
 		if !strings.Contains(empty["xl/workbook.xml"], `<sheet name="`+name+`"`) {
 			t.Errorf("the workbook has no %q sheet", name)
 		}
@@ -86,7 +89,7 @@ func TestExceptionsWorkbookDownload(t *testing.T) {
 	// Downloaded with no selections, the workbook has none: nothing is in
 	// scope and nothing is excepted.
 	if !strings.Contains(empty["xl/worksheets/sheet2.xml"], "Scope: 0 of "+total+" Security NFRs") {
-		t.Error("a workbook downloaded with no selections has requirements in scope")
+		t.Error("a workbook downloaded with no selections has NFRs in scope")
 	}
 	if strings.Contains(empty["xl/worksheets/sheet2.xml"], "<v>Yes</v>") || strings.Contains(empty["xl/worksheets/sheet2.xml"], "<t>Yes</t>") {
 		t.Error("a workbook downloaded with no selections has a Scope cell filled in")
@@ -99,7 +102,7 @@ func TestExceptionsWorkbookDownload(t *testing.T) {
 		t.Error("?key= without ?scope= does not have the whole catalog in scope")
 	}
 	if !strings.Contains(selected["xl/worksheets/sheet2.xml"], "Exceptions: 2 | ") {
-		t.Error("?key= did not select the requirements in the workbook")
+		t.Error("?key= did not select the NFRs in the workbook")
 	}
 
 	// The second key is selected but outside the scope, so it is not excepted.
@@ -123,7 +126,7 @@ func TestExceptionsWorkbookDownload(t *testing.T) {
 		t.Error("an empty ?scope= must put nothing in scope")
 	}
 
-	// Two requirements of weight 3, the second excepted in part: 3 + 1.5.
+	// Two NFRs of weight 3, the second excepted in part: 3 + 1.5.
 	if nfrs[0].Weight != 3 || nfrs[1].Weight != 3 {
 		t.Fatalf("the seeded weights are %d and %d, want 3 and 3", nfrs[0].Weight, nfrs[1].Weight)
 	}
@@ -133,7 +136,7 @@ func TestExceptionsWorkbookDownload(t *testing.T) {
 	}
 	// The weight of the selection is a cell of the Summary sheet, the third.
 	if !strings.Contains(partial["xl/worksheets/sheet3.xml"], "<v>4.5</v>") {
-		t.Error("?partial= did not count the second requirement at half its weight")
+		t.Error("?partial= did not count the second NFR at half its weight")
 	}
 }
 
@@ -155,13 +158,14 @@ func TestExceptionsReportPageShowsTheSummarySheet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildHandlers: %v", err)
 	}
+	importBundledCatalogs(t, controlHandler, nfrHandler)
 	router := gin.New()
 	registerRoutes(router, userHandler, authHandler, controlHandler, nfrHandler, linkHandler, reportsHandler, riskHandler,
 		noAuthMiddleware, false, true)
 
 	data, err := loadExceptionsWorkbookData(nfrHandler.Service(), linkHandler.Service(), controlHandler.Service())
 	if err != nil || len(data.NFRs) < 4 {
-		t.Fatalf("no seeded catalog: %v", err)
+		t.Fatalf("no imported catalog: %v", err)
 	}
 	keys := []string{data.NFRs[0].Key, data.NFRs[1].Key, data.NFRs[2].Key, data.NFRs[3].Key}
 
@@ -217,7 +221,7 @@ func TestExceptionsReportPageShowsTheSummarySheet(t *testing.T) {
 	holds("an exercise", scoped, opts)
 	for _, want := range []string{
 		"<tr><td>Security NFRs in scope</td><td>3</td>",
-		"<tr><td>Selected Security NFRs</td><td>2</td>",
+		"<tr><td>Exceptions</td><td>2</td>",
 		"<tr><td>Weight of the selection</td><td>4.5</td>",
 		"<tr><td>Weight of the scope</td><td>9</td>",
 		"<tr><td>Share of the scope&#39;s weight</td><td>50%</td>",
@@ -230,6 +234,62 @@ func TestExceptionsReportPageShowsTheSummarySheet(t *testing.T) {
 	}
 	if strings.Contains(scoped, "No scope or exceptions are set") {
 		t.Error("the report for an exercise says that nothing is set")
+	}
+	// The Summary sheet's names for the selection and for what it is linked to.
+	for _, gone := range []string{"<td>Selected Security NFRs</td>", "<td>Linked Controls</td>"} {
+		if strings.Contains(scoped, gone) {
+			t.Errorf("the report still says %q", gone)
+		}
+	}
+	if !strings.Contains(scoped, "<tr><td>Missed Controls</td><td>") {
+		t.Error("the report does not count the missed controls under that name")
+	}
+
+	// Under the summary: the exceptions, heaviest first, and each control
+	// they miss once.
+	report := exceptionbook.ReportFor(data, opts)
+	if len(report.Exceptions) != 2 || len(report.Missed) == 0 {
+		t.Fatalf("the exercise has %d exceptions and %d missed controls", len(report.Exceptions), len(report.Missed))
+	}
+	at := strings.Index(scoped, "<h2>Exceptions, by weight</h2>")
+	if at < 0 {
+		t.Fatal("the report has no table of exceptions")
+	}
+	for _, exception := range report.Exceptions {
+		kind := "Full"
+		if exception.Partial {
+			kind = "Partial"
+		}
+		// An NFR with no domain shows a dash.
+		domain := exception.Domain
+		if domain == "" {
+			domain = "-"
+		}
+		row := `<a href="/security-nfrs/detail/` + exception.Key + `" target="_blank" rel="noopener noreferrer">` + html.EscapeString(exception.Summary) + `</a></td>` +
+			`<td>` + html.EscapeString(domain) + `</td><td class="number">` + strconv.Itoa(exception.Weight) + `</td><td>` + kind + `</td></tr>`
+		next := strings.Index(scoped[at:], row)
+		if next < 0 {
+			t.Fatalf("the table of exceptions does not have, in order, %q", row)
+		}
+		at += next
+	}
+	at = strings.Index(scoped, "<h2>Missed controls</h2>")
+	if at < 0 {
+		t.Fatal("the report has no list of missed controls")
+	}
+	for _, control := range report.Missed {
+		link := `<a href="/controls/detail/` + url.PathEscape(control.ID) + `" target="_blank" rel="noopener noreferrer">` + html.EscapeString(control.ID) + `</a>`
+		next := strings.Index(scoped[at:], link)
+		if next < 0 {
+			t.Fatalf("the list of missed controls does not have, in order, %q", link)
+		}
+		at += next
+	}
+	if strings.Count(scoped[strings.Index(scoped, "<h2>Missed controls</h2>"):], "<tr><td class=\"number\">") != len(report.Missed) {
+		t.Errorf("the list of missed controls does not have %d rows", len(report.Missed))
+	}
+	if !strings.Contains(plain, "No Security NFR has an exception.") || !strings.Contains(plain, "No control is missed.") {
+		t.Error("a report with nothing selected does not say that its two lists are empty")
 	}
 }
 

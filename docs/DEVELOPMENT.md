@@ -104,7 +104,7 @@ The logic exists three times: JavaScript in `internal/app/exceptions.go`, Go
 in `internal/exceptionbook` (`evaluate`), and spreadsheet formulas in the same
 package. Change all three. The LibreOffice test holds the last two together.
 `TestPageFiguresAreTheWorkbooksUnderNode` holds the first to the second for
-the weights: it runs the pages' script under node on the seeded catalog and
+the weights: it runs the pages' script under node on the imported shipped catalog and
 compares each line with `exceptionbook.Evaluate`. It is skipped where node is
 not installed, and it does not cover the counts of linked controls, which the
 pages work out in their own functions.

@@ -59,7 +59,7 @@ The sidebar groups are the product's own map of itself.
 | Catalog | Controls, Control Editor, Hierarchy, Family Filters, Security NFRs, Security NFR Editor, NFR-Control Links, NFR Enrichment, Asset Types |
 | Compliance & Risk | Risk Register, Risk Register Editor, Audit Findings, Exceptions, Policy Library, Policy Editor, Policy Templates, Policy Coverage, Regulation Coverage, Wiz Rules |
 | Crisis Exercises | Crisis Exercises |
-| Reporting & Data | Reports, Exceptions Workbook, JSON_view, Jira JSON, Jira Reports, Change Log |
+| Reporting & Data | Reports, Exceptions Workbook, Exceptions Report, DORA Report, JSON_view, Jira JSON, Jira Reports, Change Log |
 | AI Chat | AI Chat |
 | Documents | Templates, Template Brand |
 | Admin | Help, Settings, API Docs, Utilities (and User Management, outside local mode) |
@@ -109,7 +109,7 @@ main.go, cmd/api/         the server entry points (identical)
 cmd/userctl/              offline account tool (scripts/manage-user.sh)
 internal/app/             routing, middleware, and the pages that have no package of their own
 internal/<module>/        one package per module; see ARCHITECTURE.md
-internal/data/            the two catalogs as embedded JSON
+internal/data/            the two catalog JSON files shipped for import
 internal/db/              the schema, for SQLite and PostgreSQL
 regmap/profiles/          framework profiles (DORA, NIS2, CRA, PCI DSS, generic) as embedded YAML
 templates/                Typst and LaTeX document templates and sample payloads

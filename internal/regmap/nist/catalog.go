@@ -1,13 +1,13 @@
 // Package nist loads the NIST SP 800-53 Rev 5 control catalog. The catalog is
 // the shared mapping target for every source framework.
 //
-// By default it reads grc's embedded control dataset, so the crosswalk maps
-// against exactly the same controls the rest of the application serves. A YAML
-// file can be supplied instead when a run needs a narrower or custom catalog.
+// The application builds it from the controls in its database (FromControls),
+// so the crosswalk maps against exactly the controls the rest of the
+// application serves. A YAML file can be supplied instead when a run needs a
+// narrower or custom catalog.
 package nist
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -15,7 +15,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	seeddata "grc/internal/data"
 	"grc/internal/regmap/requirement"
 )
 
@@ -39,52 +38,34 @@ type Catalog struct {
 	byID map[string]Control
 }
 
-// seedEntry mirrors the shape of grc's embedded control dataset. Only the
-// fields the crosswalk needs are decoded.
-type seedEntry struct {
-	NIST struct {
-		ControlID        string `json:"control_id"`
-		Type             string `json:"type"`
-		Name             string `json:"name"`
-		NISTRequirements string `json:"nist_requirements"`
-	} `json:"nist"`
-}
-
-// LoadEmbedded builds the catalog from grc's embedded NIST dataset.
+// FromControls builds the catalog from controls the caller already holds.
+// Family is derived from the ID when it is blank, and an ID with a
+// parenthesised part counts as an enhancement whatever the caller said.
 //
 // Control enhancements (AC-2(1) and friends) are excluded unless requested:
 // a regulation crosswalk maps to base controls, and the full enhancement set
 // would triple the control-ID list injected into every LLM suggestion prompt
 // without improving the mapping.
-func LoadEmbedded(includeEnhancements bool) (*Catalog, error) {
-	var entries map[string]seedEntry
-	if err := json.Unmarshal(seeddata.ControlCatalogJSON(), &entries); err != nil {
-		return nil, fmt.Errorf("parse embedded NIST control catalog: %w", err)
-	}
-
-	c := &Catalog{Source: "grc embedded NIST 800-53 dataset (base controls)"}
-	if includeEnhancements {
-		c.Source = "grc embedded NIST 800-53 dataset (base controls and enhancements)"
-	}
-	for _, e := range entries {
-		id := strings.TrimSpace(e.NIST.ControlID)
-		if id == "" {
+func FromControls(controls []Control, includeEnhancements bool, source string) (*Catalog, error) {
+	c := &Catalog{Source: source}
+	for _, ctl := range controls {
+		ctl.ID = strings.TrimSpace(ctl.ID)
+		if ctl.ID == "" {
 			continue
 		}
-		enhancement := strings.Contains(id, "(") || e.NIST.Type == "Control Enhancement"
-		if enhancement && !includeEnhancements {
+		ctl.Enhancement = ctl.Enhancement || strings.Contains(ctl.ID, "(")
+		if ctl.Enhancement && !includeEnhancements {
 			continue
 		}
-		c.Controls = append(c.Controls, Control{
-			ID:          id,
-			Family:      family(id),
-			Title:       strings.TrimSpace(e.NIST.Name),
-			ControlText: strings.TrimSpace(e.NIST.NISTRequirements),
-			Enhancement: enhancement,
-		})
+		if ctl.Family == "" {
+			ctl.Family = family(ctl.ID)
+		}
+		ctl.Title = strings.TrimSpace(ctl.Title)
+		ctl.ControlText = strings.TrimSpace(ctl.ControlText)
+		c.Controls = append(c.Controls, ctl)
 	}
 	if len(c.Controls) == 0 {
-		return nil, fmt.Errorf("embedded NIST control catalog yielded no controls")
+		return nil, fmt.Errorf("the NIST 800-53 catalog holds no controls")
 	}
 	c.index()
 	return c, nil
@@ -98,7 +79,7 @@ func family(id string) string {
 	return strings.ToUpper(id)
 }
 
-// Load reads a catalog from a YAML file, overriding the embedded dataset.
+// Load reads a catalog from a YAML file.
 func Load(path string) (*Catalog, error) {
 	// #nosec G304 -- an explicit --catalog override supplied by the operator.
 	raw, err := os.ReadFile(path)
@@ -127,8 +108,8 @@ func (c *Catalog) index() {
 	for _, ctl := range c.Controls {
 		c.byID[normalize(ctl.ID)] = ctl
 	}
-	// The embedded dataset decodes from a map, so ordering must be imposed
-	// here for deterministic output.
+	// Callers hand controls over in whatever order their source had, so
+	// ordering is imposed here for deterministic output.
 	sort.SliceStable(c.Controls, func(i, j int) bool {
 		return requirement.NaturalLess(c.Controls[i].ID, c.Controls[j].ID)
 	})

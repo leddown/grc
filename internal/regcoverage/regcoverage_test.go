@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"grc/internal/aiprovider"
+	"grc/internal/controlcatalog"
+	"grc/internal/controlfile"
 	"grc/internal/securitynfr"
 )
 
@@ -47,9 +51,58 @@ func (s *stubAsker) Ask(_ context.Context, req aiprovider.Request) (aiprovider.R
 func (s *stubAsker) Available() bool  { return true }
 func (s *stubAsker) Describe() string { return "stub" }
 
+type stubControls struct{ list []controlcatalog.Control }
+
+func (s stubControls) List(_, _, _ string) ([]controlcatalog.Control, error) { return s.list, nil }
+
+var bundledControls = sync.OnceValues(func() ([]controlcatalog.Control, error) {
+	raw, err := os.ReadFile("../data/merged_nist_controls_master_replaced_from_controls_all.json")
+	if err != nil {
+		return nil, err
+	}
+	file, err := controlfile.ReadBytes(raw)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]controlcatalog.Control, 0, len(file))
+	for _, entry := range file {
+		out = append(out, controlcatalog.Control{
+			ID:           entry.NIST.ControlID,
+			Type:         entry.NIST.Type,
+			Name:         entry.NIST.Name,
+			Requirements: entry.NIST.Requirements,
+		})
+	}
+	return out, nil
+})
+
+// testControls is the bundled 800-53 file, the catalog an installation has
+// once it imports it.
+func testControls(t *testing.T) stubControls {
+	t.Helper()
+	list, err := bundledControls()
+	if err != nil {
+		t.Fatalf("load bundled controls: %v", err)
+	}
+	return stubControls{list: list}
+}
+
 type stubNFRs struct{ list []securitynfr.NFR }
 
 func (s stubNFRs) List(_, _ string) ([]securitynfr.NFR, error) { return s.list, nil }
+
+func TestLoadCatalogNeedsImportedControls(t *testing.T) {
+	for name, controls := range map[string]ControlLister{
+		"no source":     nil,
+		"empty catalog": stubControls{},
+	} {
+		_, err := LoadCatalog(testNFRs(), controls)
+		var invalid ErrInvalid
+		if !errors.As(err, &invalid) || !strings.Contains(invalid.Message, "import") {
+			t.Fatalf("%s: err=%v want an ErrInvalid that says to import the catalog", name, err)
+		}
+	}
+}
 
 func testNFRs() stubNFRs {
 	return stubNFRs{list: []securitynfr.NFR{
@@ -308,7 +361,7 @@ func TestImportDetectsAKnownFramework(t *testing.T) {
 func TestImportRejectsTheSameLibraryDocumentTwice(t *testing.T) {
 	repo := newMemRepo()
 	lib := newFakeLibrary(libraryContent(4, "eu.txt", sampleRegulation))
-	svc := NewService(repo, testNFRs(), nil, lib.provide)
+	svc := NewService(repo, testNFRs(), nil, lib.provide).WithControls(testControls(t))
 
 	if _, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 4}); err != nil {
 		t.Fatalf("first import: %v", err)
@@ -325,7 +378,7 @@ func TestImportRejectsTheSameLibraryDocumentTwice(t *testing.T) {
 // With no Wintermute server or agent there is nothing to import from, and the
 // message has to say that rather than pointing at a model.
 func TestImportWithoutALibrarySaysSo(t *testing.T) {
-	svc := NewService(newMemRepo(), testNFRs(), nil, nil)
+	svc := NewService(newMemRepo(), testNFRs(), nil, nil).WithControls(testControls(t))
 
 	_, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 1})
 	if !errors.Is(err, ErrNoLibrary) {
@@ -339,7 +392,7 @@ func TestImportWithoutALibrarySaysSo(t *testing.T) {
 // ---- retrieval ----
 
 func TestShortlistRanksTheRightCandidates(t *testing.T) {
-	cat, err := LoadCatalog(testNFRs())
+	cat, err := LoadCatalog(testNFRs(), testControls(t))
 	if err != nil {
 		t.Fatalf("LoadCatalog: %v", err)
 	}
@@ -480,7 +533,7 @@ func TestQuoteAppearsIn(t *testing.T) {
 // A model that names a control which does not exist must be caught, not
 // rendered into a client-facing report as though it were real.
 func TestResolveMappingsChecksTheCatalog(t *testing.T) {
-	cat, err := LoadCatalog(testNFRs())
+	cat, err := LoadCatalog(testNFRs(), testControls(t))
 	if err != nil {
 		t.Fatalf("LoadCatalog: %v", err)
 	}
@@ -592,7 +645,7 @@ func newTestService(t *testing.T, asker Asker) (*Service, *memRepo) {
 		libraryContent(1, "eu.txt", sampleRegulation),
 		libraryContent(2, "copy.txt", sampleRegulation),
 	)
-	svc := NewService(repo, testNFRs(), asker, lib.provide)
+	svc := NewService(repo, testNFRs(), asker, lib.provide).WithControls(testControls(t))
 	stamp := 0
 	svc.now = func() time.Time {
 		stamp++
@@ -941,7 +994,7 @@ func reportMaps(report *Report, sectionRef, mappingRef string) bool {
 func TestImportHasWintermuteCutTheInstrument(t *testing.T) {
 	repo := newMemRepo()
 	lib := newFakeLibrary(libraryContent(7, "eu.txt", sampleRegulation))
-	svc := NewService(repo, testNFRs(), nil, lib.provide)
+	svc := NewService(repo, testNFRs(), nil, lib.provide).WithControls(testControls(t))
 	reg, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 7})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -954,7 +1007,7 @@ func TestImportHasWintermuteCutTheInstrument(t *testing.T) {
 	}
 
 	lib = newFakeLibrary(libraryContent(8, "reg.txt", sampleRegulation))
-	svc = NewService(newMemRepo(), testNFRs(), nil, lib.provide)
+	svc = NewService(newMemRepo(), testNFRs(), nil, lib.provide).WithControls(testControls(t))
 	if _, err := svc.Import(context.Background(), ImportRequest{LibraryDocID: 8, Framework: "nis2"}); err != nil {
 		t.Fatalf("import: %v", err)
 	}

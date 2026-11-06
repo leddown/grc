@@ -44,6 +44,7 @@ var fullNavLinks = []string{
 	`href="/reports"`,
 	`href="/reports/exceptions-workbook"`,
 	`href="/reports/exceptions-report"`,
+	`href="/reports/dora"`,
 	`href="/JSON_view"`,
 	`href="/jira/json"`,
 	`href="/jira/reports"`,
@@ -348,6 +349,7 @@ func navigationTestPagePaths() []string {
 		"/reports",
 		"/reports/exceptions-workbook",
 		"/reports/exceptions-report",
+		"/reports/dora",
 	}
 }
 

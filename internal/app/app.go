@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -208,7 +207,7 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 	registerNFREnrichmentRoutes(
 		router, sqliteDB, securityNFRHandler.Service(), aiRouter, adminMiddleware, options.LocalMode)
 	registerRegulationCoverageRoutes(
-		router, sqliteDB, securityNFRHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
+		router, sqliteDB, securityNFRHandler.Service(), controlHandler.Service(), aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
 
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
@@ -305,25 +304,18 @@ func buildHandlers(sqliteDB *db.Conn) (*user.Handler, *authn.Service, *authn.Han
 
 	controlRepo := controlcatalog.NewSQLiteRepository(sqliteDB)
 	controlService := controlcatalog.NewService(controlRepo, controlDataPath)
-	controlsChanged, err := syncControlCatalog(sqliteDB, controlService)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to sync flat control catalog: %w", err)
-	}
 	nfrLinkService := nfrlink.NewService(sqliteDB)
 	controlHandler := controlcatalog.NewHandler(controlService, nfrLinkService)
 
 	securityNFRRepo := securitynfr.NewSQLiteRepository(sqliteDB)
 	securityNFRService := securitynfr.NewService(securityNFRRepo, securityNFRDataPath)
-	nfrsChanged, err := syncSecurityNFRCatalog(sqliteDB, securityNFRService)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to sync security NFR catalog: %w", err)
-	}
 	securityNFRHandler := securitynfr.NewHandler(securityNFRService, nfrLinkService)
 
-	if controlsChanged || nfrsChanged {
-		if err := nfrLinkService.Rebuild(); err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to seed NFR-control linking table: %w", err)
-		}
+	// The catalogs start empty and are filled by an import; the links are
+	// derived from both, so they are rebuilt from whatever the database holds
+	// in case it was changed underneath this process (a sync, a restore).
+	if err := nfrLinkService.Rebuild(); err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to rebuild NFR-control linking table: %w", err)
 	}
 	nfrLinkHandler := nfrlink.NewHandler(nfrLinkService)
 	reportsService := reports.NewService(sqliteDB)
@@ -333,80 +325,6 @@ func buildHandlers(sqliteDB *db.Conn) (*user.Handler, *authn.Service, *authn.Han
 	riskRegisterHandler := riskregister.NewHandler(riskRegisterService)
 
 	return userHandler, authService, authHandler, controlHandler, securityNFRHandler, nfrLinkHandler, reportsHandler, riskRegisterHandler, nil
-}
-
-func syncControlCatalog(sqliteDB *db.Conn, service *controlcatalog.Service) (bool, error) {
-	return syncSeedState(sqliteDB, "seed.control_catalog_hash", "nist_controls", service.SourceHash, service.Seed)
-}
-
-func syncSecurityNFRCatalog(sqliteDB *db.Conn, service *securitynfr.Service) (bool, error) {
-	return syncSeedState(sqliteDB, "seed.security_nfr_hash", "security_nfrs", service.SourceHash, service.Seed)
-}
-
-func syncSeedState(sqliteDB *db.Conn, stateKey string, tableName string, sourceHash func() (string, error), seed func() (int, error)) (bool, error) {
-	currentHash, err := sourceHash()
-	if err != nil {
-		return false, err
-	}
-
-	storedHash, err := loadAppState(sqliteDB, stateKey)
-	if err != nil {
-		return false, err
-	}
-
-	hasRows, err := tableHasRows(sqliteDB, tableName)
-	if err != nil {
-		return false, err
-	}
-
-	if hasRows && storedHash == currentHash {
-		return false, nil
-	}
-
-	if _, err := seed(); err != nil {
-		return false, err
-	}
-	if err := saveAppState(sqliteDB, stateKey, currentHash); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func loadAppState(sqliteDB *db.Conn, key string) (string, error) {
-	var value string
-	err := sqliteDB.QueryRow(`SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
-	if err == nil {
-		return value, nil
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return "", err
-}
-
-func saveAppState(sqliteDB *db.Conn, key string, value string) error {
-	_, err := sqliteDB.Exec(`
-		INSERT INTO app_state (key, value) VALUES (?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value
-	`, key, value)
-	return err
-}
-
-func tableHasRows(sqliteDB *db.Conn, tableName string) (bool, error) {
-	var count int
-	switch tableName {
-	case "nist_controls":
-		if err := sqliteDB.QueryRow(`SELECT COUNT(*) FROM nist_controls`).Scan(&count); err != nil {
-			return false, err
-		}
-	case "security_nfrs":
-		if err := sqliteDB.QueryRow(`SELECT COUNT(*) FROM security_nfrs`).Scan(&count); err != nil {
-			return false, err
-		}
-	default:
-		return false, fmt.Errorf("unsupported table name: %s", tableName)
-	}
-	return count > 0, nil
 }
 
 func registerRoutes(r gin.IRouter, userHandler *user.Handler, authHandler *authn.Handler, controlHandler *controlcatalog.Handler, securityNFRHandler *securitynfr.Handler, nfrLinkHandler *nfrlink.Handler, reportsHandler *reports.Handler, riskRegisterHandler *riskregister.Handler, adminMiddleware gin.HandlerFunc, allowJSONSave bool, localMode bool) {
@@ -452,6 +370,7 @@ func registerRegulationCoverageRoutes(
 	r gin.IRouter,
 	sqliteDB *db.Conn,
 	nfrService *securitynfr.Service,
+	controlService *controlcatalog.Service,
 	aiRouter *aiprovider.Router,
 	pdfRenderer reporting.Renderer,
 	adminMiddleware gin.HandlerFunc,
@@ -464,7 +383,7 @@ func registerRegulationCoverageRoutes(
 		// Regulations live in the agent's library on the Wintermute server,
 		// which extracted them; this reads that text back and segments it.
 		aiRouter.Library,
-	).WithRenderer(pdfRenderer)
+	).WithRenderer(pdfRenderer).WithControls(controlService)
 
 	handler := regcoverage.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)
@@ -861,6 +780,8 @@ func registerDomainReadRoutes(r gin.IRouter, userHandler *user.Handler, controlH
 	r.GET("/reports", reportsHandler.Page)
 	r.GET("/reports/exceptions-workbook", exceptionsWorkbookPage)
 	r.GET("/reports/exceptions-report", exceptionsReportPage(securityNFRHandler, nfrLinkHandler, controlHandler))
+	r.GET("/reports/dora", doraReportPage(securityNFRHandler, nfrLinkHandler, controlHandler))
+	r.GET("/reports/dora/detail", doraDetailPage(securityNFRHandler, nfrLinkHandler, controlHandler))
 	r.GET("/reports/exceptions-workbook/download", exceptionsWorkbookDownload(securityNFRHandler, nfrLinkHandler, controlHandler))
 	r.POST("/reports/exceptions-workbook/download", exceptionsWorkbookDownload(securityNFRHandler, nfrLinkHandler, controlHandler))
 	r.GET("/reports/data/unlinked-controls", reportsHandler.UnlinkedControlsData)
@@ -896,9 +817,11 @@ func registerAdminRoutes(r gin.IRouter, userHandler *user.Handler, authHandler *
 	admin.PUT("/controls/family-visibility/:family", controlHandler.UpdateFamilyVisibility)
 	admin.PUT("/controls/:controlID", controlHandler.UpdateControl)
 	admin.DELETE("/controls/:controlID", controlHandler.DeleteControl)
+	admin.POST("/controls/import", controlHandler.ImportControls)
 	admin.PUT("/security-nfrs/:key", securityNFRHandler.UpdateNFR)
 	admin.PUT("/security-nfrs/:key/weight", securityNFRHandler.SetNFRWeight)
 	admin.DELETE("/security-nfrs/:key", securityNFRHandler.DeleteNFR)
+	admin.POST("/security-nfrs/import", securityNFRHandler.ImportNFRs)
 	admin.GET("/security-nfrs/links/overrides", nfrLinkHandler.ListOverrides)
 	admin.PUT("/security-nfrs/links/overrides", nfrLinkHandler.SetOverride)
 	admin.DELETE("/security-nfrs/links/overrides/:nfrKey/:mappingControlID", nfrLinkHandler.DeleteOverride)

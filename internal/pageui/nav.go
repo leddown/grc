@@ -71,6 +71,7 @@ var navGroups = []NavGroup{
 			{Path: "/reports", Label: "Reports"},
 			{Path: "/reports/exceptions-workbook", Label: "Exceptions Workbook"},
 			{Path: "/reports/exceptions-report", Label: "Exceptions Report"},
+			{Path: "/reports/dora", Label: "DORA Report"},
 			{Path: "/JSON_view", Label: "JSON_view"},
 			{Path: "/jira/json", Label: "Jira JSON"},
 			{Path: "/jira/reports", Label: "Jira Reports"},

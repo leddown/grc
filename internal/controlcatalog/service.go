@@ -1,9 +1,7 @@
 package controlcatalog
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -13,7 +11,6 @@ import (
 
 	"grc/internal/controlfile"
 	"grc/internal/controlid"
-	seeddata "grc/internal/data"
 )
 
 type Service struct {
@@ -56,23 +53,25 @@ func NewService(repo Repository, flatPath string) *Service {
 	}
 }
 
-func (s *Service) SourceHash() (string, error) {
-	raw, err := s.sourceBytes()
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
+// ImportResult says what an import did to the catalog.
+type ImportResult struct {
+	Imported int `json:"imported"`
+	Removed  int `json:"removed"`
 }
 
-func (s *Service) Seed() (int, error) {
-	raw, err := s.sourceBytes()
-	if err != nil {
-		return 0, err
-	}
+// ErrInvalidImport marks a file that was refused before anything was written.
+var ErrInvalidImport = errors.New("invalid control catalog file")
+
+// Import loads a control catalog in the controlfile JSON shape. Every entry in
+// the file is inserted or updated; with replace, controls the file does not
+// carry are deleted, so the file becomes the whole catalog.
+func (s *Service) Import(raw []byte, replace bool) (ImportResult, error) {
 	controls, err := controlfile.ReadBytes(raw)
 	if err != nil {
-		return 0, err
+		return ImportResult{}, fmt.Errorf("%w: %w", ErrInvalidImport, err)
+	}
+	if len(controls) == 0 {
+		return ImportResult{}, fmt.Errorf("%w: the file holds no controls", ErrInvalidImport)
 	}
 
 	keys := make([]string, 0, len(controls))
@@ -82,12 +81,18 @@ func (s *Service) Seed() (int, error) {
 	sortRecordKeys(keys)
 
 	incoming := make(map[string]struct{}, len(controls))
-	toSeed := make([]Control, 0, len(keys))
+	toImport := make([]Control, 0, len(keys))
 	for _, recordKey := range keys {
 		entry := controls[recordKey]
 		controlID := controlid.Normalize(entry.NIST.ControlID)
 		if controlID == "" {
 			controlID = controlid.Normalize(recordKey)
+		}
+		if controlID == "" {
+			return ImportResult{}, fmt.Errorf("%w: record %q has no control id", ErrInvalidImport, recordKey)
+		}
+		if _, dup := incoming[controlID]; dup {
+			return ImportResult{}, fmt.Errorf("%w: control %s appears more than once", ErrInvalidImport, controlID)
 		}
 		incoming[controlID] = struct{}{}
 		control := Control{
@@ -109,28 +114,34 @@ func (s *Service) Seed() (int, error) {
 			Appendix:         entry.Appendix,
 		}
 		normalizeControl(&control)
-		toSeed = append(toSeed, control)
+		if control.Name == "" {
+			return ImportResult{}, fmt.Errorf("%w: control %s has no name", ErrInvalidImport, controlID)
+		}
+		toImport = append(toImport, control)
 	}
 
-	if err := s.repo.UpsertMany(toSeed); err != nil {
-		return 0, err
+	if err := s.repo.UpsertMany(toImport); err != nil {
+		return ImportResult{}, fmt.Errorf("store imported controls: %w", err)
 	}
-	seeded := len(toSeed)
+	result := ImportResult{Imported: len(toImport)}
+	if !replace {
+		return result, nil
+	}
 
 	existing, err := s.repo.List("", "", "")
 	if err != nil {
-		return seeded, err
+		return result, err
 	}
 	for _, control := range existing {
 		if _, ok := incoming[control.ID]; ok {
 			continue
 		}
 		if err := s.repo.DeleteByControlID(control.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return seeded, err
+			return result, fmt.Errorf("remove control %s: %w", control.ID, err)
 		}
+		result.Removed++
 	}
-
-	return seeded, nil
+	return result, nil
 }
 
 func (s *Service) List(search, baseline, cia string) ([]Control, error) {
@@ -286,15 +297,6 @@ func (s *Service) SaveToJSON() (int, string, error) {
 	}
 
 	return len(controls), s.flatPath, nil
-}
-
-func (s *Service) sourceBytes() ([]byte, error) {
-	if raw, err := os.ReadFile(s.flatPath); err == nil {
-		return raw, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	return seeddata.ControlCatalogJSON(), nil
 }
 
 func (s *Service) ListFamilySettings() ([]FamilySetting, error) {

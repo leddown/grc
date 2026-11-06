@@ -91,16 +91,16 @@ func homePage(c *gin.Context) {
 </head>
 <body>
   <main>
-    %[3]s
+    %[2]s
     <h1>GRC SQLite UI</h1>
-    <p>Internal pages for the SQLite-backed control catalog seeded from %[2]s, plus supporting APIs.</p>
+    <p>Internal pages for the SQLite-backed NIST 800-53 and Security NFR catalogs, filled by JSON import on their editor pages, plus supporting APIs.</p>
 
     <div class="grid">
       <section class="card">
         <h2>Database Views</h2>
         <ul>
           <li><a href="/">/ (Homepage)</a></li>
-	  %[4]s
+	  %[3]s
           <li><a href="/health">/health</a></li>
           <li><a href="/users">/users</a></li>
 	          <li><a href="/asset-types">/asset-types</a> (asset type selector)</li>
@@ -115,6 +115,7 @@ func homePage(c *gin.Context) {
 	          <li><a href="/reports">/reports</a> (reporting dashboard)</li>
 	          <li><a href="/reports/exceptions-workbook">/reports/exceptions-workbook</a> (the Exceptions page as a working Excel workbook)</li>
 	          <li><a href="/reports/exceptions-report">/reports/exceptions-report</a> (the workbook's Summary sheet for the scope and exceptions set on the Exceptions page)</li>
+	          <li><a href="/reports/dora">/reports/dora</a> (the DORA and RTS articles the controls linked to NFRs in scope cite, with the exceptions against each)</li>
 	          <li><a href="/risk-register">/risk-register</a> (security risk register dashboard)</li>
 	          <li><a href="/risk-register/manage">/risk-register/manage</a> (risk register editor with save)</li>
 
@@ -150,6 +151,7 @@ func homePage(c *gin.Context) {
 	          <li><a href="%[1]s/reports">%[1]s/reports</a></li>
 	          <li><a href="%[1]s/reports/exceptions-workbook">%[1]s/reports/exceptions-workbook</a></li>
 	          <li><a href="%[1]s/reports/exceptions-report">%[1]s/reports/exceptions-report</a></li>
+	          <li><a href="%[1]s/reports/dora">%[1]s/reports/dora</a></li>
 	          <li><a href="%[1]s/risk-register">%[1]s/risk-register</a></li>
 	          <li><a href="%[1]s/risk-register/data">%[1]s/risk-register/data</a></li>
 	          <li><a href="%[1]s/changelog">%[1]s/changelog</a></li>
@@ -194,10 +196,10 @@ func homePage(c *gin.Context) {
     </div>
   </main>
   <footer style="max-width:1320px;margin:0 auto 24px;padding:16px 24px;color:#6b6155;border-top:1px solid rgba(90,84,76,0.25);font-size:0.85rem;text-align:center;">
-    &copy; %[5]s GRC &middot; Risk &amp; Control Self-Assessment platform
+    &copy; %[4]s GRC &middot; Risk &amp; Control Self-Assessment platform
   </footer>
 </body>
-</html>`, baseURL, controlDataPath, pageui.Nav("/"), authLinks, fmt.Sprintf("%d", time.Now().Year()))
+</html>`, baseURL, pageui.Nav("/"), authLinks, fmt.Sprintf("%d", time.Now().Year()))
 
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }

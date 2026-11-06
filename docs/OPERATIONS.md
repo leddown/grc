@@ -38,6 +38,23 @@ First start on a server: set `SETUP_TOKEN`, start, create the admin with
 `POST /auth/bootstrap-admin`, then remove the token. `admin_setup_login.sh`
 does those steps; `scripts/setup.sh` does them as part of an install.
 
+The catalogs start empty. Sign in as the admin and import the two files shipped
+in `internal/data/`: the 800-53 file on `/controls/manage` and the NFR file on
+`/security-nfrs/manage` ("Import JSON"). Each import links the NFRs to the
+controls. From a shell:
+
+```sh
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -F file=@internal/data/merged_nist_controls_master_replaced_from_controls_all.json \
+  http://localhost:8080/controls/import
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -F file=@internal/data/NFR_incremental_keys_with_domain.json \
+  http://localhost:8080/security-nfrs/import
+```
+
+Add `?replace=true` to make the file the whole catalog, deleting entries it
+does not carry.
+
 ## Configuration
 
 A flag overrides its environment variable.

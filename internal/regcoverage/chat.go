@@ -254,7 +254,7 @@ func (s *Service) Revise(ctx context.Context, id int64, sectionRef, instruction,
 		}
 	}
 
-	cat, err := LoadCatalog(s.nfrs)
+	cat, err := LoadCatalog(s.nfrs, s.controls)
 	if err != nil {
 		return nil, err
 	}
