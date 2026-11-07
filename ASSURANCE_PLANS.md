@@ -28,8 +28,10 @@ quarterly and annual reports, and the knowledge kinds. Phase 5 (plan types) is
 in: the ICT risk assessment cycle (RCSA), policy review, resilience testing and
 remediation roadmap types, the plan type settings and stratum flags they run
 on, multi-year cycles, coverage measured on signed-off tests, and populations
-proposed from the policy library and from Audit Findings. AI assist (phase 6)
-is described below as designed, and marked with its phase.
+proposed from the policy library and from Audit Findings. Phase 6 (AI assist)
+is in: a plan drafted from a brief, test attributes proposed from a shortlist of
+the catalogs, and committee narrative for the pack and the reports. Every answer
+is a stored proposal that a person accepts, edits or rejects.
 
 The module produces:
 
@@ -193,7 +195,7 @@ which is why the module is excluded from `-sync-to` / `-sync-from` (see
 | `assurance_plan_basis` | Regulatory basis (phase 4) | `plan_id`, `ordinal`, `requirement`, `reference`, `how_met` |
 | `assurance_plan_history` | Every design, status, selection and result change | `plan_id`, `at`, `actor`, `event`, `subject`, `from_value`, `to_value`, `note` |
 | `assurance_plan_versions` | Approval snapshots, immutable | `plan_id`, `number`, `label`, `approved_by`, `approved_at`, `change_reason`, `snapshot_json`, `snapshot_sha256` |
-| `assurance_plan_ai_proposals` | AI proposals and their decisions (phase 6) | `plan_id`, `kind`, `model`, `prompt_hash`, `payload_json`, `status` (proposed / accepted / rejected), `created_*`, `decided_by`, `decided_at` |
+| `assurance_plan_ai_proposals` | AI proposals and their decisions | `plan_id`, `kind` (draft / attributes / narrative), `document` (a narrative's `pack`, `q1`..`q4` or `annual`), `revision` (the plan's design revision when asked), `input_json` (the brief), `model`, `prompt_hash` (SHA-256 of the system prompt and the prompt), `payload_json` (the answer after the server's checks), `status` (proposed / accepted / rejected), `applied_json` (what was accepted, with the person's edits), `decision_note`, `created_*`, `decided_by`, `decided_at` |
 
 Phase 3 adds one column to an existing table: `audit_findings.origin_ref` (for
 example `AP-2027-001 / T27-Q1-004 / NFR-04`). It is the plan side of the
@@ -374,7 +376,9 @@ It drops:
 - attestation dates, DQ status and top-up flags (a top-up is a risk call for
   the year it was made in)
 - selections, tests, results, finding links and thematic pushes
-- history and versions, and the AI provenance
+- history, versions and AI proposals, and the plan's own AI-generated mark. An
+  attribute added from an AI proposal keeps its marker, model and prompt hash,
+  because its text is still what was proposed and accepted.
 
 The clone starts in Draft with a new reference (in the new year), a new
 author and no seed: a new seed is drawn when its population is frozen. Its
@@ -880,6 +884,9 @@ spend need admin, the same split as the risk register and Audit Findings.
   `GET /assurance-plans/:id/versions/:n`. A version is served as the bytes
   stored at approval, with their SHA-256 in `X-Snapshot-SHA256`, so a reader
   can check the copy against the hash.
+- `GET /assurance-plans/:id/ai/proposals`: `{"configured", "model",
+  "proposals"}`, newest first; `GET /assurance-plans/:id/ai/proposals/:pid`:
+  one proposal (see [AI assist](#ai-assist-optional))
 - `GET /assurance-plans/:id/export.json`: the whole plan (see below)
 - `GET /assurance-plans/:id/export/:file`: one table as CSV. `:file` is
   `steps.csv`, `quarters.csv`, `population.csv`, `tests.csv` or
@@ -901,7 +908,7 @@ spend need admin, the same split as the risk register and Audit Findings.
 
 **Admin**
 
-- `POST /assurance-plans` (`{"type": …}` or `{"example": "appendix-a"}`),
+- `POST /assurance-plans` (`{"type": …}` or `{"example": "dora-nfr-2027"}`),
   `PUT /assurance-plans/:id` (the header), `DELETE /assurance-plans/:id` (a
   Draft with no versions only)
 - `PUT /assurance-plans/:id/steps | quarters | governance | strata | attributes`
@@ -951,8 +958,21 @@ spend need admin, the same split as the risk register and Audit Findings.
   only when there is no session (local mode). A blocked approval answers 422
   with `{"error", "findings"}`; a move the lifecycle does not allow answers
   409.
-- AI (phase 6): `POST /assurance-plans/:id/ai/draft | attributes | narrative`
-  and `POST /assurance-plans/:id/ai/proposals/:pid/decide`
+- `POST /assurance-plans/:id/ai/draft`
+  (`{"objective", "regulation", "population_size", "constraints"}`),
+  `POST /assurance-plans/:id/ai/attributes` (`{"focus", "count"}`) and
+  `POST /assurance-plans/:id/ai/narrative` (`{"document": "pack" | "quarter" |
+  "annual", "quarter"}`): ask the model, and answer 201 with the stored
+  proposal. With no provider configured, or while another request for the
+  plan is running, they answer 409; a draft or attributes on a locked design
+  answer 409 too. A refusal or an answer cut off answers 422; a provider
+  failure, or an answer still malformed after one repair turn, answers 502.
+  Nothing is stored in either case.
+- `POST /assurance-plans/:id/ai/proposals/:pid/decide`
+  (`{"decision": "accept" | "reject", "note", "parts", "attributes",
+  "payload"}`): `parts` chooses what of a draft to apply, `attributes` which
+  proposed attributes to add, and `payload` is the proposal as edited. Answers
+  `{"proposal", "plan", "notes"}`; 409 once decided.
 
 The JSON export is a dedicated type in the `TemplateExport` style
 (`PlanExport` in `export.go`), so renaming an internal JSON tag cannot silently
@@ -1018,6 +1038,10 @@ its sources and its data, and links the JSON and CSV exports.
     attributes, quarter dates out of order), and any quarter over the
     utilisation threshold
   - `peak_quarter`
+  - `narrative`, only once a person has accepted a pack narrative (see
+    [AI assist](#ai-assist-optional)): `executive_summary`, `speaker_notes`
+    (`[{slide, title, notes}]`, `slide` counting the cover as 1), `model`,
+    `accepted_by` and `accepted_at`
 - The slides, in order:
   1. cover
   2. decisions requested
@@ -1035,6 +1059,10 @@ its sources and its data, and links the JSON and CSV exports.
       risk flagged by the plan's checks."
   13. next steps
 - A long list is cut on its slide and says how many more are in the export.
+- With a `narrative`, a "Presenter's notes" page follows the slides: the
+  executive summary and the speaker notes, under a line that says they were
+  drafted with AI assistance, by which model, and who accepted them when. The
+  slides themselves do not change.
 
 **Quarterly progress report** (`report/quarter/:q`) and **annual conclusion**
 (`report/annual.pdf`)
@@ -1077,6 +1105,12 @@ sections:
 5. Next quarter
 
 The appendix is the test attributes.
+
+Once a person has accepted a narrative for a report (`q1`..`q4` or `annual`),
+its executive summary replaces the generated one, and the limitations add that
+it was drafted with AI assistance from the plan's data, the model, and who
+accepted it when. The newest accepted narrative for that report wins; the
+sections, tables and figures are generated as before.
 
 The **annual conclusion**:
 
@@ -1194,27 +1228,119 @@ from the 45-second cache: they change while the year runs.
 
 ## AI assist (optional)
 
-AI calls go through `aiprovider.Router`, are logged to `ai_usage_log`, and use
-the model selected in Settings. Every feature works with no model configured.
+Three assists, on the plan's **AI assist** tab. None is required: every
+feature of the module works with no model configured, and the tab then says so
+and disables its buttons.
 
-The assists:
+- **Draft plan from a brief.** The brief is an objective, a regulation, a
+  population size and constraints. The answer proposes the plan's own steps
+  (not the quarterly steps generated from the quarter dates), quarter dates
+  and a RACI, and may propose an objective.
+- **Propose test attributes** for a regulation or a domain. The server
+  retrieves a shortlist lexically through the knowledge service (up to 12
+  NFRs, 12 controls and 8 Regulation Coverage clauses) and puts it in the
+  prompt. The model judges the shortlist; it does not browse. With nothing on
+  the shortlist the request answers 400 and the model is not asked.
+- **Draft committee narrative**: an executive summary and, for the pack,
+  speaker notes per slide, from the plan's data. That data is the pack payload
+  or the report payload, as JSON, without the appendices. It works on a plan
+  in any status.
 
-- draft a plan from a brief
-- propose test attributes from a lexically retrieved shortlist of NFRs,
-  controls and Regulation Coverage clauses (the model judges the shortlist; it
-  does not browse)
-- draft committee narrative
+**The model.** Every call goes through `aiprovider.Router`, the same router
+the Policy Studio and Regulation Coverage use. It answers with the Wintermute
+model chosen in Settings, and logs each call to `ai_usage_log`. Only one
+request per plan runs at a time, so a double click does not pay twice.
 
-Rules for every output:
+**The standing rules** are the system prompt of every assist, so no brief can
+talk the model out of them:
 
-- It is a proposal with the model, the prompt hash and the timestamp. A person
-  accepts, edits or rejects it.
-- Every reference is resolved against the catalogs. A reference that does not
-  resolve is marked unresolved.
-- The standing prompt says:
-  - say when you do not know
-  - never invent a control id, threshold, deadline or article
-  - keep what the regulation requires separate from good practice
+1. Say when you do not know: what could not be determined goes in `unknowns`.
+2. Never invent a control identifier, an NFR key, a regulatory article, a
+   threshold or a deadline. Cite only references from the lists shown. A
+   figure, date or percentage must come from the data given or the brief.
+3. Keep what the regulation requires separate from good practice: an item is
+   `regulation` only when a cited regulation reference requires it, otherwise
+   `good_practice`.
+4. Dates for the plan's own schedule are proposals, never regulatory
+   deadlines.
+5. Answer with one JSON object in the contract given.
+
+**The answer.** It is parsed strictly, with unknown fields refused. A malformed
+answer gets one repair turn that quotes the parse error; a second malformed
+answer is a 502. A refusal or an answer cut off at the token limit is never
+parsed: it answers 422. Nothing is stored for a failure.
+
+**The proposal.** A usable answer is checked and stored in
+`assurance_plan_ai_proposals` with:
+
+- the model that answered
+- the prompt hash: SHA-256 of the system prompt and the prompt, so the exact
+  question can be shown to be the one asked
+- the timestamp and who asked
+- the brief, and the plan's design revision
+
+The plan is not changed. The proposal lists the server's checks ("Checks"), the
+model's unknowns, and for a narrative its flags.
+
+**References.** Every reference a draft step or an attribute cites is
+resolved, in this order:
+
+1. the shortlist the model was shown
+2. the catalogs, through the knowledge service. A hit that was not on the
+   shortlist is kept, and noted.
+3. the plan's own references: its regulatory references and the references of
+   its regulatory basis rows
+
+A reference that resolves nowhere is listed as **unresolved**, shown struck
+through, and never stored on the plan. An item marked `regulation` that cites
+nothing that resolves (for an attribute, no regulation clause and no plan
+reference) is turned to `good_practice`, with a note.
+
+**The checks**, besides references, leave out what cannot be applied and note
+what a person should look at:
+
+- draft steps: left out without a title or valid dates, when they end before
+  they start, repeat a reference or take the reference of a generated step;
+  noted when they run outside the plan's span, name a role that is not a RACI
+  role, or have no responsible role. An unknown step type becomes an activity.
+- draft quarters: all seven dates, in order, inside the plan's span; otherwise
+  the quarter keeps its current dates, with a note
+- draft RACI: a cell with an unknown role, or a letter other than R, A, C, I or
+  A/R, is left out; an activity with other than one accountable role is noted
+- attributes: left out without a requirement. A reference already used
+  becomes `<ref>-2`, a method that is not one of the four becomes Inspection,
+  and an applies-to code that is not a stratum of the plan is dropped, each
+  with a note. The first NFR cited becomes the attribute's NFR, the controls
+  its control ids, and the clauses and plan references its regulatory
+  references.
+- narrative: speaker notes only for the pack's 13 slides, one per slide. Flags
+  for each figure in the text that is not in the plan's data (as given, rounded,
+  or as a percentage of a share) and each article that is not among the plan's
+  references or data. A flag is a warning to the reader, not a refusal.
+
+**The decision** (admin; `.../ai/proposals/:pid/decide`). A proposal is decided
+once.
+
+- **Reject** stores the decision and an optional note. The plan does not
+  change.
+- **Accept** applies the proposal as the person edited it. An edited payload is
+  checked again against the references stored with the proposal, never against
+  references taken from the edit, so an edit cannot slip in a reference the
+  model was not shown or that does not resolve.
+  - A draft applies the parts chosen, through the same validation as the
+    editors: the objective, the steps (replacing the plan's own steps; the
+    generated quarterly steps stay, with their statuses), the quarters' dates
+    (the generated steps are regenerated from them) and the RACI. It needs an
+    editable design. The plan is marked AI-generated, with the model and the
+    prompt hash.
+  - Attributes add the ones chosen to the test script, each with `ai_generated`,
+    the model and the prompt hash. The test script shows them with an **AI**
+    marker. It needs an editable design.
+  - A narrative takes the text as edited on the tab. It is used in its
+    document, as [Documents](#documents) describes.
+- `applied_json` keeps what was accepted, apart from `payload_json`, what the
+  model proposed. Both decisions, and the proposal itself, are in the plan's
+  history.
 
 ## Backup and sync
 
@@ -1235,6 +1361,9 @@ Rules for every output:
 - Phase 5's columns join the snapshot's column lists at version 16 too. A
   snapshot without them restores with each column's default: attestation
   basis, no test types, no source, no cycle.
+- Phase 6's `assurance_plan_ai_proposals` joins version 16 too, `idKeyed` and
+  `skipInSync`, for the same reason. A restored proposal keeps its model,
+  prompt hash and decision.
 - The tables are excluded from `-sync-to` / `-sync-from` for the same reason as
   crisis exercises and Audit Findings: each plan is a tree of rows joined by
   autoincrement ids. To move plans between deployments, use the snapshot

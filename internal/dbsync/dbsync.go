@@ -660,6 +660,16 @@ var syncOrder = []tableSpec{
 		idKeyed:      true,
 		strat:        skipInSync,
 	},
+	{
+		table: "assurance_plan_ai_proposals",
+		cols: []string{
+			"id", "plan_id", "kind", "document", "revision", "input_json", "model", "prompt_hash", "payload_json",
+			"status", "applied_json", "decision_note", "created_at", "created_by", "decided_by", "decided_at",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
 	// ---- Policy Studio (internal/policystudio) ----
 	//
 	// The live collaborative document of each Studio policy, as Yjs binary.

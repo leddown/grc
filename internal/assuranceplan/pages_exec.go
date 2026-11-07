@@ -14,7 +14,8 @@ func attributesHTML(d planPageData) string {
 	b.WriteString(`<h2>Test script</h2>
 <p class="lede">What 2LoD tests on every selected item: the requirement, the procedure and its method (NIST SP 800-53A: examine, interview,
 test), the evidence requested and what passes. The attributes are copied onto the plan, so a later catalog edit does not change an
-approved plan. Control ids and NFR keys are checked against the catalogs; one that does not resolve is marked, never presented as found.</p>`)
+approved plan. Control ids and NFR keys are checked against the catalogs; one that does not resolve is marked, never presented as found.
+Attributes can also be proposed from a shortlist of the catalogs on the <a href="#ai" data-goto="ai">AI assist</a> tab.</p>`)
 	b.WriteString(lockNotice(p))
 	if len(p.Attributes) == 0 {
 		b.WriteString(`<p class="muted">No test attributes yet.</p>`)
@@ -43,6 +44,9 @@ approved plan. Control ids and NFR keys are checked against the catalogs; one th
 			}
 			if !a.Checked {
 				source += ` <span class="muted">(not checked)</span>`
+			}
+			if a.AIGenerated {
+				source += ` <span class="ap-st ap-st-ai" title="` + esc("Proposed by "+a.Model+", prompt "+clip(a.PromptHash, 12)+"; accepted by a person") + `">AI</span>`
 			}
 			fmt.Fprintf(&b, `<tr><td class="ap-nw">%s</td><td>%s</td><td class="pre">%s</td><td class="pre">%s</td><td>%s</td><td class="pre">%s</td><td class="pre">%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
 				esc(a.AttrRef), esc(a.Domain), esc(a.Requirement), esc(a.Procedure), esc(a.Method), esc(a.EvidenceRequested),

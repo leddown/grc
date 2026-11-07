@@ -31,6 +31,8 @@ type PackExtras struct {
 	NextSteps     []ExportStep  `json:"next_steps"`
 	DeliveryRisks []string      `json:"delivery_risks"`
 	PeakQuarter   int           `json:"peak_quarter"`
+	// Narrative is the accepted speaker notes and summary, when there are.
+	Narrative *PackNarrative `json:"narrative,omitempty"`
 }
 
 // RoadmapCard is one card of the roadmap slide: mobilisation, then a quarter.
@@ -46,7 +48,12 @@ func (s *Service) PackData(id int64) (PackPayload, error) {
 	if err != nil {
 		return PackPayload{}, err
 	}
-	return packOf(e, s.today()), nil
+	pack := packOf(e, s.today())
+	if n, pr, ok := s.acceptedNarrative(id, "pack"); ok {
+		pack.Pack.Narrative = &PackNarrative{ExecutiveSummary: n.ExecutiveSummary, SpeakerNotes: n.SpeakerNotes,
+			Model: pr.Model, AcceptedBy: pr.DecidedBy, AcceptedAt: pr.DecidedAt}
+	}
+	return pack, nil
 }
 
 func packOf(e PlanExport, today string) PackPayload {
@@ -201,6 +208,17 @@ type ReportFinding struct {
 
 // QuarterReport is the quarterly progress report to the approval forum.
 func (s *Service) QuarterReport(id int64, q int) (ReportPayload, error) {
+	r, err := s.plainQuarterReport(id, q)
+	if err != nil {
+		return r, err
+	}
+	s.withNarrative(id, "q"+strconv.Itoa(q), &r)
+	return r, nil
+}
+
+// plainQuarterReport is the report as the data writes it, without an
+// accepted narrative.
+func (s *Service) plainQuarterReport(id int64, q int) (ReportPayload, error) {
 	if q < 1 || q > 4 {
 		return ReportPayload{}, invalid("quarter must be 1 to 4")
 	}
@@ -253,6 +271,15 @@ func (s *Service) deviationsUpTo(id int64, q int) ([]ExportDeviation, error) {
 // AnnualReport is the year's conclusion, an input to the ICT risk management
 // framework review.
 func (s *Service) AnnualReport(id int64) (ReportPayload, error) {
+	r, err := s.plainAnnualReport(id)
+	if err != nil {
+		return r, err
+	}
+	s.withNarrative(id, "annual", &r)
+	return r, nil
+}
+
+func (s *Service) plainAnnualReport(id int64) (ReportPayload, error) {
 	e, err := s.Export(id)
 	if err != nil {
 		return ReportPayload{}, err

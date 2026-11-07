@@ -83,6 +83,8 @@ func seedModules(t *testing.T, conn *db.Conn) {
 		VALUES (46, 40, 'created', 'Draft')`)
 	mustExec(t, conn, `INSERT INTO assurance_plan_versions (id, plan_id, number, label, snapshot_json)
 		VALUES (47, 40, 1, 'v1', '{}')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_ai_proposals (id, plan_id, kind, model, prompt_hash, payload_json, status)
+		VALUES (56, 40, 'attributes', 'test-model', 'abc', '{"attributes":[]}', 'proposed')`)
 	mustExec(t, conn, `INSERT INTO assurance_plan_strata (id, plan_id, ordinal, code, name, confidence, tolerable_rate, wave_q1, wave_q2, wave_q3)
 		VALUES (48, 40, 0, 'T1', 'Tier 1', 0.95, 0.05, 0.35, 0.35, 0.30)`)
 	mustExec(t, conn, `INSERT INTO assurance_plan_population (id, plan_id, item_ref, stratum_code, wave_quarter, internet_facing)
@@ -138,7 +140,7 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"policy_ai_proposals": 1, "policy_ai_edits": 1,
 		"assurance_plans": 1, "assurance_plan_steps": 1, "assurance_plan_quarters": 1,
 		"assurance_plan_raci": 1, "assurance_plan_cadence": 1, "assurance_plan_escalations": 1,
-		"assurance_plan_basis": 1, "assurance_plan_history": 1, "assurance_plan_versions": 1,
+		"assurance_plan_basis": 1, "assurance_plan_history": 1, "assurance_plan_versions": 1, "assurance_plan_ai_proposals": 1,
 		"assurance_plan_strata": 1, "assurance_plan_population": 1, "assurance_plan_selections": 1,
 		"assurance_plan_attributes": 1, "assurance_plan_tests": 1, "assurance_plan_results": 1, "assurance_plan_thematic": 1,
 	} {
@@ -272,10 +274,10 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 47 {
-		t.Errorf("report marks %d tables skipped, want 47", len(skipped))
+	if len(skipped) != 48 {
+		t.Errorf("report marks %d tables skipped, want 48", len(skipped))
 	}
-	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit", "assurance_plans", "assurance_plan_versions", "assurance_plan_population", "assurance_plan_selections", "assurance_plan_tests", "assurance_plan_results"} {
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit", "assurance_plans", "assurance_plan_versions", "assurance_plan_population", "assurance_plan_selections", "assurance_plan_tests", "assurance_plan_results", "assurance_plan_ai_proposals"} {
 		if !skipped[want] {
 			t.Errorf("%s is not reported as skipped", want)
 		}
@@ -368,7 +370,7 @@ func TestImport_V15FindingRestoresWithoutAnOrigin(t *testing.T) {
 	if got := scalar(t, dst, `SELECT reference || '|' || origin_ref FROM audit_findings WHERE id = 3`); got != "AF-2026-003|" {
 		t.Errorf("restored finding = %q, want its reference and a blank origin", got)
 	}
-	for _, table := range []string{"assurance_plans", "assurance_plan_tests", "assurance_plan_results"} {
+	for _, table := range []string{"assurance_plans", "assurance_plan_tests", "assurance_plan_results", "assurance_plan_ai_proposals"} {
 		if got := count(t, dst, table); got != 0 {
 			t.Errorf("%s count=%d want 0", table, got)
 		}

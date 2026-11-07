@@ -170,17 +170,26 @@ ASSURANCE_PLANS.md, "Documents".
 
   ```
   pack { as_of, roadmap[] { label, period, lines[] }, next_steps[] (export steps),
-         delivery_risks[], peak_quarter }
+         delivery_risks[], peak_quarter,
+         narrative? { executive_summary, speaker_notes[] { slide, title, notes },
+                      model, accepted_by, accepted_at } }
   ```
 
   It sets thirteen slides on Typst's `presentation-16-9` paper. Each slide
   carries its own header (reference, classification) and footer (function,
   forum, page), so a page printed alone still says what it belongs to. A list
   that would overflow its slide is cut, and the slide says how many more are
-  in the export.
+  in the export. `narrative` is there only once a person has accepted an
+  AI-drafted pack narrative; it adds a "Presenter's notes" page after the
+  slides, which says it was drafted with AI assistance, by which model, and
+  who accepted it. The slides do not read it. Its strings are data like every
+  other, and `internal/doctemplate`'s test compiles the page from hostile
+  strings too.
 - **The quarterly progress report and the annual conclusion** use
   `business-report.typ` (`report-typst`) with the report contract below. Their
-  sections carry tables.
+  sections carry tables. An accepted AI-drafted narrative for the report
+  replaces `executive_summary`, and `limitations` then says so; the contract
+  does not change.
 
 `build.sh pack | quarterly | annual` renders the samples. The quarterly and
 annual reports are written to `out/assurance-quarterly-report.pdf` and

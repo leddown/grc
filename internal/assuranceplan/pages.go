@@ -63,6 +63,8 @@ const pageStyles = `
   .status-line.err { color: var(--error, #ff8a8a); }
   .notice { border-left: 3px solid var(--accent, #6ea8fe); padding: 4px 10px; background: var(--surface, #171a21); margin: 6px 0; }
   .notice.warn { border-left-color: #f5b83d; }
+  .notice ul { margin: 2px 0 0; padding-left: 18px; }
+  label.ap-inline { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; color: var(--text, #e6e8ec); margin-right: 12px; }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; }
   .kv dt { color: var(--muted, #8b93a3); }
   .kv dd { margin: 0; }
@@ -82,10 +84,10 @@ const pageStyles = `
   .ap-st { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11px; line-height: 18px;
          border: 1px solid; white-space: nowrap; font-weight: 600; }
   .ap-st-draft, .ap-st-not-started, .ap-st-closed, .ap-st-none, .ap-st-advisory, .ap-st-not-selected, .ap-st-not-reviewed,
-  .ap-st-n-a, .ap-st-not-tested, .ap-st-not-due, .ap-st-missing, .ap-st-low, .ap-st-risk-accepted {
+  .ap-st-n-a, .ap-st-not-tested, .ap-st-not-due, .ap-st-missing, .ap-st-low, .ap-st-risk-accepted, .ap-st-rejected, .ap-st-good-practice {
          color: var(--muted, #8b93a3); background: var(--surface-2, #1f232c); border-color: var(--border, #2a2f3a); }
   .ap-st-in-review, .ap-st-in-progress, .ap-st-statistical, .ap-st-awaiting-qa, .ap-st-open, .ap-st-in-remediation,
-  .ap-st-pending-validation, .ap-st-reopened {
+  .ap-st-pending-validation, .ap-st-reopened, .ap-st-proposed, .ap-st-regulation, .ap-st-ai {
          color: var(--accent, #6ea8fe); background: var(--surface, #171a21);
          background: color-mix(in srgb, var(--accent, #6ea8fe) 14%, var(--surface, #171a21)); border-color: var(--accent, #6ea8fe); }
   .ap-st-approved, .ap-st-active, .ap-st-complete, .ap-st-selected, .ap-st-within-capacity, .ap-st-accepted, .ap-st-full-coverage,
@@ -337,6 +339,7 @@ type planPageData struct {
 	Today       string
 	Viewer      string
 	SepEnforced bool
+	AI          aiPageData
 }
 
 var planTabs = []struct{ id, label string }{
@@ -349,6 +352,7 @@ var planTabs = []struct{ id, label string }{
 	{"tests", "Tests"},
 	{"dashboard", "Dashboard"},
 	{"governance", "Governance"},
+	{"ai", "AI assist"},
 	{"history", "History & versions"},
 }
 
@@ -393,6 +397,7 @@ func planPageHTML(d planPageData) string {
 <section class="tab-panel" id="tab-tests" hidden>` + testsHTML(d) + `</section>
 <section class="tab-panel" id="tab-dashboard" hidden>` + dashboardHTML(d) + `</section>
 <section class="tab-panel" id="tab-governance" hidden>` + governanceHTML(p) + `</section>
+<section class="tab-panel" id="tab-ai" hidden>` + aiHTML(d) + `</section>
 <section class="tab-panel" id="tab-history" hidden>` + historyHTML(d) + `</section>
 </main>
 <script type="application/json" id="plan-data">` + jsonData(p) + `</script>
@@ -400,8 +405,9 @@ func planPageHTML(d planPageData) string {
 <script type="application/json" id="page-data">` + jsonData(map[string]any{"viewer": d.Viewer, "sep_enforced": d.SepEnforced}) + `</script>
 <script type="application/json" id="population-data">` + jsonData(nonNil(d.Population)) + `</script>
 <script type="application/json" id="tests-data">` + jsonData(nonNil(d.Tests)) + `</script>
+<script type="application/json" id="ai-data">` + jsonData(d.AI) + `</script>
 <script>
-` + sharedScript + planScript + scopeScript + execScript + `
+` + sharedScript + planScript + scopeScript + execScript + aiScript + `
 </script>
 </body>
 </html>`

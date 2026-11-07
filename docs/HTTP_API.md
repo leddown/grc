@@ -217,6 +217,14 @@ The proposed population (phase 5): `population/propose` takes
 the proposal as CSV text with its counts and notes. It writes nothing; the
 page applies it through `population/preview` and `population`.
 
+AI assist (phase 6): `ai/draft`, `ai/attributes` and `ai/narrative` ask the
+model through `aiprovider.Router` and answer 201 with a stored proposal; the
+plan does not change until `ai/proposals/:pid/decide` accepts it. With no
+provider configured, or while another request for the plan runs, they answer
+409; a refusal or a cut-off answer is 422, and a provider failure or an answer
+still malformed after one repair turn is 502. `ai/proposals` answers
+`{"configured", "model", "proposals"}`.
+
 | Method | Path | Access | Handler |
 |---|---|---|---|
 | GET | `/assurance-plans` | signed in | `assuranceplan.(*Handler).ListPage` |
@@ -225,6 +233,12 @@ page applies it through `population/preview` and `population`.
 | GET | `/assurance-plans/:id` | signed in | `assuranceplan.(*Handler).PlanPage` |
 | PUT | `/assurance-plans/:id` | admin | `assuranceplan.(*Handler).UpdateHeader` |
 | POST | `/assurance-plans/:id/activate` | admin | `assuranceplan.(*Handler).Activate` |
+| POST | `/assurance-plans/:id/ai/attributes` | admin | `assuranceplan.(*Handler).AIAttributes` |
+| POST | `/assurance-plans/:id/ai/draft` | admin | `assuranceplan.(*Handler).AIDraft` |
+| POST | `/assurance-plans/:id/ai/narrative` | admin | `assuranceplan.(*Handler).AINarrative` |
+| GET | `/assurance-plans/:id/ai/proposals` | signed in | `assuranceplan.(*Handler).AIProposals` |
+| GET | `/assurance-plans/:id/ai/proposals/:pid` | signed in | `assuranceplan.(*Handler).AIProposal` |
+| POST | `/assurance-plans/:id/ai/proposals/:pid/decide` | admin | `assuranceplan.(*Handler).AIDecide` |
 | POST | `/assurance-plans/:id/approve` | admin | `assuranceplan.(*Handler).Approve` |
 | PUT | `/assurance-plans/:id/attributes` | admin | `assuranceplan.(*Handler).ReplaceAttributes` |
 | POST | `/assurance-plans/:id/attributes/seed` | admin | `assuranceplan.(*Handler).SeedAttributes` |

@@ -1024,6 +1024,31 @@ CREATE TABLE IF NOT EXISTS assurance_plan_versions (
 	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
 );
 
+-- An AI proposal is what the model offered, kept as it came back after the
+-- server's checks, and what a person then applied. The two are separate
+-- columns so the record shows what the model said and what was decided.
+CREATE TABLE IF NOT EXISTS assurance_plan_ai_proposals (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	kind TEXT NOT NULL DEFAULT '',
+	document TEXT NOT NULL DEFAULT '',
+	revision INTEGER NOT NULL DEFAULT 0,
+	input_json TEXT NOT NULL DEFAULT '{}',
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	payload_json TEXT NOT NULL DEFAULT '{}',
+	status TEXT NOT NULL DEFAULT 'proposed',
+	applied_json TEXT NOT NULL DEFAULT '',
+	decision_note TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	decided_by TEXT NOT NULL DEFAULT '',
+	decided_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_ai_proposals_plan ON assurance_plan_ai_proposals (plan_id, id);
+
 CREATE TABLE IF NOT EXISTS assurance_plan_strata (
 	id BIGSERIAL PRIMARY KEY,
 	plan_id BIGINT NOT NULL,

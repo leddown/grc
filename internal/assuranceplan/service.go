@@ -45,6 +45,7 @@ type Service struct {
 	// approver, and enforcing it would make every plan unapprovable.
 	requireSeparateApprover bool
 	in                      Integrations
+	ai                      *aiDeps
 }
 
 func NewService(repo Repository) *Service {

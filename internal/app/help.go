@@ -300,6 +300,12 @@ func helpPage(c *gin.Context) {
               pack, each quarter's progress report and the annual conclusion as PDFs (or their
               sources and data), and the plan as JSON or one CSV per table. The pack's regulatory
               slide is the Governance tab's regulatory basis.</li>
+            <li>Optionally, the AI assist tab drafts a plan from a brief, proposes test attributes
+              from a shortlist of the NFR catalog, the controls and Regulation Coverage, or drafts
+              the executive summary and speaker notes for the pack or a report. Each answer is a
+              proposal: review its checks, unresolved references and flags, then accept, edit or
+              reject it. Nothing changes until you accept, and with no model configured in
+              <a href="/settings">Settings</a> the rest of the module works the same.</li>
           </ol>
           <p class="note">Practice, lifecycle and sampling method are in
           <a href="/knowledge/assurance-plans">ASSURANCE_PLANS.md</a>.</p>
@@ -600,7 +606,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register/manage">/risk-register/manage</a></td><td>Create and edit risk entries.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/audit-findings">/audit-findings</a></td><td>Audit findings, action plans, validation and closure.</td></tr>
-          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections, the test script, tests and QA, findings raised into Audit Findings, the dashboard, and the approval pack, quarterly and annual reports and exports.</td></tr>
+          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections, the test script, tests and QA, findings raised into Audit Findings, the dashboard, the approval pack, quarterly and annual reports and exports, and optional AI assist whose answers are proposals a person accepts or rejects.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/exceptions">/exceptions</a></td><td>Build an exception set from the requirements catalog.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies">/policies</a></td><td>The policy library and its review states.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/manage">/policies/manage</a></td><td>Write policy sections and cite controls.</td></tr>

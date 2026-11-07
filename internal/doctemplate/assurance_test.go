@@ -50,20 +50,35 @@ func TestTypstRendersTheAssurancePlanDocuments(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, c := range []struct{ name, entry, sample, want string }{
-		{"pack", "assurance-plan-pack.typ", "assurance-plan-sample.json", "What the regulation asks, and how the plan meets it"},
-		{"quarterly", "business-report.typ", "assurance-quarterly-sample.json", "Coverage against plan"},
-		{"annual", "business-report.typ", "assurance-annual-sample.json", "Input to the ICT risk management framework review report"},
+	for _, c := range []struct {
+		name, entry, sample, want string
+		narrative                 bool
+	}{
+		{"pack", "assurance-plan-pack.typ", "assurance-plan-sample.json", "What the regulation asks, and how the plan meets it", false},
+		{"pack-notes", "assurance-plan-pack.typ", "assurance-plan-sample.json", "Executive summary and speaker notes", true},
+		{"quarterly", "business-report.typ", "assurance-quarterly-sample.json", "Coverage against plan", false},
+		{"annual", "business-report.typ", "assurance-annual-sample.json", "Input to the ICT risk management framework review report", false},
 	} {
 		sample, err := os.ReadFile(filepath.Join("..", "..", "templates", "samples", c.sample)) // #nosec G304 -- the repository's own samples
 		if err != nil {
 			t.Fatal(err)
 		}
-		var v any
+		var v map[string]any
 		if err := json.Unmarshal(sample, &v); err != nil {
 			t.Fatalf("%s: %v", c.sample, err)
 		}
-		hostile, _ := json.Marshal(hostileStrings(v))
+		if c.narrative {
+			v["pack"].(map[string]any)["narrative"] = map[string]any{
+				"executive_summary": "The plan asks the committee to approve the year.\n\nIt covers every Tier 1 asset.",
+				"speaker_notes": []any{map[string]any{"slide": 1, "title": "Cover", "notes": "Introduce the plan."},
+					map[string]any{"slide": 2, "title": "Decisions requested", "notes": "Take the decisions in order."}},
+				"model": "test-model", "accepted_by": "bob", "accepted_at": "2026-11-07T09:30:00Z",
+			}
+			if sample, err = json.Marshal(v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		hostile, _ := json.Marshal(hostileStrings(any(v)))
 		for variant, payload := range map[string][]byte{"sample": sample, "hostile": hostile} {
 			if err := os.WriteFile(filepath.Join(root, "data.json"), payload, 0o600); err != nil {
 				t.Fatal(err)

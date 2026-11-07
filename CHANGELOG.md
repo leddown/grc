@@ -3,6 +3,188 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-07 (Assurance Plans, phase 6: AI assist — plan drafts, test attributes, committee narrative)
+
+Last of six phases on `feature/assurance-plans`. Three optional assists on a
+new **AI assist** tab. Each answer is a stored proposal that changes nothing
+until a person accepts, edits or rejects it. Every feature of the module works
+with no model configured. Nothing is uploaded or parsed: the assists read the
+plan and the catalogs this server already holds.
+
+- **The model** (`ai.go`, new). Calls go through the shared
+  `aiprovider.Router`, so they use the Wintermute model chosen in Settings and
+  are logged to `ai_usage_log`. `Service.WithAI(asker, retriever)` is wired in
+  `app.go` with the router and the knowledge service.
+  - The standing rules are the system prompt of every assist:
+    1. say when you do not know (`unknowns`)
+    2. never invent a control identifier, NFR key, article, threshold or
+       deadline; cite only from the lists shown, and take figures only from
+       the data or the brief
+    3. `regulation` only when a cited regulation reference requires it,
+       otherwise `good_practice`
+    4. plan dates are proposals, not regulatory deadlines
+    5. one JSON object
+  - Answers are decoded strictly (unknown fields refused). A malformed answer
+    gets one repair turn that quotes the parse error, through the session id
+    or the history. A refusal or an answer cut off at the token limit
+    (8,000) is never parsed.
+  - One request per plan at a time (409), so a double click does not pay
+    twice.
+  - Errors: 409 with no provider ("set the Wintermute server in Settings, or
+    do this by hand"), 422 for a refusal or a cut-off (`RefusedError`), 502
+    for a provider failure or a second malformed answer (`UpstreamError`).
+    Nothing is stored for any of them.
+- **Draft plan from a brief** (`ai_draft.go`, new; admin
+  `POST /assurance-plans/:id/ai/draft`).
+  - The brief is `objective`, `regulation`, `population_size` and
+    `constraints`: at least one of them, and each text 4,000 characters at
+    most.
+  - The prompt holds the plan, its own steps, the refs of the generated
+    quarterly steps (not to be proposed), the quarters, up to 8 Regulation
+    Coverage clauses retrieved lexically, and the plan's own references.
+  - The answer proposes up to 60 steps, quarter dates and a RACI (up to 40
+    activities), and may propose an objective.
+  - The checks leave out:
+    - a step without a title or valid dates, one that ends before it starts,
+      repeats a reference or takes a generated step's reference
+    - a quarter whose seven dates are not all valid, in order and inside the
+      plan's span (it keeps its current dates)
+    - a RACI cell with an unknown role or letter
+  - They note a step outside the span, a role that is not a RACI role, a
+    missing responsible role, and an activity with other than one
+    accountable role.
+  - Only a design that can be edited can be drafted (409 in review or
+    locked).
+- **Propose test attributes** (`ai_attributes.go`, new; admin
+  `POST /assurance-plans/:id/ai/attributes`, `{"focus", "count"}`).
+  - The server retrieves a shortlist through `knowledge.Service.Search`: up
+    to 12 NFRs, 12 controls and 8 Regulation Coverage clauses. The model
+    judges the shortlist; it does not browse.
+  - Default 8 attributes, at most 15. An empty focus, or one over 500
+    characters, is 400. An empty shortlist is 400 and the model is not asked.
+    No catalogs wired is 409.
+  - The checks:
+    - a reference already on the plan becomes `<ref>-2`
+    - an unknown method becomes Inspection
+    - an applies-to code that is not a stratum is dropped
+    - the first NFR cited becomes `nfr_key`, the controls `control_ids`, and
+      the clauses and plan references `regulatory_refs`
+- **Draft committee narrative** (`ai_narrative.go`, new; admin
+  `POST /assurance-plans/:id/ai/narrative`, `{"document": "pack" | "quarter"
+  | "annual", "quarter"}`).
+  - The data is the pack payload (with the slide titles) or the report
+    payload, without the appendices, as JSON. A plan in any status can have
+    one.
+  - The answer is an executive summary (4,000 characters) and, for the pack,
+    speaker notes for slides 1–13 (1,500 characters each, one per slide).
+  - **Flags** warn of each figure that is not in the data (as given, rounded,
+    or a share as a percentage) and each article that is not among the plan's
+    references or the data. A flag is not a refusal.
+- **References.** Every reference a step or an attribute cites is resolved,
+  in order: the shortlist, the catalogs (`knowledge.Service.Get`, noted when
+  it was not on the shortlist), then the plan's own references (header and
+  regulatory basis). One that resolves nowhere is listed as unresolved, shown
+  struck through, and never stored on the plan. An item marked `regulation`
+  with nothing regulatory that resolves is marked `good_practice`, with a
+  note.
+- **The proposal** (`assurance_plan_ai_proposals`, new, in `sqlite.go` and
+  `postgres.go`; `repository_ai.go`, new). It stores:
+  - the model and the prompt hash (SHA-256 of the system prompt and the
+    prompt), the timestamp and who asked
+  - the brief (`input_json`) and the plan's design `revision`
+  - `payload_json`: the answer after the checks
+  - `status` (proposed, accepted or rejected), `applied_json`,
+    `decision_note`, `decided_by` and `decided_at`
+
+  The proposal and its decision are both in the plan's history. Read through
+  `GET /assurance-plans/:id/ai/proposals` (`{"configured", "model",
+  "proposals"}`) and `GET …/ai/proposals/:pid`.
+- **The decision** (admin `POST …/ai/proposals/:pid/decide`, `{"decision",
+  "note", "parts", "attributes", "payload"}`).
+  - A proposal is decided once; the update is guarded on `status =
+    'proposed'`, so two people cannot both decide it (409).
+  - An edited `payload` is checked again against the references stored with
+    the proposal, never against references in the edit.
+  - Accepting a draft applies the chosen parts through the existing
+    validators: the objective, the steps (replacing the plan's own; the
+    generated steps stay with their statuses), the quarters (and their
+    generated steps are rebuilt) and the RACI. The plan's `ai_generated`,
+    `model` and `prompt_hash` are set.
+  - Accepting attributes adds the chosen ones with `ai_generated`, `model`
+    and `prompt_hash`. The test script shows an **AI** marker on them, and a
+    clone keeps it.
+  - Accepting a narrative takes the text as edited. The newest accepted one
+    for a report replaces its executive summary, and the limitations say it
+    was drafted with AI assistance, by which model, and who accepted it when.
+    For the pack it goes into `pack.narrative`.
+  - Decide bodies may be up to 1 MiB, because they can carry a whole edited
+    proposal; the asks are limited to 64 KiB.
+- **The pack.** `assurance-plan-pack.typ` sets a "Presenter's notes" page
+  after the slides when `pack.narrative` is there: the executive summary and
+  the speaker notes under a provenance line. The slides do not change, and
+  the reference render in `templates/out/` is unchanged (no narrative in the
+  sample).
+- **The tab** (`pages_ai.go`, new).
+  - Three forms, with the brief pre-filled from the plan.
+  - The proposals table (explicit `<thead>`; status as a word in a pill).
+  - A review of each proposal: its checks, unknowns and flags, the cites with
+    links, and the unresolved references struck through.
+  - Checkboxes say what accepting replaces. Narrative text is edited in
+    place.
+  - With no model the tab says so and its buttons are disabled; on a locked
+    design the draft and attribute buttons are.
+- **Backup.** The table joins the snapshot at version 16, `idKeyed` and
+  `skipInSync`, like the module's other tables, because no build with the
+  module has been released.
+- **Tests** (`ai_test.go`, new; `internal/doctemplate/assurance_test.go`;
+  `internal/dbsync/modules_test.go`). A fake model and a fake catalog cover:
+  - no provider (409, nothing stored)
+  - the repair turn; the stored model and prompt hash; the standing rules in
+    the system prompt; the plan unchanged until accepted
+  - each draft check; acceptance of chosen parts with the generated steps
+    kept, and an edited payload whose fake reference is dropped
+  - deciding twice; drafting a design in review
+  - a refusal, a cut-off, a twice-malformed answer and a provider failure,
+    none stored and none leaving the plan claimed
+  - the attribute shortlist, resolution, a catalog hit off the shortlist,
+    an unresolved control, renaming, method, applies-to and provenance; an
+    empty catalog and no catalog
+  - narrative flags; pack notes; an edited Q1 narrative in the Q1 report and
+    not in Q2; `pack.narrative`; a rejected narrative unused
+  - the routes (201, 200, 400, 404, 409, 422, 502, both body limits) and the
+    tab
+  - Typst compiles the pack with a narrative from the sample and from hostile
+    strings
+  - I broke citation resolution on purpose to check that the tests catch it;
+    they did. The tab's script was checked with `node --check`, and its
+    review was run in Node against stored proposals of each kind and status.
+- **Gate.** `go fmt` and `go vet` are clean, and `go test ./...` passes,
+  including TestGosec and TestGovulncheck. TestGosec first flagged G602 on a
+  guarded `dates[i-1]` in the quarter check, now a running previous date.
+  `npm audit --omit=dev` in `web/policy-studio` found 0 vulnerabilities.
+  PostgreSQL was reviewed, not run.
+- **Manual check.** I ran a throwaway server: local mode, a temporary SQLite
+  database, port 18947, no AI configured.
+  - The three asks answered 409 with the Settings message. The list answered
+    `configured: false`, and a 70 KB brief was refused with 400.
+  - The page showed the notice and disabled buttons. The table was created
+    with its 16 columns. The pack payload had no narrative.
+  - Headless Chrome at 1024×640 showed the tab usable with the tabs wrapping.
+
+  The server, database, key file, binary and browser profile were removed.
+  **Correction to phase 5:** that entry says its server was removed, but the
+  process kept running from its deleted binary on port 18947 until this
+  check found it; it was stopped now.
+- Docs:
+  - `ASSURANCE_PLANS.md`: build status; the proposals table; the AI routes;
+    the AI assist section (rewritten); `pack.narrative` and the presenter's
+    notes; narrative in the reports; clone; backup. The create example is
+    now `dora-nfr-2027` (it said `appendix-a`, which is refused).
+  - HTTP_API (six routes), DATA_MODEL (the table, the attribute provenance,
+    the history), FEATURES, ARCHITECTURE (now counted, like the other rows,
+    in non-blank lines), the Help page, README, Agents.md, AI_AGENT.md (which
+    agent answers) and DOCUMENT_TEMPLATES.md (`pack.narrative`)
+
 ## 2026-11-07 (Assurance Plans, phase 5: RCSA, policy review, resilience testing and remediation roadmap types, multi-year cycles, proposed populations)
 
 Fifth of six phases on `feature/assurance-plans`. Four plan types join

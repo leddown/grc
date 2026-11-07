@@ -74,7 +74,9 @@ package and how a request is served. In short:
   attribute sampling over a pasted or proposed scope population and frozen, re-performable
   quarterly selections, tests with QA sign-off, findings raised into Audit
   Findings, thematic risks pushed to the risk register, the dashboard, and the
-  committee approval pack, quarterly and annual reports and JSON/CSV exports
+  committee approval pack, quarterly and annual reports and JSON/CSV exports,
+  and an optional AI assist (plan drafts, test attributes, committee narrative)
+  whose answers are proposals a person accepts or rejects
   (see [ASSURANCE_PLANS.md](ASSURANCE_PLANS.md))
 - `internal/policydocs` — the policy library: documents, sections, control
   mappings, lint, approval, versions and the coverage matrix; also letters

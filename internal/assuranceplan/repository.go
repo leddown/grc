@@ -38,6 +38,10 @@ type Repository interface {
 	Versions(planID int64) ([]Version, error)
 	Version(planID int64, number int) (Version, error)
 	Clients() ([]Client, error)
+	CreateAIProposal(pr AIProposal, history []HistoryEntry) (int64, error)
+	DecideAIProposal(pr AIProposal, history []HistoryEntry) error
+	AIProposals(planID int64) ([]AIProposal, error)
+	AIProposal(planID, id int64) (AIProposal, error)
 }
 
 type SQLiteRepository struct {

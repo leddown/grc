@@ -519,3 +519,34 @@
     ]
   ]
 ]
+
+// ---------------------------------------------------------------------------
+// Presenter's notes: only when a person accepted a narrative drafted with AI
+// assistance, and after the slides, so the argument never rests on it.
+// ---------------------------------------------------------------------------
+
+#let narrative = pack.at("narrative", default: none)
+#let paras(s) = for p in s.split(regex("\n\s*\n")) [#p #parbreak()]
+#if narrative != none [
+  #slide("Presenter's notes", "Executive summary and speaker notes")[
+    #text(size: brand.micro-size, fill: brand.muted)[
+      Drafted with AI assistance (#narrative.at("model", default: "model not recorded")) from the plan's data, and reviewed and accepted by #narrative.at("accepted_by", default: "") on #day(narrative.at("accepted_at", default: "")). The slides do not depend on these notes.
+    ]
+    #if narrative.at("executive_summary", default: "") != "" [
+      #heading-label("Executive summary")
+      #text(size: 9.5pt)[#paras(narrative.at("executive_summary"))]
+    ]
+    #let notes = narrative.at("speaker_notes", default: ())
+    #if notes.len() > 0 [
+      #heading-label("Speaker notes")
+      #small-table(
+        columns: (auto, 1fr),
+        header: ("Slide", "Notes"),
+        rows: notes.map(n => (
+          if n.at("slide", default: 0) <= 1 { n.at("title", default: "Cover") } else { str(n.at("slide") - 1) + " · " + n.at("title", default: "") },
+          n.at("notes", default: ""),
+        )),
+      )
+    ]
+  ]
+]

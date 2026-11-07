@@ -69,6 +69,14 @@ model you want and gain the tools either way.
    on a cloud backend. See
    [POLICY_STUDIO.md](POLICY_STUDIO.md).
 
+**Assurance Plans' AI assist** (draft a plan, propose test attributes, draft
+committee narrative) uses the agent of step 4. Each request carries what the
+model is to judge: the plan's data and, for attributes, a shortlist this
+server retrieves from its own catalogs, so the answer does not depend on the
+agent reaching the knowledge API. The answer is JSON with one repair turn, and
+is stored as a proposal a person accepts or rejects. See
+[ASSURANCE_PLANS.md](ASSURANCE_PLANS.md), "AI assist".
+
 The Settings page and the AI Chat page then link to that agent's page on
 Wintermute, which is where documents are uploaded — that server owns the
 library, the extraction and the search over it.

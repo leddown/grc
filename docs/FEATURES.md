@@ -290,7 +290,8 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
   a thematic risk, once.
 - **Documents and exports** (Overview tab):
   - the **committee approval pack**: thirteen 16:9 slides, typeset by Typst
-    from `templates/typst/assurance-plan-pack.typ`
+    from `templates/typst/assurance-plan-pack.typ`, and a presenter's notes
+    page once an AI-drafted narrative has been accepted
   - a **quarterly progress report** for each quarter, stated as at that
     quarter
   - the **annual conclusion**, labelled as an input to the ICT risk
@@ -306,6 +307,19 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
 - **Knowledge API**: the kinds `assurance_plan` and `assurance_plan_test`, read
   fresh. An agent can answer "what's due this quarter?", "are we behind
   plan?" and "which Tier 1 assets failed NFR-04?".
+- **AI assist** (optional; the plan's AI assist tab): draft a plan from a brief
+  (objective, regulation, population size, constraints → steps, quarter dates
+  and a RACI); propose test attributes for a regulation or a domain from a
+  lexical shortlist of NFRs, 800-53 controls and Regulation Coverage clauses;
+  draft the executive summary and speaker notes for the pack or a report from
+  the plan's data. Calls go through the AI router with the Settings model and
+  are logged to `ai_usage_log`. Every answer is stored as a proposal with its
+  model, prompt hash and timestamp, and changes nothing until a person
+  accepts, edits or rejects it. Each cited reference is resolved against the
+  shortlist, the catalogs or the plan's own references; one that does not
+  resolve is shown as unresolved and never stored. Narrative is flagged where
+  a figure or article is not in the plan's data. With no model configured the
+  tab says so and everything else works.
 
 ### Exceptions (`/exceptions`, detail at `/exceptions/detail`)
 

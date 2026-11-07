@@ -41,6 +41,8 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/assurance-plans/:id/tests", h.Tests)
 	r.GET("/assurance-plans/:id/deviations", h.Deviations)
 	r.GET("/assurance-plans/:id/dashboard", h.Dashboard)
+	r.GET("/assurance-plans/:id/ai/proposals", h.AIProposals)
+	r.GET("/assurance-plans/:id/ai/proposals/:pid", h.AIProposal)
 	h.registerDocumentRoutes(r)
 }
 
@@ -78,6 +80,10 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/assurance-plans/:id/tests/:testID/qa", h.SignOffQA)
 	r.POST("/assurance-plans/:id/results/:resultID/finding", h.RaiseFinding)
 	r.POST("/assurance-plans/:id/thematic", h.PushThematic)
+	r.POST("/assurance-plans/:id/ai/draft", h.AIDraft)
+	r.POST("/assurance-plans/:id/ai/attributes", h.AIAttributes)
+	r.POST("/assurance-plans/:id/ai/narrative", h.AINarrative)
+	r.POST("/assurance-plans/:id/ai/proposals/:pid/decide", h.AIDecide)
 }
 
 func (h *Handler) actorOf(c *gin.Context) string {
@@ -163,10 +169,16 @@ func (h *Handler) PlanPage(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "failed to build the plan's dashboard")
 		return
 	}
+	proposals, err := h.service.AIProposals(id)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "failed to load the plan's AI proposals")
+		return
+	}
 	page := planPageHTML(planPageData{
 		Plan: publicPlan(p), Lint: Lint(p, pop), History: history, Versions: versions, Clients: clients,
 		Population: pop, Sampling: sampling, Tests: tests, Dashboard: dashboard,
 		Today: time.Now().UTC().Format(dateLayout), Viewer: h.actorOf(c), SepEnforced: h.service.SeparationEnforced(),
+		AI: aiPageData{Configured: h.service.AIConfigured(), Model: h.service.AIModel(), Proposals: proposals},
 	})
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(page))
 }
@@ -691,7 +703,13 @@ func writeError(c *gin.Context, err error) {
 	var verr *ValidationError
 	var cerr *ConflictError
 	var aerr ApprovalError
+	var uerr *UpstreamError
+	var rerr *RefusedError
 	switch {
+	case errors.As(err, &uerr):
+		c.JSON(http.StatusBadGateway, gin.H{"error": uerr.Error()})
+	case errors.As(err, &rerr):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": rerr.Error()})
 	case errors.As(err, &aerr):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": aerr.Error(), "findings": aerr.Findings})
 	case errors.As(err, &verr):
@@ -703,4 +721,123 @@ func writeError(c *gin.Context, err error) {
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "assurance plan storage failed"})
 	}
+}
+
+// ---- AI assist ----
+
+// A brief is small; a decision may carry the whole proposal as edited.
+const (
+	maxAIBody       = 64 << 10
+	maxDecisionBody = 1 << 20
+)
+
+func (h *Handler) AIProposals(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	list, err := h.service.AIProposals(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"configured": h.service.AIConfigured(), "model": h.service.AIModel(), "proposals": list})
+}
+
+func (h *Handler) AIProposal(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	pid, ok := parseID(c, "pid")
+	if !ok {
+		return
+	}
+	pr, err := h.service.AIProposal(id, pid)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, pr)
+}
+
+func aiBody(c *gin.Context, out any, limit int64) bool {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+	if err := c.ShouldBindJSON(out); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return false
+	}
+	return true
+}
+
+func (h *Handler) AIDraft(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var in DraftInput
+	if !aiBody(c, &in, maxAIBody) {
+		return
+	}
+	pr, err := h.service.DraftPlan(c.Request.Context(), id, in, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, pr)
+}
+
+func (h *Handler) AIAttributes(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var in AttributesInput
+	if !aiBody(c, &in, maxAIBody) {
+		return
+	}
+	pr, err := h.service.ProposeAttributes(c.Request.Context(), id, in, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, pr)
+}
+
+func (h *Handler) AINarrative(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var in NarrativeInput
+	if !aiBody(c, &in, maxAIBody) {
+		return
+	}
+	pr, err := h.service.DraftNarrative(c.Request.Context(), id, in, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, pr)
+}
+
+func (h *Handler) AIDecide(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	pid, ok := parseID(c, "pid")
+	if !ok {
+		return
+	}
+	var in DecideInput
+	if !aiBody(c, &in, maxDecisionBody) {
+		return
+	}
+	out, err := h.service.Decide(id, pid, in, h.actorOf(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }

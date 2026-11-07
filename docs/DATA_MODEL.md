@@ -264,7 +264,7 @@ The frozen quarterly picks: written once by the selection action and never recom
 
 ### `assurance_plan_attributes`
 
-The test script: what 2LoD tests on every selected item. One row per attribute (`attr_ref` unique per plan), with its domain, requirement, test procedure, method (Inspection, Inquiry, Observation, Re-performance), evidence requested, pass criteria, the strata it applies to (comma-separated codes; empty = every stratum), regulatory references, 800-53 ids (comma-separated) and the Security NFR key it was copied from (empty = plan-local). Copied onto the plan, so a catalog edit does not change an approved plan; unresolved references are worked out on read.
+The test script: what 2LoD tests on every selected item. One row per attribute (`attr_ref` unique per plan), with its domain, requirement, test procedure, method (Inspection, Inquiry, Observation, Re-performance), evidence requested, pass criteria, the strata it applies to (comma-separated codes; empty = every stratum), regulatory references, 800-53 ids (comma-separated) and the Security NFR key it was copied from (empty = plan-local). `ai_generated`, `model` and `prompt_hash` mark an attribute added from an accepted AI proposal. Copied onto the plan, so a catalog edit does not change an approved plan; unresolved references are worked out on read.
 
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
@@ -312,7 +312,7 @@ The regulatory basis: what the regulation asks of the control function, its refe
 
 ### `assurance_plan_history`
 
-Append-only history of design changes (summarised by reference), status and revision moves, change requests, approvals, step-status changes, population imports and item edits, the population freeze (with its membership SHA-256 and the seed commitment) and each quarter's selection, with the actor.
+Append-only history of design changes (summarised by reference), status and revision moves, change requests, approvals, step-status changes, population imports and item edits, the population freeze (with its membership SHA-256 and the seed commitment), each quarter's selection, and each AI proposal and its decision (with the model and the prompt hash), with the actor.
 
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
@@ -325,6 +325,14 @@ Approval snapshots: the plan as approved, with its strata and the population's m
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
 - **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `number integer`, `label`, `approved_by`, `approved_at`, `change_reason`, `snapshot_json`, `snapshot_sha256`.
+
+### `assurance_plan_ai_proposals`
+
+Each AI assist answer and its decision: a plan drafted from a brief (`draft`), test attributes proposed from a catalog shortlist (`attributes`), or committee narrative for the pack or a report (`narrative`, with `document` `pack`, `q1`..`q4` or `annual`). `payload_json` is the answer after the server's checks, with every reference resolved or listed as unresolved; `applied_json` is what a person accepted, with their edits, and stays empty for a proposal still open or rejected. `prompt_hash` is the SHA-256 of the system prompt and the prompt. `status` moves once, from `proposed` to `accepted` or `rejected`.
+
+- **Key:** `id`. **Travels:** backup only.
+- **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `kind`, `document`, `revision integer`, `input_json`, `model`, `prompt_hash`, `payload_json`, `status`, `applied_json`, `decision_note`, `created_at`, `created_by`, `decided_by`, `decided_at`.
 
 
 ## Policy library

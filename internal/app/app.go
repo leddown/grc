@@ -220,7 +220,7 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 		Controls: controlHandler.Service(),
 		NFRs:     securityNFRHandler.Service(),
 		Policies: policyService,
-	}, docRenderer(templateService), adminMiddleware, options.LocalMode)
+	}, docRenderer(templateService), aiRouter, knowledgeService, adminMiddleware, options.LocalMode)
 	knowledgeService.WithAssurancePlans(planService.KnowledgePlans, planService.KnowledgeTests)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
@@ -752,8 +752,11 @@ func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddlewar
 // policy library: on only when more than one person can sign in. A failed
 // test raises its finding in Audit Findings and a thematic conclusion goes to
 // the risk register, through those modules' own services and their rules.
-func registerAssurancePlanRoutes(r gin.IRouter, sqliteDB *db.Conn, authService *authn.Service, in assuranceplan.Integrations, render assuranceplan.Renderer, adminMiddleware gin.HandlerFunc, localMode bool) *assuranceplan.Service {
-	service := assuranceplan.NewService(assuranceplan.NewSQLiteRepository(sqliteDB)).WithIntegrations(in)
+// AI assist asks through the shared router, so the Settings model and the
+// ai_usage_log apply, and cites the catalogs through the knowledge service.
+func registerAssurancePlanRoutes(r gin.IRouter, sqliteDB *db.Conn, authService *authn.Service, in assuranceplan.Integrations, render assuranceplan.Renderer,
+	aiRouter *aiprovider.Router, knowledgeService *knowledge.Service, adminMiddleware gin.HandlerFunc, localMode bool) *assuranceplan.Service {
+	service := assuranceplan.NewService(assuranceplan.NewSQLiteRepository(sqliteDB)).WithIntegrations(in).WithAI(aiRouter, knowledgeService)
 	service.SetRequireSeparateApprover(!localMode && authService != nil && !authService.SingleUserMode())
 	handler := assuranceplan.NewHandler(service, sessionUsername).WithRenderer(render)
 	handler.RegisterRoutes(r)
