@@ -472,7 +472,7 @@ var syncOrder = []tableSpec{
 			"recommendation", "root_cause_category", "business_unit", "process_area", "owner",
 			"management_response", "management_response_text", "identified_date", "report_date",
 			"original_due_date", "due_date", "extension_count", "extension_reason", "status",
-			"repeat_finding", "prior_reference", "linked_risks", "linked_controls", "framework_refs",
+			"repeat_finding", "prior_reference", "linked_risks", "linked_controls", "framework_refs", "origin_ref",
 			"validated_by", "validation_date", "validation_notes", "closure_evidence", "closed_date",
 			"risk_accepted_by", "risk_acceptance_rationale", "risk_acceptance_expiry", "notes",
 			"created_at", "created_by", "updated_at", "updated_by",
@@ -494,6 +494,178 @@ var syncOrder = []tableSpec{
 	{
 		table:        "audit_finding_history",
 		cols:         []string{"id", "finding_id", "at", "actor", "event", "from_value", "to_value", "note"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+
+	// ---- Assurance Plans (internal/assuranceplan) ----
+	//
+	// A plan is the parent of every row below it, joined on plan_id, so these
+	// travel in the snapshot and are skipped by Sync for the same reason as the
+	// crisis exercises and Audit Findings.
+	{
+		table: "assurance_plans",
+		cols: []string{
+			"id", "reference", "title", "plan_type", "function_name", "client_profile_id",
+			"period_start", "period_end", "mobilise_start", "closing_date",
+			"objective", "decisions_requested", "regulatory_refs",
+			"owner_role", "accountable_role", "approval_forum",
+			"status", "revision", "revision_status", "revision_author", "change_reason",
+			"author", "approved_by", "approved_at", "activated_at", "closed_at",
+			"selection_seed", "non_working_dates", "raci_roles", "test_types", "coverage_basis", "population_source",
+			"tester_fte", "days_per_fte_quarter", "utilisation_threshold", "rag_amber_points",
+			"result_partial_min", "result_ineffective_min", "deviation_extend_at", "deviation_thematic_at",
+			"extend_pct", "evidence_sla_days", "ai_generated", "model", "prompt_hash",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_steps",
+		cols: []string{
+			"id", "plan_id", "ordinal", "step_ref", "phase", "title", "step_type", "responsible_role",
+			"accountable_role", "start_date", "end_date", "deliverable", "refs", "status", "quarter", "generated", "notes",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_quarters",
+		cols: []string{
+			"id", "plan_id", "quarter", "lod1_window_start", "lod1_deadline", "selection_date",
+			"fieldwork_start", "fieldwork_end", "findings_agreed_by", "report_date", "committee_label",
+			"retest_days", "overhead_days", "selected_at", "selected_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_strata",
+		cols: []string{
+			"id", "plan_id", "ordinal", "code", "name", "definition", "sampling_enabled", "confidence", "tolerable_rate",
+			"floor_pct", "effort_per_test", "effort_per_review", "wave_q1", "wave_q2", "wave_q3", "wave_q4",
+			"topup_q1", "topup_q2", "topup_q3", "topup_q4", "planned_size", "cycle_years", "takes",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_population",
+		cols: []string{
+			"id", "plan_id", "item_ref", "name", "stratum_code", "cif", "business_line", "hosting", "internet_facing",
+			"owner", "wave_quarter", "attested_on", "dq_status", "dq_reviewed_on", "topup_quarter", "topup_rationale",
+			"last_tested_on", "source_kind", "source_ref",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_selections",
+		cols: []string{
+			"id", "plan_id", "quarter", "population_id", "item_ref", "stratum_code", "basis", "rank_order", "rank_hash",
+			"plan_version", "selected_at", "selected_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_attributes",
+		cols: []string{
+			"id", "plan_id", "ordinal", "attr_ref", "domain", "requirement", "test_procedure", "method", "evidence_requested",
+			"pass_criteria", "applies_to", "regulatory_refs", "control_ids", "nfr_key", "ai_generated", "model", "prompt_hash",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_tests",
+		cols: []string{
+			"id", "plan_id", "selection_id", "test_ref", "test_type", "tester", "evidence_requested_on", "evidence_due_on",
+			"evidence_received_on", "fieldwork_completed_on", "evidence_summary", "qa_reviewer", "qa_date", "qa_note", "notes",
+			"created_at", "created_by", "updated_at", "updated_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_results",
+		cols: []string{
+			"id", "plan_id", "test_id", "attribute_id", "result", "note", "finding_id", "finding_ref", "severity",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_thematic",
+		cols: []string{
+			"id", "plan_id", "attribute_id", "stratum_code", "risk_id", "risk_ref", "deviations", "note", "pushed_at", "pushed_by",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_raci",
+		cols:         []string{"id", "plan_id", "ordinal", "activity", "cells"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_cadence",
+		cols:         []string{"id", "plan_id", "ordinal", "forum", "frequency", "content", "owner"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_escalations",
+		cols:         []string{"id", "plan_id", "ordinal", "trigger_text", "escalate_to", "within_text"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_basis",
+		cols:         []string{"id", "plan_id", "ordinal", "requirement", "reference", "how_met"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table:        "assurance_plan_history",
+		cols:         []string{"id", "plan_id", "at", "actor", "event", "subject", "from_value", "to_value", "note"},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_versions",
+		cols: []string{
+			"id", "plan_id", "number", "label", "approved_by", "approved_at", "change_reason",
+			"snapshot_json", "snapshot_sha256",
+		},
+		conflictCols: []string{"id"},
+		idKeyed:      true,
+		strat:        skipInSync,
+	},
+	{
+		table: "assurance_plan_ai_proposals",
+		cols: []string{
+			"id", "plan_id", "kind", "document", "revision", "input_json", "model", "prompt_hash", "payload_json",
+			"status", "applied_json", "decision_note", "created_at", "created_by", "decided_by", "decided_at",
+		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
 		strat:        skipInSync,

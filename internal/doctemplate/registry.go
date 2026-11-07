@@ -40,6 +40,9 @@ const (
 	// KindLetter is a policydocs document of type letter: the same payload
 	// shape as KindPolicy, laid out as correspondence.
 	KindLetter Kind = "letter"
+	// KindAssurancePack is an assurance plan's export with its pack extras,
+	// from internal/assuranceplan.
+	KindAssurancePack Kind = "assurance_pack"
 )
 
 // Template describes one renderable document template.
@@ -88,7 +91,7 @@ var Templates = []Template{
 		Name:        "Business report (Typst)",
 		Engine:      EngineTypst,
 		Kind:        KindReport,
-		Description: "Assessment, gap analysis and control review reports. Executive summary callout, findings tables and rated observations. Has no in-app data producer yet, so it renders from a supplied payload or from the bundled sample.",
+		Description: "Assessment, gap analysis and control review reports. Executive summary callout, findings tables and rated observations, and sections that may carry tables. Assurance Plans renders its quarterly progress reports and annual conclusion through it; otherwise it renders from a supplied payload or from the bundled sample.",
 		Sources:     []string{"typst/business-report.typ", "typst/brand.typ", "typst/lib.typ"},
 		Entry:       "business-report.typ",
 		SampleData:  "samples/report-sample.json",
@@ -112,6 +115,16 @@ var Templates = []Template{
 		Sources:     []string{"typst/letter.typ", "typst/brand.typ", "typst/lib.typ"},
 		Entry:       "letter.typ",
 		SampleData:  "samples/letter-sample.json",
+	},
+	{
+		ID:          "assurance-pack-typst",
+		Name:        "Assurance plan approval pack (Typst)",
+		Engine:      EngineTypst,
+		Kind:        KindAssurancePack,
+		Description: "The committee approval pack for an assurance plan: thirteen 16:9 slides from the decisions requested and the regulatory basis through scope, approach, sampling and the deviation rule, the roadmap, quarterly targets and cycle, governance, resourcing and next steps. Rendered from the plan's Overview tab.",
+		Sources:     []string{"typst/assurance-plan-pack.typ", "typst/brand.typ", "typst/lib.typ"},
+		Entry:       "assurance-plan-pack.typ",
+		SampleData:  "samples/assurance-plan-sample.json",
 	},
 	{
 		ID:          "letter-docx",

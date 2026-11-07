@@ -29,6 +29,7 @@ var protectedPrefixes = []string{
 	"/reports",
 	"/risk-register",
 	"/audit-findings",
+	"/assurance-plans",
 	"/asset-types",
 	"/exceptions",
 	"/changelog",

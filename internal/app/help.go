@@ -263,6 +263,56 @@ func helpPage(c *gin.Context) {
       </article>
 
       <article class="panel">
+        <div class="panel-header">Assurance plans</div>
+        <div class="panel-body">
+          <p class="purpose">Build, approve and run the second line's annual plans: a controls
+          testing plan, a risk assessment cycle, policy review, resilience testing, a remediation
+          roadmap.</p>
+          <ol>
+            <li>At <a href="/assurance-plans">Assurance Plans</a>, create a plan from a plan type or
+              from the worked 2027 example. Steps, the quarterly cycle and the RACI come from the
+              template; the timeline tab draws them as a Gantt.</li>
+            <li>Fill the header, steps, quarters and governance, then submit it for review. The
+              approval gate lists what blocks approval; the approver cannot be the author when
+              more than one person can sign in.</li>
+            <li>On the Sampling tab, set each stratum's confidence, tolerable rate, coverage
+              floor, waves and top-ups; the sample sizes, quarterly allocation and capacity follow,
+              each with its formula. On the Scope population tab, paste the population as CSV
+              text, preview the changes and apply them. Nothing is uploaded. A policy review plan
+              proposes its population from the policy library's documents due for review, and a
+              remediation roadmap from the open audit findings; the proposal is previewed like a
+              paste.</li>
+            <li>After approval, freeze the population: this records a random seed, shown to
+              readers only as its hash until the year's draws are done. Each quarter, select the
+              sample: the picks are ranked by a hash of the seed, frozen, and can be re-performed
+              from the seed.</li>
+            <li>On the Tests tab, open the quarter's tests, record the evidence dates and a Pass,
+              Fail or N/A per attribute of the Test script, and have someone other than the tester
+              sign off QA. A plan without sampling (policy review, resilience testing, the
+              roadmap) tests every item due, and its coverage is the tests signed off. "Raise finding" turns a Fail into a finding in
+              <a href="/audit-findings">Audit Findings</a>, linked both ways. The Dashboard shows
+              coverage against plan, testing progress, the deviation rule per attribute and the
+              linked findings; a not-effective attribute can be pushed to the risk register.</li>
+            <li>Approval stores an immutable version. After it, step status stays editable and the
+              design changes only through a change request with a reason, which is reviewed and
+              approved as the next version. Clone a plan to start next year's.</li>
+            <li>The Overview tab's Documents and exports table downloads the committee approval
+              pack, each quarter's progress report and the annual conclusion as PDFs (or their
+              sources and data), and the plan as JSON or one CSV per table. The pack's regulatory
+              slide is the Governance tab's regulatory basis.</li>
+            <li>Optionally, the AI assist tab drafts a plan from a brief, proposes test attributes
+              from a shortlist of the NFR catalog, the controls and Regulation Coverage, or drafts
+              the executive summary and speaker notes for the pack or a report. Each answer is a
+              proposal: review its checks, unresolved references and flags, then accept, edit or
+              reject it. Nothing changes until you accept, and with no model configured in
+              <a href="/settings">Settings</a> the rest of the module works the same.</li>
+          </ol>
+          <p class="note">Practice, lifecycle and sampling method are in
+          <a href="/knowledge/assurance-plans">ASSURANCE_PLANS.md</a>.</p>
+        </div>
+      </article>
+
+      <article class="panel">
         <div class="panel-header">Exceptions</div>
         <div class="panel-body">
           <p class="purpose">Record what a system does not meet, as a set rather than as scattered
@@ -556,6 +606,7 @@ func helpPage(c *gin.Context) {
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register">/risk-register</a></td><td>The security risk register and its dashboard.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/risk-register/manage">/risk-register/manage</a></td><td>Create and edit risk entries.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/audit-findings">/audit-findings</a></td><td>Audit findings, action plans, validation and closure.</td></tr>
+          <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/assurance-plans">/assurance-plans</a></td><td>Annual 2nd-line assurance plans: steps and Gantt, quarterly cycle, governance, approval and versions, sampling, the scope population and frozen quarterly selections, the test script, tests and QA, findings raised into Audit Findings, the dashboard, the approval pack, quarterly and annual reports and exports, and optional AI assist whose answers are proposals a person accepts or rejects.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/exceptions">/exceptions</a></td><td>Build an exception set from the requirements catalog.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies">/policies</a></td><td>The policy library and its review states.</td></tr>
           <tr><td class="section">Compliance &amp; Risk</td><td class="page"><a href="/policies/manage">/policies/manage</a></td><td>Write policy sections and cite controls.</td></tr>

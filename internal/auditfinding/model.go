@@ -130,6 +130,10 @@ type Finding struct {
 	LinkedRisks    string `json:"linked_risks"`
 	LinkedControls string `json:"linked_controls"`
 	FrameworkRefs  string `json:"framework_refs"`
+	// OriginRef names the record a finding was raised from, such as an
+	// assurance plan test ("AP-2027-001 / T27-Q1-004 / NFR-04"). It is set
+	// when the finding is created and never changed by an edit.
+	OriginRef string `json:"origin_ref"`
 
 	ValidatedBy     string `json:"validated_by"`
 	ValidationDate  string `json:"validation_date"`

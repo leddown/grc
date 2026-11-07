@@ -69,6 +69,14 @@ model you want and gain the tools either way.
    on a cloud backend. See
    [POLICY_STUDIO.md](POLICY_STUDIO.md).
 
+**Assurance Plans' AI assist** (draft a plan, propose test attributes, draft
+committee narrative) uses the agent of step 4. Each request carries what the
+model is to judge: the plan's data and, for attributes, a shortlist this
+server retrieves from its own catalogs, so the answer does not depend on the
+agent reaching the knowledge API. The answer is JSON with one repair turn, and
+is stored as a proposal a person accepts or rejects. See
+[ASSURANCE_PLANS.md](ASSURANCE_PLANS.md), "AI assist".
+
 The Settings page and the AI Chat page then link to that agent's page on
 Wintermute, which is where documents are uploaded — that server owns the
 library, the extraction and the search over it.
@@ -127,9 +135,22 @@ write path here to secure, forget to secure, or be talked into using.
 | `GET /export` | Everything, in one document — see below |
 
 Kinds: `nfr`, `control`, `regulation_clause`, `regulation`, `policy_clause`,
-`policy`, `risk`, `exercise`, `exercise_finding`. Exceptions are absent because
-that page is a saved view over the NFR catalog rather than a record set of its
-own.
+`policy`, `risk`, `exercise`, `exercise_finding`, `assurance_plan`,
+`assurance_plan_test`. Exceptions are absent because that page is a saved view
+over the NFR catalog rather than a record set of its own.
+
+The two assurance plan kinds are for the control function's questions:
+
+| Question | Where the answer is |
+|---|---|
+| What's due this quarter? | The `assurance_plan` record's quarter dates and steps |
+| Are we behind plan? | The `assurance_plan` record opens with On plan, Behind plan: … or Not started, and its `behind_plan` field says the same |
+| Which Tier 1 assets failed NFR-04? | Search `assurance_plan_test`, or filter on its `stratum` and `failed_attributes` fields |
+| Which systems had a penetration test? | Filter `assurance_plan_test` on its `test_type` field |
+
+Plans have an index; tests are searched. Both are worked out by the Assurance
+Plans module and read fresh, like exercises. See ASSURANCE_PLANS.md,
+"Knowledge API".
 
 Authenticate with `X-Knowledge-Token` or `Authorization: Bearer`.
 

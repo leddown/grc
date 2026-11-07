@@ -30,12 +30,12 @@ const findingColumns = `reference, title, source, engagement, auditor, finding_t
 	recommendation, root_cause_category, business_unit, process_area, owner,
 	management_response, management_response_text, identified_date, report_date,
 	original_due_date, due_date, extension_count, extension_reason, status,
-	repeat_finding, prior_reference, linked_risks, linked_controls, framework_refs,
+	repeat_finding, prior_reference, linked_risks, linked_controls, framework_refs, origin_ref,
 	validated_by, validation_date, validation_notes, closure_evidence, closed_date,
 	risk_accepted_by, risk_acceptance_rationale, risk_acceptance_expiry, notes,
 	created_at, created_by, updated_at, updated_by`
 
-const findingColumnCount = 44
+const findingColumnCount = 45
 
 func findingArgs(f Finding) []any {
 	return []any{
@@ -44,7 +44,7 @@ func findingArgs(f Finding) []any {
 		f.Recommendation, f.RootCauseCategory, f.BusinessUnit, f.ProcessArea, f.Owner,
 		f.ManagementResponse, f.ManagementResponseText, f.IdentifiedDate, f.ReportDate,
 		f.OriginalDueDate, f.DueDate, f.ExtensionCount, f.ExtensionReason, f.Status,
-		boolToInt(f.RepeatFinding), f.PriorReference, f.LinkedRisks, f.LinkedControls, f.FrameworkRefs,
+		boolToInt(f.RepeatFinding), f.PriorReference, f.LinkedRisks, f.LinkedControls, f.FrameworkRefs, f.OriginRef,
 		f.ValidatedBy, f.ValidationDate, f.ValidationNotes, f.ClosureEvidence, f.ClosedDate,
 		f.RiskAcceptedBy, f.RiskAcceptanceRationale, f.RiskAcceptanceExpiry, f.Notes,
 		f.CreatedAt, f.CreatedBy, f.UpdatedAt, f.UpdatedBy,
@@ -61,7 +61,7 @@ func scanFinding(scanner interface{ Scan(dest ...any) error }) (Finding, error) 
 		&f.Recommendation, &f.RootCauseCategory, &f.BusinessUnit, &f.ProcessArea, &f.Owner,
 		&f.ManagementResponse, &f.ManagementResponseText, &f.IdentifiedDate, &f.ReportDate,
 		&f.OriginalDueDate, &f.DueDate, &f.ExtensionCount, &f.ExtensionReason, &f.Status,
-		&repeat, &f.PriorReference, &f.LinkedRisks, &f.LinkedControls, &f.FrameworkRefs,
+		&repeat, &f.PriorReference, &f.LinkedRisks, &f.LinkedControls, &f.FrameworkRefs, &f.OriginRef,
 		&f.ValidatedBy, &f.ValidationDate, &f.ValidationNotes, &f.ClosureEvidence, &f.ClosedDate,
 		&f.RiskAcceptedBy, &f.RiskAcceptanceRationale, &f.RiskAcceptanceExpiry, &f.Notes,
 		&f.CreatedAt, &f.CreatedBy, &f.UpdatedAt, &f.UpdatedBy,
@@ -77,10 +77,10 @@ func (r *SQLiteRepository) List(filter Filter) ([]Finding, error) {
 		query += ` AND (
 			UPPER(reference) LIKE ? OR UPPER(title) LIKE ? OR UPPER(owner) LIKE ? OR
 			UPPER(engagement) LIKE ? OR UPPER(business_unit) LIKE ? OR UPPER(linked_controls) LIKE ? OR
-			UPPER(linked_risks) LIKE ?
+			UPPER(linked_risks) LIKE ? OR UPPER(origin_ref) LIKE ?
 		)`
 		like := "%" + strings.ToUpper(filter.Search) + "%"
-		args = append(args, like, like, like, like, like, like, like)
+		args = append(args, like, like, like, like, like, like, like, like)
 	}
 	if filter.Status != "" {
 		query += ` AND status = ?`

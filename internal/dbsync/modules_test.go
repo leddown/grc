@@ -58,12 +58,47 @@ func seedModules(t *testing.T, conn *db.Conn) {
 	mustExec(t, conn, `INSERT INTO crisis_ex_chat (id, exercise_id, role, content)
 		VALUES (18, 4, 'user', 'Summarise the findings')`)
 
-	mustExec(t, conn, `INSERT INTO audit_findings (id, reference, title, severity, status)
-		VALUES (19, 'AF-2026-001', 'Privileged access not reviewed', 'High', 'In Remediation')`)
+	mustExec(t, conn, `INSERT INTO audit_findings (id, reference, title, severity, status, origin_ref)
+		VALUES (19, 'AF-2026-001', 'Privileged access not reviewed', 'High', 'In Remediation', 'AP-2027-001 / T27-Q1-001 / NFR-04')`)
 	mustExec(t, conn, `INSERT INTO audit_finding_actions (id, finding_id, ordinal, description, owner)
 		VALUES (20, 19, 0, 'Quarterly privileged access recertification', 'IAM lead')`)
 	mustExec(t, conn, `INSERT INTO audit_finding_history (id, finding_id, event, to_value)
 		VALUES (21, 19, 'created', 'Open')`)
+
+	mustExec(t, conn, `INSERT INTO assurance_plans (id, reference, title, plan_type, status, raci_roles)
+		VALUES (40, 'AP-2027-001', '2027 Security NFR Controls Testing Plan', 'controls-testing', 'Approved', '["CISO"]')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_steps (id, plan_id, ordinal, step_ref, title, step_type, start_date, end_date)
+		VALUES (41, 40, 0, '0.1', 'Confirm mandate, scope and independence', 'activity', '2026-11-09', '2026-11-13')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_quarters (id, plan_id, quarter, lod1_deadline, report_date, retest_days, overhead_days)
+		VALUES (42, 40, 1, '2027-02-26', '2027-04-30', 0, 10.5)`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_raci (id, plan_id, ordinal, activity, cells)
+		VALUES (43, 40, 0, 'Approve the plan', '{"CISO":"A"}')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_cadence (id, plan_id, ordinal, forum, frequency)
+		VALUES (44, 40, 0, 'ICT Risk Committee', 'Quarterly')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_escalations (id, plan_id, ordinal, trigger_text, escalate_to)
+		VALUES (45, 40, 0, 'Coverage more than 10 points behind plan', 'CISO and CIO')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_basis (id, plan_id, ordinal, requirement, reference, how_met)
+		VALUES (55, 40, 0, 'Review the ICT risk management framework yearly', 'DORA Art. 6(5)', 'Annual conclusion')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_history (id, plan_id, event, to_value)
+		VALUES (46, 40, 'created', 'Draft')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_versions (id, plan_id, number, label, snapshot_json)
+		VALUES (47, 40, 1, 'v1', '{}')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_ai_proposals (id, plan_id, kind, model, prompt_hash, payload_json, status)
+		VALUES (56, 40, 'attributes', 'test-model', 'abc', '{"attributes":[]}', 'proposed')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_strata (id, plan_id, ordinal, code, name, confidence, tolerable_rate, wave_q1, wave_q2, wave_q3)
+		VALUES (48, 40, 0, 'T1', 'Tier 1', 0.95, 0.05, 0.35, 0.35, 0.30)`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_population (id, plan_id, item_ref, stratum_code, wave_quarter, internet_facing)
+		VALUES (49, 40, 'T1-001', 'T1', 1, 1)`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_selections (id, plan_id, quarter, population_id, item_ref, stratum_code, basis, rank_order)
+		VALUES (50, 40, 1, 49, 'T1-001', 'T1', 'Statistical', 1)`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_attributes (id, plan_id, ordinal, attr_ref, domain, method, control_ids)
+		VALUES (51, 40, 0, 'NFR-04', 'Access management', 'Re-performance', 'AC-2, AC-6')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_tests (id, plan_id, selection_id, test_ref, tester, evidence_due_on)
+		VALUES (52, 40, 50, 'T27-Q1-001', 'tess', '2027-03-15')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_results (id, plan_id, test_id, attribute_id, result, finding_id, finding_ref, severity)
+		VALUES (53, 40, 52, 51, 'Fail', 19, 'AF-2026-001', 'High')`)
+	mustExec(t, conn, `INSERT INTO assurance_plan_thematic (id, plan_id, attribute_id, stratum_code, risk_id, risk_ref, deviations)
+		VALUES (54, 40, 51, 'T1', 7, 'AP-2027-001-NFR-04-T1', 2)`)
 
 	mustExec(t, conn, `INSERT INTO policy_documents (id, title, editor_format, projection_token)
 		VALUES (30, 'ICT and Information Security Policy', 'studio', 'tok-1')`)
@@ -103,6 +138,11 @@ func checkModules(t *testing.T, dst *db.Conn) {
 		"policy_doc_state": 1, "policy_doc_updates": 1, "policy_doc_snapshots": 1,
 		"policy_comment_threads": 1, "policy_comments": 1, "policy_studio_audit": 1,
 		"policy_ai_proposals": 1, "policy_ai_edits": 1,
+		"assurance_plans": 1, "assurance_plan_steps": 1, "assurance_plan_quarters": 1,
+		"assurance_plan_raci": 1, "assurance_plan_cadence": 1, "assurance_plan_escalations": 1,
+		"assurance_plan_basis": 1, "assurance_plan_history": 1, "assurance_plan_versions": 1, "assurance_plan_ai_proposals": 1,
+		"assurance_plan_strata": 1, "assurance_plan_population": 1, "assurance_plan_selections": 1,
+		"assurance_plan_attributes": 1, "assurance_plan_tests": 1, "assurance_plan_results": 1, "assurance_plan_thematic": 1,
 	} {
 		if got := count(t, dst, table); got != want {
 			t.Errorf("%s count=%d want %d", table, got, want)
@@ -117,6 +157,30 @@ func checkModules(t *testing.T, dst *db.Conn) {
 	if got := scalar(t, dst, `SELECT i.title FROM crisis_ex_responses r
 		JOIN crisis_ex_injects i ON i.id = r.inject_id`); got != "Payments queue stalls" {
 		t.Errorf("response's inject title=%q want 'Payments queue stalls'", got)
+	}
+	if got := scalar(t, dst, `SELECT p.reference FROM assurance_plan_steps s
+		JOIN assurance_plans p ON p.id = s.plan_id WHERE s.step_ref = '0.1'`); got != "AP-2027-001" {
+		t.Errorf("step's plan reference=%q want AP-2027-001", got)
+	}
+	if got := scalar(t, dst, `SELECT x.item_ref FROM assurance_plan_selections s
+		JOIN assurance_plan_population x ON x.id = s.population_id WHERE s.id = 50`); got != "T1-001" {
+		t.Errorf("selection's population item=%q want T1-001", got)
+	}
+	if got := scalar(t, dst, `SELECT a.attr_ref || ' ' || x.item_ref || ' ' || r.result FROM assurance_plan_results r
+		JOIN assurance_plan_tests t ON t.id = r.test_id
+		JOIN assurance_plan_selections s ON s.id = t.selection_id
+		JOIN assurance_plan_population x ON x.id = s.population_id
+		JOIN assurance_plan_attributes a ON a.id = r.attribute_id WHERE r.id = 53`); got != "NFR-04 T1-001 Fail" {
+		t.Errorf("result through its test, selection, item and attribute=%q want 'NFR-04 T1-001 Fail'", got)
+	}
+	if got := scalar(t, dst, `SELECT origin_ref FROM audit_findings WHERE id = 19`); got != "AP-2027-001 / T27-Q1-001 / NFR-04" {
+		t.Errorf("finding origin_ref=%q", got)
+	}
+	if got := scalar(t, dst, `SELECT wave_q3 FROM assurance_plan_strata WHERE id = 48`); got != "0.3" {
+		t.Errorf("stratum wave_q3=%q want 0.3", got)
+	}
+	if got := scalar(t, dst, `SELECT overhead_days FROM assurance_plan_quarters WHERE id = 42`); got != "10.5" {
+		t.Errorf("quarter overhead_days=%q want 10.5 (a REAL column must survive the round trip)", got)
 	}
 	if got := scalar(t, dst, `SELECT rationale FROM crisis_ex_classification WHERE exercise_id = 4`); got == "" {
 		t.Error("classification rationale is empty")
@@ -210,10 +274,10 @@ func TestSync_SkipsTheTreeShapedModules(t *testing.T) {
 			skipped[tr.Table] = true
 		}
 	}
-	if len(skipped) != 31 {
-		t.Errorf("report marks %d tables skipped, want 31", len(skipped))
+	if len(skipped) != 48 {
+		t.Errorf("report marks %d tables skipped, want 48", len(skipped))
 	}
-	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit"} {
+	for _, want := range []string{"crisis_ex_exercises", "reg_coverage_regulations", "crisis_ex_chat", "audit_findings", "policy_doc_state", "policy_doc_updates", "policy_comment_threads", "policy_studio_audit", "assurance_plans", "assurance_plan_versions", "assurance_plan_population", "assurance_plan_selections", "assurance_plan_tests", "assurance_plan_results", "assurance_plan_ai_proposals"} {
 		if !skipped[want] {
 			t.Errorf("%s is not reported as skipped", want)
 		}
@@ -284,5 +348,31 @@ func TestDecodeBlobRejectsNonBase64(t *testing.T) {
 	got, err := decodeBlob(nil)
 	if err != nil || got != nil {
 		t.Fatalf("decodeBlob(nil) = %v, %v; want nil, nil", got, err)
+	}
+}
+
+// A v15 backup predates Assurance Plans and audit_findings.origin_ref. Its
+// findings restore with the origin blank and the plan tables empty.
+func TestImport_V15FindingRestoresWithoutAnOrigin(t *testing.T) {
+	dst := openTemp(t, "v15.db")
+	older := &Snapshot{
+		Version:    15,
+		ExportedAt: "2026-10-01T00:00:00Z",
+		Tables: map[string][]map[string]any{
+			"audit_findings": {{
+				"id": 3, "reference": "AF-2026-003", "title": "Backups not tested", "severity": "Medium", "status": "Open",
+			}},
+		},
+	}
+	if _, err := Import(dst, roundTrip(t, older)); err != nil {
+		t.Fatalf("Import of a v15 snapshot: %v", err)
+	}
+	if got := scalar(t, dst, `SELECT reference || '|' || origin_ref FROM audit_findings WHERE id = 3`); got != "AF-2026-003|" {
+		t.Errorf("restored finding = %q, want its reference and a blank origin", got)
+	}
+	for _, table := range []string{"assurance_plans", "assurance_plan_tests", "assurance_plan_results", "assurance_plan_ai_proposals"} {
+		if got := count(t, dst, table); got != 0 {
+			t.Errorf("%s count=%d want 0", table, got)
+		}
 	}
 }

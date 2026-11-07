@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"grc/internal/aiprovider"
+	"grc/internal/assuranceplan"
 	"grc/internal/auditfinding"
 	"grc/internal/authn"
 	"grc/internal/controlcatalog"
@@ -190,7 +191,7 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 	pdfRenderer := registerReportingRoutes(router)
 	registerSettingsRoutes(router, settingsService, aiRouter, settingsStorage(options), adminMiddleware, options.LocalMode)
 	policyService := registerPolicyDocRoutes(router, sqliteDB, authService, adminMiddleware, options.LocalMode)
-	registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
+	templateService := registerDocTemplateRoutes(router, sqliteDB, policyService, adminMiddleware, options.LocalMode)
 
 	// One knowledge service, two consumers. It is the read-only view over every
 	// catalog in this installation, and both the machine-facing API an external
@@ -212,7 +213,15 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 	registerKnowledgeRoutes(router, knowledgeService, options)
 	registerCrisisExerciseRoutes(
 		router, sqliteDB, knowledgeService, settingsService, aiRouter, pdfRenderer, adminMiddleware, options.LocalMode)
-	registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
+	findingService := registerAuditFindingRoutes(router, sqliteDB, adminMiddleware, options.LocalMode)
+	planService := registerAssurancePlanRoutes(router, sqliteDB, authService, assuranceplan.Integrations{
+		Findings: findingService,
+		Risks:    riskregister.NewService(riskregister.NewSQLiteRepository(sqliteDB)),
+		Controls: controlHandler.Service(),
+		NFRs:     securityNFRHandler.Service(),
+		Policies: policyService,
+	}, docRenderer(templateService), aiRouter, knowledgeService, adminMiddleware, options.LocalMode)
+	knowledgeService.WithAssurancePlans(planService.KnowledgePlans, planService.KnowledgeTests)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	return router, studioService, nil
@@ -431,7 +440,7 @@ func registerPolicyDocRoutes(r gin.IRouter, sqliteDB *db.Conn, authService *auth
 // imported by internal/doctemplate, which keeps that package free of any
 // knowledge of how a policy is stored — see its package comment. This function
 // is the only place the two modules meet.
-func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *policydocs.Service, adminMiddleware gin.HandlerFunc, localMode bool) {
+func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *policydocs.Service, adminMiddleware gin.HandlerFunc, localMode bool) *doctemplate.Service {
 	templateService := doctemplate.NewService(doctemplate.NewSQLiteRepository(sqliteDB))
 	templateService.SetPayloadSource(doctemplate.PolicyPayloadSource(func(id int64) (any, string, error) {
 		export, err := policyService.ExportTemplateJSON(id)
@@ -502,6 +511,25 @@ func registerDocTemplateRoutes(r gin.IRouter, sqliteDB *db.Conn, policyService *
 		admin.Use(adminMiddleware)
 	}
 	templateHandler.RegisterAdminRoutes(admin)
+	return templateService
+}
+
+// docRenderer lets a module typeset its own payload with a registered
+// template without importing internal/doctemplate. It answers like the
+// redline: the PDF, the source bundle with ?bundle=1 or when no engine is
+// found, or 422 with the compiler's log.
+func docRenderer(templateService *doctemplate.Service) func(c *gin.Context, templateID string, data []byte, baseName string) {
+	return func(c *gin.Context, templateID string, data []byte, baseName string) {
+		result, err := templateService.Render(c.Request.Context(), doctemplate.Request{
+			TemplateID: templateID, Data: data, BaseName: baseName, PDFStandard: doctemplate.PDFStandards[0].Value,
+			Bundle: c.Query("bundle") == "1",
+		})
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error(), "log": result.Log})
+			return
+		}
+		doctemplate.WriteResult(c, result, c.Query("inline") == "1")
+	}
 }
 
 // settingsStorage names where the Settings page's values are written.
@@ -706,9 +734,9 @@ func registerCrisisExerciseRoutes(
 
 // registerAuditFindingRoutes wires Audit Findings & Remediation with the same
 // read-open / write-admin split as the risk register it sits beside.
-func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware gin.HandlerFunc, localMode bool) {
-	handler := auditfinding.NewHandler(
-		auditfinding.NewService(auditfinding.NewSQLiteRepository(sqliteDB)), sessionUsername)
+func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddleware gin.HandlerFunc, localMode bool) *auditfinding.Service {
+	service := auditfinding.NewService(auditfinding.NewSQLiteRepository(sqliteDB))
+	handler := auditfinding.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)
 
 	admin := r.Group("/")
@@ -716,6 +744,29 @@ func registerAuditFindingRoutes(r gin.IRouter, sqliteDB *db.Conn, adminMiddlewar
 		admin.Use(adminMiddleware)
 	}
 	handler.RegisterAdminRoutes(admin)
+	return service
+}
+
+// registerAssurancePlanRoutes wires Assurance Plans with the read-open /
+// write-admin split of Audit Findings, and the separation of duties of the
+// policy library: on only when more than one person can sign in. A failed
+// test raises its finding in Audit Findings and a thematic conclusion goes to
+// the risk register, through those modules' own services and their rules.
+// AI assist asks through the shared router, so the Settings model and the
+// ai_usage_log apply, and cites the catalogs through the knowledge service.
+func registerAssurancePlanRoutes(r gin.IRouter, sqliteDB *db.Conn, authService *authn.Service, in assuranceplan.Integrations, render assuranceplan.Renderer,
+	aiRouter *aiprovider.Router, knowledgeService *knowledge.Service, adminMiddleware gin.HandlerFunc, localMode bool) *assuranceplan.Service {
+	service := assuranceplan.NewService(assuranceplan.NewSQLiteRepository(sqliteDB)).WithIntegrations(in).WithAI(aiRouter, knowledgeService)
+	service.SetRequireSeparateApprover(!localMode && authService != nil && !authService.SingleUserMode())
+	handler := assuranceplan.NewHandler(service, sessionUsername).WithRenderer(render)
+	handler.RegisterRoutes(r)
+
+	admin := r.Group("/")
+	if !localMode {
+		admin.Use(adminMiddleware)
+	}
+	handler.RegisterAdminRoutes(admin)
+	return service
 }
 
 func registerPublicPageRoutes(r gin.IRouter, localMode bool) {

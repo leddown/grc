@@ -36,6 +36,7 @@ var fullNavLinks = []string{
 	`href="/risk-register"`,
 	`href="/risk-register/manage"`,
 	`href="/audit-findings"`,
+	`href="/assurance-plans"`,
 	`href="/exceptions"`,
 	`href="/policies"`,
 	`href="/policies/manage"`,

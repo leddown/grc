@@ -5,6 +5,9 @@
 #   ./build.sh policy                   just the policy document
 #   ./build.sh report                   just the business report
 #   ./build.sh letter                   just the letter
+#   ./build.sh pack                     the assurance plan approval pack
+#   ./build.sh quarterly                an assurance plan quarterly report
+#   ./build.sh annual                   an assurance plan annual conclusion
 #   ./build.sh latex                    the LaTeX policy document
 #   ./build.sh policy path/to/doc.json  a real document
 #
@@ -37,7 +40,7 @@ mkdir -p "$OUT"
 have() { command -v "$1" >/dev/null 2>&1 || [ -x "$1" ]; }
 
 build_typst() {
-  local name="$1" data="$2"
+  local name="$1" data="$2" out="${3:-$1}"
   if ! have "$TYPST"; then
     echo "typst not found. Install it (https://github.com/typst/typst/releases)" >&2
     echo "or set TYPST=/path/to/typst. It is a single static binary." >&2
@@ -58,9 +61,9 @@ build_typst() {
     --root .. \
     --input "data=$data" \
     ${PDF_STD:+--pdf-standard "$PDF_STD"} \
-    "typst/$name.typ" "$OUT/$name.pdf" 2>&1 \
+    "typst/$name.typ" "$OUT/$out.pdf" 2>&1 \
     | grep -vE 'unknown font family|^\s*[┌│]|^\s*[0-9]+ │|^\s*\^+\s*$|^\s*$' || true
-  echo "    $OUT/$name.pdf"
+  echo "    $OUT/$out.pdf"
 }
 
 build_latex() {
@@ -97,6 +100,17 @@ case "$target" in
   letter)
     build_typst letter "${data:-../samples/letter-sample.json}"
     ;;
+  pack)
+    build_typst assurance-plan-pack "${data:-../samples/assurance-plan-sample.json}"
+    ;;
+  quarterly)
+    # The quarterly and annual reports are the business report with an
+    # assurance plan's payload, so they are written under their own names.
+    build_typst business-report "${data:-../samples/assurance-quarterly-sample.json}" assurance-quarterly-report
+    ;;
+  annual)
+    build_typst business-report "${data:-../samples/assurance-annual-sample.json}" assurance-annual-conclusion
+    ;;
   latex)
     build_latex
     ;;
@@ -104,9 +118,12 @@ case "$target" in
     build_typst policy-document ../samples/policy-sample.json
     build_typst business-report ../samples/report-sample.json
     build_typst letter ../samples/letter-sample.json
+    build_typst assurance-plan-pack ../samples/assurance-plan-sample.json
+    build_typst business-report ../samples/assurance-quarterly-sample.json assurance-quarterly-report
+    build_typst business-report ../samples/assurance-annual-sample.json assurance-annual-conclusion
     ;;
   *)
-    echo "unknown target: $target (expected policy, report, letter, latex or all)" >&2
+    echo "unknown target: $target (expected policy, report, letter, pack, quarterly, annual, latex or all)" >&2
     exit 2
     ;;
 esac

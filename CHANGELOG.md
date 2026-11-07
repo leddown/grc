@@ -3,6 +3,1050 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-07 (Assurance Plans, phase 6: AI assist — plan drafts, test attributes, committee narrative)
+
+Last of six phases on `feature/assurance-plans`. Three optional assists on a
+new **AI assist** tab. Each answer is a stored proposal that changes nothing
+until a person accepts, edits or rejects it. Every feature of the module works
+with no model configured. Nothing is uploaded or parsed: the assists read the
+plan and the catalogs this server already holds.
+
+- **The model** (`ai.go`, new). Calls go through the shared
+  `aiprovider.Router`, so they use the Wintermute model chosen in Settings and
+  are logged to `ai_usage_log`. `Service.WithAI(asker, retriever)` is wired in
+  `app.go` with the router and the knowledge service.
+  - The standing rules are the system prompt of every assist:
+    1. say when you do not know (`unknowns`)
+    2. never invent a control identifier, NFR key, article, threshold or
+       deadline; cite only from the lists shown, and take figures only from
+       the data or the brief
+    3. `regulation` only when a cited regulation reference requires it,
+       otherwise `good_practice`
+    4. plan dates are proposals, not regulatory deadlines
+    5. one JSON object
+  - Answers are decoded strictly (unknown fields refused). A malformed answer
+    gets one repair turn that quotes the parse error, through the session id
+    or the history. A refusal or an answer cut off at the token limit
+    (8,000) is never parsed.
+  - One request per plan at a time (409), so a double click does not pay
+    twice.
+  - Errors: 409 with no provider ("set the Wintermute server in Settings, or
+    do this by hand"), 422 for a refusal or a cut-off (`RefusedError`), 502
+    for a provider failure or a second malformed answer (`UpstreamError`).
+    Nothing is stored for any of them.
+- **Draft plan from a brief** (`ai_draft.go`, new; admin
+  `POST /assurance-plans/:id/ai/draft`).
+  - The brief is `objective`, `regulation`, `population_size` and
+    `constraints`: at least one of them, and each text 4,000 characters at
+    most.
+  - The prompt holds the plan, its own steps, the refs of the generated
+    quarterly steps (not to be proposed), the quarters, up to 8 Regulation
+    Coverage clauses retrieved lexically, and the plan's own references.
+  - The answer proposes up to 60 steps, quarter dates and a RACI (up to 40
+    activities), and may propose an objective.
+  - The checks leave out:
+    - a step without a title or valid dates, one that ends before it starts,
+      repeats a reference or takes a generated step's reference
+    - a quarter whose seven dates are not all valid, in order and inside the
+      plan's span (it keeps its current dates)
+    - a RACI cell with an unknown role or letter
+  - They note a step outside the span, a role that is not a RACI role, a
+    missing responsible role, and an activity with other than one
+    accountable role.
+  - Only a design that can be edited can be drafted (409 in review or
+    locked).
+- **Propose test attributes** (`ai_attributes.go`, new; admin
+  `POST /assurance-plans/:id/ai/attributes`, `{"focus", "count"}`).
+  - The server retrieves a shortlist through `knowledge.Service.Search`: up
+    to 12 NFRs, 12 controls and 8 Regulation Coverage clauses. The model
+    judges the shortlist; it does not browse.
+  - Default 8 attributes, at most 15. An empty focus, or one over 500
+    characters, is 400. An empty shortlist is 400 and the model is not asked.
+    No catalogs wired is 409.
+  - The checks:
+    - a reference already on the plan becomes `<ref>-2`
+    - an unknown method becomes Inspection
+    - an applies-to code that is not a stratum is dropped
+    - the first NFR cited becomes `nfr_key`, the controls `control_ids`, and
+      the clauses and plan references `regulatory_refs`
+- **Draft committee narrative** (`ai_narrative.go`, new; admin
+  `POST /assurance-plans/:id/ai/narrative`, `{"document": "pack" | "quarter"
+  | "annual", "quarter"}`).
+  - The data is the pack payload (with the slide titles) or the report
+    payload, without the appendices, as JSON. A plan in any status can have
+    one.
+  - The answer is an executive summary (4,000 characters) and, for the pack,
+    speaker notes for slides 1–13 (1,500 characters each, one per slide).
+  - **Flags** warn of each figure that is not in the data (as given, rounded,
+    or a share as a percentage) and each article that is not among the plan's
+    references or the data. A flag is not a refusal.
+- **References.** Every reference a step or an attribute cites is resolved,
+  in order: the shortlist, the catalogs (`knowledge.Service.Get`, noted when
+  it was not on the shortlist), then the plan's own references (header and
+  regulatory basis). One that resolves nowhere is listed as unresolved, shown
+  struck through, and never stored on the plan. An item marked `regulation`
+  with nothing regulatory that resolves is marked `good_practice`, with a
+  note.
+- **The proposal** (`assurance_plan_ai_proposals`, new, in `sqlite.go` and
+  `postgres.go`; `repository_ai.go`, new). It stores:
+  - the model and the prompt hash (SHA-256 of the system prompt and the
+    prompt), the timestamp and who asked
+  - the brief (`input_json`) and the plan's design `revision`
+  - `payload_json`: the answer after the checks
+  - `status` (proposed, accepted or rejected), `applied_json`,
+    `decision_note`, `decided_by` and `decided_at`
+
+  The proposal and its decision are both in the plan's history. Read through
+  `GET /assurance-plans/:id/ai/proposals` (`{"configured", "model",
+  "proposals"}`) and `GET …/ai/proposals/:pid`.
+- **The decision** (admin `POST …/ai/proposals/:pid/decide`, `{"decision",
+  "note", "parts", "attributes", "payload"}`).
+  - A proposal is decided once; the update is guarded on `status =
+    'proposed'`, so two people cannot both decide it (409).
+  - An edited `payload` is checked again against the references stored with
+    the proposal, never against references in the edit.
+  - Accepting a draft applies the chosen parts through the existing
+    validators: the objective, the steps (replacing the plan's own; the
+    generated steps stay with their statuses), the quarters (and their
+    generated steps are rebuilt) and the RACI. The plan's `ai_generated`,
+    `model` and `prompt_hash` are set.
+  - Accepting attributes adds the chosen ones with `ai_generated`, `model`
+    and `prompt_hash`. The test script shows an **AI** marker on them, and a
+    clone keeps it.
+  - Accepting a narrative takes the text as edited. The newest accepted one
+    for a report replaces its executive summary, and the limitations say it
+    was drafted with AI assistance, by which model, and who accepted it when.
+    For the pack it goes into `pack.narrative`.
+  - Decide bodies may be up to 1 MiB, because they can carry a whole edited
+    proposal; the asks are limited to 64 KiB.
+- **The pack.** `assurance-plan-pack.typ` sets a "Presenter's notes" page
+  after the slides when `pack.narrative` is there: the executive summary and
+  the speaker notes under a provenance line. The slides do not change, and
+  the reference render in `templates/out/` is unchanged (no narrative in the
+  sample).
+- **The tab** (`pages_ai.go`, new).
+  - Three forms, with the brief pre-filled from the plan.
+  - The proposals table (explicit `<thead>`; status as a word in a pill).
+  - A review of each proposal: its checks, unknowns and flags, the cites with
+    links, and the unresolved references struck through.
+  - Checkboxes say what accepting replaces. Narrative text is edited in
+    place.
+  - With no model the tab says so and its buttons are disabled; on a locked
+    design the draft and attribute buttons are.
+- **Backup.** The table joins the snapshot at version 16, `idKeyed` and
+  `skipInSync`, like the module's other tables, because no build with the
+  module has been released.
+- **Tests** (`ai_test.go`, new; `internal/doctemplate/assurance_test.go`;
+  `internal/dbsync/modules_test.go`). A fake model and a fake catalog cover:
+  - no provider (409, nothing stored)
+  - the repair turn; the stored model and prompt hash; the standing rules in
+    the system prompt; the plan unchanged until accepted
+  - each draft check; acceptance of chosen parts with the generated steps
+    kept, and an edited payload whose fake reference is dropped
+  - deciding twice; drafting a design in review
+  - a refusal, a cut-off, a twice-malformed answer and a provider failure,
+    none stored and none leaving the plan claimed
+  - the attribute shortlist, resolution, a catalog hit off the shortlist,
+    an unresolved control, renaming, method, applies-to and provenance; an
+    empty catalog and no catalog
+  - narrative flags; pack notes; an edited Q1 narrative in the Q1 report and
+    not in Q2; `pack.narrative`; a rejected narrative unused
+  - the routes (201, 200, 400, 404, 409, 422, 502, both body limits) and the
+    tab
+  - Typst compiles the pack with a narrative from the sample and from hostile
+    strings
+  - I broke citation resolution on purpose to check that the tests catch it;
+    they did. The tab's script was checked with `node --check`, and its
+    review was run in Node against stored proposals of each kind and status.
+- **Gate.** `go fmt` and `go vet` are clean, and `go test ./...` passes,
+  including TestGosec and TestGovulncheck. TestGosec first flagged G602 on a
+  guarded `dates[i-1]` in the quarter check, now a running previous date.
+  `npm audit --omit=dev` in `web/policy-studio` found 0 vulnerabilities.
+  PostgreSQL was reviewed, not run.
+- **Manual check.** I ran a throwaway server: local mode, a temporary SQLite
+  database, port 18947, no AI configured.
+  - The three asks answered 409 with the Settings message. The list answered
+    `configured: false`, and a 70 KB brief was refused with 400.
+  - The page showed the notice and disabled buttons. The table was created
+    with its 16 columns. The pack payload had no narrative.
+  - Headless Chrome at 1024×640 showed the tab usable with the tabs wrapping.
+
+  The server, database, key file, binary and browser profile were removed.
+  **Correction to phase 5:** that entry says its server was removed, but the
+  process kept running from its deleted binary on port 18947 until this
+  check found it; it was stopped now.
+- Docs:
+  - `ASSURANCE_PLANS.md`: build status; the proposals table; the AI routes;
+    the AI assist section (rewritten); `pack.narrative` and the presenter's
+    notes; narrative in the reports; clone; backup. The create example is
+    now `dora-nfr-2027` (it said `appendix-a`, which is refused).
+  - HTTP_API (six routes), DATA_MODEL (the table, the attribute provenance,
+    the history), FEATURES, ARCHITECTURE (now counted, like the other rows,
+    in non-blank lines), the Help page, README, Agents.md, AI_AGENT.md (which
+    agent answers) and DOCUMENT_TEMPLATES.md (`pack.narrative`)
+
+## 2026-11-07 (Assurance Plans, phase 5: RCSA, policy review, resilience testing and remediation roadmap types, multi-year cycles, proposed populations)
+
+Fifth of six phases on `feature/assurance-plans`. Four plan types join
+Controls testing and Blank. They are templates plus flags. The only new code
+that knows about a source is the proposal, which reads the policy library and
+Audit Findings. Every feature works with no model configured, and nothing is
+uploaded or parsed.
+
+- **Plan types** (`internal/assuranceplan/templates/`, new JSON):
+  - `rcsa.json`, the ICT risk assessment cycle: business units or processes
+    in two strata, Critical (BU-C) and Other (BU-O). 1LoD self-assesses 100%
+    in waves, and 2LoD reviews and challenges a sample through the same
+    engine. The default confidence is smaller than controls testing's:
+    90%/10% with a 20% floor for BU-C, 80%/15% with a 10% floor for BU-O.
+    Six review attributes, RC-01..RC-06.
+  - `policy-review.json`: Policies (POL) and Standards and procedures (STD),
+    with sampling off. Owner review, consultation, approval and publication
+    (PR-01..PR-04) are recorded as one test per document. Coverage is the
+    signed-off test. The population is proposed from the policy library.
+  - `resilience-testing.json` (DORA Arts. 24–25): Systems supporting critical
+    or important functions (SYS) and TLPT scopes (TLPT, a three-year cycle),
+    with sampling off. Six test types, from vulnerability assessment to TLPT.
+    Coverage is the share of systems with a signed-off test. RT-06 applies to
+    TLPT only. Steps T.1–T.5 track the TLPT.
+  - `remediation-roadmap.json`: open findings, Critical and High (F-CH) and
+    Medium and Low (F-ML). Each finding sits in the wave of the quarter it is
+    due. Closure validation (VR-01..VR-04) is the test. There are quarterly
+    milestones and a half-year Audit Committee report (step 2.7). The
+    population is proposed from Audit Findings.
+  - `controls-testing.json` and the 2027 example gained
+    `"test_types": ["Controls test"]` and `"coverage_basis": "attestation"`.
+  - **The regulatory basis rows are paraphrases and need your check against
+    the texts before a pack goes to a committee:** DORA Arts. 5(2)(b), 6(4),
+    6(5), 6(7), 8(2), 8(3), 9(4)(a), 11(6), 24(1), 24(2), 24(4), 24(5), 24(6),
+    25(1), 26(1); RTS (EU) 2024/1774 Arts. 2 and 27; ISO/IEC 27001:2022 A.5.1;
+    IIA Global Internal Audit Standards 15.2.
+- **Plan settings** (`assurance_plans.test_types` JSON, `coverage_basis`,
+  `population_source`; SQLite `ensureColumn`, PostgreSQL
+  `ADD COLUMN IF NOT EXISTS`). They are edited under "Plan type settings" in
+  the header.
+  - `test_types`: at most 20 types of up to 60 characters, deduplicated
+    without regard to case. A test records one of them.
+  - `coverage_basis` `attestation` | `tests`: what counts an item as covered
+    in the RAG, the dashboard, the reports and the knowledge record.
+  - `population_source` `policies` | `findings` | empty.
+  - A header save without these keys keeps them, so an older client cannot
+    wipe them; `"none"` clears the source. The history event names each one
+    that changed.
+- **Stratum flags** (`assurance_plan_strata.cycle_years`, `takes`):
+  - `cycle_years` is 0–10; 1 is stored as 0.
+  - `takes` is the document types or severities a proposal places in the
+    stratum. At most 20 values, each up to 40 characters with no separator.
+  - Both are edited in the strata editor on the Sampling tab.
+- **Multi-year cycle** (`assurance_plan_population.last_tested_on`):
+  - An item is due in the period when it was never tested, or when its last
+    test plus the cycle falls on or before the period end.
+  - An item not due and with no wave is counted as `in_cycle`: it is left out
+    of N, needs no wave at the freeze, and counts as covered until its cycle
+    lapses.
+  - On a cycle stratum, a change to `last_tested_on` is a membership change
+    under the population rules.
+  - Clone sets each item's `last_tested_on` to this year's QA sign-off date
+    when that is later, so the cycle runs on into next year.
+- **Full-coverage strata** (sampling off) are planned by their loaded waves.
+  - Before, the tests per quarter came from the wave percentages, so a wave
+    of 3 items under a 25% share planned 1 test while the selection took 3.
+  - Now, once the population is loaded, statistical picks, reviews due and
+    the cumulative target are the wave counts, and the plan agrees with the
+    selection. Before the population is loaded, the planned size and the
+    percentages still stand in.
+  - The `wave_counts` advisory applies to sampled strata only.
+- **Coverage on tests.** On the `tests` basis an item is covered on its test's
+  QA sign-off date, and an item in cycle counts as covered. A cycle stratum's
+  planned count for a quarter is the items in cycle at its end plus the items
+  with a wave up to that quarter.
+  - `CoverageCell.Attested` is renamed `Covered` (JSON `covered`).
+  - `CoverageRow` gains `basis`, `tested`, `covered`, `covered_pct`,
+    `in_cycle` and `cycle_years`.
+  - The dashboard's heading reads "Test coverage against plan" on that basis.
+- **Test type** (`assurance_plan_tests.test_type`):
+  - A new test takes the plan's first type.
+  - A save matches the type without regard to case and stores the plan's
+    spelling. A type the plan does not list is refused with 400. A blank type
+    keeps the current one.
+  - It appears in the Tests tab's column and editor, the search, the export,
+    the tests CSV, and the knowledge test record (body and field
+    `test_type`).
+- **Deviation rule without sampling.** One deviation in a full-coverage
+  stratum reads "1 deviation – full coverage, raise as findings", with no
+  extension (`full_coverage: true`). Two or more are still Not effective.
+- **Proposed populations** (`propose.go`, new; admin
+  `POST /assurance-plans/:id/population/propose?source=policies|findings`).
+  - The answer is CSV text in the import format, with its counts and notes.
+    It writes nothing. "Propose from …" on the Scope population tab fills the
+    box, turns merge on and runs the preview, so the proposal goes through the
+    same validation and diff as a paste.
+  - Policies: documents that are approved or approved and in review, not
+    letters, and of the plan's client profile. A document is due on its next
+    review date, or on its effective date plus its cadence. Those due by the
+    period end are proposed, each in the wave of its due quarter; an overdue
+    review goes into Q1. A document with no review clock is counted and left
+    out.
+  - Findings: the open findings (not Draft, Closed or Risk accepted), each in
+    the wave of its due quarter. An overdue or undated finding goes into Q1.
+    One due after the period is left for next year's roadmap and counted.
+  - An item already in the plan keeps its stratum and wave. A note says when
+    the source now places it elsewhere, so a second proposal adds only what
+    is new.
+  - The proposal refuses (400) a plan without a source, without period dates,
+    or where no stratum takes anything. It refuses (409) a closed plan or an
+    integration that is not wired.
+  - `Integrations` gained `Policies`, wired in `app.go`.
+  - Population CSV import and export gained `last_tested_on` (aliases
+    `last_test_date` and others), `source_kind` and `source_ref`. The export
+    adds `cycle_due`. The item table links an item to its policy document or
+    finding.
+- **Gate:**
+  - new advisories: `in_cycle`, `takes_unknown` (a value that is not a
+    document type or severity), `source_unmapped` (a source where no stratum
+    takes anything)
+  - `no_attributes` now fires for any plan with strata, not only a sampled one
+- **Outputs.**
+  - The approval pack's Approach, Sampling and Quarterly targets slides now
+    follow the plan's basis, sampling and cycles. Before, a policy review
+    plan's pack said 1LoD attests and 2LoD samples, and showed "Planned tests
+    0" for a full-coverage stratum. Now the slides show every item due, the
+    real planned tests, "tested and signed off by quarter end", and the cycle
+    line. The roadmap says "Wave: n item(s) due" and "selected" for such a
+    plan; so do the quarterly report's next-quarter line and the knowledge
+    record.
+  - The annual on the tests basis has the columns "Tested and signed off",
+    "In cycle" and "Covered". A plan with two or more test types adds "Tests
+    by type".
+  - The limitations follow the basis and whether the plan samples. The annual
+    sentence now reads "does not replace the work of the other assurance
+    plans, such as resilience testing, or of internal audit". The old wording
+    named the resilience programme, which is wrong in the resilience plan's
+    own report.
+  - The samples were regenerated with
+    `GRC_UPDATE_SAMPLES=1 go test ./internal/assuranceplan -run Payload`, and
+    `templates/out/` was re-rendered.
+- **Backup.** The new columns join the snapshot's column lists. A snapshot
+  without them restores with the defaults: the attestation basis, no types,
+  no source, no cycle. `SnapshotVersion` stays 16, because no build with the
+  module has been released.
+- **Tests** (`types_test.go`, new; additions to `knowledge_test.go`,
+  `exec_test.go` and `documents_test.go`):
+  - Every type instantiates for 2027 with no blocking finding, with:
+    - roles in steps and the RACI that are RACI roles
+    - attributes that apply to existing strata
+    - basis, cadence and escalations present
+    - at least 16 quarterly steps
+    - no `takes_unknown` or `source_unmapped`
+  - The header settings: kept when omitted, deduplicated, `none`, and bad
+    values refused (400).
+  - Stratum cycle and takes validation, and the normalisation of both.
+  - The policy proposal over nine documents:
+    - waves, owners and source refs
+    - overdue documents in Q1
+    - later, draft, retired, letter and no-clock documents left out
+    - apply, then a re-proposal that adds nothing and notes a moved due date
+  - The findings proposal: stratum by severity, waves, an overdue finding,
+    the risk-accepted finding and the one due later left out.
+  - The refusals: no source, nothing taken, a bad source, the integration
+    missing. The lint codes.
+  - The resilience year:
+    - N and in-cycle counts, wave-count planning, and a freeze with an
+      in-cycle item that has no wave
+    - Full coverage picks, the default test type, canonical spelling, the 400,
+      and a blank type kept
+    - coverage on QA dates, with Q1 Red before the April sign-off
+    - TLPT cells across the CIF-PAY lapse
+    - the full-coverage deviation
+    - the export fields and Tests by type
+    - the roadmap and next-quarter wording
+    - a clone carrying the QA date into `last_tested_on`
+  - A freeze refused for a lapsed TLPT scope with no wave, and the cycle
+    boundaries.
+  - The CSV columns and a bad `last_tested_on`.
+  - The propose route (400) and the page: the button present only with a
+    source, the settings fieldset, the coverage heading, the takes column.
+- **Manual check.** I ran a throwaway server: local mode, a temporary SQLite
+  database, port 18947.
+  - Findings were created through the API; policy documents were written into
+    the temporary database.
+  - Both proposals gave the expected CSV and notes, and the bad sources gave
+    400.
+  - The policy proposal was previewed and applied, keeping its source fields.
+  - A resilience plan was approved, frozen with an in-cycle scope that had no
+    wave, drawn and tested: penetration test canonicalised, the unknown type
+    400, QA signed off. The dashboard showed tests-basis coverage with the
+    TLPT cycle.
+  - Typst compiled the pack and annual for the policy review, resilience and
+    RCSA plans, and I read the resilience pack's slides 5–8.
+
+  The server, database, key file and payloads were removed.
+- **Gate.** `go fmt`, `go vet` and `go test ./...` are clean, including
+  TestGosec and TestGovulncheck. `npm audit --omit=dev` in `web/policy-studio`
+  found 0 vulnerabilities. PostgreSQL was reviewed, not run: the columns are in
+  its CREATE TABLEs and seven `ADD COLUMN IF NOT EXISTS`.
+- Docs:
+  - `ASSURANCE_PLANS.md`: build status; the new "Plan types" section;
+    columns; the gate; clone; full-coverage planning and the multi-year
+    cycle; the freeze; the deviation rule without sampling; coverage on
+    tests; the dashboard; Proposed populations (rewritten); the import
+    columns; the propose route; the export; the annual; the knowledge
+    fields; backup; sources
+  - HTTP_API (the propose route), DATA_MODEL (the seven columns), FEATURES,
+    ARCHITECTURE, the Help page, README, Agents.md, and AI_AGENT.md (the
+    `test_type` question)
+
+## 2026-11-06 (Assurance Plans, phase 4: regulatory basis, exports, approval pack, quarterly and annual reports, knowledge kinds)
+
+Fourth of six phases on `feature/assurance-plans`. A plan now produces its
+deliverables: the plan as JSON and CSV, the committee approval pack, a progress
+report per quarter and the annual conclusion. Its records reach the AI agent
+through two new knowledge kinds. Every feature works with no model configured,
+and nothing is uploaded or parsed.
+
+- **Regulatory basis** (`assurance_plan_basis`, new; SQLite and PostgreSQL).
+  - Why a table: the pack's slide "what DORA asks of the control function"
+    pairs each requirement with how the plan meets it. The plan's free-text
+    `regulatory_refs` cannot hold that pairing, so the rows are part of the
+    governance design.
+  - Each row is a requirement, a reference and how the plan meets it.
+  - The rows are edited on the Governance tab, saved with
+    `PUT /:id/governance` (`regulatory_basis`), and locked after approval like
+    the rest of the design. They are in the approval snapshot and copied by
+    clone.
+  - A governance save without `regulatory_basis` keeps the rows, so an older
+    client cannot wipe them. An empty list clears them.
+  - Both built-in types carry five rows: DORA Art. 6(4), 8(1), 8(4) with RTS
+    (EU) 2024/1774 Arts. 4–5, 24(6), and 6(5) with RTS Art. 27.
+  - **The requirement texts are paraphrases. They need your check against the
+    regulation before a pack goes to a committee.** RTS Art. 2(2)(c), which is
+    in the example's `regulatory_refs`, has no basis row: I could not state it
+    reliably without the text in front of me.
+- **JSON export** (`export.go`, new; `GET /:id/export.json`). `PlanExport` is
+  a dedicated type, like the policy library's `TemplateExport`.
+  - It carries `format_version` and no database ids; rows refer to each other
+    by `step_ref`, `item_ref`, `attr_ref` and `test_ref`. Every collection is
+    an array, never null.
+  - Besides the design, it holds what is worked out from it: stratum sizes and
+    targets, capacity, each item's selection and result, the tests with their
+    results, deviations, coverage, testing progress, findings, approved versions
+    with their SHA-256, gate findings and totals.
+  - It includes `seed` only once the page would show it; `seed_commitment` is
+    always there.
+- **CSV per table** (`GET /:id/export/:file`): steps, quarters (with columns
+  per stratum), population (with selection basis, rank, test and result),
+  tests (with failed attributes and findings), deviations. Every data cell
+  starting with `=`, `+`, `-`, `@`, a tab or a CR is prefixed with `'`, so a
+  spreadsheet does not run a pasted name or a tester's note as a formula.
+- **Route shapes.** Gin matches a parameter to a whole path segment, so the
+  prompt's `:table.csv` and `:q.pdf` cannot be routes. The routes are:
+  - `/export/:file`: the handler requires `.csv` (404 otherwise) and a known
+    table (400 otherwise)
+  - `/report/quarter/:q`: takes `1`..`4` or `Q1`..`Q4`, with or without
+    `.pdf`, so `/report/quarter/Q2.pdf` still works
+  - `/pack.pdf` and `/report/annual.pdf`: static
+- **Committee approval pack** (`templates/typst/assurance-plan-pack.typ`, new).
+  - Thirteen 16:9 slides (`presentation-16-9`) built from `brand.typ` and
+    `lib.typ`, registered in `internal/doctemplate` as `assurance-pack-typst`
+    with the new kind `assurance_pack`. The slides are listed in
+    ASSURANCE_PLANS.md.
+  - Its payload (`documents.go`) is the export without the population and test
+    log, plus what the slides work out: the roadmap cards, up to six next
+    steps, the delivery risks and the peak quarter.
+  - The delivery risks are the gate's blocking findings and the advisories
+    that bear on delivery. Catalog-reference notes are about the record, not
+    delivery, and stay on the page.
+  - Every payload string is placed as data. Long lists are cut on the slide
+    with "…and N more in the plan's export".
+- **Quarterly progress report** (`/report/quarter/:q`) **and annual conclusion**
+  (`/report/annual.pdf`), both through `business-report.typ`.
+  - Findings are read back from Audit Findings, with condition, effect,
+    recommendation, management response, owner, due date and linked controls.
+  - The quarterly report is stated as at its quarter, so the Q1 report
+    downloaded in October says what it said in April. Its tests are that
+    quarter's; coverage and DQ count items dated by the quarter end; the
+    deviation rule runs on quarters 1 to q, with the thematic risks pushed by
+    the quarter's report date. The findings' status is the current one, and
+    the report says so.
+  - The annual conclusion is subtitled "Input to the ICT risk management
+    framework review report (RTS (EU) 2024/1774 Art. 27)". It states the
+    population and coverage, the tests by quarter and stratum, the results per
+    attribute and stratum with the risk raised, the findings by severity and in
+    full, and the conclusion.
+  - The conclusion's wording is generated per stratum from the deviation rule.
+    It says plainly when a stratum had no tests or testing is incomplete.
+  - Both carry limitations: the records' date, that sampling gives reasonable
+    rather than absolute assurance, and that results without QA sign-off are
+    provisional. The annual adds that the conclusion does not replace the
+    resilience testing programme or internal audit.
+- **Rendering.** The module does not import `doctemplate`:
+  - `Handler.WithRenderer` takes a `Renderer`, which `app.go` builds
+    (`docRenderer`) on the template service. `registerDocTemplateRoutes` now
+    returns that service.
+  - The renderer answers like the redline: the PDF, the sources zip with
+    `?bundle=1` or when no engine is found, `?inline=1`, and 422 with
+    `{error, log}` on a compile failure.
+  - `?format=json` returns any document's payload without rendering. Without
+    a renderer the PDF routes answer 503.
+- **`business-report.typ`**, backward compatible:
+  - Sections and appendices take optional `tables` (`{caption, columns,
+    rows}`). Short columns keep their natural width and text columns share
+    the rest in proportion; a first version with one `1fr` column crushed
+    neighbouring text to a letter wide.
+  - Table text is not justified.
+  - A finding's observation, risk and recommendation are printed only when not
+    empty.
+  - The existing sample renders as before. `out/business-report.pdf` is left
+    as committed: it was rendered under a client brand.
+- **Overview tab**: a "Documents and exports" table links the pack, Q1–Q4
+  reports and the annual (each as PDF, sources and data), the JSON and each
+  CSV.
+- **Knowledge API**: kinds `assurance_plan` and `assurance_plan_test`, in
+  overview, search, item and `/api/knowledge/export`.
+  - The plan record opens with On plan, Behind plan: … or Not started, then
+    gives the stage, quarter dates, coverage RAG, testing, steps overdue and
+    due within 30 days, deviations and findings. Its fields include
+    `current_quarter` and `behind_plan`.
+  - A test record has its item, stratum, results per attribute and finding
+    references. Its fields include `stratum` and `failed_attributes`.
+  - `knowledge.Service.WithAssurancePlans` takes the corpora from
+    `assuranceplan.Service.KnowledgePlans`/`KnowledgeTests`, because coverage
+    and the deviation rule are computed, not stored.
+  - Both kinds are read fresh, not from the 45-second cache. Plans have an
+    index; tests are searched.
+- **Samples** (`templates/samples/assurance-plan-sample.json`,
+  `assurance-quarterly-sample.json`, `assurance-annual-sample.json`).
+  - They are written by `documents_test.go` from the Appendix A plan run
+    through a sample year, with a fixed seed: fails raised as findings, a
+    thematic risk, an extension, and two tests still open.
+  - Their shape is checked on every `go test`. `GRC_UPDATE_SAMPLES=1`
+    rewrites them; the finding references carry the current year, so values
+    differ between runs and the check compares shape only.
+  - `templates/build.sh pack | quarterly | annual`, also in `all`. The reference
+    renders are in `templates/out/` (`assurance-plan-pack.pdf`,
+    `assurance-quarterly-report.pdf`, `assurance-annual-conclusion.pdf`).
+- **Correction to phase 3.** That entry and ASSURANCE_PLANS.md said the
+  Controls testing type carried Appendix A's sixteen attributes. Only the
+  worked example does; a plan from the type starts with none and is seeded
+  from the catalogs. Both texts are corrected in place.
+- **Backup and sync.** `assurance_plan_basis` is in the snapshot after the
+  escalations, `idKeyed`, `skipInSync`. `SnapshotVersion` stays 16, because no
+  build with the module has been released. The PostgreSQL DDL was reviewed
+  against the SQLite DDL but not run against a server.
+- **Tests.**
+  - The export: a new plan and a plan in Q1, with no null value and no id key
+    anywhere, the seed withheld, totals, and the selections.
+  - The CSVs: row counts, the formula prefix, the per-stratum quarter columns,
+    failed attributes, and an unknown table.
+  - The payloads:
+    - the pack's roadmap, next steps, delivery risks and peak quarter
+    - Q1's sections, tests and finding
+    - the annual's subtitle, findings, conclusion wording and limitations
+    - a Q1 report read in January 2028 still stating Q1's deviations
+  - The routes, with a fake renderer: template, base name and payload for
+    each document; `?format=json`; the 400s, 404s and 503; export.json and a
+    CSV.
+  - The regulatory basis: kept when omitted, trimmed, cleared, length-checked,
+    in the approval snapshot, copied by clone.
+  - The knowledge kinds over a seeded plan: the index, item and fields; "Q2 of
+    the period" and Behind plan; the Tier 1 NFR-04 fail found by search; the
+    export counts; and Not started before the period.
+  - `internal/knowledge`: the kinds are empty unwired, read fresh, and
+    indexed for plans only.
+  - `internal/doctemplate`: the pack is registered with its sample, and with
+    Typst installed all three documents compile from their samples and from
+    the same payloads with every string replaced by Typst code, which prints.
+  - `modules_test.go` gained the basis row.
+- **Manual check.** I ran a throwaway server: local mode, a temporary SQLite
+  database, Typst, port 18947.
+  - Through the API, I created the example, loaded its population, approved it,
+    froze it, drew Q1 and opened the tests.
+  - Every route answered as designed: real PDFs from Typst for the pack, Q1,
+    Q2 and the annual; the zip for `?bundle=1`; the JSON payload; the 400s and
+    404.
+  - Downloads are named `AP-2027-001-pack.pdf`, `AP-2027-001-Q1.pdf` and so on.
+  - The knowledge API returned the plan and its 17 tests.
+  - In headless Chrome at 1280 wide, I checked the Overview's documents table
+    and the Governance tab's basis table.
+
+  The server, database, Chrome profile and screenshots were removed.
+- **Gate.** `go fmt`, `go vet` and `go test ./...` are clean, including
+  TestGosec and TestGovulncheck. `npm audit --omit=dev` in `web/policy-studio`
+  found 0 vulnerabilities.
+- Docs:
+  - `ASSURANCE_PLANS.md`: build status, the basis, the export and CSV rules,
+    the route shapes, Documents, Knowledge API, backup
+  - `DOCUMENT_TEMPLATES.md`: the pack, the report contract with tables, the
+    build targets
+  - `AI_AGENT.md`: the kinds and the questions they answer
+  - HTTP_API (five routes), DATA_MODEL (`assurance_plan_basis`), FEATURES,
+    ARCHITECTURE, the Help page, README and Agents.md
+
+## 2026-11-06 (Assurance Plans, phase 3: test script, tests and QA, deviation rule, findings, thematic risks, dashboard)
+
+Third of six phases on `feature/assurance-plans`. A plan now runs: it holds
+the test script, records a test for every frozen pick with a result per
+attribute and a QA sign-off, applies the deviation rule, raises its fails as
+findings in Audit Findings, pushes not-effective conclusions to the risk
+register, and reports coverage and progress on a dashboard. Every feature works
+with no model configured.
+
+- **Result and deviation rules** (`internal/assuranceplan/execution.go`, new).
+  Pure functions:
+  - `OverallResult`: none tested → Not started; 0 fails → Effective; from
+    `result_partial_min` (1) → Partially effective; from
+    `result_ineffective_min` (3) → Ineffective. N/A is not counted as tested.
+  - `Conclude`, per attribute per stratum, cumulative for the year: none tested
+    → Not tested; 0 → "No deviations / effective"; from `deviation_extend_at`
+    (1) → "1 deviation – extend sample"; from `deviation_thematic_at` (2) →
+    "Not effective – thematic finding"
+  - `ExtendBy`: ⌈`extend_pct` × the next quarter's planned tests⌉
+  - `RAG`: Not due before the quarter ends; Green on or above plan; Amber
+    within `rag_amber_points` (10) below; Red beyond
+  - `QuarterEnd`, `EvidenceDue` (requested + `evidence_sla_days` business
+    days, on the plan's calendar), `EvidenceLate`, and the test reference
+    `T27-Q1-001`
+- **Test script** (`assurance_plan_attributes`; `PUT /:id/attributes`,
+  `POST /:id/attributes/seed`). Each attribute has a reference, domain,
+  requirement, procedure, method (Inspection, Inquiry, Observation,
+  Re-performance), evidence requested, pass criteria, the strata it applies to,
+  regulatory references, 800-53 ids and the NFR key it came from.
+  - It is part of the design: edited while the design is open, locked after
+    approval, in the approval snapshot, copied by clone. An edit updates
+    attributes in place by reference, so results stay attached.
+  - Under a change request, an attribute with results cannot be removed or
+    narrowed off a stratum where it has results.
+  - The worked example carries Appendix A's sixteen attributes,
+    NFR-01..NFR-16, with their domains, 800-53 ids, procedures, evidence and
+    pass criteria. A plan from the Controls testing type starts with none and
+    is seeded from the catalogs. (Corrected in phase 4: this line first said
+    the type carried them too.)
+  - Seeding copies Security NFRs (by record key, ID or `NFR-` + ID) and 800-53
+    controls into the script, and reports what was added, skipped (already
+    there) and not found.
+  - On every read, control ids and NFR keys are checked against the catalogs.
+    One that does not resolve is marked Unresolved on the page and listed by
+    the gate. Without the catalogs nothing is checked and nothing is claimed.
+  - New gate advisories: unresolved attribute references, a sampling plan with
+    no attributes, an attribute with no pass criteria.
+- **Tests** (`assurance_plan_tests`, `assurance_plan_results`).
+  - `POST /:id/tests` opens one test per pick of a selected quarter, numbered
+    after the highest reference used. The tester defaults to the person
+    opening them; the evidence due date is computed from the request date.
+    Only for an Approved or Active plan; a closed plan's tests do not change.
+  - `PUT /:id/tests/:testID` saves the dates, tester, evidence summary, notes
+    and results. Results not sent keep their value. The answer lists the
+    changes (`NFR-04 blank → Fail`), which also go to history.
+  - A result with a finding stays a Fail (409); the finding is closed in Audit
+    Findings.
+  - `POST /:id/tests/:testID/qa` signs off. It needs fieldwork completed and
+    no result pending. Under multi-user authentication the tester cannot sign
+    off their own test (409); in single-user mode it goes through with a
+    warning, kept in `qa_note`. Any later change withdraws the sign-off and
+    says so.
+  - The test carries its counts, overall result and evidence lateness,
+    computed on read.
+- **Raise finding** (`POST /:id/results/:resultID/finding`). A Fail becomes a
+  finding through `auditfinding.Service.Create`:
+  - source Second Line Review; engagement = plan reference and title
+  - auditor = tester; owner = the one given, else the item's owner
+  - criteria = requirement and pass criteria; condition = evidence summary and
+    result note
+  - 800-53 ids as linked controls, regulatory references and the NFR key as
+    framework references
+  - deficiency type Operating Effectiveness; identified on the fieldwork date;
+    the due date by the severity's SLA unless given
+  - status Open or Draft
+
+  The finding's id, reference and severity go on the result. The plan, test
+  and attribute go on the finding in a new `audit_findings.origin_ref` column.
+  It is set at creation, an edit never changes it, and the Audit Findings page
+  shows it read-only as "Raised from", linked to the plan. A second raise
+  answers 409, unless the finding was deleted in Audit Findings.
+- **Thematic push** (`POST /:id/thematic`). A Not effective conclusion becomes
+  a risk through `riskregister.Service.Create`, once.
+  - Risk id `AP-2027-001-NFR-04-T1`.
+  - The deviation summary is the vulnerability, the 800-53 ids the current
+    controls, and the plan and rule go in the notes.
+  - The person pushing names the owner and rates likelihood and impact.
+  - The risk id and reference are kept in `assurance_plan_thematic` and shown
+    on the deviation's row.
+- **Dashboard** (`GET /:id/dashboard`, `GET /:id/deviations`, and a tab):
+  - cards for tests, QA, fails and findings
+  - 1LoD coverage against plan, per stratum and quarter, with its RAG, and the
+    year-end tracker (attested and DQ accepted against every item)
+  - 2LoD testing progress per quarter, with evidence late and the tests by
+    result
+  - deviations by attribute and stratum, with the extension or the push
+  - linked findings by severity (raised, draft, open, overdue, closed),
+    read live from Audit Findings, with a deleted finding shown as Missing
+  - utilisation
+- **Wiring.** `assuranceplan.Integrations` (Audit Findings, risk register,
+  control catalog, NFR catalog) is set in `app.go` through
+  `WithIntegrations`. `registerAuditFindingRoutes` now returns its service. A
+  missing member turns its feature off with a 409 that says so.
+- **Pages.** New tabs: **Test script** (the attributes, the editor, "Copy from
+  the catalogs"), **Tests** (open per quarter, filters, the test editor with
+  the result grid, Raise finding and QA) and **Dashboard**. The Overview gains
+  test attributes, tests opened and signed off. New pills (pass, fail, N/A,
+  effective, partially effective, ineffective, extend, not effective, Green,
+  Amber, Red, not due, evidence late, awaiting QA, signed off, unresolved, the
+  finding severities and statuses) use explicit colour pairs and print their
+  word.
+- **Schema.** New tables `assurance_plan_attributes`, `assurance_plan_tests`
+  (cascade from their selection), `assurance_plan_results` (cascade from test
+  and attribute; `finding_id` is deliberately not a foreign key) and
+  `assurance_plan_thematic`, plus `audit_findings.origin_ref` through
+  `ensureColumn` and `ADD COLUMN IF NOT EXISTS`, in `sqlite.go` and
+  `postgres.go`. The PostgreSQL schema was reviewed, not run.
+- **Backup.** The four tables are in the snapshot (`idKeyed`, `skipInSync`),
+  and `origin_ref` joins the `audit_findings` columns. `SnapshotVersion` stays
+  at 16, because no v16 build has been released. The module fixture gained an
+  attribute, a test, a result linked to a finding, and a thematic push; the
+  skip count went 42 → 46. A new test restores a v15 snapshot whose findings
+  have no `origin_ref`.
+- **Where the build differs from the prompt:**
+  - The column is `test_procedure`, because `PROCEDURE` is a reserved word in
+    standard SQL. The JSON field is still `procedure`.
+  - Unresolved references are worked out on read, not stored in an
+    `unresolved_refs` column, so they cannot go stale when the catalog changes.
+  - There is no `test_type` yet; it comes with the other plan types in phase 5.
+  - Results carry `plan_id`; thematic rows carry `risk_ref`, `deviations` and
+    the summary; tests carry `qa_note`.
+  - Audit Findings' `source` is a closed list, so a raised finding's source is
+    Second Line Review. The plan reference goes in `engagement` and
+    `origin_ref`.
+  - A pushed risk's residual rating starts equal to the inherent one. The plan
+    does not judge what the controls are worth; the risk's owner does.
+  - The shipped NFR catalog is keyed `1`, `2`… with IDs `0.1`…, so seeding
+    accepts the key, the ID or `NFR-` + ID.
+  - The extend rule suggests the extension, using the quarter after the last
+    one tested, and leaves the frozen selection unchanged. A deviation in Q4
+    is carried into next year's sample.
+  - Linked findings in Draft are counted separately, not as open.
+- **Fixed during the build:**
+  - Saving a test with only some results dropped the rest from its counts.
+    Results not sent now keep their value.
+  - NFR seeding first matched only the record key, which never matched an ID
+    such as `0.1`.
+  - On the page, the reference columns and small buttons now keep to one line,
+    and the push date shows as a date rather than a clipped timestamp.
+- **Tests.** `exec_test.go` covers:
+  - result thresholds, including custom ones
+  - deviation conclusions for 0, 1 and 2+ and none tested, a custom threshold,
+    `ExtendBy`
+  - RAG at and around the amber band, quarter ends
+  - evidence due 2 → 16 March 2027 and over a holiday, lateness, test refs
+  - the example's sixteen attributes, unresolved marking with and without the
+    catalogs, and the gate
+  - seeding from imported catalogs (added, skipped, not found)
+  - opening Q1's 17 tests, numbering, due dates, and the 409s
+  - results, counts, invalid values, QA preconditions, separation of duties
+    enforced and as a warning, and QA withdrawn by a change
+  - Raise finding's prefilled fields, `origin_ref` surviving edits, the second
+    raise and the stays-a-Fail refusal, the dashboard counting it, a deleted
+    finding shown as Missing and raised again
+  - one deviation extending Q2 by 7 (Tier 1) and 4 (Tier 2), two pushing a
+    risk with residual = inherent, and the second push refused
+  - attributes with results neither removed nor narrowed, and an edit keeping
+    them attached
+  - coverage RAG at 15 April 2027 (Tier 1 Amber at 28.75% against 35%, Tier 2
+    Red), the year-end tracker, testing progress
+  - the snapshot holding the attributes; clone carrying them without tests
+  - the routes (201, 400, 409) and the page's tabs, pills and `<thead>`s
+
+  `modules_test.go` gained the new rows, their join and the v15 restore, and
+  the pill test covers the new words.
+- **Manual check.** On a throwaway server (local mode, temp SQLite seeded with
+  the example plan in its Q1 tests), headless Chrome over DevTools:
+  - opened a test and checked the result grid and linked finding
+  - raised a Medium finding on a Fail; it appeared on the result and the
+    dashboard
+  - signed off QA
+  - pushed NFR-04 / Tier 1 to the risk register
+
+  No page exceptions. Screenshots were checked at 1280 wide and 1024×640. The
+  server, database and screenshots were removed.
+- **Gate.** `go fmt`, `go vet` and `go test ./...` are clean, including
+  TestGosec and TestGovulncheck. `npm audit --omit=dev` in `web/policy-studio`
+  found 0 vulnerabilities.
+- Docs: `ASSURANCE_PLANS.md` (build status, tables as built, tests and QA, the
+  extend rule, the dashboard, the integrations as built, the API),
+  `AUDIT_FINDINGS.md` (origin), FEATURES, HTTP_API (ten routes), DATA_MODEL
+  (four tables and `origin_ref`), ARCHITECTURE, the Help page, README and
+  Agents.md.
+
+## 2026-11-06 (Assurance Plans, phase 2: strata, scope population, sampling engine, freeze and quarterly selection)
+
+Second of six phases on `feature/assurance-plans`. A plan now sizes its
+samples, allocates them to quarters and loads them against capacity. It holds
+its scope population, and draws each quarter's sample in a way Internal Audit
+can re-perform.
+
+- **Sampling engine** (`internal/assuranceplan/sampling.go`, new). Pure
+  functions:
+  - `StatisticalSize`: n0 = ⌈ln(1−c)/ln(1−t)⌉
+  - `CorrectedSize`: the finite-population correction
+  - `FloorSize`, and `AnnualSample` = min(N, max(n, floor)); with sampling off
+    it is N
+  - `ValidateWaves`: the four wave shares must sum to 100%, ±10⁻⁶
+  - `Allocate`: cumulative ceil allocation, so the quarters always sum to the
+    year
+  - `ReviewsDue`: the same over N, with round
+  - `Rank` / `RankHash`: SHA-256 of seed ‖ 0x1F ‖ stratum ‖ 0x1F ‖ item_ref,
+    lowest first
+  - `Capacity`: effort per quarter from tests, reviews, retest and overhead,
+    against FTE × days, flagged above the threshold
+
+  Each cumulative product is rounded to 6 decimals before the ceiling. Without
+  that, floating-point drift adds or moves an item.
+- **Strata** (`PUT /:id/strata`, editable on the Sampling tab while the design
+  is open). Each stratum has:
+  - a code and name
+  - sampling on or off, confidence, tolerable rate and coverage floor
+  - effort per test and per review
+  - four wave shares and four planned top-up counts
+  - a **planned size**
+
+  N is the stratum's population count, or its planned size until the
+  population is loaded. A plan can be sized and approved on the inventory's
+  expected count. A stratum that still holds items cannot be removed or
+  renamed.
+
+  The Controls testing type seeds Tier 1 and Tier 2 with the reference
+  parameters and no planned size. The worked 2027 example seeds them with
+  planned sizes 80 and 240 and the Appendix A waves and top-ups.
+- **Scope population**, CSV text pasted into a textarea and posted as JSON.
+  There is no upload and no file parsing, in keeping with the no-ingestion
+  rule.
+  - The delimiter (comma, semicolon or tab) is taken from the header, and a
+    BOM is dropped.
+  - Header aliases are accepted (`Asset ID`, `Tier`, `1LoD wave`, `Attestation
+    date`…). Unknown columns are listed as ignored.
+  - Only `item_ref` is required. A column left out of the paste keeps each
+    item's existing value.
+  - Replace (the default) or merge, which keeps items left out of the paste.
+  - `POST /:id/population/preview` returns every problem by line and
+    reference, the added / changed (with fields) / removed / unchanged items,
+    the count per stratum, and a digest of the current population.
+    `POST /:id/population` applies the paste only when there are no problems
+    and the digest still matches. A paste previewed against a population that
+    changed since gets 409.
+  - Limits: 50,000 rows, 16 MiB body, 200 problems listed.
+  - Also `GET /:id/population`, `population.csv`, `population/example.csv` (an
+    example built from the planned sizes and waves), and
+    `PATCH /:id/population/:itemID` for one item's description, attestation,
+    DQ review and top-up.
+- **Population rules**, applied the same way to an import and to an item edit:
+  - Membership (add, remove, or move to another stratum or wave) is closed
+    while the plan or a revision is In review. After the freeze it opens only
+    while a change request's revision is a Draft.
+  - A selected quarter's wave cannot gain, lose or move items.
+  - A selected item stays, and its stratum is fixed.
+  - A top-up flag needs a rationale. It cannot be set for a selected quarter
+    or on an item that is already a pick, and a selected top-up cannot be
+    withdrawn.
+- **Freeze and commit-reveal seed** (`POST /:id/population/freeze`, once,
+  Approved or Active with no open revision). It needs every item in a wave and
+  every stratum's waves summing to 100%. It draws a 32-byte `crypto/rand` seed
+  and writes a `population frozen` event with the membership SHA-256 and the
+  seed's commitment (the SHA-256 of its hex text).
+
+  Readers see only the commitment until every quarter is selected or the plan
+  is closed. Every plan JSON the module serves masks the seed (`publicPlan`).
+  Administrators read it through `GET /:id/seed` ("Show seed"). The reason: the
+  page is open to anyone with page access, including the 1LoD owners whose
+  items are about to be drawn, and the seed predicts every draw.
+- **Quarterly selection** (`POST /:id/quarters/:q/select`, `:q` as `1` or
+  `Q1`).
+  - Each stratum's wave is ranked by hash, and the first q_i items not already
+    picked this year are taken. A stratum with sampling off takes its whole
+    wave as Full coverage.
+  - The flagged top-ups are added as Risk-based top-up. A top-up that
+    duplicates a pick refuses the whole selection and names the item.
+  - Each pick records its basis, rank order, hash and plan version.
+  - A short wave is taken whole and reported, never borrowed from another
+    wave. Planned top-ups that differ from the items flagged give a warning.
+  - The quarter's stamp is set only where it is empty, so a second or
+    concurrent run is refused rather than recomputed.
+  - The first selection moves an Approved plan to Active. Everything is
+    written to history.
+- **Approval gate** (`lint.go`). Now blocking:
+  - a stratum's waves not summing to 100% (every stratum, since the waves also
+    schedule attestations)
+  - a sampled stratum's confidence, tolerable rate or floor out of range
+
+  New advisory findings: a stratum with no population (and what it is sized
+  on), wave counts that differ from the wave shares, items with no wave, and
+  utilisation over the threshold.
+- **Approval snapshot** and **clone**. The snapshot now holds the strata and
+  the population's membership and description, not the seed, the freeze stamps
+  or execution data. Clone copies the strata and the population, without
+  attestations, DQ reviews or top-ups.
+- **Pages.** New tabs:
+  - **Sampling**: sample sizes with each formula and its inputs, the quarterly
+    allocation matrix, capacity per quarter, the strata editor, and the
+    freeze, seed and selection controls with the picks per quarter
+  - **Scope population**: counts per stratum and wave, filters, the item
+    table and editor, and the paste / preview / apply box
+
+  The Quarterly plan tab gains quarter-by-quarter targets, and the Overview
+  gains items in scope and tests planned. New pills (statistical, risk-based
+  top-up, full coverage, selected, within capacity, over threshold, DQ
+  statuses) use explicit colour pairs and print their word.
+- **Schema.** New tables `assurance_plan_strata`, `assurance_plan_population`
+  and `assurance_plan_selections` (selections cascade from their population
+  item; index on plan and quarter), in `sqlite.go` and `postgres.go`. The
+  PostgreSQL schema was reviewed, not run.
+- **Backup.** The three tables are in the snapshot (`idKeyed`, `skipInSync`).
+  `SnapshotVersion` stays at 16: phase 1 has not been released, so no v16
+  backup without these tables exists. The module fixture, the FK join check
+  and the skip count (39 → 42) were updated.
+- **Where the build differs from the prompt:**
+  - `ASSURANCE_PLANS.md`'s float example. 0.35 + 0.35 + 0.30 sums to exactly 1
+    in IEEE doubles. The doc and the test now use 0.2/0.4/0.3/0.1, which does
+    drift.
+  - The seed is committed and revealed (see above), not shown on the page.
+  - Selections store the rank order and plan version, not a copy of the seed.
+  - Strata carry a planned size.
+  - The population can still be completed between approval and the freeze.
+  - The planned-top-ups mismatch moved from the gate to a selection-time
+    warning, because top-ups are flagged during the year.
+- **Fixed during the build:** the preview answered `"errors": null` for a clean
+  paste. It is now always a list.
+- **Tests.** `sampling_test.go` covers:
+  - n0 59/29/45/22
+  - FPC 35 and 21, the floor winning, the cap at N
+  - the Appendix A allocation [13,12,10,0] and [4,6,6,5], and reviews due
+    [28,28,24,0] and [36,72,72,60]
+  - the drift case, failing without the guard, and every 5%-step split
+    summing exactly
+  - wave sums ≠ 100% rejected by the engine, the strata validation and the
+    gate
+  - rank determinism, and adding an item moving no other rank
+  - capacity 74.4 / 81.8 / 76.8 / 47.0 of 100 and 280 of 400 (70%), and the
+    threshold flag
+
+  `scope_test.go` covers:
+  - preview, diff, apply and row errors; a partial-column paste
+  - the stale-preview 409
+  - freeze preconditions and once-only
+  - membership after the freeze and under a change request
+  - the selection's golden picks; re-performance from the seed; all four
+    quarters
+  - a top-up duplicating a pick refused
+  - a selected wave frozen
+  - shortfall and full coverage
+  - strata validation, snapshot contents, clone
+
+  Handler tests cover the population routes round trip, readers seeing only
+  the commitment until the last quarter, and the page's tabs and pills.
+- **Manual check.** On a throwaway server (local mode, temp SQLite), the
+  example plan showed the golden values on the page. A 320-item example
+  population was pasted, previewed and applied, then frozen. The Q1 draw took
+  18 picks and made the plan Active. The Scope population tab was driven in
+  headless Chrome over DevTools: fill, merge-preview-apply, a bad paste listing
+  its problems with Apply disabled, an item edit, and the filters. No page
+  exceptions. Screenshots were checked at 1440 wide and 1024×640.
+- Docs: `ASSURANCE_PLANS.md`, FEATURES, HTTP_API, DATA_MODEL, ARCHITECTURE,
+  the Help page, README and Agents.md.
+
+## 2026-11-06 (Assurance Plans, phase 1: plans, timeline, quarterly cycle, governance, approval)
+
+A new page, Assurance Plans, under Compliance & Risk (`/assurance-plans`):
+the second line's annual plans, starting with a 2nd-line controls testing plan.
+This is the first of six phases on `feature/assurance-plans`; sampling, test
+execution, documents, the other plan types and AI assist follow.
+
+- Design: `ASSURANCE_PLANS.md` (new, served at `/knowledge/assurance-plans`)
+  sets out the practice it follows (IIA Global Internal Audit Standards 2024,
+  AICPA attribute sampling, DORA Art. 6 and 24 and RTS 2024/1774), the data
+  model for all six phases, the lifecycle, the approval gate, clone, the
+  sampling method and the API. Each section says which phase builds it.
+- `internal/assuranceplan` (new): model, calendar, cycle, templates, lint,
+  repository, service, handler, Gantt and pages.
+  - A plan type is a JSON template in `internal/assuranceplan/templates/`,
+    embedded: Controls testing (2nd line), Blank, and the worked DORA NFR
+    controls testing plan for 2027 as an example with fixed dates. Template
+    dates are expressions against the period and quarters
+    (`period_start-53d`, `lod1_deadline+5bd`, `q3.report_date`) rolled onto
+    business days; quarterly steps are repeated per quarter (`{q}.3`).
+  - Business days: weekends and the plan's own non-working dates.
+  - The default quarterly cycle: the 1LoD window opens on the quarter's first
+    business day, attestations are due the last Friday of its second month,
+    selection the next business day, fieldwork from a week later to six weeks
+    after the deadline, findings agreed at +8 weeks, report at +9, committee
+    the month after. It reproduces the example's Q1–Q3 dates.
+  - Lifecycle Draft → In review → Approved → Active → Closed; Return sends a
+    plan in review back with a note. There is no edge from Draft to Approved.
+    Status, revision, approval fields and the author come from the server,
+    never the request body.
+  - The approval gate (`Lint`, `GET /:id/lint`) has blocking findings (owner,
+    accountable, forum, period, no steps, a step with no responsible role, no
+    dates or ending before it starts, a quarter with no deadline or report
+    date) and advisory ones (a step outside the plan's span, quarter dates out
+    of order, a RACI activity without exactly one Accountable). A blocked
+    approval answers 422 with the findings.
+  - Separation of duties as in the policy library: with more than one user,
+    whoever submitted the revision cannot approve it; single-user and local
+    mode approve with a warning. The approver is the signed-in user.
+  - Approval writes an immutable version: the plan as JSON with its SHA-256,
+    served back as the stored bytes with `X-Snapshot-SHA256`.
+  - After approval the design is locked (409 on steps, quarters, governance
+    and the header); step status still moves. A change request with a reason
+    opens revision n+1 on the approved plan (`revision_status` Draft → In
+    review → approved as the next version) without taking the plan's status
+    backwards.
+  - Every change is written to `assurance_plan_history` with the actor: header
+    fields old → new, step edits summarised ("added O.5; changed 0.2"),
+    lifecycle moves with their notes.
+  - Clone for next year: new reference, period +1 year, working dates rolled to
+    business days (back, not forward, at the year end), years in titles and
+    labels moved on (citations such as 2024/1774 left alone), steps reset,
+    history, versions and AI provenance not copied, a note to check movable
+    holidays.
+  - Pages: the list with filters (type, status, year, client, text) and a new
+    plan form; the plan with tabs Overview, Plan & timeline, Quarterly plan,
+    Governance, History & versions. The timeline is a server-rendered Gantt
+    against months: a bar for an activity, a diamond for a milestone, a grey
+    band for ongoing work, an outline for at risk or delayed, a today line,
+    and a legend in words; each row also prints its dates and status. Steps,
+    quarters, RACI, cadence and escalations are edited in place.
+  - Status pills are the module's own `ap-st` classes with an explicit colour
+    pair per status, because the theme layer forces `.pill`'s colours; every
+    pill prints its word. Every table has an explicit `<thead>`.
+- Routes (`internal/app/app.go`, `registerAssurancePlanRoutes`): reads behind
+  page access, writes admin, the same split as Audit Findings. Added to
+  `protectedPrefixes`, the user-management page list, the sidebar, the Help
+  page, the knowledge documents, `Agents.md` and `README.md`.
+- Schema (`internal/db/sqlite.go`, `internal/db/postgres.go`): new tables
+  `assurance_plans`, `assurance_plan_steps`, `assurance_plan_quarters`,
+  `assurance_plan_raci`, `assurance_plan_cadence`,
+  `assurance_plan_escalations`, `assurance_plan_history`,
+  `assurance_plan_versions`. The PostgreSQL schema was reviewed, not run.
+- Backup (`internal/dbsync`): the eight tables are in the snapshot,
+  `SnapshotVersion` bumped to 16; v15 and older backups restore with them
+  empty. They are excluded from `-sync-to/-sync-from` like the other modules
+  whose records are trees of rows. The module fixture and the skip count were
+  updated.
+- Where the build differs from the prompt it came from: the client is a
+  `client_profiles` row (there is no `crm_clients` table); the themes are
+  dark, matrix, chaos and 40k (there is no light theme); the selection seed is
+  drawn when the population is frozen (phase 2), not at creation; a change
+  request is a revision on the approved plan, not a return to Draft.
+- Tests: `internal/assuranceplan` covers business days and holidays, the
+  default cycle against the example's dates, date expressions, every template
+  instantiating, the example's 53 steps and key dates, references, the
+  lifecycle edges, the gate, separation of duties, the design lock, change
+  requests and snapshot immutability, step and governance validation, history,
+  clone (dates, rolls, years) and delete; handlers: a client-sent status
+  ignored, 409 then 422 on approve, the approver from the session, the
+  snapshot hash, 409 on a locked design, the page's tabs, pills, legend and
+  table heads, and the list filters. `internal/dbsync` round-trips the eight
+  tables; `internal/app` checks the nav link.
+- Docs: FEATURES, HTTP_API, DATA_MODEL, DATABASE, OPERATIONS, ARCHITECTURE,
+  PROJECT_OVERVIEW, README and Agents.md.
+
 ## 2026-11-06 (Exceptions: go_rcsa's exception-management changes brought in, and a DORA Report)
 
 The exceptions feature here came from go_rcsa and had fallen behind it. This

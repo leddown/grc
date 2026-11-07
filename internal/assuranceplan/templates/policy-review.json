@@ -1,0 +1,475 @@
+{
+  "key": "policy-review",
+  "order": 3,
+  "name": "Policy and standards review plan",
+  "description": "Every policy and standard due for review in the period goes through owner review, consultation and approval, one test record per document. The population is proposed from the policy library: the documents whose next review date falls in the period, and any already overdue.",
+  "plan": {
+    "title": "{year} Policy and Standards Review Plan",
+    "function_name": "2LoD Policy Governance (CISO Office)",
+    "objective": "By {period_end_long}, every ICT and information security policy and standard due for review in {year} has been reviewed by its owner, consulted on and approved by the body its approval route names, so that the documented framework the ICT risk management rests on is current.",
+    "decisions_requested": "Approve the {year} review schedule: the documents in scope and the quarter each is reviewed in.\nConfirm the approval route for each document type: the management body for policies, the ICT Risk Committee for standards and procedures.\nMandate document owners to complete their review by the wave deadline.",
+    "regulatory_refs": "DORA Art. 5(2)(b), 6(5), 9(4)(a); RTS (EU) 2024/1774 Art. 2; ISO/IEC 27001:2022 cl. 5.2, 7.5.3, A.5.1",
+    "owner_role": "Policy Governance Lead (2LoD)",
+    "accountable_role": "CISO (2LoD)",
+    "approval_forum": "ICT Risk Committee",
+    "mobilise_start": "period_start-30d",
+    "closing_date": "period_end+21d",
+    "raci_roles": [
+      "Management body",
+      "ICT Risk Committee",
+      "CISO (2LoD)",
+      "Policy Governance Lead (2LoD)",
+      "Document owners (1LoD)",
+      "Consulted functions (Legal, Compliance, HR, Operational Risk)",
+      "Internal Audit (3LoD)"
+    ],
+    "test_types": [
+      "Policy review"
+    ],
+    "coverage_basis": "tests",
+    "population_source": "policies"
+  },
+  "quarters": {
+    "mode": "default"
+  },
+  "steps": [
+    {
+      "step_ref": "0.1",
+      "phase": "Phase 0 — Mobilise",
+      "title": "Confirm the mandate and the approval route for each document type",
+      "step_type": "activity",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "period_start-30d",
+      "deliverable": "Approval routes confirmed",
+      "refs": "",
+      "to": "period_start-25d"
+    },
+    {
+      "step_ref": "0.2",
+      "phase": "Phase 0 — Mobilise",
+      "title": "Propose the population from the policy library and confirm it with the owners",
+      "step_type": "activity",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "period_start-25d",
+      "deliverable": "Review schedule: one row per document, in the quarter it is due",
+      "refs": "",
+      "to": "period_start-15d"
+    },
+    {
+      "step_ref": "0.3",
+      "phase": "Phase 0 — Mobilise",
+      "title": "Confirm each document's owner, consultees and approver",
+      "step_type": "activity",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "period_start-20d",
+      "deliverable": "Owner and approver per document",
+      "refs": "",
+      "to": "period_start-12d"
+    },
+    {
+      "step_ref": "0.4",
+      "phase": "Phase 0 — Mobilise",
+      "title": "Review plan approved by the ICT Risk Committee",
+      "step_type": "milestone",
+      "responsible_role": "CISO (2LoD)",
+      "accountable_role": "ICT Risk Committee",
+      "from": "period_start-10d",
+      "deliverable": "Committee minute approving the schedule",
+      "refs": "DORA Art. 6(5)"
+    },
+    {
+      "step_ref": "0.5",
+      "phase": "Phase 0 — Mobilise",
+      "title": "Freeze the schedule",
+      "step_type": "milestone",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "period_start-7d",
+      "deliverable": "Frozen population in the plan record",
+      "refs": ""
+    },
+    {
+      "step_ref": "{q}.1",
+      "phase": "Phase {q} — Q{q} cycle",
+      "title": "Owner review of the wave's documents",
+      "step_type": "activity",
+      "responsible_role": "Document owners (1LoD)",
+      "accountable_role": "Document owners (1LoD)",
+      "from": "lod1_window_start",
+      "deliverable": "Redline, or a no-change statement, for each document",
+      "refs": "ISO/IEC 27001:2022 A.5.1",
+      "to": "lod1_deadline",
+      "quarterly": true
+    },
+    {
+      "step_ref": "{q}.2",
+      "phase": "Phase {q} — Q{q} cycle",
+      "title": "Open the review record for each document of the wave",
+      "step_type": "milestone",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "selection_date",
+      "deliverable": "One review record per document",
+      "refs": "",
+      "quarterly": true
+    },
+    {
+      "step_ref": "{q}.3",
+      "phase": "Phase {q} — Q{q} cycle",
+      "title": "Consultation with the affected functions",
+      "step_type": "activity",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "fieldwork_start",
+      "deliverable": "Consultation log with the disposition of every comment",
+      "refs": "",
+      "to": "fieldwork_start+15bd",
+      "quarterly": true
+    },
+    {
+      "step_ref": "{q}.4",
+      "phase": "Phase {q} — Q{q} cycle",
+      "title": "Approval by the authorised body; next review date set",
+      "step_type": "activity",
+      "responsible_role": "Document owners (1LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "fieldwork_start+15bd",
+      "deliverable": "Approval minute or record; new version in the policy library",
+      "refs": "DORA Art. 5(2)(b)",
+      "to": "fieldwork_end",
+      "quarterly": true
+    },
+    {
+      "step_ref": "{q}.5",
+      "phase": "Phase {q} — Q{q} cycle",
+      "title": "2LoD check and QA sign-off of each review record",
+      "step_type": "activity",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "fieldwork_end+1bd",
+      "deliverable": "QA sign-off on every review record",
+      "refs": "",
+      "to": "findings_agreed_by",
+      "quarterly": true
+    },
+    {
+      "step_ref": "{q}.6",
+      "phase": "Phase {q} — Q{q} cycle",
+      "title": "Quarterly review status to the ICT Risk Committee",
+      "step_type": "milestone",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "report_date",
+      "deliverable": "Quarterly status: reviewed, approved, overdue",
+      "refs": "",
+      "quarterly": true,
+      "skip_quarters": [
+        4
+      ]
+    },
+    {
+      "step_ref": "4.7",
+      "phase": "Phase 4 — Q4 cycle",
+      "title": "Draft the {next_year} review schedule",
+      "step_type": "activity",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "period_end-45d",
+      "deliverable": "Draft {next_year} schedule from the policy library",
+      "refs": "",
+      "to": "period_end-15d"
+    },
+    {
+      "step_ref": "4.8",
+      "phase": "Phase 4 — Q4 cycle",
+      "title": "Annual policy framework statement to the management body",
+      "step_type": "milestone",
+      "responsible_role": "CISO (2LoD)",
+      "accountable_role": "Management body",
+      "from": "closing_date",
+      "deliverable": "Statement that the framework is reviewed and current, with exceptions",
+      "refs": "DORA Art. 6(5)"
+    },
+    {
+      "step_ref": "4.9",
+      "phase": "Phase 4 — Q4 cycle",
+      "title": "Input to the annual ICT RMF review report",
+      "step_type": "activity",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "closing_date-15bd",
+      "deliverable": "Section for the ICT risk management framework review report",
+      "refs": "DORA Art. 6(5); RTS 2024/1774 Art. 27",
+      "to": "closing_date"
+    },
+    {
+      "step_ref": "O.1",
+      "phase": "Ongoing",
+      "title": "Event-driven reviews on major change, new regulation or a significant incident",
+      "step_type": "ongoing",
+      "responsible_role": "Document owners (1LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "period_start",
+      "deliverable": "Review record for each event-driven review",
+      "refs": "ISO/IEC 27001:2022 A.5.1",
+      "to": "period_end"
+    },
+    {
+      "step_ref": "O.2",
+      "phase": "Ongoing",
+      "title": "Monthly status to the CISO",
+      "step_type": "ongoing",
+      "responsible_role": "Policy Governance Lead (2LoD)",
+      "accountable_role": "CISO (2LoD)",
+      "from": "period_start",
+      "deliverable": "Monthly status note",
+      "refs": "",
+      "to": "period_end"
+    }
+  ],
+  "strata": [
+    {
+      "code": "POL",
+      "name": "Policies",
+      "definition": "Policies, approved by the management body",
+      "sampling_enabled": false,
+      "confidence": 0,
+      "tolerable_rate": 0,
+      "floor_pct": 0,
+      "effort_per_test": 1.5,
+      "effort_per_review": 0,
+      "waves": [
+        0.25,
+        0.25,
+        0.25,
+        0.25
+      ],
+      "top_ups": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "planned_size": 0,
+      "takes": [
+        "policy"
+      ]
+    },
+    {
+      "code": "STD",
+      "name": "Standards and procedures",
+      "definition": "Standards, procedures, work instructions, guidelines and targeted risk analyses, approved by the ICT Risk Committee or the owner's function",
+      "sampling_enabled": false,
+      "confidence": 0,
+      "tolerable_rate": 0,
+      "floor_pct": 0,
+      "effort_per_test": 0.75,
+      "effort_per_review": 0,
+      "waves": [
+        0.25,
+        0.25,
+        0.25,
+        0.25
+      ],
+      "top_ups": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "planned_size": 0,
+      "takes": [
+        "standard",
+        "procedure",
+        "work_instruction",
+        "guideline",
+        "tra"
+      ]
+    }
+  ],
+  "attributes": [
+    {
+      "attr_ref": "PR-01",
+      "domain": "Policy review",
+      "requirement": "The owner has reviewed the document for its continued suitability, adequacy and effectiveness, against what changed since the last review: regulation, threats, technology and the organisation.",
+      "procedure": "Inspect the owner's review record and the redline or the no-change statement.",
+      "method": "Inspection",
+      "evidence_requested": "Review record; redline or no-change statement",
+      "pass_criteria": "A dated review by the owner says what was considered and what changed, or why nothing did.",
+      "applies_to": [],
+      "regulatory_refs": "ISO/IEC 27001:2022 A.5.1",
+      "control_ids": [],
+      "nfr_key": ""
+    },
+    {
+      "attr_ref": "PR-02",
+      "domain": "Policy review",
+      "requirement": "The functions the document affects were consulted and their comments resolved.",
+      "procedure": "Inspect the consultation log: who was consulted, their comments and the disposition of each.",
+      "method": "Inspection",
+      "evidence_requested": "Consultation log",
+      "pass_criteria": "Consulted functions are recorded, and every comment is accepted, rejected with a reason or deferred to the next review.",
+      "applies_to": [],
+      "regulatory_refs": "",
+      "control_ids": [],
+      "nfr_key": ""
+    },
+    {
+      "attr_ref": "PR-03",
+      "domain": "Policy review",
+      "requirement": "The document is approved by the body its approval route names, and its next review date is set.",
+      "procedure": "Inspect the approval minute or record and the document's version history in the policy library.",
+      "method": "Inspection",
+      "evidence_requested": "Approval minute; version history",
+      "pass_criteria": "Approved by the authorised body, with a new version, an effective date and a next review date.",
+      "applies_to": [],
+      "regulatory_refs": "DORA Art. 5(2)(b); ISO/IEC 27001:2022 cl. 5.2, 7.5.3",
+      "control_ids": [],
+      "nfr_key": ""
+    },
+    {
+      "attr_ref": "PR-04",
+      "domain": "Policy review",
+      "requirement": "The approved document is published and communicated to those it applies to.",
+      "procedure": "Inspect the publication in the policy library and the communication record.",
+      "method": "Inspection",
+      "evidence_requested": "Publication and communication record",
+      "pass_criteria": "Published and communicated within 10 business days of approval.",
+      "applies_to": [],
+      "regulatory_refs": "ISO/IEC 27001:2022 A.5.1",
+      "control_ids": [],
+      "nfr_key": ""
+    }
+  ],
+  "raci": [
+    {
+      "activity": "Approve the review schedule and the approval routes",
+      "cells": {
+        "ICT Risk Committee": "A",
+        "CISO (2LoD)": "R",
+        "Policy Governance Lead (2LoD)": "C",
+        "Document owners (1LoD)": "I",
+        "Internal Audit (3LoD)": "I"
+      }
+    },
+    {
+      "activity": "Propose and maintain the schedule from the policy library",
+      "cells": {
+        "CISO (2LoD)": "A",
+        "Policy Governance Lead (2LoD)": "R",
+        "Document owners (1LoD)": "C"
+      }
+    },
+    {
+      "activity": "Review the document",
+      "cells": {
+        "Policy Governance Lead (2LoD)": "C",
+        "Document owners (1LoD)": "A/R"
+      }
+    },
+    {
+      "activity": "Consult the affected functions",
+      "cells": {
+        "Policy Governance Lead (2LoD)": "R",
+        "Document owners (1LoD)": "A",
+        "Consulted functions (Legal, Compliance, HR, Operational Risk)": "C"
+      }
+    },
+    {
+      "activity": "Approve a policy",
+      "cells": {
+        "Management body": "A",
+        "CISO (2LoD)": "R",
+        "Document owners (1LoD)": "C"
+      }
+    },
+    {
+      "activity": "Approve a standard or procedure",
+      "cells": {
+        "ICT Risk Committee": "A",
+        "CISO (2LoD)": "R",
+        "Document owners (1LoD)": "C"
+      }
+    },
+    {
+      "activity": "Check and QA the review record",
+      "cells": {
+        "CISO (2LoD)": "A",
+        "Policy Governance Lead (2LoD)": "R",
+        "Document owners (1LoD)": "I"
+      }
+    },
+    {
+      "activity": "Report the status and the annual statement",
+      "cells": {
+        "Management body": "I",
+        "ICT Risk Committee": "I",
+        "CISO (2LoD)": "A",
+        "Policy Governance Lead (2LoD)": "R",
+        "Internal Audit (3LoD)": "I"
+      }
+    }
+  ],
+  "cadence": [
+    {
+      "forum": "Policy owners' check-in",
+      "frequency": "Monthly",
+      "content": "Documents in review, consultation status, approvals due",
+      "owner": "Policy Governance Lead (2LoD)"
+    },
+    {
+      "forum": "ICT Risk Committee",
+      "frequency": "Quarterly",
+      "content": "Reviews completed and approved, overdue documents, standards for approval",
+      "owner": "CISO (2LoD)"
+    },
+    {
+      "forum": "Management body",
+      "frequency": "Annually, and for each policy approval",
+      "content": "Policies for approval; the annual statement on the framework",
+      "owner": "CISO (2LoD)"
+    }
+  ],
+  "escalations": [
+    {
+      "trigger": "Owner review not done by the wave deadline",
+      "escalate_to": "Owner's line manager, then the CISO",
+      "within": "5 business days, then 10"
+    },
+    {
+      "trigger": "A document past its next review date",
+      "escalate_to": "ICT Risk Committee",
+      "within": "Next committee"
+    },
+    {
+      "trigger": "A consultation comment the owner and the consultee cannot resolve",
+      "escalate_to": "CISO",
+      "within": "10 business days"
+    }
+  ],
+  "regulatory_basis": [
+    {
+      "requirement": "The management body puts in place policies that aim to ensure the maintenance of high standards of availability, authenticity, integrity and confidentiality of data.",
+      "reference": "DORA Art. 5(2)(b)",
+      "how": "Policies are approved by the management body in the quarter they are due (attribute PR-03)."
+    },
+    {
+      "requirement": "Develop and document an information security policy as part of the ICT risk management framework.",
+      "reference": "DORA Art. 9(4)(a); RTS (EU) 2024/1774 Art. 2",
+      "how": "The information security policy and the standards under it are in the population and reviewed when due."
+    },
+    {
+      "requirement": "Review the ICT risk management framework, of which the policies are part, at least once a year.",
+      "reference": "DORA Art. 6(5)",
+      "how": "The annual statement and the input to the framework review report say which documents were reviewed and which are overdue."
+    },
+    {
+      "requirement": "Review the information security policies at planned intervals and if significant changes occur.",
+      "reference": "ISO/IEC 27001:2022 A.5.1",
+      "how": "The schedule follows each document's review date, and event-driven reviews run alongside it (step O.1)."
+    }
+  ]
+}

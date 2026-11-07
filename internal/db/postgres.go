@@ -801,6 +801,7 @@ CREATE TABLE IF NOT EXISTS audit_findings (
 	linked_risks TEXT NOT NULL DEFAULT '',
 	linked_controls TEXT NOT NULL DEFAULT '',
 	framework_refs TEXT NOT NULL DEFAULT '',
+	origin_ref TEXT NOT NULL DEFAULT '',
 	validated_by TEXT NOT NULL DEFAULT '',
 	validation_date TEXT NOT NULL DEFAULT '',
 	validation_notes TEXT NOT NULL DEFAULT '',
@@ -818,6 +819,8 @@ CREATE TABLE IF NOT EXISTS audit_findings (
 
 CREATE INDEX IF NOT EXISTS idx_audit_findings_status ON audit_findings (status);
 CREATE INDEX IF NOT EXISTS idx_audit_findings_due_date ON audit_findings (due_date);
+-- origin_ref names the assurance plan test a finding was raised from.
+ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS origin_ref TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS audit_finding_actions (
 	id BIGSERIAL PRIMARY KEY,
@@ -851,6 +854,376 @@ CREATE TABLE IF NOT EXISTS audit_finding_history (
 
 CREATE INDEX IF NOT EXISTS idx_audit_finding_history_finding
 	ON audit_finding_history (finding_id, id);
+
+-- Assurance Plans: see internal/db/sqlite.go and ASSURANCE_PLANS.md.
+CREATE TABLE IF NOT EXISTS assurance_plans (
+	id BIGSERIAL PRIMARY KEY,
+	reference TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL DEFAULT '',
+	plan_type TEXT NOT NULL DEFAULT '',
+	function_name TEXT NOT NULL DEFAULT '',
+	client_profile_id BIGINT NOT NULL DEFAULT 0,
+	period_start TEXT NOT NULL DEFAULT '',
+	period_end TEXT NOT NULL DEFAULT '',
+	mobilise_start TEXT NOT NULL DEFAULT '',
+	closing_date TEXT NOT NULL DEFAULT '',
+	objective TEXT NOT NULL DEFAULT '',
+	decisions_requested TEXT NOT NULL DEFAULT '',
+	regulatory_refs TEXT NOT NULL DEFAULT '',
+	owner_role TEXT NOT NULL DEFAULT '',
+	accountable_role TEXT NOT NULL DEFAULT '',
+	approval_forum TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'Draft',
+	revision INTEGER NOT NULL DEFAULT 1,
+	revision_status TEXT NOT NULL DEFAULT '',
+	revision_author TEXT NOT NULL DEFAULT '',
+	change_reason TEXT NOT NULL DEFAULT '',
+	author TEXT NOT NULL DEFAULT '',
+	approved_by TEXT NOT NULL DEFAULT '',
+	approved_at TEXT NOT NULL DEFAULT '',
+	activated_at TEXT NOT NULL DEFAULT '',
+	closed_at TEXT NOT NULL DEFAULT '',
+	selection_seed TEXT NOT NULL DEFAULT '',
+	non_working_dates TEXT NOT NULL DEFAULT '',
+	raci_roles TEXT NOT NULL DEFAULT '[]',
+	test_types TEXT NOT NULL DEFAULT '[]',
+	coverage_basis TEXT NOT NULL DEFAULT 'attestation',
+	population_source TEXT NOT NULL DEFAULT '',
+	tester_fte DOUBLE PRECISION NOT NULL DEFAULT 0,
+	days_per_fte_quarter DOUBLE PRECISION NOT NULL DEFAULT 0,
+	utilisation_threshold DOUBLE PRECISION NOT NULL DEFAULT 0,
+	rag_amber_points DOUBLE PRECISION NOT NULL DEFAULT 0,
+	result_partial_min INTEGER NOT NULL DEFAULT 0,
+	result_ineffective_min INTEGER NOT NULL DEFAULT 0,
+	deviation_extend_at INTEGER NOT NULL DEFAULT 0,
+	deviation_thematic_at INTEGER NOT NULL DEFAULT 0,
+	extend_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+	evidence_sla_days INTEGER NOT NULL DEFAULT 0,
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plans_status ON assurance_plans (status);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_steps (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	step_ref TEXT NOT NULL DEFAULT '',
+	phase TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	step_type TEXT NOT NULL DEFAULT 'activity',
+	responsible_role TEXT NOT NULL DEFAULT '',
+	accountable_role TEXT NOT NULL DEFAULT '',
+	start_date TEXT NOT NULL DEFAULT '',
+	end_date TEXT NOT NULL DEFAULT '',
+	deliverable TEXT NOT NULL DEFAULT '',
+	refs TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'Not started',
+	quarter INTEGER NOT NULL DEFAULT 0,
+	generated INTEGER NOT NULL DEFAULT 0,
+	notes TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_steps_plan ON assurance_plan_steps (plan_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_quarters (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	quarter INTEGER NOT NULL DEFAULT 0,
+	lod1_window_start TEXT NOT NULL DEFAULT '',
+	lod1_deadline TEXT NOT NULL DEFAULT '',
+	selection_date TEXT NOT NULL DEFAULT '',
+	fieldwork_start TEXT NOT NULL DEFAULT '',
+	fieldwork_end TEXT NOT NULL DEFAULT '',
+	findings_agreed_by TEXT NOT NULL DEFAULT '',
+	report_date TEXT NOT NULL DEFAULT '',
+	committee_label TEXT NOT NULL DEFAULT '',
+	retest_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+	overhead_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+	selected_at TEXT NOT NULL DEFAULT '',
+	selected_by TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, quarter),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_raci (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	activity TEXT NOT NULL DEFAULT '',
+	cells TEXT NOT NULL DEFAULT '{}',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_cadence (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	forum TEXT NOT NULL DEFAULT '',
+	frequency TEXT NOT NULL DEFAULT '',
+	content TEXT NOT NULL DEFAULT '',
+	owner TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_escalations (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	trigger_text TEXT NOT NULL DEFAULT '',
+	escalate_to TEXT NOT NULL DEFAULT '',
+	within_text TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_basis (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	requirement TEXT NOT NULL DEFAULT '',
+	reference TEXT NOT NULL DEFAULT '',
+	how_met TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_history (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	at TEXT NOT NULL DEFAULT '',
+	actor TEXT NOT NULL DEFAULT '',
+	event TEXT NOT NULL DEFAULT '',
+	subject TEXT NOT NULL DEFAULT '',
+	from_value TEXT NOT NULL DEFAULT '',
+	to_value TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_history_plan ON assurance_plan_history (plan_id, id);
+
+-- An approval snapshot is evidence of what the committee approved, so a row
+-- is written once and never updated; the sha256 lets a reader confirm it.
+CREATE TABLE IF NOT EXISTS assurance_plan_versions (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	number INTEGER NOT NULL DEFAULT 0,
+	label TEXT NOT NULL DEFAULT '',
+	approved_by TEXT NOT NULL DEFAULT '',
+	approved_at TEXT NOT NULL DEFAULT '',
+	change_reason TEXT NOT NULL DEFAULT '',
+	snapshot_json TEXT NOT NULL DEFAULT '{}',
+	snapshot_sha256 TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, number),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+-- An AI proposal is what the model offered, kept as it came back after the
+-- server's checks, and what a person then applied. The two are separate
+-- columns so the record shows what the model said and what was decided.
+CREATE TABLE IF NOT EXISTS assurance_plan_ai_proposals (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	kind TEXT NOT NULL DEFAULT '',
+	document TEXT NOT NULL DEFAULT '',
+	revision INTEGER NOT NULL DEFAULT 0,
+	input_json TEXT NOT NULL DEFAULT '{}',
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	payload_json TEXT NOT NULL DEFAULT '{}',
+	status TEXT NOT NULL DEFAULT 'proposed',
+	applied_json TEXT NOT NULL DEFAULT '',
+	decision_note TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	decided_by TEXT NOT NULL DEFAULT '',
+	decided_at TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_ai_proposals_plan ON assurance_plan_ai_proposals (plan_id, id);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_strata (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	code TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	definition TEXT NOT NULL DEFAULT '',
+	sampling_enabled INTEGER NOT NULL DEFAULT 1,
+	confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+	tolerable_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+	floor_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+	effort_per_test DOUBLE PRECISION NOT NULL DEFAULT 0,
+	effort_per_review DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q1 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q2 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q3 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	wave_q4 DOUBLE PRECISION NOT NULL DEFAULT 0,
+	topup_q1 INTEGER NOT NULL DEFAULT 0,
+	topup_q2 INTEGER NOT NULL DEFAULT 0,
+	topup_q3 INTEGER NOT NULL DEFAULT 0,
+	topup_q4 INTEGER NOT NULL DEFAULT 0,
+	planned_size INTEGER NOT NULL DEFAULT 0,
+	cycle_years INTEGER NOT NULL DEFAULT 0,
+	takes TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, code),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_population (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	item_ref TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	stratum_code TEXT NOT NULL DEFAULT '',
+	cif TEXT NOT NULL DEFAULT '',
+	business_line TEXT NOT NULL DEFAULT '',
+	hosting TEXT NOT NULL DEFAULT '',
+	internet_facing INTEGER NOT NULL DEFAULT 0,
+	owner TEXT NOT NULL DEFAULT '',
+	wave_quarter INTEGER NOT NULL DEFAULT 0,
+	attested_on TEXT NOT NULL DEFAULT '',
+	dq_status TEXT NOT NULL DEFAULT '',
+	dq_reviewed_on TEXT NOT NULL DEFAULT '',
+	topup_quarter INTEGER NOT NULL DEFAULT 0,
+	topup_rationale TEXT NOT NULL DEFAULT '',
+	last_tested_on TEXT NOT NULL DEFAULT '',
+	source_kind TEXT NOT NULL DEFAULT '',
+	source_ref TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, item_ref),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+-- A selection is the frozen record of a quarter's draw: written once by the
+-- selection action, never recomputed, and an item is selected at most once
+-- a year.
+CREATE TABLE IF NOT EXISTS assurance_plan_selections (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	quarter INTEGER NOT NULL DEFAULT 0,
+	population_id BIGINT NOT NULL,
+	item_ref TEXT NOT NULL DEFAULT '',
+	stratum_code TEXT NOT NULL DEFAULT '',
+	basis TEXT NOT NULL DEFAULT '',
+	rank_order INTEGER NOT NULL DEFAULT 0,
+	rank_hash TEXT NOT NULL DEFAULT '',
+	plan_version INTEGER NOT NULL DEFAULT 0,
+	selected_at TEXT NOT NULL DEFAULT '',
+	selected_by TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, population_id),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+	FOREIGN KEY(population_id) REFERENCES assurance_plan_population(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_selections_plan ON assurance_plan_selections (plan_id, quarter);
+
+-- The test script. Attributes are copied onto the plan, so a later catalog
+-- edit does not change an approved plan; nfr_key is empty for a plan-local
+-- attribute. A replace keeps each attribute's id by reference, because
+-- results point at it.
+CREATE TABLE IF NOT EXISTS assurance_plan_attributes (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	ordinal INTEGER NOT NULL DEFAULT 0,
+	attr_ref TEXT NOT NULL DEFAULT '',
+	domain TEXT NOT NULL DEFAULT '',
+	requirement TEXT NOT NULL DEFAULT '',
+	test_procedure TEXT NOT NULL DEFAULT '',
+	method TEXT NOT NULL DEFAULT '',
+	evidence_requested TEXT NOT NULL DEFAULT '',
+	pass_criteria TEXT NOT NULL DEFAULT '',
+	applies_to TEXT NOT NULL DEFAULT '',
+	regulatory_refs TEXT NOT NULL DEFAULT '',
+	control_ids TEXT NOT NULL DEFAULT '',
+	nfr_key TEXT NOT NULL DEFAULT '',
+	ai_generated INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	prompt_hash TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, attr_ref),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS assurance_plan_tests (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	selection_id BIGINT NOT NULL UNIQUE,
+	test_ref TEXT NOT NULL DEFAULT '',
+	test_type TEXT NOT NULL DEFAULT '',
+	tester TEXT NOT NULL DEFAULT '',
+	evidence_requested_on TEXT NOT NULL DEFAULT '',
+	evidence_due_on TEXT NOT NULL DEFAULT '',
+	evidence_received_on TEXT NOT NULL DEFAULT '',
+	fieldwork_completed_on TEXT NOT NULL DEFAULT '',
+	evidence_summary TEXT NOT NULL DEFAULT '',
+	qa_reviewer TEXT NOT NULL DEFAULT '',
+	qa_date TEXT NOT NULL DEFAULT '',
+	qa_note TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '',
+	updated_by TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, test_ref),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+	FOREIGN KEY(selection_id) REFERENCES assurance_plan_selections(id) ON DELETE CASCADE
+);
+
+-- finding_id is an audit_findings id but not a foreign key: a finding
+-- belongs to Audit Findings, and deleting it there must not delete the
+-- test result that raised it.
+CREATE TABLE IF NOT EXISTS assurance_plan_results (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	test_id BIGINT NOT NULL,
+	attribute_id BIGINT NOT NULL,
+	result TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	finding_id BIGINT NOT NULL DEFAULT 0,
+	finding_ref TEXT NOT NULL DEFAULT '',
+	severity TEXT NOT NULL DEFAULT '',
+	UNIQUE (test_id, attribute_id),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+	FOREIGN KEY(test_id) REFERENCES assurance_plan_tests(id) ON DELETE CASCADE,
+	FOREIGN KEY(attribute_id) REFERENCES assurance_plan_attributes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assurance_plan_results_plan ON assurance_plan_results (plan_id);
+
+-- A not-effective conclusion pushed to the risk register; risk_id is the
+-- register's row id, not a foreign key, for the same reason as finding_id.
+CREATE TABLE IF NOT EXISTS assurance_plan_thematic (
+	id BIGSERIAL PRIMARY KEY,
+	plan_id BIGINT NOT NULL,
+	attribute_id BIGINT NOT NULL,
+	stratum_code TEXT NOT NULL DEFAULT '',
+	risk_id BIGINT NOT NULL DEFAULT 0,
+	risk_ref TEXT NOT NULL DEFAULT '',
+	deviations INTEGER NOT NULL DEFAULT 0,
+	note TEXT NOT NULL DEFAULT '',
+	pushed_at TEXT NOT NULL DEFAULT '',
+	pushed_by TEXT NOT NULL DEFAULT '',
+	UNIQUE (plan_id, attribute_id, stratum_code),
+	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
+	FOREIGN KEY(attribute_id) REFERENCES assurance_plan_attributes(id) ON DELETE CASCADE
+);
+
+-- The Assurance Plans types beyond controls testing: test types, the coverage
+-- basis, proposed populations and multi-year strata.
+ALTER TABLE assurance_plans ADD COLUMN IF NOT EXISTS test_types TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE assurance_plans ADD COLUMN IF NOT EXISTS coverage_basis TEXT NOT NULL DEFAULT 'attestation';
+ALTER TABLE assurance_plans ADD COLUMN IF NOT EXISTS population_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE assurance_plan_strata ADD COLUMN IF NOT EXISTS cycle_years INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE assurance_plan_strata ADD COLUMN IF NOT EXISTS takes TEXT NOT NULL DEFAULT '';
+ALTER TABLE assurance_plan_population ADD COLUMN IF NOT EXISTS last_tested_on TEXT NOT NULL DEFAULT '';
+ALTER TABLE assurance_plan_tests ADD COLUMN IF NOT EXISTS test_type TEXT NOT NULL DEFAULT '';
+
 
 -- Policy Studio: see internal/db/sqlite.go for what each table holds.
 ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS editor_format TEXT NOT NULL DEFAULT 'markdown';

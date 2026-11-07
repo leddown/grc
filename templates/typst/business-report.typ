@@ -37,6 +37,40 @@
 
 #let count-of(sev) = findings.filter(f => lower(f.at("severity", default: "")) == sev).len()
 
+// section-tables sets the optional tables a section or appendix carries after
+// its body: {caption, columns, rows}, every cell a string placed as data. A
+// column of short values keeps its natural width; columns of running text
+// share the rest in proportion to their longest cell. An auto-width text
+// column would take the measure and crush its neighbours to a letter wide.
+#let section-tables(s) = for t in s.at("tables", default: ()) {
+  let cols = t.at("columns", default: ())
+  if cols.len() == 0 { continue }
+  let rows = t.at("rows", default: ()).map(r => range(cols.len()).map(i => r.at(i, default: "")))
+  let width(i) = rows.fold(cols.at(i).len(), (m, r) => calc.max(m, r.at(i).len()))
+  block(above: 0.9em, below: 0.9em)[
+    #set par(justify: false)
+    #if t.at("caption", default: "") != "" [
+      #label-text(t.at("caption"))
+      #v(-0.25em)
+    ]
+    #data-table(
+      columns: range(cols.len()).map(i => if width(i) > 20 { calc.min(width(i), 90) * 1fr } else { auto }),
+      header: cols,
+      rows: rows,
+    )
+  ]
+}
+
+// finding-part prints one labelled part of a finding, or nothing when the
+// payload leaves it empty: a finding raised from a test has an observation
+// before it has a recommendation.
+#let finding-part(label, value) = if value != none and value != "" [
+  #v(0.4em)
+  #label-text(label)
+  #v(-0.2em)
+  #value
+]
+
 #show: base-document.with(
   title: get("title"),
   reference: get("reference"),
@@ -130,6 +164,7 @@
 #for s in get("sections", fallback: ()) {
   heading(level: 1, s.at("heading", default: ""))
   s.at("body", default: "")
+  section-tables(s)
 }
 
 // ---------------------------------------------------------------------------
@@ -171,20 +206,10 @@
       )
     ]
 
-    #v(0.5em)
-    #label-text("Observation")
-    #v(-0.2em)
-    #f.at("observation", default: "")
-
-    #v(0.4em)
-    #label-text("Risk")
-    #v(-0.2em)
-    #f.at("risk", default: "")
-
-    #v(0.4em)
-    #label-text("Recommendation")
-    #v(-0.2em)
-    #f.at("recommendation", default: "")
+    #v(0.1em)
+    #finding-part("Observation", f.at("observation", default: ""))
+    #finding-part("Risk", f.at("risk", default: ""))
+    #finding-part("Recommendation", f.at("recommendation", default: ""))
 
     #if f.at("management_response", default: "") != "" [
       #v(0.5em)
@@ -215,6 +240,7 @@
   #for a in appendices [
     #heading(level: 1, a.at("heading", default: ""))
     #a.at("body", default: "")
+    #section-tables(a)
   ]
 ]
 

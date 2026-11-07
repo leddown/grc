@@ -1,0 +1,16 @@
+{
+  "key": "blank",
+  "order": 90,
+  "name": "Blank plan",
+  "description": "An empty plan: set the period, add steps, quarters and governance yourself.",
+  "plan": {
+    "title": "Untitled assurance plan"
+  },
+  "quarters": {
+    "mode": "none"
+  },
+  "steps": [],
+  "raci": [],
+  "cadence": [],
+  "escalations": []
+}

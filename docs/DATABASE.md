@@ -121,9 +121,9 @@ row count and exits non-zero on the first error.
   `client_profiles` and `ai_usage_log` carry their primary keys across so foreign-key relationships
   stay intact; on PostgreSQL the identity sequences are realigned afterwards so
   future inserts don't collide.
-- **Three modules are outside the sync entirely.** Regulation Coverage
-  (`reg_coverage_*`), Risk & Crisis Exercises (`crisis_ex_*`) and Audit
-  Findings (`audit_finding*`) are skipped, and the run prints `skip` for them
+- **Four modules are outside the sync entirely.** Regulation Coverage
+  (`reg_coverage_*`), Risk & Crisis Exercises (`crisis_ex_*`), Audit
+  Findings (`audit_finding*`) and Assurance Plans (`assurance_plan*`) are skipped, and the run prints `skip` for them
   rather than a row count. Each of their
   records is a *tree* of rows joined by autoincrement ids, and an autoincrement
   id is not an identity two deployments share: upserting on it would rewrite

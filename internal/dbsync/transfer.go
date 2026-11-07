@@ -59,6 +59,11 @@ import (
 // v9 added Audit Findings & Remediation (audit_findings, audit_finding_actions,
 // audit_finding_history). A v8-or-older backup restores with those empty.
 //
+// v16 added Assurance Plans (assurance_plans and its steps, quarters, strata,
+// population, selections, attributes, tests, results, thematic pushes, RACI,
+// cadence, escalations, history and versions) and audit_findings.origin_ref.
+// A v15-or-older backup restores with the module empty and origin_ref blank.
+//
 // v15 renamed the control catalog's table to nist_controls. An older backup
 // carries those rows under the table's earlier name, and Import reads them from
 // there; an older build would find no controls in a v15 file, which is why the
@@ -88,7 +93,7 @@ import (
 // an existing backup unrestorable — that was the effect when the handler
 // compared for equality, and it is the failure mode to watch for on the next
 // bump.
-const SnapshotVersion = 15
+const SnapshotVersion = 16
 
 // Snapshot is a portable, engine-independent dump of every managed table — the
 // same tables (and columns) dbsync.Sync copies. It is the on-the-wire format

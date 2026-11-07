@@ -200,6 +200,93 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | GET | `/audit-findings/summary` | signed in | `auditfinding.(*Handler).SummaryData` |
 | GET | `/audit-findings/vocabulary` | signed in | `auditfinding.(*Handler).VocabularyData` |
 
+## Assurance plans
+
+`internal/assuranceplan`. See [ASSURANCE_PLANS.md](../ASSURANCE_PLANS.md). Added 2026-11-06, after the route count above was taken.
+
+The documents and exports (phase 4):
+
+- `export/:file` takes `steps.csv`, `quarters.csv`, `population.csv`,
+  `tests.csv` or `deviations.csv`.
+- `report/quarter/:q` takes `1`..`4` or `Q1`..`Q4`, with or without `.pdf`.
+- The three PDF routes take `?bundle=1`, `?inline=1` and `?format=json` (the
+  payload, not rendered).
+
+The proposed population (phase 5): `population/propose` takes
+`?source=policies|findings` (the plan's own source when left out) and answers
+the proposal as CSV text with its counts and notes. It writes nothing; the
+page applies it through `population/preview` and `population`.
+
+AI assist (phase 6): `ai/draft`, `ai/attributes` and `ai/narrative` ask the
+model through `aiprovider.Router` and answer 201 with a stored proposal; the
+plan does not change until `ai/proposals/:pid/decide` accepts it. With no
+provider configured, or while another request for the plan runs, they answer
+409; a refusal or a cut-off answer is 422, and a provider failure or an answer
+still malformed after one repair turn is 502. `ai/proposals` answers
+`{"configured", "model", "proposals"}`.
+
+| Method | Path | Access | Handler |
+|---|---|---|---|
+| GET | `/assurance-plans` | signed in | `assuranceplan.(*Handler).ListPage` |
+| POST | `/assurance-plans` | admin | `assuranceplan.(*Handler).Create` |
+| DELETE | `/assurance-plans/:id` | admin | `assuranceplan.(*Handler).Delete` |
+| GET | `/assurance-plans/:id` | signed in | `assuranceplan.(*Handler).PlanPage` |
+| PUT | `/assurance-plans/:id` | admin | `assuranceplan.(*Handler).UpdateHeader` |
+| POST | `/assurance-plans/:id/activate` | admin | `assuranceplan.(*Handler).Activate` |
+| POST | `/assurance-plans/:id/ai/attributes` | admin | `assuranceplan.(*Handler).AIAttributes` |
+| POST | `/assurance-plans/:id/ai/draft` | admin | `assuranceplan.(*Handler).AIDraft` |
+| POST | `/assurance-plans/:id/ai/narrative` | admin | `assuranceplan.(*Handler).AINarrative` |
+| GET | `/assurance-plans/:id/ai/proposals` | signed in | `assuranceplan.(*Handler).AIProposals` |
+| GET | `/assurance-plans/:id/ai/proposals/:pid` | signed in | `assuranceplan.(*Handler).AIProposal` |
+| POST | `/assurance-plans/:id/ai/proposals/:pid/decide` | admin | `assuranceplan.(*Handler).AIDecide` |
+| POST | `/assurance-plans/:id/approve` | admin | `assuranceplan.(*Handler).Approve` |
+| PUT | `/assurance-plans/:id/attributes` | admin | `assuranceplan.(*Handler).ReplaceAttributes` |
+| POST | `/assurance-plans/:id/attributes/seed` | admin | `assuranceplan.(*Handler).SeedAttributes` |
+| POST | `/assurance-plans/:id/change-request` | admin | `assuranceplan.(*Handler).ChangeRequest` |
+| POST | `/assurance-plans/:id/clone` | admin | `assuranceplan.(*Handler).Clone` |
+| POST | `/assurance-plans/:id/close` | admin | `assuranceplan.(*Handler).Close` |
+| GET | `/assurance-plans/:id/dashboard` | signed in | `assuranceplan.(*Handler).Dashboard` |
+| GET | `/assurance-plans/:id/deviations` | signed in | `assuranceplan.(*Handler).Deviations` |
+| GET | `/assurance-plans/:id/export.json` | signed in | `assuranceplan.(*Handler).ExportJSON` |
+| GET | `/assurance-plans/:id/export/:file` | signed in | `assuranceplan.(*Handler).ExportCSV` |
+| PUT | `/assurance-plans/:id/governance` | admin | `assuranceplan.(*Handler).ReplaceGovernance` |
+| GET | `/assurance-plans/:id/history` | signed in | `assuranceplan.(*Handler).History` |
+| GET | `/assurance-plans/:id/lint` | signed in | `assuranceplan.(*Handler).Lint` |
+| GET | `/assurance-plans/:id/pack.pdf` | signed in | `assuranceplan.(*Handler).Pack` |
+| GET | `/assurance-plans/:id/population` | signed in | `assuranceplan.(*Handler).Population` |
+| POST | `/assurance-plans/:id/population` | admin | `assuranceplan.(*Handler).ApplyPopulation` |
+| GET | `/assurance-plans/:id/population.csv` | signed in | `assuranceplan.(*Handler).PopulationCSV` |
+| PATCH | `/assurance-plans/:id/population/:itemID` | admin | `assuranceplan.(*Handler).UpdatePopulationItem` |
+| GET | `/assurance-plans/:id/population/example.csv` | signed in | `assuranceplan.(*Handler).ExamplePopulationCSV` |
+| POST | `/assurance-plans/:id/population/freeze` | admin | `assuranceplan.(*Handler).FreezePopulation` |
+| POST | `/assurance-plans/:id/population/preview` | admin | `assuranceplan.(*Handler).PreviewPopulation` |
+| POST | `/assurance-plans/:id/population/propose` | admin | `assuranceplan.(*Handler).ProposePopulation` |
+| PUT | `/assurance-plans/:id/quarters` | admin | `assuranceplan.(*Handler).ReplaceQuarters` |
+| POST | `/assurance-plans/:id/quarters/:q/select` | admin | `assuranceplan.(*Handler).SelectQuarter` |
+| POST | `/assurance-plans/:id/quarters/generate` | admin | `assuranceplan.(*Handler).GenerateQuarters` |
+| GET | `/assurance-plans/:id/report/annual.pdf` | signed in | `assuranceplan.(*Handler).AnnualReportPDF` |
+| GET | `/assurance-plans/:id/report/quarter/:q` | signed in | `assuranceplan.(*Handler).QuarterReportPDF` |
+| POST | `/assurance-plans/:id/results/:resultID/finding` | admin | `assuranceplan.(*Handler).RaiseFinding` |
+| POST | `/assurance-plans/:id/return` | admin | `assuranceplan.(*Handler).Return` |
+| GET | `/assurance-plans/:id/sampling` | signed in | `assuranceplan.(*Handler).Sampling` |
+| GET | `/assurance-plans/:id/seed` | admin | `assuranceplan.(*Handler).Seed` |
+| GET | `/assurance-plans/:id/selections` | signed in | `assuranceplan.(*Handler).Selections` |
+| PUT | `/assurance-plans/:id/steps` | admin | `assuranceplan.(*Handler).ReplaceSteps` |
+| PATCH | `/assurance-plans/:id/steps/:stepID` | admin | `assuranceplan.(*Handler).UpdateStepStatus` |
+| PUT | `/assurance-plans/:id/strata` | admin | `assuranceplan.(*Handler).ReplaceStrata` |
+| POST | `/assurance-plans/:id/submit` | admin | `assuranceplan.(*Handler).Submit` |
+| GET | `/assurance-plans/:id/tests` | signed in | `assuranceplan.(*Handler).Tests` |
+| POST | `/assurance-plans/:id/tests` | admin | `assuranceplan.(*Handler).CreateTests` |
+| PUT | `/assurance-plans/:id/tests/:testID` | admin | `assuranceplan.(*Handler).SaveTest` |
+| POST | `/assurance-plans/:id/tests/:testID/qa` | admin | `assuranceplan.(*Handler).SignOffQA` |
+| POST | `/assurance-plans/:id/thematic` | admin | `assuranceplan.(*Handler).PushThematic` |
+| GET | `/assurance-plans/:id/versions` | signed in | `assuranceplan.(*Handler).Versions` |
+| GET | `/assurance-plans/:id/versions/:n` | signed in | `assuranceplan.(*Handler).Version` |
+| GET | `/assurance-plans/data` | signed in | `assuranceplan.(*Handler).List` |
+| GET | `/assurance-plans/data/:id` | signed in | `assuranceplan.(*Handler).GetOne` |
+| GET | `/assurance-plans/types` | signed in | `assuranceplan.(*Handler).Types` |
+| GET | `/assurance-plans/vocabulary` | signed in | `assuranceplan.(*Handler).Vocabulary` |
+
 ## Policy library (documents, sections, mappings, coverage)
 
 `internal/policydocs`; `compare.pdf` is wired in `internal/app/app.go` over `internal/doctemplate`.

@@ -21,6 +21,7 @@ templates/
     business-report.typ    assessment and consulting reports
     policy-redline.typ     the changes between two revisions of a policy
     letter.typ             a letter on a client's behalf (doc_type letter)
+    assurance-plan-pack.typ  an assurance plan's committee approval pack, 16:9
   latex/
     grc.sty           LaTeX equivalent of brand.typ + lib.typ
     policy-document.tex    LaTeX policy document
@@ -29,6 +30,9 @@ templates/
     report-sample.json
     redline-sample.json    a comparison, as GET /policies/:id/compare returns it
     letter-sample.json     a letter to a JST, in the policy contract
+    assurance-plan-sample.json       an assurance plan's pack payload
+    assurance-quarterly-sample.json  a quarterly report, in the report contract
+    assurance-annual-sample.json     an annual conclusion, in the report contract
   build.sh
 ```
 
@@ -46,6 +50,9 @@ cd templates
 ./build.sh policy         # just the policy document
 ./build.sh report         # just the report
 ./build.sh letter         # just the letter
+./build.sh pack           # the assurance plan approval pack
+./build.sh quarterly      # an assurance plan quarterly report (business-report.typ)
+./build.sh annual         # an assurance plan annual conclusion (business-report.typ)
 ./build.sh latex          # the LaTeX policy document
 ```
 
@@ -149,6 +156,45 @@ on each section that is new, removed or renamed, and a list of the sections
 with no changes. The data is `GET /policies/:id/compare` plus the document's
 reference and classification. As in every Typst template, the strings are
 placed as content and never evaluated.
+
+### Assurance plan documents
+
+Assurance Plans renders three documents with these templates. Each comes from
+the plan's Overview tab, and each answers `?format=json` with its payload. See
+ASSURANCE_PLANS.md, "Documents".
+
+- **The approval pack.** `assurance-plan-pack.typ` is registered as
+  `assurance-pack-typst`, kind `assurance_pack`. Its payload is the plan's
+  export (`GET /assurance-plans/:id/export.json`) without the population and
+  the test log, plus a `pack` object:
+
+  ```
+  pack { as_of, roadmap[] { label, period, lines[] }, next_steps[] (export steps),
+         delivery_risks[], peak_quarter,
+         narrative? { executive_summary, speaker_notes[] { slide, title, notes },
+                      model, accepted_by, accepted_at } }
+  ```
+
+  It sets thirteen slides on Typst's `presentation-16-9` paper. Each slide
+  carries its own header (reference, classification) and footer (function,
+  forum, page), so a page printed alone still says what it belongs to. A list
+  that would overflow its slide is cut, and the slide says how many more are
+  in the export. `narrative` is there only once a person has accepted an
+  AI-drafted pack narrative; it adds a "Presenter's notes" page after the
+  slides, which says it was drafted with AI assistance, by which model, and
+  who accepted it. The slides do not read it. Its strings are data like every
+  other, and `internal/doctemplate`'s test compiles the page from hostile
+  strings too.
+- **The quarterly progress report and the annual conclusion** use
+  `business-report.typ` (`report-typst`) with the report contract below. Their
+  sections carry tables. An accepted AI-drafted narrative for the report
+  replaces `executive_summary`, and `limitations` then says so; the contract
+  does not change.
+
+`build.sh pack | quarterly | annual` renders the samples. The quarterly and
+annual reports are written to `out/assurance-quarterly-report.pdf` and
+`out/assurance-annual-conclusion.pdf` so they do not overwrite
+`out/business-report.pdf`.
 
 ### No engine installed is a normal outcome
 
@@ -453,6 +499,35 @@ It is a dedicated `TemplateExport` type rather than the internal structs
 serialised directly -- row ids and provenance have no business in a client
 deliverable's data file, and a separate type means renaming an internal JSON tag
 cannot silently produce PDFs with blank fields.
+
+`business-report.typ` expects the shape of `samples/report-sample.json`:
+
+```
+reference, title, subtitle, client_name, engagement, version, classification,
+prepared_by, reviewed_by, report_date, period, distribution, frameworks[],
+executive_summary, key_messages[],
+sections[]    { heading, body, tables[]? { caption, columns[], rows[][] } }
+findings[]    { id, title, severity, control_id, status, observation, risk,
+                recommendation, management_response, owner, target_date }
+appendices[]  { heading, body, tables[]? }
+limitations
+```
+
+The rules for this template:
+
+- `tables` is optional, so a payload without it renders as before. Every cell
+  is a string placed as data.
+- Column widths follow the content:
+  - A column whose cells are all short (20 characters or fewer) keeps its
+    natural width.
+  - Columns of running text share the rest of the line in proportion to their
+    longest cell.
+
+  An auto-width text column would take the whole line and squeeze its
+  neighbours to a letter wide.
+- A finding's observation, risk and recommendation are printed only when they
+  are not empty. A finding raised from a test has an observation before it has
+  a recommendation, and an empty label reads as an omission.
 
 ### Blocks
 

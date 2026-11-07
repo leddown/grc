@@ -122,6 +122,7 @@ func pageHTML() string {
           <label>Source<select data-f="source" data-v="sources" data-blank="1"></select></label>
           <label>Engagement / audit<input data-f="engagement" placeholder="e.g. 2026 ITGC review"></label>
           <label>Auditor / examiner<input data-f="auditor"></label>
+          <label>Raised from<div class="readonly" id="originRef">—</div></label>
           <label>Deficiency type<select data-f="deficiency_type" data-v="deficiency_types" data-blank="1"></select></label>
           <label>Identified<input type="date" data-f="identified_date"></label>
           <label>Report issued<input type="date" data-f="report_date"></label>
@@ -302,6 +303,10 @@ func pageHTML() string {
         if (el.type === "checkbox") el.checked = !!v; else el.value = v == null ? "" : v;
       });
       $("origDue").textContent = f.original_due_date || "—";
+      var origin = f.origin_ref || "";
+      $("originRef").innerHTML = origin
+        ? (/^AP-\d{4}-\d+/.test(origin) ? '<a href="/assurance-plans?q=' + encodeURIComponent(origin.split(" / ")[0]) + '">' + esc(origin) + "</a>" : esc(origin))
+        : "—";
       $("extCount").textContent = f.extension_count || 0;
       $("closedDate").textContent = f.closed_date || "—";
       $("actionRows").innerHTML = "";

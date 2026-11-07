@@ -76,6 +76,33 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   management response and dated action plan, extensions that are counted, and
   closure only on independent validation or an expiring risk acceptance — see
   `AUDIT_FINDINGS.md`
+- `internal/assuranceplan` — Assurance Plans: the second line's annual plans
+  (controls testing, risk assessment cycle, policy review, resilience testing,
+  remediation roadmap). A plan type is a JSON template in
+  `internal/assuranceplan/templates/`, not a code path: the types differ in
+  plan settings (test types, coverage basis, population source) and stratum
+  flags (sampling, `cycle_years`, `takes`). Draft → In review →
+  Approved → Active → Closed with an approval gate (422), immutable approval
+  snapshots, a locked design after approval that changes only through a change
+  request, and clone for next year. The sampling engine is pure functions in
+  `sampling.go`, the result and deviation rules in `execution.go`. The scope
+  population is CSV text pasted into the page and posted as JSON, or proposed
+  as the same CSV text from `policydocs.Service` (documents due for review) or
+  `auditfinding.Service` (open findings) in `propose.go`. It is structured
+  data, not a document, and there is no upload. A Fail is raised as a
+  finding through `auditfinding.Service` and a thematic conclusion goes to the
+  risk register through `riskregister.Service`; the module keeps no finding or
+  risk register of its own. The approval pack (`assurance-plan-pack.typ`) and
+  the quarterly and annual reports render through a `Renderer` that `app.go`
+  builds on `doctemplate`; the module does not import it. The AI assist
+  (`ai*.go`) asks through `aiprovider.Router` and retrieves its shortlist
+  through `knowledge.Service` (`WithAI`, wired in `app.go`). Every answer is a
+  row in `assurance_plan_ai_proposals` with its model and prompt hash, every
+  cited reference is resolved before it is shown, and nothing changes on the
+  plan until a person accepts. A payload change
+  means regenerating `templates/samples/assurance-*.json` with
+  `GRC_UPDATE_SAMPLES=1 go test ./internal/assuranceplan -run Payload` — see
+  `ASSURANCE_PLANS.md`
 - `internal/crisisexercise` — Risk & Crisis Exercises: plans, runs and reports
   the exercise arc from red team through incident response, DORA incident
   classification and its notification clocks, crisis and continuity activation,

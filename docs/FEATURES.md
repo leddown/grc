@@ -186,6 +186,141 @@ close. Code: `internal/auditfinding`; detail in `AUDIT_FINDINGS.md`.
   expired ones) and closures in the last 90 days, and groups open findings by
   age.
 
+
+### Assurance Plans (`/assurance-plans`)
+
+The second line's annual plans: controls testing, an ICT risk assessment
+cycle (RCSA), policy review, a resilience testing programme and a remediation
+roadmap.
+Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
+
+- A plan is created **from a plan type** (Controls testing, ICT risk
+  assessment cycle, Policy review, Resilience testing, Remediation roadmap,
+  Blank) or from the **worked 2027 example**. Types are JSON templates in
+  `internal/assuranceplan/templates/`: they seed the steps, the default
+  quarterly cycle, the RACI, the reporting cadence and the escalation
+  triggers. Template dates are expressions on the period and the quarters
+  (`period_start-53d`, `lod1_deadline+5bd`), rolled onto business days.
+- **Plan types are data.** A type differs in its template and a few settings,
+  not in code: the test types a test records, whether coverage is measured on
+  the 1LoD attestation or on the test signed off by QA, and where a population
+  can be proposed from. Each stratum can turn sampling off (every item due is
+  tested), run a multi-year cycle (the TLPT scopes' three years: an item
+  inside its cycle is not due and counts as covered), and name the document
+  types or severities a proposal places in it.
+- **Plan & timeline**: the steps with a server-rendered Gantt (bars,
+  milestone diamonds, grey bands for ongoing items, a legend in words).
+  **Quarterly plan**: the cycle's dates, with a reset to the default cycle
+  and a regeneration of the per-quarter steps. **Governance**: RACI, cadence,
+  escalation. **History & versions**.
+- **Lifecycle:** Draft → In review → Approved → Active → Closed, with no
+  edge from Draft to Approved. Approval runs a gate (422 with the findings)
+  and stores an immutable JSON snapshot with its SHA-256. The approver cannot
+  be the author of the revision under multi-user authentication; in
+  single-user mode it is a warning.
+- After approval the design is locked; step status stays editable. A
+  **change request** with a reason opens the next revision, which goes
+  through review and approval again while the plan stays Active.
+- **Clone** copies the design for the next year: dates move one year onto
+  business days, years in titles move on, execution data is dropped. The
+  population is copied without its attestations, DQ reviews or top-ups.
+- **Sampling** tab, for each stratum, with the formula and inputs behind each
+  figure:
+  - the sample size: confidence and tolerable rate give n0, then the
+    finite-population correction, the coverage floor and the annual sample
+  - the quarterly allocation of tests (statistical picks plus planned
+    risk-based top-ups) and the 1LoD reviews due
+  - the cumulative coverage target
+  - capacity per quarter against the testers' FTE, flagged in words above the
+    utilisation threshold
+
+  A stratum is sized on its planned size until its population is loaded. The
+  strata (codes, parameters, waves, top-ups, planned size) are edited here
+  while the design is open. The **Quarterly plan** tab carries the
+  quarter-by-quarter targets.
+- **Scope population** tab: the items in scope, each with its stratum, 1LoD
+  wave, CIF, owner, attestation, 2LoD data-quality review and top-up flag.
+  - Counts per stratum and wave, filters, and an editor for one item.
+  - The population is **pasted as CSV text**, not uploaded. Paste the text,
+    choose replace or merge, and preview it. The preview lists every
+    problem by line, and the added, changed and removed items.
+  - Apply writes it in one step, and refuses a paste previewed against a
+    population that has changed since.
+  - The tab can download the population as CSV, or fill the box with it, or
+    with an example built from the planned sizes.
+  - **Propose from the policy library** (Policy review): the documents in
+    force whose review falls due by the period end, each in the wave of its
+    due quarter, overdue ones in Q1. **Propose from open audit findings**
+    (Remediation roadmap): the open findings, each in the wave of the quarter
+    its remediation is due. The proposal fills the box and runs the preview,
+    so it is validated and diffed like a paste; items already in the plan
+    keep their stratum and wave.
+- **Freeze and select.** After approval, "Freeze population and record seed"
+  fixes the population and draws a random seed. Readers see only the seed's
+  SHA-256 until every quarter is drawn. "Select Q*n* sample" ranks each
+  stratum's wave by a hash of the seed and the item reference, and takes the
+  quarter's allocation plus the flagged top-ups. The picks are frozen,
+  written to history, and can be re-performed from the seed. The first
+  selection makes the plan Active.
+- **Test script** tab: the attributes 2LoD tests on every selected item
+  (requirement, procedure, method, evidence requested, pass criteria, the
+  strata it applies to, 800-53 ids, regulatory basis). The worked example
+  carries Appendix A's sixteen. Attributes can be copied from the Security NFR
+  and 800-53 catalogs; ids that do not resolve are marked Unresolved. Part of
+  the design: locked after approval.
+- **Tests** tab: "Open N test(s) for Q*n*" opens one test per pick
+  (`T27-Q1-001`…), with the tester, evidence requested, due (10 business days
+  later) and received, fieldwork completed, the test type (Penetration test,
+  Policy review…), and Pass / Fail / N/A and a note per attribute. The overall result follows the fails: Effective, Partially
+  effective (1–2), Ineffective (3+). QA sign-off is four-eyes under multi-user
+  authentication (a warning in single-user mode), and a change after it
+  withdraws it.
+  - **Raise finding** on a Fail creates the finding in Audit Findings, written
+    as criteria and condition from the attribute and the test, with the item's
+    owner, the 800-53 ids, source Second Line Review, and the plan, test and
+    attribute as its origin. The result links to the finding and the finding
+    back to the plan.
+- **Dashboard** tab: coverage against plan (1LoD attestation, or tests signed
+  off by QA, by the plan's basis) per stratum and quarter with a
+  RAG (Green, Amber within 10 points, Red, Not due) and the year-end tracker;
+  2LoD testing progress; the deviation rule per attribute and stratum (0
+  effective, 1 extend the next quarter's sample by 50%, 2+ not effective); the
+  linked findings by severity, open and overdue, read from Audit Findings; and
+  utilisation. A not-effective conclusion can be pushed to the risk register as
+  a thematic risk, once.
+- **Documents and exports** (Overview tab):
+  - the **committee approval pack**: thirteen 16:9 slides, typeset by Typst
+    from `templates/typst/assurance-plan-pack.typ`, and a presenter's notes
+    page once an AI-drafted narrative has been accepted
+  - a **quarterly progress report** for each quarter, stated as at that
+    quarter
+  - the **annual conclusion**, labelled as an input to the ICT risk
+    management framework review report (RTS (EU) 2024/1774 Art. 27)
+  - the whole plan as **JSON**
+  - one **CSV** per table (steps, quarters, population, tests, deviations),
+    with formula-like cells prefixed so a spreadsheet reads them as text
+
+  Each PDF also comes as its sources and as its data (`?format=json`).
+- **Regulatory basis** (Governance tab): what the regulation asks of the
+  control function and how the plan meets it. It is the pack's regulatory
+  slide; every built-in type carries its own rows.
+- **Knowledge API**: the kinds `assurance_plan` and `assurance_plan_test`, read
+  fresh. An agent can answer "what's due this quarter?", "are we behind
+  plan?" and "which Tier 1 assets failed NFR-04?".
+- **AI assist** (optional; the plan's AI assist tab): draft a plan from a brief
+  (objective, regulation, population size, constraints → steps, quarter dates
+  and a RACI); propose test attributes for a regulation or a domain from a
+  lexical shortlist of NFRs, 800-53 controls and Regulation Coverage clauses;
+  draft the executive summary and speaker notes for the pack or a report from
+  the plan's data. Calls go through the AI router with the Settings model and
+  are logged to `ai_usage_log`. Every answer is stored as a proposal with its
+  model, prompt hash and timestamp, and changes nothing until a person
+  accepts, edits or rejects it. Each cited reference is resolved against the
+  shortlist, the catalogs or the plan's own references; one that does not
+  resolve is shown as unresolved and never stored. Narrative is flagged where
+  a figure or article is not in the plan's data. With no model configured the
+  tab says so and everything else works.
+
 ### Exceptions (`/exceptions`, detail at `/exceptions/detail`)
 
 Builds an **exception set**: the Security NFRs a system does not meet. Code:
