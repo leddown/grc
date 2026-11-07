@@ -12,6 +12,7 @@ import (
 	"grc/internal/auditfinding"
 	"grc/internal/controlcatalog"
 	"grc/internal/controlid"
+	"grc/internal/policydocs"
 	"grc/internal/riskregister"
 	"grc/internal/securitynfr"
 )
@@ -25,6 +26,8 @@ type Integrations struct {
 	Risks    *riskregister.Service
 	Controls *controlcatalog.Service
 	NFRs     *securitynfr.Service
+	// Policies is read to propose a policy review plan's population.
+	Policies *policydocs.Service
 }
 
 func (s *Service) WithIntegrations(in Integrations) *Service {
@@ -447,7 +450,7 @@ func (s *Service) CreateTests(id int64, in CreateTestsInput, actor string) ([]Te
 		}
 		delete(want, sel.ID)
 		highest++
-		t := Test{SelectionID: sel.ID, TestRef: testRef(p.PeriodStart, in.Quarter, highest),
+		t := Test{SelectionID: sel.ID, TestRef: testRef(p.PeriodStart, in.Quarter, highest), TestType: firstOf(p.TestTypes),
 			Tester: firstNonEmpty(in.Tester, actor), EvidenceRequestedOn: in.EvidenceRequestedOn,
 			CreatedAt: stamp, CreatedBy: actor, UpdatedAt: stamp, UpdatedBy: actor}
 		t.EvidenceDueOn = EvidenceDue(t.EvidenceRequestedOn, p.Parameters.EvidenceSLADays, cal)
@@ -489,7 +492,9 @@ func (s *Service) CreateTests(id int64, in CreateTestsInput, actor string) ([]Te
 
 // TestInput is a test's record as the editor saves it. The evidence due date
 // is not in it: it is always the requested date plus the SLA.
+// TestInput is a test's record. A blank test type keeps the test's type.
 type TestInput struct {
+	TestType             string        `json:"test_type"`
 	Tester               string        `json:"tester"`
 	EvidenceRequestedOn  string        `json:"evidence_requested_on"`
 	EvidenceReceivedOn   string        `json:"evidence_received_on"`
@@ -503,6 +508,27 @@ type ResultInput struct {
 	AttributeID int64  `json:"attribute_id"`
 	Result      string `json:"result"`
 	Note        string `json:"note"`
+}
+
+func firstOf(list []string) string {
+	if len(list) == 0 {
+		return ""
+	}
+	return list[0]
+}
+
+// matchTestType finds a type in the plan's list without regard to case. A plan
+// with no list takes any short type.
+func matchTestType(types []string, v string) (string, bool) {
+	if len(types) == 0 {
+		return v, len(v) <= maxTestType
+	}
+	for _, t := range types {
+		if strings.EqualFold(t, v) {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 type TestSaveResult struct {
@@ -557,6 +583,13 @@ func (s *Service) SaveTest(id, testID int64, in TestInput, actor string) (TestSa
 		}
 	}
 	next.EvidenceDueOn = EvidenceDue(next.EvidenceRequestedOn, p.Parameters.EvidenceSLADays, NewCalendar(p.NonWorkingDates))
+	if v := strings.TrimSpace(in.TestType); v != "" {
+		typ, ok := matchTestType(p.TestTypes, v)
+		if !ok {
+			return TestSaveResult{}, invalid("test type %q is not one of the plan's (%s)", v, strings.Join(p.TestTypes, ", "))
+		}
+		next.TestType = typ
+	}
 
 	attrByID := map[int64]Attribute{}
 	for _, a := range p.Attributes {
@@ -610,7 +643,7 @@ func (s *Service) SaveTest(id, testID int64, in TestInput, actor string) (TestSa
 		}
 	}
 	for _, x := range []struct{ label, a, b string }{
-		{"tester", prev.Tester, next.Tester}, {"evidence requested", prev.EvidenceRequestedOn, next.EvidenceRequestedOn},
+		{"test type", prev.TestType, next.TestType}, {"tester", prev.Tester, next.Tester}, {"evidence requested", prev.EvidenceRequestedOn, next.EvidenceRequestedOn},
 		{"evidence received", prev.EvidenceReceivedOn, next.EvidenceReceivedOn},
 		{"fieldwork completed", prev.FieldworkCompletedOn, next.FieldworkCompletedOn},
 		{"evidence summary", prev.EvidenceSummary, next.EvidenceSummary}, {"notes", prev.Notes, next.Notes}} {
@@ -823,6 +856,13 @@ func (s *Service) RaiseFinding(id, resultID int64, in RaiseInput, actor string) 
 	return RaiseResult{Result: r, Finding: created}, nil
 }
 
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
 func nonEmpty(values ...string) []string {
 	out := []string{}
 	for _, v := range values {
@@ -837,18 +877,22 @@ func nonEmpty(values ...string) []string {
 
 // Deviation is the rule's conclusion for one attribute in one stratum.
 type Deviation struct {
-	AttributeID   int64     `json:"attribute_id"`
-	AttrRef       string    `json:"attr_ref"`
-	Domain        string    `json:"domain"`
-	StratumCode   string    `json:"stratum"`
-	Tested        int       `json:"tested"`
-	Fails         int       `json:"fails"`
-	Kind          string    `json:"kind"`
-	Conclusion    string    `json:"conclusion"`
-	Failures      []string  `json:"failures"`
-	ExtendQuarter int       `json:"extend_quarter"`
-	ExtendBy      int       `json:"extend_by"`
-	Thematic      *Thematic `json:"thematic,omitempty"`
+	AttributeID   int64    `json:"attribute_id"`
+	AttrRef       string   `json:"attr_ref"`
+	Domain        string   `json:"domain"`
+	StratumCode   string   `json:"stratum"`
+	Tested        int      `json:"tested"`
+	Fails         int      `json:"fails"`
+	Kind          string   `json:"kind"`
+	Conclusion    string   `json:"conclusion"`
+	Failures      []string `json:"failures"`
+	ExtendQuarter int      `json:"extend_quarter"`
+	ExtendBy      int      `json:"extend_by"`
+	// FullCoverage marks a stratum with sampling off: every item is tested,
+	// so a deviation below the not-effective threshold has no sample to
+	// extend and stands as the findings raised on it.
+	FullCoverage bool      `json:"full_coverage"`
+	Thematic     *Thematic `json:"thematic,omitempty"`
 }
 
 // computeDeviations applies the deviation rule to every attribute in every
@@ -885,7 +929,11 @@ func computeDeviations(p Plan, tests []Test, view SamplingView, pushed []Themati
 				}
 			}
 			d.Kind, d.Conclusion = Conclude(d.Fails, d.Tested, p.Parameters)
-			if d.Kind == KindExtend && lastQ < 4 && si < len(view.Strata) {
+			d.FullCoverage = !st.SamplingEnabled
+			if d.Kind == KindExtend && d.FullCoverage {
+				d.Conclusion = fmt.Sprintf("%d %s – full coverage, raise as findings", d.Fails, plural(d.Fails, "deviation", "deviations"))
+			}
+			if d.Kind == KindExtend && !d.FullCoverage && lastQ < 4 && si < len(view.Strata) {
 				d.ExtendQuarter = lastQ + 1
 				d.ExtendBy = ExtendBy(view.Strata[si].Tests[lastQ], p.Parameters.ExtendPct)
 			}

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"grc/internal/db"
 )
@@ -22,7 +23,7 @@ var errQuarterTaken = errors.New("quarter already selected")
 func (r *SQLiteRepository) strata(planID int64) ([]Stratum, error) {
 	rows, err := r.db.Query(`SELECT id, ordinal, code, name, definition, sampling_enabled, confidence, tolerable_rate,
 		floor_pct, effort_per_test, effort_per_review, wave_q1, wave_q2, wave_q3, wave_q4,
-		topup_q1, topup_q2, topup_q3, topup_q4, planned_size
+		topup_q1, topup_q2, topup_q3, topup_q4, planned_size, cycle_years, takes
 		FROM assurance_plan_strata WHERE plan_id = ? ORDER BY ordinal, id`, planID)
 	if err != nil {
 		return nil, fmt.Errorf("load plan strata: %w", err)
@@ -32,12 +33,14 @@ func (r *SQLiteRepository) strata(planID int64) ([]Stratum, error) {
 	for rows.Next() {
 		var s Stratum
 		var sampling int
+		var takes string
 		if err := rows.Scan(&s.ID, &s.Ordinal, &s.Code, &s.Name, &s.Definition, &sampling, &s.Confidence, &s.TolerableRate,
 			&s.FloorPct, &s.EffortPerTest, &s.EffortPerReview, &s.Waves[0], &s.Waves[1], &s.Waves[2], &s.Waves[3],
-			&s.TopUps[0], &s.TopUps[1], &s.TopUps[2], &s.TopUps[3], &s.PlannedSize); err != nil {
+			&s.TopUps[0], &s.TopUps[1], &s.TopUps[2], &s.TopUps[3], &s.PlannedSize, &s.CycleYears, &takes); err != nil {
 			return nil, fmt.Errorf("scan plan stratum: %w", err)
 		}
 		s.SamplingEnabled = sampling == 1
+		s.Takes = splitList(takes)
 		out = append(out, s)
 	}
 	return out, rows.Err()
@@ -47,11 +50,11 @@ func writeStrata(tx *db.Tx, planID int64, strata []Stratum) error {
 	for i, s := range strata {
 		if _, err := tx.Exec(`INSERT INTO assurance_plan_strata (plan_id, ordinal, code, name, definition, sampling_enabled,
 			confidence, tolerable_rate, floor_pct, effort_per_test, effort_per_review, wave_q1, wave_q2, wave_q3, wave_q4,
-			topup_q1, topup_q2, topup_q3, topup_q4, planned_size)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			topup_q1, topup_q2, topup_q3, topup_q4, planned_size, cycle_years, takes)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			planID, i, s.Code, s.Name, s.Definition, boolToInt(s.SamplingEnabled), s.Confidence, s.TolerableRate,
 			s.FloorPct, s.EffortPerTest, s.EffortPerReview, s.Waves[0], s.Waves[1], s.Waves[2], s.Waves[3],
-			s.TopUps[0], s.TopUps[1], s.TopUps[2], s.TopUps[3], s.PlannedSize); err != nil {
+			s.TopUps[0], s.TopUps[1], s.TopUps[2], s.TopUps[3], s.PlannedSize, s.CycleYears, strings.Join(s.Takes, ", ")); err != nil {
 			return fmt.Errorf("insert plan stratum %s: %w", s.Code, err)
 		}
 	}
@@ -68,17 +71,17 @@ func (r *SQLiteRepository) ReplaceStrata(planID int64, strata []Stratum, history
 }
 
 const populationColumns = `item_ref, name, stratum_code, cif, business_line, hosting, internet_facing, owner,
-	wave_quarter, attested_on, dq_status, dq_reviewed_on, topup_quarter, topup_rationale, source_kind, source_ref`
+	wave_quarter, attested_on, dq_status, dq_reviewed_on, topup_quarter, topup_rationale, last_tested_on, source_kind, source_ref`
 
 func populationArgs(it PopulationItem) []any {
 	return []any{it.ItemRef, it.Name, it.StratumCode, it.CIF, it.BusinessLine, it.Hosting, boolToInt(it.InternetFacing), it.Owner,
-		it.WaveQuarter, it.AttestedOn, it.DQStatus, it.DQReviewedOn, it.TopUpQuarter, it.TopUpRationale, it.SourceKind, it.SourceRef}
+		it.WaveQuarter, it.AttestedOn, it.DQStatus, it.DQReviewedOn, it.TopUpQuarter, it.TopUpRationale, it.LastTestedOn, it.SourceKind, it.SourceRef}
 }
 
 func (r *SQLiteRepository) Population(planID int64) ([]PopulationItem, error) {
 	rows, err := r.db.Query(`SELECT x.id, x.item_ref, x.name, x.stratum_code, x.cif, x.business_line, x.hosting, x.internet_facing,
 		x.owner, x.wave_quarter, x.attested_on, x.dq_status, x.dq_reviewed_on, x.topup_quarter, x.topup_rationale,
-		x.source_kind, x.source_ref, COALESCE(s.quarter, 0), COALESCE(s.basis, '')
+		x.last_tested_on, x.source_kind, x.source_ref, COALESCE(s.quarter, 0), COALESCE(s.basis, '')
 		FROM assurance_plan_population x
 		LEFT JOIN assurance_plan_selections s ON s.population_id = x.id
 		WHERE x.plan_id = ? ORDER BY x.item_ref`, planID)
@@ -92,7 +95,7 @@ func (r *SQLiteRepository) Population(planID int64) ([]PopulationItem, error) {
 		var internet int
 		if err := rows.Scan(&it.ID, &it.ItemRef, &it.Name, &it.StratumCode, &it.CIF, &it.BusinessLine, &it.Hosting, &internet, &it.Owner,
 			&it.WaveQuarter, &it.AttestedOn, &it.DQStatus, &it.DQReviewedOn, &it.TopUpQuarter, &it.TopUpRationale,
-			&it.SourceKind, &it.SourceRef, &it.SelectedQuarter, &it.SelectionBasis); err != nil {
+			&it.LastTestedOn, &it.SourceKind, &it.SourceRef, &it.SelectedQuarter, &it.SelectionBasis); err != nil {
 			return nil, fmt.Errorf("scan population item: %w", err)
 		}
 		it.InternetFacing = internet == 1
@@ -103,7 +106,7 @@ func (r *SQLiteRepository) Population(planID int64) ([]PopulationItem, error) {
 
 func insertPopulationItem(tx *db.Tx, planID int64, it PopulationItem) error {
 	if _, err := tx.Exec(`INSERT INTO assurance_plan_population (plan_id, `+populationColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, append([]any{planID}, populationArgs(it)...)...); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, append([]any{planID}, populationArgs(it)...)...); err != nil {
 		return fmt.Errorf("insert population item %s: %w", it.ItemRef, err)
 	}
 	return nil
@@ -112,7 +115,7 @@ func insertPopulationItem(tx *db.Tx, planID int64, it PopulationItem) error {
 func updatePopulationItem(tx *db.Tx, planID int64, it PopulationItem) error {
 	res, err := tx.Exec(`UPDATE assurance_plan_population SET item_ref = ?, name = ?, stratum_code = ?, cif = ?,
 		business_line = ?, hosting = ?, internet_facing = ?, owner = ?, wave_quarter = ?, attested_on = ?, dq_status = ?,
-		dq_reviewed_on = ?, topup_quarter = ?, topup_rationale = ?, source_kind = ?, source_ref = ?
+		dq_reviewed_on = ?, topup_quarter = ?, topup_rationale = ?, last_tested_on = ?, source_kind = ?, source_ref = ?
 		WHERE id = ? AND plan_id = ?`, append(populationArgs(it), it.ID, planID)...)
 	if err != nil {
 		return fmt.Errorf("update population item %s: %w", it.ItemRef, err)

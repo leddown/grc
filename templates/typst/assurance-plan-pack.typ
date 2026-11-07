@@ -103,6 +103,14 @@
 #let strata = get("strata", fallback: ())
 #let quarters = get("quarters", fallback: ())
 #let params = get("parameters", fallback: (:))
+// The plan type's settings decide what the approach, sampling and target
+// slides claim: a plan whose coverage is its signed-off tests, or that samples
+// nothing, must not be described as attested by 1LoD and sample-tested.
+#let on-tests = get("coverage_basis", fallback: "attestation") == "tests"
+#let sampled = strata.any(s => s.at("sampling_enabled", default: true))
+#let unsampled = strata.any(s => not s.at("sampling_enabled", default: true))
+#let cycled = strata.filter(s => s.at("cycle_years", default: 0) > 1)
+#let covered-word = if on-tests { "tested and signed off" } else { "attested" }
 
 // ---------------------------------------------------------------------------
 // 1. Cover
@@ -239,25 +247,51 @@
 // 6. Approach
 // ---------------------------------------------------------------------------
 
-#slide("5 · Approach", "Two tracks: every item reviewed, a sample tested on evidence")[
+#let waves-lines = for s in strata [
+  - #s.at("name", default: ""): waves #s.at("waves", default: ()).map(w => pct(w)).join(" / ").
+]
+#let cycle-lines = for s in cycled [
+  - #s.at("name", default: ""): a #str(s.at("cycle_years", default: 0))-year cycle; an item tested within it is not due and counts as covered.
+]
+#let rag-line = [Coverage is measured against a cumulative target per stratum at each quarter end, rated Green, Amber (within #num(params.at("rag_amber_points", default: 0)) points) or Red.]
+#let test-types = get("test_types", fallback: ())
+
+#slide("5 · Approach", if on-tests and not sampled { "Every item due is tested on evidence, in quarterly waves" } else if sampled { "Two tracks: every item reviewed, a sample tested on evidence" } else { "Every item reviewed, in quarterly waves" })[
   #grid(
     columns: (1fr, 1fr),
     column-gutter: 8pt,
     rows: 64mm,
-    card("Track 1 — 100% coverage review", [
-      - 1LoD asset owners review and attest every item in scope, in quarterly waves.
-      - 2LoD reviews the data quality of every submission and accepts it or returns it.
-      - Coverage is measured against a cumulative target per stratum at each quarter end, rated Green, Amber (within #num(params.at("rag_amber_points", default: 0)) points) or Red.
-      #for s in strata [
-        - #s.at("name", default: ""): waves #s.at("waves", default: ()).map(w => pct(w)).join(" / ").
-      ]
-    ], tint: true),
-    card("Track 2 — evidence-based sample testing", [
-      - Each quarter 2LoD draws a sample from the frozen population and tests every attribute on evidence.
-      - Samples are sized by attribute sampling at each stratum's confidence and tolerable deviation rate, with a coverage floor and risk-based top-ups.
-      - The draw is ranked by a seed committed when the population is frozen, so any selection can be re-performed.
-      - Every test is QA-reviewed before its result counts; fails are raised as findings in Audit Findings.
-    ]),
+    if on-tests {
+      card("Coverage — every item due, tested", [
+        - Every item due in the period is tested on evidence in its quarter's wave.
+        - An item counts as covered once its test is signed off by QA. #rag-line
+        #waves-lines
+        #cycle-lines
+      ], tint: true)
+    } else {
+      card("Track 1 — 100% coverage review", [
+        - 1LoD owners review and attest every item in scope, in quarterly waves.
+        - 2LoD reviews the data quality of every submission and accepts it or returns it.
+        - #rag-line
+        #waves-lines
+        #cycle-lines
+      ], tint: true)
+    },
+    if sampled {
+      card("Track 2 — evidence-based sample testing", [
+        - Each quarter 2LoD draws a sample from the frozen population and tests every attribute on evidence.
+        - Samples are sized by attribute sampling at each stratum's confidence and tolerable deviation rate, with a coverage floor and risk-based top-ups.
+        #if unsampled [- Strata without sampling take every item due in the wave.]
+        - The draw is ranked by a seed committed when the population is frozen, so any selection can be re-performed.
+        - Every test is QA-reviewed before its result counts; fails are raised as findings in Audit Findings.
+      ])
+    } else {
+      card("Testing and QA", [
+        - Each quarter's wave is selected in full from the frozen population, and recorded with the plan version.
+        - Every test is QA-reviewed before its result counts; fails are raised as findings in Audit Findings.
+        #if test-types.len() > 0 [- Test types: #test-types.join(", ").]
+      ])
+    },
   )
 ]
 
@@ -265,7 +299,7 @@
 // 7. Sampling and the deviation rule
 // ---------------------------------------------------------------------------
 
-#slide("6 · Sampling", "Sample sizes and the deviation rule")[
+#slide("6 · Sampling", if sampled { "Sample sizes and the deviation rule" } else { "Tests planned and the deviation rule" })[
   #small-table(
     columns: (1fr, auto, auto, auto, auto, auto, auto, auto, auto, auto),
     header: ("Stratum", "N", "Confidence", "Tolerable rate", "n₀", "With FPC", "Floor", "Annual sample", "Planned tests", "Coverage"),
@@ -278,11 +312,12 @@
         num(s.at("coverage_pct", default: 0)) + "%",
       )
     } else {
-      (s.at("name", default: ""), str(s.at("n", default: 0)), "—", "—", "—", "—", "—", "Not sampled", "0", "—")
+      (s.at("name", default: ""), str(s.at("n", default: 0)), "—", "—", "—", "—", "—", "Every item due", str(s.at("total_tests", default: 0)),
+        num(s.at("coverage_pct", default: 0)) + "%")
     }),
   )
   #text(size: brand.micro-size, fill: brand.muted)[
-    The annual sample is the larger of the statistical size after the finite population correction and the coverage floor. Planned tests add the risk-based top-ups.
+    #if sampled [The annual sample is the larger of the statistical size after the finite population correction and the coverage floor. Planned tests add the risk-based top-ups.] #if unsampled [A stratum without sampling tests every item due in the period#if cycled.len() > 0 [; items inside a multi-year cycle are not due].]
   ]
   #v(2mm)
   #let extend-at = params.at("deviation_extend_at", default: 1)
@@ -292,7 +327,7 @@
     column-gutter: 8pt,
     rows: 30mm,
     card(text(fill: brand.ok)[No deviations], [Effective for the attribute in that stratum.]),
-    card(text(fill: brand.warn)[#str(extend-at) deviation#if extend-at != 1 [s]], [The sample is extended by #num(params.at("extend_pct", default: 0))% in the next quarter.]),
+    card(text(fill: brand.warn)[#str(extend-at) deviation#if extend-at != 1 [s]], if sampled [The sample is extended by #num(params.at("extend_pct", default: 0))% in the next quarter.#if unsampled [ Without sampling there is no sample to extend: each fail is raised as a finding.]] else [Every item due is already tested, so there is no sample to extend: each fail is raised as a finding.]),
     card(text(fill: brand.risk)[#str(thematic-at) or more], [Not effective: a thematic finding, raised to the risk register.]),
   )
   #text(size: brand.micro-size, fill: brand.muted)[
@@ -329,7 +364,7 @@
   #let qcols = quarters.map(q => "Q" + str(q.at("quarter", default: 0)))
   #let rows = ()
   #for s in strata {
-    rows.push((s.at("name", default: "") + ": attested by quarter end (cumulative)",) + s.at("cumulative_target_pct", default: ()).map(x => num(x) + "%"))
+    rows.push((s.at("name", default: "") + ": " + covered-word + " by quarter end (cumulative)",) + s.at("cumulative_target_pct", default: ()).map(x => num(x) + "%"))
     rows.push((s.at("name", default: "") + ": items due in the wave",) + s.at("reviews_due", default: ()).map(x => str(x)))
     rows.push((s.at("name", default: "") + ": tests",) + s.at("tests", default: ()).map(x => str(x)))
   }

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"grc/internal/auditfinding"
+	"grc/internal/policydocs"
 )
 
 const (
@@ -140,14 +143,19 @@ func Lint(p Plan, pop []PopulationItem) []LintFinding {
 			add(LintAdvisory, "stratum_empty", subject, "Stratum %s has no population items yet, %s.", z.Code, sized)
 			continue
 		}
-		if z.Error == "" && z.WaveCounts != z.ReviewsDue {
+		if z.Error == "" && z.Sampling && z.WaveCounts != z.ReviewsDue {
 			add(LintAdvisory, "wave_counts", subject, "Stratum %s: the waves hold %s items; the wave percentages of %d give %s.",
 				z.Code, joinInts(z.WaveCounts), z.N, joinInts(z.ReviewsDue))
 		}
 		if z.NoWave > 0 {
 			add(LintAdvisory, "no_wave", subject, "Stratum %s: %d item(s) have no 1LoD wave, so they are never due for attestation or drawn.", z.Code, z.NoWave)
 		}
+		if z.InCycle > 0 {
+			add(LintAdvisory, "in_cycle", subject, "Stratum %s: %d item(s) are inside their %d-year cycle and not due in the period; they count as covered until the cycle lapses.",
+				z.Code, z.InCycle, z.CycleYears)
+		}
 	}
+	lintSource(p, add)
 	if len(p.Strata) > 0 {
 		for _, l := range view.Quarters {
 			if l.Over {
@@ -157,8 +165,8 @@ func Lint(p Plan, pop []PopulationItem) []LintFinding {
 		}
 	}
 
-	if len(p.Attributes) == 0 && slices.ContainsFunc(p.Strata, func(st Stratum) bool { return st.SamplingEnabled }) {
-		add(LintAdvisory, "no_attributes", "test script", "The plan samples items but has no test attributes, so its tests have nothing to record.")
+	if len(p.Attributes) == 0 && len(p.Strata) > 0 {
+		add(LintAdvisory, "no_attributes", "test script", "The plan tests items but has no test attributes, so its tests have nothing to record.")
 	}
 	for _, a := range p.Attributes {
 		subject := "attribute " + a.AttrRef
@@ -185,6 +193,30 @@ func Lint(p Plan, pop []PopulationItem) []LintFinding {
 		}
 	}
 	return out
+}
+
+// lintSource checks what the strata take from the plan's population source.
+func lintSource(p Plan, add func(sev, code, subject, format string, args ...any)) {
+	if p.PopulationSource == "" {
+		return
+	}
+	known, what := policydocs.DocTypes, "document type"
+	if p.PopulationSource == SourceFindings {
+		known, what = auditfinding.Severities, "finding severity"
+	}
+	mapped := false
+	for _, st := range p.Strata {
+		for _, v := range st.Takes {
+			mapped = true
+			if !slices.ContainsFunc(known, func(k string) bool { return strings.EqualFold(k, v) }) {
+				add(LintAdvisory, "takes_unknown", "stratum "+st.Code, "Stratum %s takes %q, which is not a %s (%s).", st.Code, v, what, strings.Join(known, ", "))
+			}
+		}
+	}
+	if !mapped && len(p.Strata) > 0 {
+		add(LintAdvisory, "source_unmapped", "population", "The population is proposed from %s, but no stratum takes anything from it: list the %ss each stratum takes on the Sampling tab.",
+			p.PopulationSource, what)
+	}
 }
 
 func joinInts(v [4]int) string {

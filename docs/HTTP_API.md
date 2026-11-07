@@ -212,6 +212,11 @@ The documents and exports (phase 4):
 - The three PDF routes take `?bundle=1`, `?inline=1` and `?format=json` (the
   payload, not rendered).
 
+The proposed population (phase 5): `population/propose` takes
+`?source=policies|findings` (the plan's own source when left out) and answers
+the proposal as CSV text with its counts and notes. It writes nothing; the
+page applies it through `population/preview` and `population`.
+
 | Method | Path | Access | Handler |
 |---|---|---|---|
 | GET | `/assurance-plans` | signed in | `assuranceplan.(*Handler).ListPage` |
@@ -241,6 +246,7 @@ The documents and exports (phase 4):
 | GET | `/assurance-plans/:id/population/example.csv` | signed in | `assuranceplan.(*Handler).ExamplePopulationCSV` |
 | POST | `/assurance-plans/:id/population/freeze` | admin | `assuranceplan.(*Handler).FreezePopulation` |
 | POST | `/assurance-plans/:id/population/preview` | admin | `assuranceplan.(*Handler).PreviewPopulation` |
+| POST | `/assurance-plans/:id/population/propose` | admin | `assuranceplan.(*Handler).ProposePopulation` |
 | PUT | `/assurance-plans/:id/quarters` | admin | `assuranceplan.(*Handler).ReplaceQuarters` |
 | POST | `/assurance-plans/:id/quarters/:q/select` | admin | `assuranceplan.(*Handler).SelectQuarter` |
 | POST | `/assurance-plans/:id/quarters/generate` | admin | `assuranceplan.(*Handler).GenerateQuarters` |

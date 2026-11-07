@@ -886,6 +886,9 @@ CREATE TABLE IF NOT EXISTS assurance_plans (
 	selection_seed TEXT NOT NULL DEFAULT '',
 	non_working_dates TEXT NOT NULL DEFAULT '',
 	raci_roles TEXT NOT NULL DEFAULT '[]',
+	test_types TEXT NOT NULL DEFAULT '[]',
+	coverage_basis TEXT NOT NULL DEFAULT 'attestation',
+	population_source TEXT NOT NULL DEFAULT '',
 	tester_fte DOUBLE PRECISION NOT NULL DEFAULT 0,
 	days_per_fte_quarter DOUBLE PRECISION NOT NULL DEFAULT 0,
 	utilisation_threshold DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -1043,6 +1046,8 @@ CREATE TABLE IF NOT EXISTS assurance_plan_strata (
 	topup_q3 INTEGER NOT NULL DEFAULT 0,
 	topup_q4 INTEGER NOT NULL DEFAULT 0,
 	planned_size INTEGER NOT NULL DEFAULT 0,
+	cycle_years INTEGER NOT NULL DEFAULT 0,
+	takes TEXT NOT NULL DEFAULT '',
 	UNIQUE (plan_id, code),
 	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
 );
@@ -1064,6 +1069,7 @@ CREATE TABLE IF NOT EXISTS assurance_plan_population (
 	dq_reviewed_on TEXT NOT NULL DEFAULT '',
 	topup_quarter INTEGER NOT NULL DEFAULT 0,
 	topup_rationale TEXT NOT NULL DEFAULT '',
+	last_tested_on TEXT NOT NULL DEFAULT '',
 	source_kind TEXT NOT NULL DEFAULT '',
 	source_ref TEXT NOT NULL DEFAULT '',
 	UNIQUE (plan_id, item_ref),
@@ -1124,6 +1130,7 @@ CREATE TABLE IF NOT EXISTS assurance_plan_tests (
 	plan_id BIGINT NOT NULL,
 	selection_id BIGINT NOT NULL UNIQUE,
 	test_ref TEXT NOT NULL DEFAULT '',
+	test_type TEXT NOT NULL DEFAULT '',
 	tester TEXT NOT NULL DEFAULT '',
 	evidence_requested_on TEXT NOT NULL DEFAULT '',
 	evidence_due_on TEXT NOT NULL DEFAULT '',
@@ -1181,6 +1188,16 @@ CREATE TABLE IF NOT EXISTS assurance_plan_thematic (
 	FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE,
 	FOREIGN KEY(attribute_id) REFERENCES assurance_plan_attributes(id) ON DELETE CASCADE
 );
+
+-- The Assurance Plans types beyond controls testing: test types, the coverage
+-- basis, proposed populations and multi-year strata.
+ALTER TABLE assurance_plans ADD COLUMN IF NOT EXISTS test_types TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE assurance_plans ADD COLUMN IF NOT EXISTS coverage_basis TEXT NOT NULL DEFAULT 'attestation';
+ALTER TABLE assurance_plans ADD COLUMN IF NOT EXISTS population_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE assurance_plan_strata ADD COLUMN IF NOT EXISTS cycle_years INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE assurance_plan_strata ADD COLUMN IF NOT EXISTS takes TEXT NOT NULL DEFAULT '';
+ALTER TABLE assurance_plan_population ADD COLUMN IF NOT EXISTS last_tested_on TEXT NOT NULL DEFAULT '';
+ALTER TABLE assurance_plan_tests ADD COLUMN IF NOT EXISTS test_type TEXT NOT NULL DEFAULT '';
 
 
 -- Policy Studio: see internal/db/sqlite.go for what each table holds.

@@ -50,7 +50,8 @@ func TestKnowledgeKindsReturnASeededPlan(t *testing.T) {
 		t.Errorf("searching for NFR-04 fails does not put %v first: %+v %v", failedT1, hits, err)
 	}
 	one, err := ks.Get(knowledge.KindAssuranceTest, "AP-2027-001/T27-Q1-001")
-	if err != nil || !strings.Contains(one.Body, "NFR-04 Access management & recertification: Fail") || !slices.Contains(one.Related, "NFR-04") {
+	if err != nil || !strings.Contains(one.Body, "NFR-04 Access management & recertification: Fail") || !slices.Contains(one.Related, "NFR-04") ||
+		one.Fields["test_type"] != "Controls test" || !strings.Contains(one.Body, "T27-Q1-001 (Controls test)") {
 		t.Errorf("test record = %+v, %v", one, err)
 	}
 

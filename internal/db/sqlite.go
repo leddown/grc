@@ -858,6 +858,9 @@ func OpenSQLite(path string) (*Conn, error) {
 		selection_seed TEXT NOT NULL DEFAULT '',
 		non_working_dates TEXT NOT NULL DEFAULT '',
 		raci_roles TEXT NOT NULL DEFAULT '[]',
+		test_types TEXT NOT NULL DEFAULT '[]',
+		coverage_basis TEXT NOT NULL DEFAULT 'attestation',
+		population_source TEXT NOT NULL DEFAULT '',
 		tester_fte REAL NOT NULL DEFAULT 0,
 		days_per_fte_quarter REAL NOT NULL DEFAULT 0,
 		utilisation_threshold REAL NOT NULL DEFAULT 0,
@@ -1015,6 +1018,8 @@ func OpenSQLite(path string) (*Conn, error) {
 		topup_q3 INTEGER NOT NULL DEFAULT 0,
 		topup_q4 INTEGER NOT NULL DEFAULT 0,
 		planned_size INTEGER NOT NULL DEFAULT 0,
+		cycle_years INTEGER NOT NULL DEFAULT 0,
+		takes TEXT NOT NULL DEFAULT '',
 		UNIQUE (plan_id, code),
 		FOREIGN KEY(plan_id) REFERENCES assurance_plans(id) ON DELETE CASCADE
 	);
@@ -1036,6 +1041,7 @@ func OpenSQLite(path string) (*Conn, error) {
 		dq_reviewed_on TEXT NOT NULL DEFAULT '',
 		topup_quarter INTEGER NOT NULL DEFAULT 0,
 		topup_rationale TEXT NOT NULL DEFAULT '',
+		last_tested_on TEXT NOT NULL DEFAULT '',
 		source_kind TEXT NOT NULL DEFAULT '',
 		source_ref TEXT NOT NULL DEFAULT '',
 		UNIQUE (plan_id, item_ref),
@@ -1096,6 +1102,7 @@ func OpenSQLite(path string) (*Conn, error) {
 		plan_id INTEGER NOT NULL,
 		selection_id INTEGER NOT NULL UNIQUE,
 		test_ref TEXT NOT NULL DEFAULT '',
+		test_type TEXT NOT NULL DEFAULT '',
 		tester TEXT NOT NULL DEFAULT '',
 		evidence_requested_on TEXT NOT NULL DEFAULT '',
 		evidence_due_on TEXT NOT NULL DEFAULT '',
@@ -1677,6 +1684,21 @@ func OpenSQLite(path string) (*Conn, error) {
 	// origin_ref names the assurance plan test a finding was raised from.
 	if err := ensureColumn(db, "audit_findings", "origin_ref", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return nil, err
+	}
+	// The Assurance Plans types beyond controls testing: test types, the
+	// coverage basis, proposed populations and multi-year strata.
+	for _, c := range []struct{ table, column, definition string }{
+		{"assurance_plans", "test_types", "TEXT NOT NULL DEFAULT '[]'"},
+		{"assurance_plans", "coverage_basis", "TEXT NOT NULL DEFAULT 'attestation'"},
+		{"assurance_plans", "population_source", "TEXT NOT NULL DEFAULT ''"},
+		{"assurance_plan_strata", "cycle_years", "INTEGER NOT NULL DEFAULT 0"},
+		{"assurance_plan_strata", "takes", "TEXT NOT NULL DEFAULT ''"},
+		{"assurance_plan_population", "last_tested_on", "TEXT NOT NULL DEFAULT ''"},
+		{"assurance_plan_tests", "test_type", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := ensureColumn(db, c.table, c.column, c.definition); err != nil {
+			return nil, err
+		}
 	}
 	if err := ensureIndex(db, "idx_nist_controls_control_id", "CREATE INDEX IF NOT EXISTS idx_nist_controls_control_id ON nist_controls(control_id)"); err != nil {
 		return nil, err

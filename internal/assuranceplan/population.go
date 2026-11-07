@@ -28,6 +28,7 @@ const (
 var populationFields = []string{
 	"item_ref", "name", "stratum", "cif", "business_line", "hosting", "internet_facing", "owner",
 	"wave", "attested_on", "dq_status", "dq_reviewed_on", "topup_quarter", "topup_rationale",
+	"last_tested_on", "source_kind", "source_ref",
 }
 
 var headerAliases = map[string]string{
@@ -43,6 +44,7 @@ var headerAliases = map[string]string{
 	"dq_review_date": "dq_reviewed_on",
 	"top_up_quarter": "topup_quarter", "topup": "topup_quarter", "top_up": "topup_quarter",
 	"top_up_rationale": "topup_rationale",
+	"last_tested":      "last_tested_on", "last_test": "last_tested_on", "last_test_date": "last_tested_on", "last_tested_date": "last_tested_on",
 }
 
 func canonicalColumn(h string) string {
@@ -261,18 +263,25 @@ func parsePopulationCSV(text string, strata []Stratum) (parsedCSV, error) {
 				} else {
 					it.TopUpQuarter = q
 				}
-			case "attested_on", "dq_reviewed_on":
+			case "attested_on", "dq_reviewed_on", "last_tested_on":
 				if v != "" {
 					if _, valid := parseDate(v); !valid {
 						fail("%s %q is not a date (YYYY-MM-DD)", strings.ReplaceAll(key, "_", " "), v)
 						ok = false
 					}
 				}
-				if key == "attested_on" {
+				switch key {
+				case "attested_on":
 					it.AttestedOn = v
-				} else {
+				case "dq_reviewed_on":
 					it.DQReviewedOn = v
+				default:
+					it.LastTestedOn = v
 				}
+			case "source_kind":
+				it.SourceKind = v
+			case "source_ref":
+				it.SourceRef = v
 			case "dq_status":
 				status, valid := parseDQStatus(v)
 				if !valid {
@@ -380,6 +389,8 @@ func itemChanges(a, b PopulationItem) []string {
 	cmp("DQ reviewed on", a.DQReviewedOn, b.DQReviewedOn)
 	cmp("top-up", quarterLabel(a.TopUpQuarter), quarterLabel(b.TopUpQuarter))
 	cmp("top-up rationale", a.TopUpRationale, b.TopUpRationale)
+	cmp("last tested on", a.LastTestedOn, b.LastTestedOn)
+	cmp("source", a.SourceKind+" "+a.SourceRef, b.SourceKind+" "+b.SourceRef)
 	return out
 }
 
@@ -407,6 +418,9 @@ func mergeRow(base PopulationItem, row parsedRow) PopulationItem {
 	set("dq_reviewed_on", func() { it.DQReviewedOn = src.DQReviewedOn })
 	set("topup_quarter", func() { it.TopUpQuarter = src.TopUpQuarter })
 	set("topup_rationale", func() { it.TopUpRationale = src.TopUpRationale })
+	set("last_tested_on", func() { it.LastTestedOn = src.LastTestedOn })
+	set("source_kind", func() { it.SourceKind = src.SourceKind })
+	set("source_ref", func() { it.SourceRef = src.SourceRef })
 	return it
 }
 
@@ -418,10 +432,18 @@ type scopeRules struct {
 	membershipOK bool
 	reason       string
 	selectedQ    map[int]bool
+	// cycle holds the multi-year strata, where an item's last test decides
+	// whether it is due and so whether it is in the sampled population.
+	cycle map[string]bool
 }
 
 func rulesFor(p Plan) scopeRules {
-	r := scopeRules{membershipOK: true, selectedQ: map[int]bool{}}
+	r := scopeRules{membershipOK: true, selectedQ: map[int]bool{}, cycle: map[string]bool{}}
+	for _, st := range p.Strata {
+		if st.CycleYears > 1 {
+			r.cycle[st.Code] = true
+		}
+	}
 	for _, q := range p.Quarters {
 		if q.SelectedAt != "" {
 			r.selectedQ[q.Quarter] = true
@@ -440,7 +462,8 @@ func rulesFor(p Plan) scopeRules {
 // item and next is nil for a removed one.
 func (r scopeRules) check(prev, next *PopulationItem) []string {
 	var out []string
-	membership := prev == nil || next == nil || prev.StratumCode != next.StratumCode || prev.WaveQuarter != next.WaveQuarter
+	membership := prev == nil || next == nil || prev.StratumCode != next.StratumCode || prev.WaveQuarter != next.WaveQuarter ||
+		(prev.LastTestedOn != next.LastTestedOn && (r.cycle[prev.StratumCode] || r.cycle[next.StratumCode]))
 	if membership && !r.membershipOK {
 		out = append(out, r.reason)
 	}
@@ -566,7 +589,8 @@ func populationDigest(items []PopulationItem, membershipOnly bool) string {
 		fields := []string{it.ItemRef, it.StratumCode, strconv.Itoa(it.WaveQuarter)}
 		if !membershipOnly {
 			fields = append(fields, it.Name, it.CIF, it.BusinessLine, it.Hosting, strconv.FormatBool(it.InternetFacing), it.Owner,
-				it.AttestedOn, it.DQStatus, it.DQReviewedOn, strconv.Itoa(it.TopUpQuarter), it.TopUpRationale)
+				it.AttestedOn, it.DQStatus, it.DQReviewedOn, strconv.Itoa(it.TopUpQuarter), it.TopUpRationale,
+				it.LastTestedOn, it.SourceKind, it.SourceRef)
 		}
 		h.Write([]byte(strings.Join(fields, "\x1f") + "\n"))
 	}
@@ -593,7 +617,8 @@ func populationCSV(items []PopulationItem) string {
 	}
 	for _, it := range items {
 		_ = w.Write([]string{it.ItemRef, it.Name, it.StratumCode, it.CIF, it.BusinessLine, it.Hosting, yes(it.InternetFacing), it.Owner,
-			q(it.WaveQuarter), it.AttestedOn, it.DQStatus, it.DQReviewedOn, q(it.TopUpQuarter), it.TopUpRationale})
+			q(it.WaveQuarter), it.AttestedOn, it.DQStatus, it.DQReviewedOn, q(it.TopUpQuarter), it.TopUpRationale,
+			it.LastTestedOn, it.SourceKind, it.SourceRef})
 	}
 	w.Flush()
 	return buf.String()

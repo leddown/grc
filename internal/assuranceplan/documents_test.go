@@ -215,7 +215,7 @@ func TestAnnualReportPayload(t *testing.T) {
 			t.Errorf("conclusion lacks %q:\n%s", want, conclusion)
 		}
 	}
-	if !strings.Contains(r.Limitations, "does not replace the resilience testing programme") {
+	if !strings.Contains(r.Limitations, "does not replace the work of the other assurance plans") {
 		t.Errorf("limitations = %q", r.Limitations)
 	}
 	checkSample(t, "assurance-annual-sample.json", r)

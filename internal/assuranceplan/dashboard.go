@@ -7,26 +7,36 @@ import (
 	"grc/internal/auditfinding"
 )
 
-// CoverageCell is one stratum's 1LoD coverage at a quarter end: the
-// cumulative wave target against the items attested by that date.
+// CoverageCell is one stratum's coverage at a quarter end: the cumulative
+// wave target against the items covered by that date, on the plan's coverage
+// basis (attested by 1LoD, or tested and signed off by QA).
 type CoverageCell struct {
 	Quarter    int     `json:"quarter"`
 	QuarterEnd string  `json:"quarter_end"`
 	Planned    int     `json:"planned"`
 	PlannedPct float64 `json:"planned_pct"`
-	Attested   int     `json:"attested"`
+	Covered    int     `json:"covered"`
 	ActualPct  float64 `json:"actual_pct"`
 	Due        bool    `json:"due"`
 	RAG        string  `json:"rag"`
 }
 
+// CoverageRow is a stratum's coverage. Attested counts 1LoD attestations
+// whatever the basis; Covered counts on the plan's basis, and includes the
+// items of a multi-year stratum still inside their cycle (InCycle).
 type CoverageRow struct {
 	Code        string          `json:"stratum"`
 	Name        string          `json:"name"`
+	Basis       string          `json:"basis"`
 	N           int             `json:"n"`
 	Attested    int             `json:"attested"`
-	DQAccepted  int             `json:"dq_accepted"`
 	AttestedPct float64         `json:"attested_pct"`
+	Tested      int             `json:"tested"`
+	Covered     int             `json:"covered"`
+	CoveredPct  float64         `json:"covered_pct"`
+	InCycle     int             `json:"in_cycle"`
+	CycleYears  int             `json:"cycle_years"`
+	DQAccepted  int             `json:"dq_accepted"`
 	DQPct       float64         `json:"dq_accepted_pct"`
 	Cells       [4]CoverageCell `json:"quarters"`
 }
@@ -83,22 +93,55 @@ type DashboardView struct {
 	TestsDone    int             `json:"tests_done"`
 }
 
-// computeCoverage compares each stratum's attestations with its cumulative
-// wave target at each quarter end. A quarter that has not ended is Not due.
-func computeCoverage(p Plan, pop []PopulationItem, view SamplingView, today string) []CoverageRow {
+// computeCoverage compares each stratum's coverage with its cumulative wave
+// target at each quarter end. A quarter that has not ended is Not due. An
+// item of a multi-year stratum counts as covered while its last test before
+// the plan is inside the cycle, and is planned to be covered from then on if
+// its wave comes before the cycle lapses.
+func computeCoverage(p Plan, pop []PopulationItem, view SamplingView, tests []Test, today string) []CoverageRow {
+	signedOff := map[int64]string{}
+	for _, t := range tests {
+		if t.QADate != "" && (signedOff[t.ItemID] == "" || t.QADate < signedOff[t.ItemID]) {
+			signedOff[t.ItemID] = t.QADate
+		}
+	}
+	basis := firstNonEmpty(p.CoverageBasis, CoverageAttestation)
 	out := []CoverageRow{}
 	for i, st := range p.Strata {
 		z := view.Strata[i]
-		row := CoverageRow{Code: st.Code, Name: st.Name}
-		var dates []string
+		row := CoverageRow{Code: st.Code, Name: st.Name, Basis: basis, CycleYears: st.CycleYears}
+		var items []PopulationItem
 		for _, it := range pop {
-			if it.StratumCode != st.Code {
-				continue
+			if it.StratumCode == st.Code {
+				items = append(items, it)
 			}
+		}
+		coveredOn := func(it PopulationItem) string {
+			if basis == CoverageTests {
+				return signedOff[it.ID]
+			}
+			return it.AttestedOn
+		}
+		coveredAt := func(it PopulationItem, date string) bool {
+			if inCycleAt(st, it, date) {
+				return true
+			}
+			d := coveredOn(it)
+			return d != "" && (date == "" || d <= date)
+		}
+		for _, it := range items {
 			row.N++
 			if it.AttestedOn != "" {
 				row.Attested++
-				dates = append(dates, it.AttestedOn)
+			}
+			if signedOff[it.ID] != "" {
+				row.Tested++
+			}
+			if coveredAt(it, today) {
+				row.Covered++
+			}
+			if inCycleAt(st, it, today) {
+				row.InCycle++
 			}
 			if it.DQStatus == DQAccepted {
 				row.DQAccepted++
@@ -106,6 +149,7 @@ func computeCoverage(p Plan, pop []PopulationItem, view SamplingView, today stri
 		}
 		if row.N > 0 {
 			row.AttestedPct = guard(float64(row.Attested) * 100 / float64(row.N))
+			row.CoveredPct = guard(float64(row.Covered) * 100 / float64(row.N))
 			row.DQPct = guard(float64(row.DQAccepted) * 100 / float64(row.N))
 		}
 		planned := 0
@@ -114,13 +158,25 @@ func computeCoverage(p Plan, pop []PopulationItem, view SamplingView, today stri
 			planned += z.ReviewsDue[q-1]
 			c := CoverageCell{Quarter: q, QuarterEnd: end, Planned: planned, PlannedPct: guard(z.CumTarget[q-1] * 100),
 				Due: end != "" && today > end}
-			for _, d := range dates {
-				if end == "" || d <= end {
-					c.Attested++
+			if st.CycleYears > 1 {
+				c.Planned = 0
+				for _, it := range items {
+					if inCycleAt(st, it, end) || (it.WaveQuarter >= 1 && it.WaveQuarter <= q) {
+						c.Planned++
+					}
+				}
+				c.PlannedPct = 0
+				if row.N > 0 {
+					c.PlannedPct = guard(float64(c.Planned) * 100 / float64(row.N))
+				}
+			}
+			for _, it := range items {
+				if coveredAt(it, end) {
+					c.Covered++
 				}
 			}
 			if row.N > 0 {
-				c.ActualPct = guard(float64(c.Attested) * 100 / float64(row.N))
+				c.ActualPct = guard(float64(c.Covered) * 100 / float64(row.N))
 			}
 			c.RAG = RAG(c.PlannedPct, c.ActualPct, p.Parameters.RAGAmberPoints, c.Due && row.N > 0)
 			row.Cells[q-1] = c
@@ -128,6 +184,30 @@ func computeCoverage(p Plan, pop []PopulationItem, view SamplingView, today stri
 		out = append(out, row)
 	}
 	return out
+}
+
+// coverageWord is how the pages and reports say an item is covered.
+func coverageWord(basis string) string {
+	if basis == CoverageTests {
+		return "tested"
+	}
+	return "attested"
+}
+
+// coverageMethod says how coverage is measured, for a page or a report.
+func coverageMethod(basis string, cycle bool) string {
+	out := "1LoD owners attest their items in quarterly waves, and 2LoD reviews the data quality of every submission. An item counts as covered on its attestation date."
+	if basis == CoverageTests {
+		out = "Every item due in the period is tested in its quarter's wave. An item counts as covered on the date its test is signed off by QA."
+	}
+	if cycle {
+		out += " An item of a multi-year stratum (TLPT every three years) also counts while its last test before the plan is inside the cycle, and falls due when the cycle lapses."
+	}
+	return out
+}
+
+func hasCycle(strata []Stratum) bool {
+	return slices.ContainsFunc(strata, func(st Stratum) bool { return st.CycleYears > 1 })
 }
 
 func (s *Service) Dashboard(id int64) (DashboardView, error) {
@@ -152,7 +232,7 @@ func (s *Service) Dashboard(id int64) (DashboardView, error) {
 		return DashboardView{}, err
 	}
 	today := s.today()
-	d := DashboardView{Today: today, Coverage: computeCoverage(p, pop, view, today), Testing: []TestingRow{},
+	d := DashboardView{Today: today, Coverage: computeCoverage(p, pop, view, tests, today), Testing: []TestingRow{},
 		Deviations: computeDeviations(p, tests, view, pushed), Findings: []LinkedFinding{}, BySeverity: []SeverityCount{},
 		Quarters: view.Quarters, Threshold: view.Threshold, TestsPlanned: view.TotalTests}
 

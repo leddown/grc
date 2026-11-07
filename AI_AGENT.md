@@ -138,6 +138,7 @@ The two assurance plan kinds are for the control function's questions:
 | What's due this quarter? | The `assurance_plan` record's quarter dates and steps |
 | Are we behind plan? | The `assurance_plan` record opens with On plan, Behind plan: … or Not started, and its `behind_plan` field says the same |
 | Which Tier 1 assets failed NFR-04? | Search `assurance_plan_test`, or filter on its `stratum` and `failed_attributes` fields |
+| Which systems had a penetration test? | Filter `assurance_plan_test` on its `test_type` field |
 
 Plans have an index; tests are searched. Both are worked out by the Assurance
 Plans module and read fresh, like exercises. See ASSURANCE_PLANS.md,

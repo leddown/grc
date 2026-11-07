@@ -513,6 +513,13 @@ func overviewHTML(d planPageData) string {
 	}
 	kv("Mobilise / close", esc(firstNonEmpty(displayDate(p.MobiliseStart), "—"))+" / "+esc(firstNonEmpty(displayDate(p.ClosingDate), "—")))
 	kv("Regulatory basis", esc(firstNonEmpty(p.RegulatoryRefs, "—")))
+	kv("Coverage measured on", esc(map[string]string{CoverageAttestation: "1LoD attestation", CoverageTests: "test signed off by QA"}[p.CoverageBasis]))
+	if p.PopulationSource != "" {
+		kv("Population proposed from", esc(map[string]string{SourcePolicies: "policy documents due for review", SourceFindings: "open audit findings"}[p.PopulationSource]))
+	}
+	if len(p.TestTypes) > 0 {
+		kv("Test types", esc(strings.Join(p.TestTypes, " · ")))
+	}
 	if d.SepEnforced {
 		kv("Separation of duties", "Enforced: the approver cannot be the author of the revision.")
 	} else {
@@ -623,11 +630,31 @@ func headerForm(p Plan, clients []Client) string {
 	b.WriteString(param("Not effective at (deviations)", "deviation_thematic_at", float64(pr.DeviationThematicAt), "1"))
 	b.WriteString(param("Sample extension (%)", "extend_pct", pr.ExtendPct, "1"))
 	b.WriteString(param("Evidence SLA (business days)", "evidence_sla_days", float64(pr.EvidenceSLADays), "1"))
-	b.WriteString(`</div></fieldset>`)
+	b.WriteString(`</div></fieldset><fieldset><legend>Plan type settings</legend><div class="grid">`)
+	basisOpts := ""
+	for _, o := range [][2]string{{CoverageAttestation, "1LoD attestation"}, {CoverageTests, "Test signed off by QA"}} {
+		basisOpts += `<option value="` + o[0] + `"` + selectedIf(p.CoverageBasis == o[0]) + `>` + esc(o[1]) + `</option>`
+	}
+	b.WriteString(`<label>Coverage measured on<select data-h="coverage_basis"` + dis + `>` + basisOpts + `</select></label>`)
+	sourceOpts := ""
+	for _, o := range [][2]string{{"none", "Nothing (CSV paste only)"}, {SourcePolicies, "Policy documents due for review"}, {SourceFindings, "Open audit findings"}} {
+		sourceOpts += `<option value="` + o[0] + `"` + selectedIf(firstNonEmpty(p.PopulationSource, "none") == o[0]) + `>` + esc(o[1]) + `</option>`
+	}
+	b.WriteString(`<label>Population proposed from<select data-h="population_source"` + dis + `>` + sourceOpts + `</select></label>`)
+	b.WriteString(`</div>`)
+	b.WriteString(area("Test types (one per line; the first is the default for a new test)", "test_types", strings.Join(p.TestTypes, "\n")))
+	b.WriteString(`</fieldset>`)
 	if !p.DesignLocked {
 		b.WriteString(`<div class="toolbar"><button class="primary" type="button" id="saveHeader">Save header</button></div>`)
 	}
 	return b.String()
+}
+
+func selectedIf(ok bool) string {
+	if ok {
+		return " selected"
+	}
+	return ""
 }
 
 func quartersHTML(p Plan) string {
@@ -839,7 +866,10 @@ if (!PLAN.design_locked) {
 const saveHeader = document.getElementById('saveHeader');
 if (saveHeader) saveHeader.addEventListener('click', () => {
   const body = { parameters: {} };
-  document.querySelectorAll('[data-h]').forEach(el => { body[el.dataset.h] = el.dataset.h === 'client_profile_id' ? Number(el.value || 0) : el.value; });
+  document.querySelectorAll('[data-h]').forEach(el => {
+    const k = el.dataset.h;
+    body[k] = k === 'client_profile_id' ? Number(el.value || 0) : k === 'test_types' ? el.value.split('\n').map(x => x.trim()).filter(Boolean) : el.value;
+  });
   document.querySelectorAll('[data-p]').forEach(el => { body.parameters[el.dataset.p] = Number(el.value || 0); });
   act('PUT', base, body);
 });

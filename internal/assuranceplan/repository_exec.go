@@ -104,17 +104,17 @@ func (r *SQLiteRepository) ReplaceAttributes(planID int64, attrs []Attribute, hi
 	})
 }
 
-const testColumns = `test_ref, tester, evidence_requested_on, evidence_due_on, evidence_received_on, fieldwork_completed_on,
+const testColumns = `test_ref, test_type, tester, evidence_requested_on, evidence_due_on, evidence_received_on, fieldwork_completed_on,
 	evidence_summary, qa_reviewer, qa_date, qa_note, notes`
 
 func testArgs(t Test) []any {
-	return []any{t.TestRef, t.Tester, t.EvidenceRequestedOn, t.EvidenceDueOn, t.EvidenceReceivedOn, t.FieldworkCompletedOn,
+	return []any{t.TestRef, t.TestType, t.Tester, t.EvidenceRequestedOn, t.EvidenceDueOn, t.EvidenceReceivedOn, t.FieldworkCompletedOn,
 		t.EvidenceSummary, t.QAReviewer, t.QADate, t.QANote, t.Notes}
 }
 
 // Tests loads every test of the plan with its selection and its results.
 func (r *SQLiteRepository) Tests(planID int64) ([]Test, error) {
-	rows, err := r.db.Query(`SELECT t.id, t.selection_id, t.test_ref, t.tester, t.evidence_requested_on, t.evidence_due_on,
+	rows, err := r.db.Query(`SELECT t.id, t.selection_id, t.test_ref, t.test_type, t.tester, t.evidence_requested_on, t.evidence_due_on,
 		t.evidence_received_on, t.fieldwork_completed_on, t.evidence_summary, t.qa_reviewer, t.qa_date, t.qa_note, t.notes,
 		t.created_at, t.created_by, t.updated_at, t.updated_by,
 		s.quarter, s.population_id, s.item_ref, COALESCE(x.name, ''), COALESCE(x.owner, ''), s.stratum_code, s.basis
@@ -130,7 +130,7 @@ func (r *SQLiteRepository) Tests(planID int64) ([]Test, error) {
 	index := map[int64]int{}
 	for rows.Next() {
 		var t Test
-		if err := rows.Scan(&t.ID, &t.SelectionID, &t.TestRef, &t.Tester, &t.EvidenceRequestedOn, &t.EvidenceDueOn,
+		if err := rows.Scan(&t.ID, &t.SelectionID, &t.TestRef, &t.TestType, &t.Tester, &t.EvidenceRequestedOn, &t.EvidenceDueOn,
 			&t.EvidenceReceivedOn, &t.FieldworkCompletedOn, &t.EvidenceSummary, &t.QAReviewer, &t.QADate, &t.QANote, &t.Notes,
 			&t.CreatedAt, &t.CreatedBy, &t.UpdatedAt, &t.UpdatedBy,
 			&t.Quarter, &t.ItemID, &t.ItemRef, &t.ItemName, &t.ItemOwner, &t.StratumCode, &t.Basis); err != nil {
@@ -180,7 +180,7 @@ func (r *SQLiteRepository) CreateTests(planID int64, tests []Test, history []His
 	return r.inTx(planID, history, func(tx *db.Tx) error {
 		for _, t := range tests {
 			if _, err := tx.Exec(`INSERT INTO assurance_plan_tests (plan_id, selection_id, `+testColumns+`,
-				created_at, created_by, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				created_at, created_by, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				append(append([]any{planID, t.SelectionID}, testArgs(t)...), t.CreatedAt, t.CreatedBy, t.UpdatedAt, t.UpdatedBy)...); err != nil {
 				return fmt.Errorf("insert test %s: %w", t.TestRef, err)
 			}

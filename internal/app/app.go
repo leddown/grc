@@ -219,6 +219,7 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 		Risks:    riskregister.NewService(riskregister.NewSQLiteRepository(sqliteDB)),
 		Controls: controlHandler.Service(),
 		NFRs:     securityNFRHandler.Service(),
+		Policies: policyService,
 	}, docRenderer(templateService), adminMiddleware, options.LocalMode)
 	knowledgeService.WithAssurancePlans(planService.KnowledgePlans, planService.KnowledgeTests)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)

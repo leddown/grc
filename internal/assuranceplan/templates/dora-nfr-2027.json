@@ -26,7 +26,11 @@
       "Asset Owners (1LoD)",
       "CIO / IT Asset Mgmt (1LoD)",
       "Internal Audit (3LoD)"
-    ]
+    ],
+    "test_types": [
+      "Controls test"
+    ],
+    "coverage_basis": "attestation"
   },
   "quarters": {
     "mode": "explicit",

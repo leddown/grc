@@ -513,7 +513,7 @@ var syncOrder = []tableSpec{
 			"owner_role", "accountable_role", "approval_forum",
 			"status", "revision", "revision_status", "revision_author", "change_reason",
 			"author", "approved_by", "approved_at", "activated_at", "closed_at",
-			"selection_seed", "non_working_dates", "raci_roles",
+			"selection_seed", "non_working_dates", "raci_roles", "test_types", "coverage_basis", "population_source",
 			"tester_fte", "days_per_fte_quarter", "utilisation_threshold", "rag_amber_points",
 			"result_partial_min", "result_ineffective_min", "deviation_extend_at", "deviation_thematic_at",
 			"extend_pct", "evidence_sla_days", "ai_generated", "model", "prompt_hash",
@@ -549,7 +549,7 @@ var syncOrder = []tableSpec{
 		cols: []string{
 			"id", "plan_id", "ordinal", "code", "name", "definition", "sampling_enabled", "confidence", "tolerable_rate",
 			"floor_pct", "effort_per_test", "effort_per_review", "wave_q1", "wave_q2", "wave_q3", "wave_q4",
-			"topup_q1", "topup_q2", "topup_q3", "topup_q4", "planned_size",
+			"topup_q1", "topup_q2", "topup_q3", "topup_q4", "planned_size", "cycle_years", "takes",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -560,7 +560,7 @@ var syncOrder = []tableSpec{
 		cols: []string{
 			"id", "plan_id", "item_ref", "name", "stratum_code", "cif", "business_line", "hosting", "internet_facing",
 			"owner", "wave_quarter", "attested_on", "dq_status", "dq_reviewed_on", "topup_quarter", "topup_rationale",
-			"source_kind", "source_ref",
+			"last_tested_on", "source_kind", "source_ref",
 		},
 		conflictCols: []string{"id"},
 		idKeyed:      true,
@@ -589,7 +589,7 @@ var syncOrder = []tableSpec{
 	{
 		table: "assurance_plan_tests",
 		cols: []string{
-			"id", "plan_id", "selection_id", "test_ref", "tester", "evidence_requested_on", "evidence_due_on",
+			"id", "plan_id", "selection_id", "test_ref", "test_type", "tester", "evidence_requested_on", "evidence_due_on",
 			"evidence_received_on", "fieldwork_completed_on", "evidence_summary", "qa_reviewer", "qa_date", "qa_note", "notes",
 			"created_at", "created_by", "updated_at", "updated_by",
 		},

@@ -189,16 +189,25 @@ close. Code: `internal/auditfinding`; detail in `AUDIT_FINDINGS.md`.
 
 ### Assurance Plans (`/assurance-plans`)
 
-The second line's annual plans: a controls testing plan, and (later) a risk
-assessment cycle, policy review, resilience testing and a remediation roadmap.
+The second line's annual plans: controls testing, an ICT risk assessment
+cycle (RCSA), policy review, a resilience testing programme and a remediation
+roadmap.
 Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
 
-- A plan is created **from a plan type** (Controls testing, Blank) or from the
-  **worked 2027 example**. Types are JSON templates in
+- A plan is created **from a plan type** (Controls testing, ICT risk
+  assessment cycle, Policy review, Resilience testing, Remediation roadmap,
+  Blank) or from the **worked 2027 example**. Types are JSON templates in
   `internal/assuranceplan/templates/`: they seed the steps, the default
   quarterly cycle, the RACI, the reporting cadence and the escalation
   triggers. Template dates are expressions on the period and the quarters
   (`period_start-53d`, `lod1_deadline+5bd`), rolled onto business days.
+- **Plan types are data.** A type differs in its template and a few settings,
+  not in code: the test types a test records, whether coverage is measured on
+  the 1LoD attestation or on the test signed off by QA, and where a population
+  can be proposed from. Each stratum can turn sampling off (every item due is
+  tested), run a multi-year cycle (the TLPT scopes' three years: an item
+  inside its cycle is not due and counts as covered), and name the document
+  types or severities a proposal places in it.
 - **Plan & timeline**: the steps with a server-rendered Gantt (bars,
   milestone diamonds, grey bands for ongoing items, a legend in words).
   **Quarterly plan**: the cycle's dates, with a reset to the default cycle
@@ -239,6 +248,13 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
     population that has changed since.
   - The tab can download the population as CSV, or fill the box with it, or
     with an example built from the planned sizes.
+  - **Propose from the policy library** (Policy review): the documents in
+    force whose review falls due by the period end, each in the wave of its
+    due quarter, overdue ones in Q1. **Propose from open audit findings**
+    (Remediation roadmap): the open findings, each in the wave of the quarter
+    its remediation is due. The proposal fills the box and runs the preview,
+    so it is validated and diffed like a paste; items already in the plan
+    keep their stratum and wave.
 - **Freeze and select.** After approval, "Freeze population and record seed"
   fixes the population and draws a random seed. Readers see only the seed's
   SHA-256 until every quarter is drawn. "Select Q*n* sample" ranks each
@@ -254,8 +270,8 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
   the design: locked after approval.
 - **Tests** tab: "Open N test(s) for Q*n*" opens one test per pick
   (`T27-Q1-001`…), with the tester, evidence requested, due (10 business days
-  later) and received, fieldwork completed, and Pass / Fail / N/A and a note per
-  attribute. The overall result follows the fails: Effective, Partially
+  later) and received, fieldwork completed, the test type (Penetration test,
+  Policy review…), and Pass / Fail / N/A and a note per attribute. The overall result follows the fails: Effective, Partially
   effective (1–2), Ineffective (3+). QA sign-off is four-eyes under multi-user
   authentication (a warning in single-user mode), and a change after it
   withdraws it.
@@ -264,7 +280,8 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
     owner, the 800-53 ids, source Second Line Review, and the plan, test and
     attribute as its origin. The result links to the finding and the finding
     back to the plan.
-- **Dashboard** tab: 1LoD coverage against plan per stratum and quarter with a
+- **Dashboard** tab: coverage against plan (1LoD attestation, or tests signed
+  off by QA, by the plan's basis) per stratum and quarter with a
   RAG (Green, Amber within 10 points, Red, Not due) and the year-end tracker;
   2LoD testing progress; the deviation rule per attribute and stratum (0
   effective, 1 extend the next quarter's sample by 50%, 2+ not effective); the
@@ -285,7 +302,7 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
   Each PDF also comes as its sources and as its data (`?format=json`).
 - **Regulatory basis** (Governance tab): what the regulation asks of the
   control function and how the plan meets it. It is the pack's regulatory
-  slide; the built-in types carry five DORA rows.
+  slide; every built-in type carries its own rows.
 - **Knowledge API**: the kinds `assurance_plan` and `assurance_plan_test`, read
   fresh. An agent can answer "what's due this quarter?", "are we behind
   plan?" and "which Tier 1 assets failed NFR-04?".

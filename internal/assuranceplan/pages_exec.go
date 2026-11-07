@@ -113,7 +113,7 @@ when more than one person can sign in, and a change after sign-off withdraws it.
 <select id="testState"><option value="">Any state</option><option value="pending">Results pending</option><option value="fail">With a fail</option>
 <option value="qa">Awaiting QA</option><option value="late">Evidence late</option></select>
 <input id="testFind" placeholder="Search test, item or tester"><span class="spacer"></span><span id="testCount" class="muted"></span></div>
-<div class="table-wrap"><table class="ap-nowrap"><thead><tr><th>Test</th><th>Item</th><th>Name</th><th>Stratum</th><th>Basis</th><th>Tester</th>
+<div class="table-wrap"><table class="ap-nowrap"><thead><tr><th>Test</th><th>Type</th><th>Item</th><th>Name</th><th>Stratum</th><th>Basis</th><th>Tester</th>
 <th>Requested</th><th>Due</th><th>Received</th><th>Fieldwork</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">N/A</th><th class="num">Pending</th>
 <th>Result</th><th>QA</th><th></th></tr></thead><tbody id="testRows"></tbody></table></div>
 <div id="testEdit" hidden></div>`)
@@ -157,20 +157,31 @@ func dashboardHTML(d planPageData) string {
 	b.WriteString(card(strconv.Itoa(overdue), "Findings overdue"))
 	b.WriteString(`</div>`)
 
-	b.WriteString(`<h2>1LoD coverage against plan</h2>
-<p class="lede">Each cell is the cumulative wave target against the share of the stratum attested by the quarter's end, then its RAG: Green on or
+	word := coverageWord(p.CoverageBasis)
+	heading, last, legend := "1LoD coverage against plan", "DQ accepted",
+		"The last two columns are the year-end objective: every item of every stratum attested by 1LoD and its data quality accepted by 2LoD."
+	if p.CoverageBasis == CoverageTests {
+		heading, last, legend = "Test coverage against plan", "In cycle",
+			"The year-end objective is every item due in the period tested and signed off by QA."
+	}
+	b.WriteString(`<h2>` + heading + `</h2>
+<p class="lede">` + esc(coverageMethod(p.CoverageBasis, hasCycle(p.Strata))) + ` Each cell is the cumulative target against the share of the stratum ` + word + ` by the quarter's end, then its RAG: Green on or
 above plan, Amber within ` + formatNumber(p.Parameters.RAGAmberPoints) + ` points below, Red further below, Not due before the quarter ends.</p>
 <div class="table-wrap"><table class="ap-nowrap"><thead><tr><th>Stratum</th><th class="num">N</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th>
-<th class="num">Attested</th><th class="num">DQ accepted</th></tr></thead><tbody>`)
+<th class="num">` + upperFirst(word) + `</th><th class="num">` + last + `</th></tr></thead><tbody>`)
 	for _, r := range v.Coverage {
 		fmt.Fprintf(&b, `<tr><td>%s</td><td class="num">%d</td>`, esc(r.Name), r.N)
 		for _, c := range r.Cells {
-			fmt.Fprintf(&b, `<td title="to %s: %d of %d planned attested">%s</td>`, esc(displayDate(c.QuarterEnd)), c.Attested, c.Planned, ragCell(c))
+			fmt.Fprintf(&b, `<td title="to %s: %d covered against %d planned">%s</td>`, esc(displayDate(c.QuarterEnd)), c.Covered, c.Planned, ragCell(c))
+		}
+		if p.CoverageBasis == CoverageTests {
+			fmt.Fprintf(&b, `<td class="num">%d</td><td class="num">%d</td></tr>`, r.Tested, r.InCycle)
+			continue
 		}
 		fmt.Fprintf(&b, `<td class="num">%d (%s%%)</td><td class="num">%d (%s%%)</td></tr>`, r.Attested, formatNumber(r.AttestedPct), r.DQAccepted, formatNumber(r.DQPct))
 	}
 	b.WriteString(`</tbody></table></div>
-<p class="ap-legend">The last two columns are the year-end objective: every item of every stratum attested by 1LoD and its data quality accepted by 2LoD.</p>`)
+<p class="ap-legend">` + legend + `</p>`)
 
 	b.WriteString(`<h2>2LoD testing progress</h2><div class="table-wrap"><table class="ap-nowrap"><thead><tr><th>Q</th><th class="num">Planned</th>
 <th class="num">Selected</th><th class="num">Opened</th><th class="num">Fieldwork done</th><th class="num">QA signed off</th><th class="num">Evidence late</th>`)
@@ -206,6 +217,8 @@ for the stratum, a thematic finding that can go to the risk register. Every indi
 				next = `Risk ` + esc(dv.Thematic.RiskRef) + ` raised ` + esc(displayDate(day))
 			case dv.Kind == KindNotEffective && canPush:
 				next = fmt.Sprintf(`<button type="button" class="mini" data-push="%d" data-stratum="%s">Push to risk register</button>`, dv.AttributeID, esc(dv.StratumCode))
+			case dv.Kind == KindExtend && dv.FullCoverage:
+				next = `Full coverage: raise each fail as a finding`
 			case dv.Kind == KindExtend && dv.ExtendQuarter > 0:
 				next = fmt.Sprintf(`Extend: +%d test(s) of %s in Q%d`, dv.ExtendBy, esc(dv.AttrRef), dv.ExtendQuarter)
 			case dv.Kind == KindExtend:
@@ -317,14 +330,14 @@ function drawTests() {
   const needle = find.trim().toLowerCase();
   const rows = TESTS.filter(t => (!q || t.quarter === Number(q))
     && (!st || (st === 'pending' && t.pending > 0) || (st === 'fail' && t.fails > 0) || (st === 'qa' && !t.qa_date && t.fieldwork_completed_on) || (st === 'late' && t.evidence_late))
-    && (!needle || [t.test_ref, t.item_ref, t.item_name, t.tester].join(' ').toLowerCase().includes(needle)));
+    && (!needle || [t.test_ref, t.test_type, t.item_ref, t.item_name, t.tester].join(' ').toLowerCase().includes(needle)));
   document.getElementById('testCount').textContent = rows.length + ' of ' + TESTS.length + ' tests';
-  testRows.innerHTML = rows.map(t => '<tr><td>' + h(t.test_ref) + '</td><td>' + h(t.item_ref) + '</td><td>' + h(t.item_name) + '</td><td>' + h(t.stratum) +
+  testRows.innerHTML = rows.map(t => '<tr><td>' + h(t.test_ref) + '</td><td>' + h(t.test_type) + '</td><td>' + h(t.item_ref) + '</td><td>' + h(t.item_name) + '</td><td>' + h(t.stratum) +
     '</td><td>' + pill(t.basis) + '</td><td>' + h(t.tester) + '</td><td>' + h(t.evidence_requested_on) + '</td><td>' + h(t.evidence_due_on) +
     '</td><td>' + h(t.evidence_received_on) + (t.evidence_late ? ' ' + pill('Evidence late') : '') + '</td><td>' + h(t.fieldwork_completed_on) +
     '</td><td class="num">' + t.passes + '</td><td class="num">' + t.fails + '</td><td class="num">' + t.not_applicable + '</td><td class="num">' + t.pending +
     '</td><td>' + pill(t.overall) + '</td><td>' + testState(t) + '</td><td><button type="button" class="link-btn" data-test="' + t.id + '">Open</button></td></tr>').join('')
-    || '<tr><td colspan="17" class="muted">No tests.</td></tr>';
+    || '<tr><td colspan="18" class="muted">No tests.</td></tr>';
   testRows.querySelectorAll('[data-test]').forEach(b => b.addEventListener('click', () => openTest(TESTS.find(t => t.id === Number(b.dataset.test)))));
 }
 testFilters.forEach(f => f && f.addEventListener('input', drawTests));
@@ -340,7 +353,9 @@ function openTest(t) {
   const opt = (v, cur) => '<option value="' + h(v) + '"' + (v === cur ? ' selected' : '') + '>' + h(v || '—') + '</option>';
   testEdit.innerHTML = '<h3>' + h(t.test_ref) + ' · ' + h(t.item_ref) + ' ' + h(t.item_name) + ' · ' + h(t.stratum) + ' · ' + pill(t.basis) + ' · ' + pill(t.overall) + '</h3>' +
     (t.qa_date ? '<p class="notice">Signed off by ' + h(t.qa_reviewer || '—') + ' on ' + h(t.qa_date) + (t.qa_note ? ' — ' + h(t.qa_note) : '') + '. A change withdraws the sign-off.</p>' : '') +
-    '<div class="grid"><label>Tester<input data-t="tester" value="' + h(t.tester) + '"' + dis + '></label>' +
+    '<div class="grid">' + (PLAN.test_types.length ? '<label>Test type<select data-t="test_type"' + dis + '>' +
+      PLAN.test_types.concat(t.test_type && !PLAN.test_types.includes(t.test_type) ? [t.test_type] : []).map(v => opt(v, t.test_type)).join('') + '</select></label>' : '') +
+    '<label>Tester<input data-t="tester" value="' + h(t.tester) + '"' + dis + '></label>' +
     '<label>Evidence requested<input type="date" data-t="evidence_requested_on" value="' + h(t.evidence_requested_on) + '"' + dis + '></label>' +
     '<label>Evidence due (requested + ' + PLAN.parameters.evidence_sla_days + ' business days)<input value="' + h(t.evidence_due_on) + '" disabled></label>' +
     '<label>Evidence received<input type="date" data-t="evidence_received_on" value="' + h(t.evidence_received_on) + '"' + dis + '></label>' +

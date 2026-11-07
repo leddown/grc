@@ -57,10 +57,65 @@ func normalizeStrata(strata []Stratum) error {
 		if s.PlannedSize < 0 || s.PlannedSize > 10000000 {
 			return invalid("stratum %s: the planned size cannot be negative", s.Code)
 		}
+		if s.CycleYears < 0 || s.CycleYears > 10 {
+			return invalid("stratum %s: the cycle is 0 to 10 years (0 or 1 is every year)", s.Code)
+		}
+		if s.CycleYears == 1 {
+			s.CycleYears = 0
+		}
+		takes := []string{}
+		for _, v := range s.Takes {
+			v = strings.TrimSpace(v)
+			switch {
+			case v == "":
+				continue
+			case len(v) > 40 || strings.ContainsAny(v, ",;\t\n"):
+				return invalid("stratum %s: %q is too long or holds a separator", s.Code, clip(v, 20))
+			case slices.ContainsFunc(takes, func(t string) bool { return strings.EqualFold(t, v) }):
+				continue
+			}
+			takes = append(takes, v)
+		}
+		if len(takes) > 20 {
+			return invalid("stratum %s takes at most 20 source values", s.Code)
+		}
+		s.Takes = takes
 		s.Ordinal = i
 		s.ID = 0
 	}
 	return nil
+}
+
+// cycleDue is when an item of a multi-year stratum is next due: its last test
+// plus the cycle. It is empty for an annual stratum, or for an item never
+// tested, which is due now.
+func cycleDue(st Stratum, it PopulationItem) string {
+	if st.CycleYears <= 1 || it.LastTestedOn == "" {
+		return ""
+	}
+	t, ok := parseDate(it.LastTestedOn)
+	if !ok {
+		return ""
+	}
+	return formatDate(t.AddDate(st.CycleYears, 0, 0))
+}
+
+// dueInPeriod reports whether an item needs its test in the period: always in
+// an annual stratum, and in a multi-year one when it was never tested or its
+// cycle lapses by the period's end.
+func dueInPeriod(st Stratum, it PopulationItem, periodEnd string) bool {
+	if st.CycleYears <= 1 {
+		return true
+	}
+	due := cycleDue(st, it)
+	return due == "" || periodEnd == "" || due <= periodEnd
+}
+
+// inCycleAt reports whether an item's last test before the plan still covers
+// it on a date.
+func inCycleAt(st Stratum, it PopulationItem, date string) bool {
+	due := cycleDue(st, it)
+	return due != "" && date < due
 }
 
 func stratumDesign(s Stratum) string {
@@ -154,9 +209,14 @@ type StratumSizing struct {
 	CumTarget     [4]float64 `json:"cumulative_target"`
 	WaveCounts    [4]int     `json:"wave_counts"`
 	NoWave        int        `json:"no_wave"`
-	Flagged       [4]int     `json:"flagged_top_ups"`
-	Selected      [4]int     `json:"selected"`
-	Error         string     `json:"error"`
+	// CycleYears and InCycle are for a multi-year stratum: InCycle counts the
+	// items whose last test is recent enough that they are not due in the
+	// period. They are outside N and are not drawn unless given a wave.
+	CycleYears int    `json:"cycle_years"`
+	InCycle    int    `json:"in_cycle"`
+	Flagged    [4]int `json:"flagged_top_ups"`
+	Selected   [4]int `json:"selected"`
+	Error      string `json:"error"`
 }
 
 type QuarterSelection struct {
@@ -203,9 +263,13 @@ func computeSampling(p Plan, pop []PopulationItem, sels []Selection) SamplingVie
 	var loads []StratumLoad
 	for _, st := range p.Strata {
 		z := StratumSizing{Code: st.Code, Name: st.Name, Sampling: st.SamplingEnabled, Confidence: st.Confidence,
-			TolerableRate: st.TolerableRate, FloorPct: st.FloorPct, TopUps: st.TopUps}
+			TolerableRate: st.TolerableRate, FloorPct: st.FloorPct, TopUps: st.TopUps, CycleYears: st.CycleYears}
 		for _, it := range pop {
 			if it.StratumCode != st.Code {
+				continue
+			}
+			if it.WaveQuarter == 0 && !dueInPeriod(st, it, p.PeriodEnd) {
+				z.InCycle++
 				continue
 			}
 			z.N++
@@ -219,7 +283,7 @@ func computeSampling(p Plan, pop []PopulationItem, sels []Selection) SamplingVie
 			}
 		}
 		switch {
-		case z.N > 0:
+		case z.N > 0 || z.InCycle > 0:
 			z.NSource = "population"
 		case st.PlannedSize > 0:
 			z.N, z.NSource = st.PlannedSize, "planned"
@@ -242,12 +306,25 @@ func computeSampling(p Plan, pop []PopulationItem, sels []Selection) SamplingVie
 		if err != nil {
 			z.Error = err.Error()
 		}
+		// A full-coverage stratum tests every item of each wave, so once its
+		// population is loaded the waves as loaded are its quarterly plan,
+		// whatever the wave percentages say. Items proposed from due dates
+		// fall where they are due, not where the percentages put them.
+		fullLoaded := !st.SamplingEnabled && z.NSource == "population" && z.Error == "" && z.N > 0
+		if fullLoaded {
+			z.Statistical, z.ReviewsDue = z.WaveCounts, z.WaveCounts
+		}
 		cum := 0.0
+		running := 0
 		for q := range 4 {
 			z.Tests[q] = z.Statistical[q] + z.TopUps[q]
 			z.TotalTests += z.Tests[q]
 			cum += st.Waves[q]
 			z.CumTarget[q] = guard(min(cum, 1))
+			if fullLoaded {
+				running += z.WaveCounts[q]
+				z.CumTarget[q] = guard(float64(running) / float64(z.N))
+			}
 		}
 		if z.N > 0 {
 			z.Coverage = guard(float64(z.TotalTests) / float64(z.N))
@@ -567,14 +644,18 @@ func (s *Service) FreezePopulation(id int64, actor string) (Plan, error) {
 	if len(pop) == 0 {
 		return Plan{}, invalid("the population is empty: load it on the Scope population tab first")
 	}
+	strata := map[string]Stratum{}
+	for _, st := range p.Strata {
+		strata[st.Code] = st
+	}
 	var noWave []string
 	for _, it := range pop {
-		if it.WaveQuarter == 0 {
+		if it.WaveQuarter == 0 && dueInPeriod(strata[it.StratumCode], it, p.PeriodEnd) {
 			noWave = append(noWave, it.ItemRef)
 		}
 	}
 	if len(noWave) > 0 {
-		return Plan{}, invalid("%d item(s) have no 1LoD wave (%s); every item needs one before the freeze", len(noWave), strings.Join(firstN(noWave, 8), ", "))
+		return Plan{}, invalid("%d item(s) have no 1LoD wave (%s); every item due in the period needs one before the freeze", len(noWave), strings.Join(firstN(noWave, 8), ", "))
 	}
 	for _, st := range p.Strata {
 		if err := ValidateWaves(st.Waves); err != nil {

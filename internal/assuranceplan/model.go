@@ -102,6 +102,33 @@ const (
 
 var Conclusions = []string{ConclusionNotTested, ConclusionEffective, ConclusionExtend, ConclusionNotEffective}
 
+// Coverage bases: what counts an item as covered on the dashboard and in the
+// reports. A controls testing or RCSA plan covers an item when 1LoD attests
+// it; a resilience programme or remediation roadmap when its 2LoD test (the
+// test of the system, the validation of the closure) is signed off by QA.
+const (
+	CoverageAttestation = "attestation"
+	CoverageTests       = "tests"
+)
+
+var CoverageBases = []string{CoverageAttestation, CoverageTests}
+
+// Population sources a plan can propose its population from. A stratum's
+// Takes lists the values of the source it takes: document types for policies,
+// severities for findings.
+const (
+	SourcePolicies = "policies"
+	SourceFindings = "findings"
+)
+
+var PopulationSources = []string{SourcePolicies, SourceFindings}
+
+// The source_kind written on a proposed item.
+const (
+	SourceKindPolicy  = "policy_document"
+	SourceKindFinding = "audit_finding"
+)
+
 // RACILetters are the values a RACI cell may hold. "A/R" is common practice
 // for the one role that both does and owns an activity.
 var RACILetters = []string{"R", "A", "C", "I", "A/R"}
@@ -149,6 +176,14 @@ type Plan struct {
 	NonWorkingDates string     `json:"non_working_dates"`
 	RACIRoles       []string   `json:"raci_roles"`
 	Parameters      Parameters `json:"parameters"`
+
+	// TestTypes is the vocabulary a test's type is chosen from; the first is
+	// the default for a new test. CoverageBasis is CoverageAttestation or
+	// CoverageTests. PopulationSource is empty, SourcePolicies or
+	// SourceFindings.
+	TestTypes        []string `json:"test_types"`
+	CoverageBasis    string   `json:"coverage_basis"`
+	PopulationSource string   `json:"population_source"`
 
 	AIGenerated bool   `json:"ai_generated"`
 	Model       string `json:"model"`
@@ -273,6 +308,13 @@ type Stratum struct {
 	// PlannedSize sizes the stratum until its population is loaded, so the
 	// sampling can be approved before the inventory extract is final.
 	PlannedSize int `json:"planned_size"`
+	// CycleYears above 1 makes the stratum a multi-year cycle (TLPT every
+	// three years): an item is due in the period only when its last test is
+	// that many years old, and until then it counts as covered.
+	CycleYears int `json:"cycle_years"`
+	// Takes is what the stratum takes from a proposed population: document
+	// types for SourcePolicies, finding severities for SourceFindings.
+	Takes []string `json:"takes"`
 }
 
 // PopulationItem is one item in scope. Membership, stratum and wave decide
@@ -293,8 +335,11 @@ type PopulationItem struct {
 	DQReviewedOn   string `json:"dq_reviewed_on"`
 	TopUpQuarter   int    `json:"topup_quarter"`
 	TopUpRationale string `json:"topup_rationale"`
-	SourceKind     string `json:"source_kind"`
-	SourceRef      string `json:"source_ref"`
+	// LastTestedOn is the item's last test before the plan, which starts the
+	// clock of a multi-year stratum.
+	LastTestedOn string `json:"last_tested_on"`
+	SourceKind   string `json:"source_kind"`
+	SourceRef    string `json:"source_ref"`
 
 	// Derived on read from the selections.
 	SelectedQuarter int    `json:"selected_quarter"`
@@ -366,6 +411,7 @@ type Test struct {
 	ID                   int64  `json:"id"`
 	SelectionID          int64  `json:"selection_id"`
 	TestRef              string `json:"test_ref"`
+	TestType             string `json:"test_type"`
 	Tester               string `json:"tester"`
 	EvidenceRequestedOn  string `json:"evidence_requested_on"`
 	EvidenceDueOn        string `json:"evidence_due_on"`
@@ -525,12 +571,15 @@ type Vocabulary struct {
 	OverallResults []string `json:"overall_results"`
 	Conclusions    []string `json:"conclusions"`
 	Severities     []string `json:"severities"`
+	CoverageBases  []string `json:"coverage_bases"`
+	Sources        []string `json:"population_sources"`
 }
 
 func Vocab() Vocabulary {
 	return Vocabulary{Statuses: Statuses, StepTypes: StepTypes, StepStatuses: StepStatuses, RACILetters: RACILetters,
 		DQStatuses: DQStatuses, SelectionBases: SelectionBases, Methods: Methods, Results: Results,
-		OverallResults: OverallResults, Conclusions: Conclusions, Severities: auditfinding.Severities}
+		OverallResults: OverallResults, Conclusions: Conclusions, Severities: auditfinding.Severities,
+		CoverageBases: CoverageBases, Sources: PopulationSources}
 }
 
 // designEditable reports whether the plan's design may change: before its

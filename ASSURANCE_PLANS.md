@@ -24,9 +24,12 @@ its seeding from the catalogs, tests and results with the evidence SLA and QA
 sign-off, the deviation rule, "Raise finding" into Audit Findings, the thematic
 push to the risk register, and the dashboard. Phase 4 (outputs) is in: the
 regulatory basis, the JSON and CSV exports, the committee approval pack, the
-quarterly and annual reports, and the knowledge kinds. The other plan types
-(phase 5) and AI assist (phase 6) are described below as designed, and marked
-with their phase where the code does not have them yet.
+quarterly and annual reports, and the knowledge kinds. Phase 5 (plan types) is
+in: the ICT risk assessment cycle (RCSA), policy review, resilience testing and
+remediation roadmap types, the plan type settings and stratum flags they run
+on, multi-year cycles, coverage measured on signed-off tests, and populations
+proposed from the policy library and from Audit Findings. AI assist (phase 6)
+is described below as designed, and marked with its phase.
 
 The module produces:
 
@@ -99,11 +102,72 @@ The module produces:
 - **Governance**: a RACI matrix, a reporting cadence, escalation triggers and
   the regulatory basis. The regulatory basis is a table of what the
   regulation asks of the control function, its reference, and how the plan
-  meets it. It is the approval pack's regulatory slide. The two built-in types
-  carry five DORA rows; they paraphrase the articles and are no substitute for
-  the text.
+  meets it. It is the approval pack's regulatory slide. Every built-in type
+  carries its own rows; they paraphrase the articles and standards and are no
+  substitute for the text.
 - **History** and **versions**: an append-only event log, and an immutable JSON
   snapshot at each approval.
+
+## Plan types
+
+Six types ship, each a JSON file in `internal/assuranceplan/templates/`. They
+differ in their data, not in code: the same steps, strata, population,
+selection, tests, deviation rule, reports and exports serve all of them. What
+sets them apart is a handful of settings on the plan and flags on each stratum.
+
+| Type | Population | Strata | Sampling | Coverage measured on | Test types |
+|---|---|---|---|---|---|
+| Controls testing (`controls-testing`) | ICT assets | Tier 1, Tier 2 | on | 1LoD attestation | Controls test |
+| ICT risk assessment cycle (`rcsa`) | Business units or processes | Critical (BU-C), Other (BU-O) | on, 90%/10% and 80%/15%: a smaller sample than controls testing, for 2LoD review and challenge | 1LoD attestation (the self-assessment submitted) | Review and challenge |
+| Policy review (`policy-review`) | Policy documents due for review, proposed from the policy library | Policies (POL), Standards and procedures (STD) | off | Test signed off by QA | Policy review |
+| Resilience testing (`resilience-testing`) | ICT systems supporting critical or important functions | Systems (SYS), TLPT scopes (TLPT, a three-year cycle) | off | Test signed off by QA | Vulnerability assessment, Vulnerability scan, Penetration test, Scenario-based test, BCP / DR test, Threat-led penetration test (TLPT) |
+| Remediation roadmap (`remediation-roadmap`) | Open audit findings, proposed from Audit Findings | Critical and High (F-CH), Medium and Low (F-ML) | off | Test signed off by QA (the closure validated) | Closure validation |
+| Blank (`blank`) | — | none | — | 1LoD attestation | none |
+
+The worked 2027 example (`dora-nfr-2027`) is the controls testing type with
+Appendix A's data.
+
+**Plan settings** (on the header, under "Plan type settings"):
+
+- `test_types`: the kinds of test the plan runs, one per line. A test records
+  one of them; the first is the default for a new test. A plan with none
+  accepts any type of up to 60 characters. At most 20 types.
+- `coverage_basis`: what counts an item as covered for the coverage RAG, the
+  dashboard, the reports and the knowledge record.
+  - `attestation` (the default): the item's 1LoD attestation date. The
+    controls testing and RCSA types work this way: 1LoD covers 100% and 2LoD
+    samples.
+  - `tests`: the date the item's test was signed off by QA. The types without
+    sampling work this way: the 2LoD test is the coverage.
+- `population_source`: where a population can be proposed from, `policies`,
+  `findings` or none (see [Proposed populations](#proposed-populations)).
+
+A header saved without these keys keeps them; `"population_source": "none"`
+clears the source.
+
+**Stratum flags** (on the Sampling tab's strata editor):
+
+- `sampling_enabled` off: every item due is tested, with basis Full coverage
+  (see [Sampling method](#sampling-method)).
+- `cycle_years` (0–10; 0 or 1 is every year): a multi-year cycle. An item
+  tested on its last test date is not due again until that date plus the
+  cycle, and counts as covered meanwhile. The resilience type's TLPT stratum
+  uses 3, for DORA Art. 26(1)'s threat-led penetration test at least every
+  three years.
+- `takes`: the values a proposal places in the stratum: document types
+  (`policy`, `standard`, `procedure`, `work_instruction`, `guideline`, `tra`)
+  for the policies source, severities (`Critical`, `High`, `Medium`, `Low`) for
+  the findings source. At most 20, each up to 40 characters without commas or
+  semicolons; matched without regard to case.
+
+**Item and test fields:**
+
+- An item's `last_tested_on` is the date it was last tested, the anchor of its
+  cycle. A clone sets it to the latest QA sign-off of the year being cloned,
+  so this year's test is next year's last test.
+- A test's `test_type` is one of the plan's test types, matched without regard
+  to case and stored in the plan's spelling. A save without a type keeps the
+  test's type; a type the plan does not list is refused (400).
 
 ## Data model
 
@@ -113,14 +177,14 @@ which is why the module is excluded from `-sync-to` / `-sync-from` (see
 
 | Table | Holds | Key columns |
 |---|---|---|
-| `assurance_plans` | The plan header and its parameters | `reference` (unique), `title`, `plan_type`, `function_name`, `client_profile_id` (0 = none), `period_start`, `period_end`, `mobilise_start`, `closing_date`, `objective`, `decisions_requested`, `owner_role`, `accountable_role`, `approval_forum`, `regulatory_refs`, `status`, `revision`, `revision_status`, `revision_author`, `change_reason`, `author`, `approved_by`, `approved_at`, `activated_at`, `closed_at`, `selection_seed`, `non_working_dates`; the parameters listed below; `ai_generated`, `model`, `prompt_hash`; `created_*`, `updated_*` |
+| `assurance_plans` | The plan header and its parameters | `reference` (unique), `title`, `plan_type`, `function_name`, `client_profile_id` (0 = none), `period_start`, `period_end`, `mobilise_start`, `closing_date`, `objective`, `decisions_requested`, `owner_role`, `accountable_role`, `approval_forum`, `regulatory_refs`, `test_types` (JSON list), `coverage_basis` (attestation / tests), `population_source` (empty / policies / findings), `status`, `revision`, `revision_status`, `revision_author`, `change_reason`, `author`, `approved_by`, `approved_at`, `activated_at`, `closed_at`, `selection_seed`, `non_working_dates`; the parameters listed below; `ai_generated`, `model`, `prompt_hash`; `created_*`, `updated_*` |
 | `assurance_plan_steps` | Plan steps | `plan_id`, `ordinal`, `step_ref`, `phase`, `title`, `step_type` (activity / milestone / ongoing), `responsible_role`, `accountable_role`, `start_date`, `end_date`, `deliverable`, `refs`, `status`, `quarter` (0 = not tied to a quarter), `generated` |
 | `assurance_plan_quarters` | The operating cycle | `plan_id`, `quarter` (1–4), `lod1_window_start`, `lod1_deadline`, `selection_date`, `fieldwork_start`, `fieldwork_end`, `findings_agreed_by`, `report_date`, `committee_label`, `retest_days`, `overhead_days`, `selected_at`, `selected_by` |
-| `assurance_plan_strata` | Strata and their sampling parameters | `plan_id`, `ordinal`, `code` (unique per plan), `name`, `definition`, `sampling_enabled`, `confidence`, `tolerable_rate`, `floor_pct`, `effort_per_test`, `effort_per_review`, `wave_q1`..`wave_q4`, `topup_q1`..`topup_q4`, `planned_size` |
-| `assurance_plan_population` | The scope population | `plan_id`, `item_ref` (unique per plan), `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing`, `owner`, `wave_quarter`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter`, `topup_rationale`, `source_kind`, `source_ref` (for populations proposed from policies or findings, phase 5) |
+| `assurance_plan_strata` | Strata and their sampling parameters | `plan_id`, `ordinal`, `code` (unique per plan), `name`, `definition`, `sampling_enabled`, `confidence`, `tolerable_rate`, `floor_pct`, `effort_per_test`, `effort_per_review`, `wave_q1`..`wave_q4`, `topup_q1`..`topup_q4`, `planned_size`, `cycle_years` (0 = every year), `takes` (comma-separated) |
+| `assurance_plan_population` | The scope population | `plan_id`, `item_ref` (unique per plan), `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing`, `owner`, `wave_quarter`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter`, `topup_rationale`, `last_tested_on`, `source_kind` (`policy_document` / `audit_finding`), `source_ref` (the record's id) |
 | `assurance_plan_attributes` | The test script | `plan_id`, `ordinal`, `attr_ref` (unique per plan), `domain`, `requirement`, `test_procedure`, `method` (Inspection / Inquiry / Observation / Re-performance), `evidence_requested`, `pass_criteria`, `applies_to` (stratum codes, comma-separated; empty = every stratum), `regulatory_refs`, `control_ids`, `nfr_key` (empty = plan-local), `ai_generated`, `model`, `prompt_hash`. Unresolved references are worked out on read, not stored. |
 | `assurance_plan_selections` | Frozen picks | `plan_id`, `quarter`, `population_id` (on delete cascade), `item_ref`, `stratum_code`, `basis` (Statistical / Risk-based top-up / Full coverage), `rank_order` (the item's place in its stratum and wave's ranking; 0 for a top-up), `rank_hash`, `plan_version` (the approved version the draw was made under), `selected_at`, `selected_by`; unique (`plan_id`, `population_id`). The seed is on the plan, not on each pick. |
-| `assurance_plan_tests` | One test per selection | `plan_id`, `selection_id` (unique, on delete cascade), `test_ref` (unique per plan), `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `qa_note`, `notes`, `created_*`, `updated_*`. The test type (controls test, policy review, …) comes with the other plan types in phase 5. |
+| `assurance_plan_tests` | One test per selection | `plan_id`, `selection_id` (unique, on delete cascade), `test_ref` (unique per plan), `test_type`, `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `qa_note`, `notes`, `created_*`, `updated_*` |
 | `assurance_plan_results` | One result per attribute per test | `plan_id`, `test_id`, `attribute_id` (unique together, both on delete cascade), `result` (Pass / Fail / N/A / empty), `note`, `finding_id`, `finding_ref`, `severity` |
 | `assurance_plan_thematic` | Not-effective conclusions pushed to the risk register | `plan_id`, `attribute_id`, `stratum_code` (unique together), `risk_id`, `risk_ref`, `deviations`, `note`, `pushed_at`, `pushed_by` |
 | `assurance_plan_raci` | RACI rows | `plan_id`, `ordinal`, `activity`, `cells` (JSON object, role → R, A, C, I or A/R). The plan stores the role columns in `raci_roles`. |
@@ -137,6 +201,13 @@ two-way link. It is set when the finding is created and an edit in Audit
 Findings never changes it; the finding's page shows it as "Raised from", linked
 back to the plan. Existing databases get it through `ensureColumn` and
 `ADD COLUMN IF NOT EXISTS`.
+
+Phase 5 adds columns to the module's own tables, the same way:
+`assurance_plans.test_types`, `coverage_basis` and `population_source`,
+`assurance_plan_strata.cycle_years` and `takes`,
+`assurance_plan_population.last_tested_on`, and `assurance_plan_tests.test_type`.
+A plan from before phase 5 reads as an attestation-basis plan with no test
+types and no source.
 
 **Plan parameters** (columns on `assurance_plans`, defaults in brackets):
 
@@ -254,12 +325,18 @@ shape as `policydocs.ApprovalError`.
 - attribute references that do not resolve against the control or NFR
   catalogs, one finding per attribute (only when both catalogs are wired in;
   without them nothing is checked and nothing is claimed)
-- a plan that samples items but has no test attributes
+- a plan with strata but no test attributes
 - an attribute with no pass criteria
 - a stratum with no population yet (the finding says whether it is sized on its
   planned size or at zero)
-- a stratum whose wave counts differ from its wave percentages, giving both
+- a sampled stratum whose wave counts differ from its wave percentages, giving
+  both (a stratum without sampling is planned by its wave counts)
 - items with no 1LoD wave, which are never due for attestation or drawn
+- items inside their multi-year cycle, not due in the period (`in_cycle`)
+- a stratum that takes a value its plan's source does not have, such as a
+  severity of "Severe" (`takes_unknown`)
+- a plan with a population source where no stratum takes anything from it
+  (`source_unmapped`)
 
 Planned top-ups with no items flagged for them are not a gate finding. Items are
 flagged for a top-up during the year, so the mismatch is a warning when that
@@ -287,7 +364,9 @@ It also:
   becomes "Draft the 2029 plan"); a year inside a citation such as
   `2024/1774` is left alone, and regulatory references are not touched
 - keeps the population: reference, name, stratum, wave, CIF, business line,
-  hosting, internet-facing and owner
+  hosting, internet-facing, owner, last tested date and source
+- sets each item's last tested date to the QA sign-off date of its test this
+  year, when that is later, so a multi-year cycle runs on
 
 It drops:
 
@@ -329,7 +408,20 @@ which one each figure uses.
 
 When sampling is off for a stratum (the coverage-only plan types), `annual = N`
 and every item is selected with basis "Full coverage". This is how one code
-path serves all six plan types.
+path serves all six plan types. Once its population is loaded, such a stratum
+is planned by the items in each wave, not by the wave percentages: the tests
+per quarter, the reviews due and the cumulative target are the wave counts, so
+the plan and the selection agree. Before the population is loaded, the planned
+size and the percentages stand in.
+
+**Multi-year cycle.** In a stratum with `cycle_years` above 1, an item is due
+in the period when it has never been tested or its cycle lapses by the period
+end (last tested + cycle years ≤ period end). An item not due and with no wave
+is counted as in cycle and left out of N: it is not sized, scheduled or drawn,
+and it counts as covered until its cycle lapses. An item not due that has a
+wave anyway is sized and drawn like the others. A TLPT scope last tested on
+1 October 2024 lapses on 1 October 2027 and is due in the 2027 plan; one tested
+on 15 June 2025 is in cycle until 15 June 2028.
 
 **Quarter allocation** uses cumulative rounding, so the quarters always sum to
 the annual figure:
@@ -381,7 +473,8 @@ seed") happens once. It needs:
 
 - an Approved or Active plan with no revision open
 - a population that is not empty
-- a wave on every item
+- a wave on every item due in the period (an item inside its multi-year cycle
+  needs none)
 - every stratum's waves summing to 100%
 
 It writes a `population frozen` history event with the item count, the
@@ -501,13 +594,22 @@ of Q2's 13), one Tier 2 deviation +4 (half of 7). A deviation in Q4 has no later
 quarter that year and is carried into next year's sample. The extension is a
 suggestion shown on the dashboard; the frozen selection is not changed.
 
+A stratum without sampling tests every item due, so there is no sample to
+extend. One deviation there reads "1 deviation – full coverage, raise as
+findings" (`full_coverage` in the JSON), and the next step is to raise each
+Fail as a finding. Two or more are still Not effective, for the risk register.
+
 Every individual Fail is still an asset-level finding.
 
 ### Coverage RAG
 
 Per stratum and quarter, the cumulative wave target (35 / 70 / 100 / 100% for
-Tier 1) is compared with the share of the stratum's items whose attestation date
-is on or before the calendar quarter end:
+Tier 1) is compared with the share of the stratum's items covered on or before
+the calendar quarter end. What covers an item is the plan's coverage basis: its
+attestation date, or the QA sign-off date of its test. An item inside its
+multi-year cycle at the quarter end counts as covered, and in a cycle stratum
+the target for a quarter is the items in cycle then plus the items with a wave
+up to that quarter.
 
 | RAG | When |
 |---|---|
@@ -524,9 +626,10 @@ The Dashboard tab (and `GET …/dashboard`) shows:
 
 - cards: tests planned, items selected, tests opened, signed off by QA,
   attribute fails, findings raised, open and overdue
-- 1LoD coverage against plan: each stratum's four quarter cells with their RAG,
-  and the year-end tracker (items attested, and data quality accepted, against
-  every item of every stratum)
+- coverage against plan, "1LoD coverage" or "Test coverage" by the plan's
+  basis: each stratum's four quarter cells with their RAG, and the year-end
+  tracker (items attested, tested and signed off, in cycle, and data quality
+  accepted, against every item of every stratum)
 - 2LoD testing progress per quarter: planned, selected, opened, fieldwork done,
   QA signed off, evidence late, and the tests by overall result
 - deviations by attribute and stratum, with the conclusion, the failing tests
@@ -648,14 +751,43 @@ key.
 
 ### Proposed populations
 
-The Policy review and Remediation roadmap types can propose a population:
+A plan with a population source can propose its population ("Propose from …"
+on the Scope population tab, `POST …/population/propose?source=`). The Policy
+review type proposes from the policy library, the Remediation roadmap type from
+Audit Findings; any plan can name either source in its header.
 
-- Policy review: from `policy_documents` whose `next_review_date` falls in the
-  period, plus any that the review cadence makes due.
-- Remediation roadmap: from open audit findings.
+The proposal is CSV text in the import's own format (`item_ref`, `name`,
+`stratum`, `owner`, `business_line`, `wave`, `source_kind`, `source_ref`) with
+notes. The page puts it in the paste box with merge on and runs the preview, so
+it goes through the same validation and diff as a paste, and nothing is
+written until it is applied. Merge, because an item the source no longer lists
+(a finding closed since) stays in the plan.
 
-Like a CSV paste, the proposal goes through preview, validation and a diff
-before it is applied.
+Each item lands in the stratum that `takes` its document type or severity, and
+in the wave of the quarter it is due. A value no stratum takes is left out and
+counted in a note.
+
+- **Policies**: the documents in force (approved, or approved and in review)
+  of the plan's client profile, or without one when the plan has none. A
+  document is due on its `next_review_date`, or on its effective date plus its
+  review cadence when none is stored. Those due by the period end are
+  proposed; a review already overdue goes into Q1. A document with neither date
+  has no review clock: it is left out and counted. Letters have no review
+  cycle and are never proposed. The reference is the document's, or
+  `DOC-<id>`; the owner is its owner role.
+- **Findings**: the open audit findings (not Draft, Closed or Risk
+  accepted). An overdue finding, or one with no due date, goes into Q1; one
+  due after the period is left for next year's roadmap and counted. The owner
+  and business unit come from the finding.
+
+An item already in the population keeps its stratum and wave. When the source
+now places it elsewhere, a note says so: a move stays a deliberate edit, by
+import or, once frozen, by change request. A second proposal therefore adds
+only what is new, and its preview of the unchanged items is empty.
+
+The proposal refuses (400) a plan with no source, no period dates, or no
+stratum that takes anything, and a closed plan (409). Without the policy
+library or Audit Findings wired in, it answers 409. No model is involved.
 
 ### Population import
 
@@ -667,11 +799,12 @@ extracted from a document, so this is not document ingestion.
 **Columns** (in the order the page writes them): `item_ref`, `name`, `stratum`,
 `cif`, `business_line`, `hosting`, `internet_facing`, `owner`, `wave`,
 `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter`,
-`topup_rationale`.
+`topup_rationale`, `last_tested_on`, `source_kind`, `source_ref`.
 
 - Headers are matched without regard to case, spaces or punctuation.
 - Common names are accepted: `Asset ID`, `Tier`, `Critical or important
-  function`, `1LoD wave`, `Attestation date`, `Top-up quarter` and others.
+  function`, `1LoD wave`, `Attestation date`, `Top-up quarter`, `Last test
+  date` and others.
 - An unknown column is listed as ignored.
 - Only `item_ref` is required. A column left out of the paste keeps each
   existing item's value, so a paste of `item_ref,attested_on` records
@@ -785,7 +918,11 @@ spend need admin, the same split as the risk register and Audit Findings.
 - `POST /assurance-plans/:id/population/preview` and
   `POST /assurance-plans/:id/population`: the CSV text as JSON, then apply (see
   [Population import](#population-import)).
-  Phase 5: `POST /assurance-plans/:id/population/propose?source=policies|findings`.
+- `POST /assurance-plans/:id/population/propose?source=policies|findings`: the
+  proposed population as CSV with its counts and notes
+  (`{"source", "csv", "items", "new", "skipped", "notes", "merge"}`); writes
+  nothing. Without `source`, the plan's own. See
+  [Proposed populations](#proposed-populations).
 - `PATCH /assurance-plans/:id/population/:itemID`: one item's description,
   attestation, DQ review and top-up
 - `POST /assurance-plans/:id/population/freeze`: freeze and draw the seed
@@ -798,8 +935,8 @@ spend need admin, the same split as the risk register and Audit Findings.
   (`{"quarter", "selection_ids", "tester", "evidence_requested_on"}`; 201):
   opens a test for each pick of the quarter that has none, or for the listed
   picks. 409 when every pick already has a test or the quarter is not selected.
-- `PUT /assurance-plans/:id/tests/:testID`: the test's dates, tester, evidence
-  summary and notes, and `results` (`[{"attribute_id", "result", "note"}]`).
+- `PUT /assurance-plans/:id/tests/:testID`: the test's type, dates, tester,
+  evidence summary and notes, and `results` (`[{"attribute_id", "result", "note"}]`).
   Results not listed keep their value. The answer carries the test, the changes
   and whether the QA sign-off was withdrawn.
 - `POST /assurance-plans/:id/tests/:testID/qa`: the signed-in user signs off
@@ -836,6 +973,11 @@ blank a field in the pack. The export:
   - the approved versions with their SHA-256
   - the gate's findings
   - totals
+- carries the plan type settings (`test_types`, `coverage_basis`,
+  `population_source`), each stratum's `cycle_years`, `takes` and `in_cycle`,
+  each item's `last_tested_on`, `cycle_due` and source, and each test's
+  `test_type`. The population CSV adds `last_tested_on`, `cycle_due`,
+  `source_kind` and `source_ref`; the tests CSV adds `test_type`.
 - has `seed` only once every quarter is drawn or the plan is closed, as on the
   page; `seed_commitment` is always there.
 
@@ -964,8 +1106,15 @@ The limitations state:
 - that sampling gives reasonable, not absolute, assurance
 - that results not signed off by QA are provisional
 
-The annual's limitations add that the conclusion does not replace the
-resilience testing programme or internal audit's work.
+The annual's limitations add that the conclusion does not replace the work of
+the other assurance plans, such as resilience testing, or of internal audit. A
+plan without sampling says that every item due is tested rather than sampled,
+and the source of coverage follows the plan's basis.
+
+On the tests basis the annual's coverage table reads "Tested and signed off",
+"In cycle" and "Covered" in place of the attestation columns. A plan with two
+or more test types adds a "Tests by type" table: each type's tests opened,
+signed off by QA, and with a fail.
 
 **Samples**
 
@@ -1005,7 +1154,8 @@ started**, then gives:
 - the plan's stage (mobilisation, Q1 to Q4 of the period, after the period
   ends)
 - each quarter's dates, marking the current quarter
-- coverage against plan per stratum and quarter, with RAG
+- coverage against plan per stratum and quarter, with RAG, on the plan's
+  coverage basis (attested, or tested and signed off, and in cycle)
 - testing per quarter
 - the steps past their end date, and the steps under way or starting within
   30 days
@@ -1020,7 +1170,8 @@ started**, then gives:
 - a finding is overdue
 
 The record's fields carry the same figures for counting: `current_quarter`,
-`behind_plan`, `coverage_<stratum>_pct`, `tests_planned`, `tests_opened`,
+`behind_plan`, `coverage_<stratum>_pct` (the share covered on the plan's
+basis), `tests_planned`, `tests_opened`,
 `tests_signed_off`, `attribute_fails`, `not_effective`, `findings_open` and
 `findings_overdue`. The plan kind has a compact index.
 
@@ -1081,6 +1232,9 @@ Rules for every output:
   An older backup restores with it blank.
 - Phase 4's `assurance_plan_basis` joins version 16 too, `idKeyed` and
   `skipInSync`, for the same reason: no build with the module has been released.
+- Phase 5's columns join the snapshot's column lists at version 16 too. A
+  snapshot without them restores with each column's default: attestation
+  basis, no test types, no source, no cycle.
 - The tables are excluded from `-sync-to` / `-sync-from` for the same reason as
   crisis exercises and Audit Findings: each plan is a tree of rows joined by
   autoincrement ids. To move plans between deployments, use the snapshot
@@ -1091,7 +1245,8 @@ Rules for every output:
 - IIA, Global Internal Audit Standards (2024): Standards 9.4 (Internal Audit Plan), 9.5, 11.3, 13.x (engagement planning), 14.3 (evaluation of findings), 14.6 (engagement documentation), 15.2 (confirming implementation)
 - AICPA, Audit Guide: *Audit Sampling* (attribute sampling, sample-size tables for tests of controls)
 - ISACA, IS Audit and Assurance Guideline 2208 *Sampling*; ISACA IT Assurance Framework (ITAF)
-- Regulation (EU) 2022/2554 (DORA): Art. 5 (governance and organisation), Art. 6 (ICT risk management framework; 6(4) control function independence, 6(5) annual review), Art. 8 (identification; 8(1) inventory and classification, 8(4) CIF mapping), Art. 24 (general requirements for testing), Art. 25 (testing of ICT tools and systems)
+- Regulation (EU) 2022/2554 (DORA): Art. 5 (governance and organisation; 5(2)(b) policies), Art. 6 (ICT risk management framework; 6(4) control function independence, 6(5) annual review, 6(7) follow-up of audit findings), Art. 8 (identification; 8(1) inventory and classification, 8(2)–(3) risk assessment, 8(4) CIF mapping), Art. 9(4)(a) (information security policy), Art. 11(6) (testing of business continuity and response and recovery plans), Art. 24 (general requirements for testing), Art. 25 (testing of ICT tools and systems), Art. 26 (advanced testing based on TLPT)
+- ISO/IEC 27001:2022 Annex A 5.1 (policies for information security: reviewed at planned intervals)
 - Commission Delegated Regulation (EU) 2024/1774 (RTS on ICT risk management framework): Arts. 2–27, in particular Art. 2(2)(c), Arts. 4–5 (ICT asset management) and Art. 27 (report on the ICT risk management framework review)
 - NIST SP 800-53A Rev. 5, *Assessing Security and Privacy Controls in Information Systems and Organizations*: assessment methods (examine, interview, test) and objects
 - NIST SP 800-53 Rev. 5: control identifiers referenced by test attributes

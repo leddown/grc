@@ -56,6 +56,7 @@ var planColumnList = []string{
 	"status", "revision", "revision_status", "revision_author", "change_reason",
 	"author", "approved_by", "approved_at", "activated_at", "closed_at",
 	"selection_seed", "non_working_dates", "raci_roles",
+	"test_types", "coverage_basis", "population_source",
 	"tester_fte", "days_per_fte_quarter", "utilisation_threshold", "rag_amber_points",
 	"result_partial_min", "result_ineffective_min", "deviation_extend_at", "deviation_thematic_at",
 	"extend_pct", "evidence_sla_days",
@@ -80,6 +81,14 @@ func planArgs(p Plan) ([]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode raci roles: %w", err)
 	}
+	types := p.TestTypes
+	if types == nil {
+		types = []string{}
+	}
+	typesJSON, err := json.Marshal(types)
+	if err != nil {
+		return nil, fmt.Errorf("encode test types: %w", err)
+	}
 	pr := p.Parameters
 	return []any{
 		p.Reference, p.Title, p.PlanType, p.FunctionName, p.ClientProfileID,
@@ -89,6 +98,7 @@ func planArgs(p Plan) ([]any, error) {
 		p.Status, p.Revision, p.RevisionStatus, p.RevisionAuthor, p.ChangeReason,
 		p.Author, p.ApprovedBy, p.ApprovedAt, p.ActivatedAt, p.ClosedAt,
 		p.SelectionSeed, p.NonWorkingDates, string(rolesJSON),
+		string(typesJSON), firstNonEmpty(p.CoverageBasis, CoverageAttestation), p.PopulationSource,
 		pr.TesterFTE, pr.DaysPerFTEQuarter, pr.UtilisationThreshold, pr.RAGAmberPoints,
 		pr.ResultPartialMin, pr.ResultIneffectiveMin, pr.DeviationExtendAt, pr.DeviationThematicAt,
 		pr.ExtendPct, pr.EvidenceSLADays,
@@ -101,7 +111,7 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanPlan(s scanner, extra ...any) (Plan, error) {
 	var p Plan
-	var roles string
+	var roles, types string
 	var ai int
 	pr := &p.Parameters
 	dest := []any{
@@ -113,6 +123,7 @@ func scanPlan(s scanner, extra ...any) (Plan, error) {
 		&p.Status, &p.Revision, &p.RevisionStatus, &p.RevisionAuthor, &p.ChangeReason,
 		&p.Author, &p.ApprovedBy, &p.ApprovedAt, &p.ActivatedAt, &p.ClosedAt,
 		&p.SelectionSeed, &p.NonWorkingDates, &roles,
+		&types, &p.CoverageBasis, &p.PopulationSource,
 		&pr.TesterFTE, &pr.DaysPerFTEQuarter, &pr.UtilisationThreshold, &pr.RAGAmberPoints,
 		&pr.ResultPartialMin, &pr.ResultIneffectiveMin, &pr.DeviationExtendAt, &pr.DeviationThematicAt,
 		&pr.ExtendPct, &pr.EvidenceSLADays,
@@ -127,6 +138,12 @@ func scanPlan(s scanner, extra ...any) (Plan, error) {
 	if roles != "" {
 		if err := json.Unmarshal([]byte(roles), &p.RACIRoles); err != nil {
 			return Plan{}, fmt.Errorf("decode raci roles of %s: %w", p.Reference, err)
+		}
+	}
+	p.TestTypes = []string{}
+	if types != "" {
+		if err := json.Unmarshal([]byte(types), &p.TestTypes); err != nil {
+			return Plan{}, fmt.Errorf("decode test types of %s: %w", p.Reference, err)
 		}
 	}
 	return p, nil

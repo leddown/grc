@@ -55,6 +55,9 @@ type templatePlan struct {
 	NonWorkingDates    string      `json:"non_working_dates"`
 	RACIRoles          []string    `json:"raci_roles"`
 	Parameters         *Parameters `json:"parameters"`
+	TestTypes          []string    `json:"test_types"`
+	CoverageBasis      string      `json:"coverage_basis"`
+	PopulationSource   string      `json:"population_source"`
 }
 
 type templateQuarters struct {
@@ -196,6 +199,9 @@ func instantiate(t PlanTemplate, periodStart, periodEnd string, now time.Time) (
 		NonWorkingDates:    t.Plan.NonWorkingDates,
 		RACIRoles:          slices.Clone(t.Plan.RACIRoles),
 		Parameters:         DefaultParameters(),
+		TestTypes:          slices.Clone(t.Plan.TestTypes),
+		CoverageBasis:      firstNonEmpty(t.Plan.CoverageBasis, CoverageAttestation),
+		PopulationSource:   t.Plan.PopulationSource,
 	}
 	if t.Plan.Parameters != nil {
 		p.Parameters = *t.Plan.Parameters

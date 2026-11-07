@@ -84,18 +84,22 @@ func planItem(id int64, e PlanExport, today string) knowledge.Item {
 	line("Owner %s; accountable %s; approved by the %s.", e.OwnerRole, e.AccountableRole, firstNonEmpty(e.ApprovalForum, "approval forum"))
 
 	line("\nQuarterly cycle:")
+	tests := "sample of %d test(s) drawn"
+	if drawWord(e.Strata) == "selected" {
+		tests = "%d test(s) selected"
+	}
 	for _, q := range e.Quarters {
 		marker := ""
 		if q.Quarter == cur {
 			marker = " (current quarter)"
 		}
-		line("Q%d%s: 1LoD wave of %d item(s) due %s; sample of %d test(s) drawn %s; fieldwork %s; findings agreed by %s; report %s; committee %s.",
+		line("Q%d%s: 1LoD wave of %d item(s) due %s; "+tests+" %s; fieldwork %s; findings agreed by %s; report %s; committee %s.",
 			q.Quarter, marker, q.ReviewsDue, q.LOD1Deadline, q.PlannedTests, q.SelectionDate, displayRange(q.FieldworkStart, q.FieldworkEnd),
 			q.FindingsAgreedBy, q.ReportDate, firstNonEmpty(q.CommitteeLabel, "—"))
 	}
 
 	var behind []string
-	line("\nCoverage against plan (attested by each quarter end, cumulative):")
+	line("\nCoverage against plan (%s by each quarter end, cumulative):", coverageWord(e.CoverageBasis))
 	for _, c := range e.Coverage {
 		cells := []string{}
 		for i, cell := range c.Cells {
@@ -104,9 +108,9 @@ func planItem(id int64, e PlanExport, today string) knowledge.Item {
 				behind = append(behind, fmt.Sprintf("%s coverage %s at Q%d end (%s%% against %s%%)", c.Name, cell.RAG, i+1, formatNumber(cell.ActualPct), formatNumber(cell.PlannedPct)))
 			}
 		}
-		line("%s (%s, %d items): %s. Attested to date %d (%s%%), data quality accepted %d.", c.Name, c.Code, c.N, strings.Join(cells, "; "),
-			c.Attested, formatNumber(c.AttestedPct), c.DQAccepted)
-		fields["coverage_"+strings.ToLower(c.Code)+"_pct"] = formatNumber(c.AttestedPct)
+		line("%s (%s, %d items): %s. Covered to date %d (%s%%); attested %d, tested %d, inside a multi-year cycle %d, data quality accepted %d.",
+			c.Name, c.Code, c.N, strings.Join(cells, "; "), c.Covered, formatNumber(c.CoveredPct), c.Attested, c.Tested, c.InCycle, c.DQAccepted)
+		fields["coverage_"+strings.ToLower(c.Code)+"_pct"] = formatNumber(c.CoveredPct)
 	}
 
 	line("\nTesting by quarter:")
@@ -243,8 +247,12 @@ func testItems(id int64, e PlanExport) []knowledge.Item {
 			failedText = "failed " + strings.Join(failed, ", ")
 		}
 		summary := fmt.Sprintf("%s Q%d, %s, %s %s: %s, %s, %s.", e.Reference, t.Quarter, stratum, t.ItemRef, t.ItemName, firstNonEmpty(t.Overall, "Not started"), failedText, qa)
-		body := fmt.Sprintf("Test %s of assurance plan %s (%s), Q%d. Item %s %s, stratum %s (%s)%s. Selected as %s. Tester %s; evidence requested %s, due %s, received %s; fieldwork completed %s; %s.\nResult: %s, %d pass, %d fail, %d not applicable, %d pending.\n%s\nAttribute results:\n%s",
-			t.TestRef, e.Reference, e.Title, t.Quarter, t.ItemRef, t.ItemName, stratum, t.Stratum, itemNote(it), firstNonEmpty(t.Basis, "—"),
+		typed := ""
+		if t.TestType != "" {
+			typed = " (" + t.TestType + ")"
+		}
+		body := fmt.Sprintf("Test %s%s of assurance plan %s (%s), Q%d. Item %s %s, stratum %s (%s)%s. Selected as %s. Tester %s; evidence requested %s, due %s, received %s; fieldwork completed %s; %s.\nResult: %s, %d pass, %d fail, %d not applicable, %d pending.\n%s\nAttribute results:\n%s",
+			t.TestRef, typed, e.Reference, e.Title, t.Quarter, t.ItemRef, t.ItemName, stratum, t.Stratum, itemNote(it), firstNonEmpty(t.Basis, "—"),
 			firstNonEmpty(t.Tester, "—"), firstNonEmpty(t.EvidenceRequestedOn, "—"), firstNonEmpty(t.EvidenceDueOn, "—"), firstNonEmpty(t.EvidenceReceivedOn, "—"),
 			firstNonEmpty(t.FieldworkCompletedOn, "—"), qa, firstNonEmpty(t.Overall, "Not started"), t.Passes, t.Fails, t.NotApplicable, t.Pending,
 			firstNonEmpty(t.EvidenceSummary, ""), strings.Join(lines, "\n"))
@@ -259,7 +267,7 @@ func testItems(id int64, e PlanExport) []knowledge.Item {
 			Fields: map[string]string{"plan": e.Reference, "quarter": strconv.Itoa(t.Quarter), "stratum": t.Stratum, "stratum_name": stratum,
 				"item_ref": t.ItemRef, "item_name": t.ItemName, "cif": it.CIF, "business_line": it.BusinessLine, "overall": t.Overall,
 				"fails": strconv.Itoa(t.Fails), "failed_attributes": strings.Join(failed, ", "), "findings": strings.Join(findings, ", "),
-				"qa_date": t.QADate, "evidence_late": late},
+				"qa_date": t.QADate, "evidence_late": late, "test_type": t.TestType},
 			URL: "/assurance-plans/" + strconv.FormatInt(id, 10) + "#tests",
 		})
 	}

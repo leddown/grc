@@ -63,6 +63,7 @@ func packOf(e PlanExport, today string) PackPayload {
 		mob.Lines = append(mob.Lines, "Confirm scope, population, sampling and resourcing")
 	}
 	x.Roadmap = append(x.Roadmap, mob)
+	drawn := drawWord(e.Strata)
 	for _, q := range e.Quarters {
 		start := ""
 		if t, ok := parseDate(e.PeriodStart); ok {
@@ -70,10 +71,14 @@ func packOf(e PlanExport, today string) PackPayload {
 		}
 		card := RoadmapCard{Label: "Q" + strconv.Itoa(q.Quarter), Period: displayRange(start, q.QuarterEnd), Lines: []string{}}
 		if q.ReviewsDue > 0 {
-			card.Lines = append(card.Lines, fmt.Sprintf("1LoD wave: %d item(s) attested by %s", q.ReviewsDue, displayDate(q.LOD1Deadline)))
+			if e.CoverageBasis == CoverageTests {
+				card.Lines = append(card.Lines, fmt.Sprintf("Wave: %d item(s) due, 1LoD deadline %s", q.ReviewsDue, displayDate(q.LOD1Deadline)))
+			} else {
+				card.Lines = append(card.Lines, fmt.Sprintf("1LoD wave: %d item(s) attested by %s", q.ReviewsDue, displayDate(q.LOD1Deadline)))
+			}
 		}
 		if q.PlannedTests > 0 {
-			card.Lines = append(card.Lines, fmt.Sprintf("2LoD: %d test(s), drawn %s", q.PlannedTests, displayDate(q.SelectionDate)))
+			card.Lines = append(card.Lines, fmt.Sprintf("2LoD: %d test(s), %s %s", q.PlannedTests, drawn, displayDate(q.SelectionDate)))
 		}
 		for _, st := range e.Steps {
 			if st.StepType == StepMilestone && st.Quarter == 0 && st.EndDate >= start && st.EndDate <= q.QuarterEnd && start != "" {
@@ -333,6 +338,7 @@ func quarterReport(e PlanExport, q int, findings []ReportFinding, today string) 
 	summary = append(summary, fmt.Sprintf("This is the Q%d progress report on %s, %s, to the %s. It covers %s and reflects the plan's records on %s.",
 		q, e.Reference, e.Title, firstNonEmpty(e.ApprovalForum, "approval forum"), r.Period, displayDate(today)))
 
+	word := coverageWord(e.CoverageBasis)
 	covRows := [][]string{}
 	for _, c := range e.Coverage {
 		cell := c.Cells[q-1]
@@ -342,19 +348,19 @@ func quarterReport(e PlanExport, q int, findings []ReportFinding, today string) 
 				dq++
 			}
 		}
-		covRows = append(covRows, []string{c.Name, strconv.Itoa(c.N), formatNumber(cell.PlannedPct) + "%", strconv.Itoa(cell.Attested),
+		covRows = append(covRows, []string{c.Name, strconv.Itoa(c.N), formatNumber(cell.PlannedPct) + "%", strconv.Itoa(cell.Covered),
 			formatNumber(cell.ActualPct) + "%", cell.RAG, strconv.Itoa(dq)})
 		if c.N > 0 {
-			line := fmt.Sprintf("%s: %d of %d items attested by %s, %s%% against a plan of %s%% (%s).", c.Name, cell.Attested, c.N,
+			line := fmt.Sprintf("%s: %d of %d items %s by %s, %s%% against a plan of %s%% (%s).", c.Name, cell.Covered, c.N, word,
 				displayDate(cell.QuarterEnd), formatNumber(cell.ActualPct), formatNumber(cell.PlannedPct), cell.RAG)
 			r.KeyMessages = append(r.KeyMessages, line)
 		}
 	}
 	r.Sections = append(r.Sections, ReportSection{Heading: "Coverage against plan",
-		Body: "1LoD asset owners attest their items in quarterly waves, and 2LoD reviews the data quality of every submission. The plan sets a cumulative target for each stratum at each quarter end; the RAG compares it with the share attested by that date: Green on or above plan, Amber within " +
-			formatNumber(e.Parameters.RAGAmberPoints) + " points below, Red further below, Not due before the quarter ends. Attested and DQ accepted count the items dated on or before the quarter end.",
+		Body: coverageMethod(e.CoverageBasis, cycleIn(e.Strata)) + " The plan sets a cumulative target for each stratum at each quarter end; the RAG compares it with the share " + word + " by that date: Green on or above plan, Amber within " +
+			formatNumber(e.Parameters.RAGAmberPoints) + " points below, Red further below, Not due before the quarter ends. " + upperFirst(word) + " and DQ accepted count the items dated on or before the quarter end.",
 		Tables: []ReportTable{{Caption: fmt.Sprintf("Coverage at the end of Q%d", q),
-			Columns: []string{"Stratum", "N", "Target", "Attested", "Share", "RAG", "DQ accepted"}, Rows: covRows}}})
+			Columns: []string{"Stratum", "N", "Target", upperFirst(word), "Share", "RAG", "DQ accepted"}, Rows: covRows}}})
 
 	var tr TestingRow
 	if q-1 < len(e.Testing) {
@@ -409,8 +415,12 @@ func quarterReport(e PlanExport, q int, findings []ReportFinding, today string) 
 	next := "The annual conclusion goes to the " + firstNonEmpty(e.ApprovalForum, "approval forum") + " on " + firstNonEmpty(displayDate(e.ClosingDate), "the closing date") + "."
 	if q < 4 {
 		n := e.Quarters[slices.IndexFunc(e.Quarters, func(x ExportQuarter) bool { return x.Quarter == q+1 })]
-		next = fmt.Sprintf("Q%d: the 1LoD wave is due by %s, the sample is drawn on %s, fieldwork runs %s and the report is due on %s.",
-			q+1, displayDate(n.LOD1Deadline), displayDate(n.SelectionDate), displayRange(n.FieldworkStart, n.FieldworkEnd), displayDate(n.ReportDate))
+		what := "the sample is drawn"
+		if drawWord(e.Strata) == "selected" {
+			what = "the wave is selected"
+		}
+		next = fmt.Sprintf("Q%d: the 1LoD wave is due by %s, %s on %s, fieldwork runs %s and the report is due on %s.",
+			q+1, displayDate(n.LOD1Deadline), what, displayDate(n.SelectionDate), displayRange(n.FieldworkStart, n.FieldworkEnd), displayDate(n.ReportDate))
 	}
 	r.Sections = append(r.Sections, ReportSection{Heading: "Next quarter", Body: next, Tables: []ReportTable{}})
 
@@ -433,14 +443,28 @@ func annualReport(e PlanExport, findings []ReportFinding, today string) ReportPa
 	r.Findings = findings
 
 	popRows := [][]string{}
+	objective := "The year's objective is every item of every stratum attested by its 1LoD owner and its data quality accepted by 2LoD."
+	columns := []string{"Stratum", "N", "Attested", "DQ accepted"}
+	if e.CoverageBasis == CoverageTests {
+		objective = "The year's objective is every item due in the period tested, with the test signed off by QA. " + coverageMethod(e.CoverageBasis, cycleIn(e.Strata))
+		columns = []string{"Stratum", "N", "Tested and signed off", "In cycle", "Covered"}
+	}
 	for _, c := range e.Coverage {
+		if e.CoverageBasis == CoverageTests {
+			popRows = append(popRows, []string{c.Name, strconv.Itoa(c.N), strconv.Itoa(c.Tested), strconv.Itoa(c.InCycle),
+				fmt.Sprintf("%d (%s%%)", c.Covered, formatNumber(c.CoveredPct))})
+			continue
+		}
 		popRows = append(popRows, []string{c.Name, strconv.Itoa(c.N), fmt.Sprintf("%d (%s%%)", c.Attested, formatNumber(c.AttestedPct)),
 			fmt.Sprintf("%d (%s%%)", c.DQAccepted, formatNumber(c.DQPct))})
 	}
+	tables := []ReportTable{{Caption: "Coverage achieved", Columns: columns, Rows: popRows}}
+	if byType := testsByType(e); len(byType.Rows) > 0 {
+		tables = append(tables, byType)
+	}
 	r.Sections = append(r.Sections, ReportSection{Heading: "Population and coverage",
-		Body: fmt.Sprintf("The population is the %d item(s) in scope%s. The year's objective is every item of every stratum attested by its 1LoD owner and its data quality accepted by 2LoD.",
-			e.Totals.PopulationSize, frozenNote(e.PopulationFrozenAt)),
-		Tables: []ReportTable{{Caption: "Coverage achieved", Columns: []string{"Stratum", "N", "Attested", "DQ accepted"}, Rows: popRows}}})
+		Body:   fmt.Sprintf("The population is the %d item(s) in scope%s. %s", e.Totals.PopulationSize, frozenNote(e.PopulationFrozenAt), objective),
+		Tables: tables})
 
 	testRows := [][]string{}
 	for _, t := range e.Testing {
@@ -496,7 +520,11 @@ func annualReport(e PlanExport, findings []ReportFinding, today string) ReportPa
 	summary = append(summary, conclusion...)
 	r.ExecutiveSummary = strings.Join(summary, "\n\n")
 	for _, c := range e.Coverage {
-		if c.N > 0 {
+		switch {
+		case c.N == 0:
+		case e.CoverageBasis == CoverageTests:
+			r.KeyMessages = append(r.KeyMessages, fmt.Sprintf("%s: %d of %d items covered (%s%%), %d tested this year and %d inside their cycle.", c.Name, c.Covered, c.N, formatNumber(c.CoveredPct), c.Tested, c.InCycle))
+		default:
 			r.KeyMessages = append(r.KeyMessages, fmt.Sprintf("%s: %d of %d items attested (%s%%), %d with data quality accepted.", c.Name, c.Attested, c.N, formatNumber(c.AttestedPct), c.DQAccepted))
 		}
 	}
@@ -586,6 +614,8 @@ func deviationSection(e PlanExport, heading string) (ReportSection, []string) {
 			next = "Risk " + d.RiskRef + " raised"
 		case d.Kind == KindNotEffective:
 			next = "Thematic finding to raise"
+		case d.Kind == KindExtend && d.FullCoverage:
+			next = "Findings raised on each fail"
 		case d.Kind == KindExtend && d.ExtendQuarter > 0:
 			next = fmt.Sprintf("+%d test(s) in Q%d", d.ExtendBy, d.ExtendQuarter)
 		case d.Kind == KindExtend:
@@ -634,13 +664,92 @@ func limitations(e PlanExport, today string, annual bool) string {
 	parts := []string{
 		fmt.Sprintf("This report is prepared by the %s for the %s, from the records of assurance plan %s as they stood on %s. It does not reflect changes made after that date.",
 			firstNonEmpty(e.FunctionName, "control function"), forum, e.Reference, displayDate(today)),
-		"Coverage is measured from the attestation and data-quality review dates recorded in the plan. Testing is on samples, which gives reasonable rather than absolute assurance; results not signed off by QA are provisional.",
+		"Coverage is measured from the " + coverageSource(e.CoverageBasis) + " recorded in the plan. " + testingBasis(e.Strata) +
+			" Results not signed off by QA are provisional.",
 		"Findings are reported as Audit Findings holds them on the report date; their remediation is followed up there.",
 	}
 	if annual {
-		parts = append(parts, "The conclusion is the control function's on the tests performed. It is not an opinion on the design or operation of controls outside the plan's scope, and it does not replace the resilience testing programme or internal audit's work.")
+		parts = append(parts, "The conclusion is the control function's on the tests performed. It is not an opinion on the design or operation of controls outside the plan's scope, and it does not replace the work of the other assurance plans, such as resilience testing, or of internal audit.")
 	}
 	return strings.Join(parts, " ")
+}
+
+func coverageSource(basis string) string {
+	if basis == CoverageTests {
+		return "QA sign-off dates of the tests and the last-test dates"
+	}
+	return "attestation and data-quality review dates"
+}
+
+// testingBasis says what assurance the tests give: a sample gives reasonable
+// assurance; full coverage tests every item due, which is still not absolute.
+func testingBasis(strata []ExportStratum) string {
+	sampled := slices.ContainsFunc(strata, func(st ExportStratum) bool { return st.SamplingEnabled })
+	full := slices.ContainsFunc(strata, func(st ExportStratum) bool { return !st.SamplingEnabled })
+	switch {
+	case sampled && full:
+		return "Sampled strata give reasonable rather than absolute assurance; full-coverage strata test every item due, on the evidence produced."
+	case full:
+		return "Every item due is tested, on the evidence produced; that gives reasonable rather than absolute assurance."
+	}
+	return "Testing is on samples, which gives reasonable rather than absolute assurance."
+}
+
+// drawWord is how a quarter's tests are chosen: drawn as a sample, or, when
+// no stratum samples, selected as the whole wave.
+func drawWord(strata []ExportStratum) string {
+	if slices.ContainsFunc(strata, func(st ExportStratum) bool { return st.SamplingEnabled }) {
+		return "drawn"
+	}
+	return "selected"
+}
+
+func cycleIn(strata []ExportStratum) bool {
+	return slices.ContainsFunc(strata, func(st ExportStratum) bool { return st.CycleYears > 1 })
+}
+
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// testsByType counts the year's tests by type, for a plan that runs more than
+// one kind (a resilience testing programme).
+func testsByType(e PlanExport) ReportTable {
+	t := ReportTable{Caption: "Tests by type", Columns: []string{"Test type", "Opened", "Signed off by QA", "With a fail"}, Rows: [][]string{}}
+	if len(e.TestTypes) < 2 {
+		return t
+	}
+	type count struct{ opened, signed, failed int }
+	counts := map[string]*count{}
+	var order []string
+	for _, typ := range e.TestTypes {
+		counts[typ] = &count{}
+		order = append(order, typ)
+	}
+	for _, x := range e.Tests {
+		typ := firstNonEmpty(x.TestType, "Not set")
+		c, ok := counts[typ]
+		if !ok {
+			c = &count{}
+			counts[typ] = c
+			order = append(order, typ)
+		}
+		c.opened++
+		if x.QADate != "" {
+			c.signed++
+		}
+		if x.Fails > 0 {
+			c.failed++
+		}
+	}
+	for _, typ := range order {
+		c := counts[typ]
+		t.Rows = append(t.Rows, []string{typ, strconv.Itoa(c.opened), strconv.Itoa(c.signed), strconv.Itoa(c.failed)})
+	}
+	return t
 }
 
 func isAre(n int) string {

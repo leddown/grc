@@ -291,6 +291,21 @@ func (s *Service) UpdateHeader(id int64, in Plan, actor string) (Plan, error) {
 	if in.Parameters != (Parameters{}) {
 		next.Parameters = in.Parameters
 	}
+	// The plan type's settings are kept when the request leaves them out;
+	// "none" clears the population source.
+	if in.TestTypes != nil {
+		next.TestTypes = in.TestTypes
+	}
+	if strings.TrimSpace(in.CoverageBasis) != "" {
+		next.CoverageBasis = in.CoverageBasis
+	}
+	switch v := strings.TrimSpace(in.PopulationSource); v {
+	case "":
+	case "none":
+		next.PopulationSource = ""
+	default:
+		next.PopulationSource = v
+	}
 	if err := normalizeHeader(&next); err != nil {
 		return Plan{}, err
 	}
@@ -328,6 +343,9 @@ func headerChanges(a, b Plan) []string {
 	cmp("accountable role", a.AccountableRole, b.AccountableRole)
 	cmp("approval forum", a.ApprovalForum, b.ApprovalForum)
 	cmp("non-working dates", a.NonWorkingDates, b.NonWorkingDates)
+	cmp("test types", strings.Join(a.TestTypes, ", "), strings.Join(b.TestTypes, ", "))
+	cmp("coverage basis", a.CoverageBasis, b.CoverageBasis)
+	cmp("population source", firstNonEmpty(a.PopulationSource, "none"), firstNonEmpty(b.PopulationSource, "none"))
 	if a.Parameters != b.Parameters {
 		pa, _ := json.Marshal(a.Parameters)
 		pb, _ := json.Marshal(b.Parameters)
@@ -693,7 +711,51 @@ func normalizeHeader(p *Plan) error {
 	if p.ClientProfileID < 0 {
 		p.ClientProfileID = 0
 	}
+	if err := normalizePlanType(p); err != nil {
+		return err
+	}
 	return validateParameters(p.Parameters)
+}
+
+const (
+	maxTestType  = 60
+	maxTestTypes = 20
+)
+
+// normalizePlanType checks the settings a plan type seeds: the test types,
+// the coverage basis and the population source.
+func normalizePlanType(p *Plan) error {
+	types := []string{}
+	seen := map[string]bool{}
+	for _, t := range p.TestTypes {
+		t = strings.TrimSpace(t)
+		switch {
+		case t == "":
+			continue
+		case len(t) > maxTestType:
+			return invalid("test type %q is longer than %d characters", clip(t, 20), maxTestType)
+		case seen[strings.ToLower(t)]:
+			continue
+		}
+		seen[strings.ToLower(t)] = true
+		types = append(types, t)
+	}
+	if len(types) > maxTestTypes {
+		return invalid("a plan has at most %d test types", maxTestTypes)
+	}
+	p.TestTypes = types
+	p.CoverageBasis = strings.ToLower(strings.TrimSpace(p.CoverageBasis))
+	if p.CoverageBasis == "" {
+		p.CoverageBasis = CoverageAttestation
+	}
+	if !slices.Contains(CoverageBases, p.CoverageBasis) {
+		return invalid("the coverage basis is %s", strings.Join(CoverageBases, " or "))
+	}
+	p.PopulationSource = strings.ToLower(strings.TrimSpace(p.PopulationSource))
+	if p.PopulationSource != "" && !slices.Contains(PopulationSources, p.PopulationSource) {
+		return invalid("the population source is %s, or none", strings.Join(PopulationSources, " or "))
+	}
+	return nil
 }
 
 func validateParameters(pr Parameters) error {
@@ -1195,9 +1257,24 @@ func (s *Service) Clone(id int64, title, actor string) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
+	tests, err := s.repo.Tests(id)
+	if err != nil {
+		return Plan{}, err
+	}
+	signedOff := map[int64]string{}
+	for _, t := range tests {
+		if t.QADate != "" && t.QADate > signedOff[t.ItemID] {
+			signedOff[t.ItemID] = t.QADate
+		}
+	}
 	pop := make([]PopulationItem, len(srcPop))
 	for i, it := range srcPop {
 		pop[i] = designOf(it)
+		// This year's signed-off test is next year's last test, which is
+		// what moves a multi-year cycle on.
+		if d := signedOff[it.ID]; d > pop[i].LastTestedOn {
+			pop[i].LastTestedOn = d
+		}
 	}
 	note := "cloned from " + src.Reference
 	if c.NonWorkingDates != "" {
@@ -1214,7 +1291,7 @@ func (s *Service) Clone(id int64, title, actor string) (Plan, error) {
 func designOf(it PopulationItem) PopulationItem {
 	return PopulationItem{ItemRef: it.ItemRef, Name: it.Name, StratumCode: it.StratumCode, CIF: it.CIF,
 		BusinessLine: it.BusinessLine, Hosting: it.Hosting, InternetFacing: it.InternetFacing, Owner: it.Owner,
-		WaveQuarter: it.WaveQuarter, SourceKind: it.SourceKind, SourceRef: it.SourceRef}
+		WaveQuarter: it.WaveQuarter, LastTestedOn: it.LastTestedOn, SourceKind: it.SourceKind, SourceRef: it.SourceRef}
 }
 
 func shiftYear(d string) string {

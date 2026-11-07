@@ -24,7 +24,7 @@
   "sections": [
     {
       "heading": "Coverage against plan",
-      "body": "1LoD asset owners attest their items in quarterly waves, and 2LoD reviews the data quality of every submission. The plan sets a cumulative target for each stratum at each quarter end; the RAG compares it with the share attested by that date: Green on or above plan, Amber within 10 points below, Red further below, Not due before the quarter ends. Attested and DQ accepted count the items dated on or before the quarter end.",
+      "body": "1LoD owners attest their items in quarterly waves, and 2LoD reviews the data quality of every submission. An item counts as covered on its attestation date. The plan sets a cumulative target for each stratum at each quarter end; the RAG compares it with the share attested by that date: Green on or above plan, Amber within 10 points below, Red further below, Not due before the quarter ends. Attested and DQ accepted count the items dated on or before the quarter end.",
       "tables": [
         {
           "caption": "Coverage at the end of Q1",
@@ -401,5 +401,5 @@
       ]
     }
   ],
-  "limitations": "This report is prepared by the 2LoD CISO Office (ICT risk control function) for the ICT Risk Committee, from the records of assurance plan AP-2027-001 as they stood on 12 Apr 2027. It does not reflect changes made after that date. Coverage is measured from the attestation and data-quality review dates recorded in the plan. Testing is on samples, which gives reasonable rather than absolute assurance; results not signed off by QA are provisional. Findings are reported as Audit Findings holds them on the report date; their remediation is followed up there."
+  "limitations": "This report is prepared by the 2LoD CISO Office (ICT risk control function) for the ICT Risk Committee, from the records of assurance plan AP-2027-001 as they stood on 12 Apr 2027. It does not reflect changes made after that date. Coverage is measured from the attestation and data-quality review dates recorded in the plan. Testing is on samples, which gives reasonable rather than absolute assurance. Results not signed off by QA are provisional. Findings are reported as Audit Findings holds them on the report date; their remediation is followed up there."
 }

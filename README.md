@@ -68,9 +68,10 @@ package and how a request is served. In short:
   snapshot
 - `internal/auditfinding` — Audit Findings & Remediation (see
   [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md))
-- `internal/assuranceplan` — Assurance Plans: the second line's annual plans,
-  from plan type to approved version, quarterly cycle and clone for next year,
-  attribute sampling over a pasted scope population and frozen, re-performable
+- `internal/assuranceplan` — Assurance Plans: the second line's annual plans
+  (controls testing, RCSA, policy review, resilience testing, remediation
+  roadmap), from plan type to approved version, quarterly cycle and clone for next year,
+  attribute sampling over a pasted or proposed scope population and frozen, re-performable
   quarterly selections, tests with QA sign-off, findings raised into Audit
   Findings, thematic risks pushed to the risk register, the dashboard, and the
   committee approval pack, quarterly and annual reports and JSON/CSV exports

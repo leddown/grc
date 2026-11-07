@@ -278,14 +278,18 @@ func helpPage(c *gin.Context) {
             <li>On the Sampling tab, set each stratum's confidence, tolerable rate, coverage
               floor, waves and top-ups; the sample sizes, quarterly allocation and capacity follow,
               each with its formula. On the Scope population tab, paste the population as CSV
-              text, preview the changes and apply them. Nothing is uploaded.</li>
+              text, preview the changes and apply them. Nothing is uploaded. A policy review plan
+              proposes its population from the policy library's documents due for review, and a
+              remediation roadmap from the open audit findings; the proposal is previewed like a
+              paste.</li>
             <li>After approval, freeze the population: this records a random seed, shown to
               readers only as its hash until the year's draws are done. Each quarter, select the
               sample: the picks are ranked by a hash of the seed, frozen, and can be re-performed
               from the seed.</li>
             <li>On the Tests tab, open the quarter's tests, record the evidence dates and a Pass,
               Fail or N/A per attribute of the Test script, and have someone other than the tester
-              sign off QA. "Raise finding" turns a Fail into a finding in
+              sign off QA. A plan without sampling (policy review, resilience testing, the
+              roadmap) tests every item due, and its coverage is the tests signed off. "Raise finding" turns a Fail into a finding in
               <a href="/audit-findings">Audit Findings</a>, linked both ways. The Dashboard shows
               coverage against plan, testing progress, the deviation rule per attribute and the
               linked findings; a not-effective attribute can be pushed to the risk register.</li>

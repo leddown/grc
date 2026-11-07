@@ -85,7 +85,13 @@ Risk-based top-ups are tested on top of it. A stratum with sampling off is cover
 				b.WriteString(`<tr><td colspan="12">` + statusPill("Blocking") + ` ` + esc(z.Error) + `</td></tr>`)
 			}
 		}
-		fmt.Fprintf(&b, `</tbody></table></div><p class="ap-legend">%d tests in the year. Coverage is total tests over N.</p>`, v.TotalTests)
+		fmt.Fprintf(&b, `</tbody></table></div><p class="ap-legend">%d tests in the year. Coverage is total tests over N.`, v.TotalTests)
+		for _, z := range v.Strata {
+			if z.CycleYears > 1 {
+				fmt.Fprintf(&b, ` %s runs a %d-year cycle: N counts the items due in the period; %d more are inside their cycle and are not drawn.`, esc(z.Name), z.CycleYears, z.InCycle)
+			}
+		}
+		b.WriteString(`</p>`)
 
 		b.WriteString(`<h2>Quarterly allocation</h2>
 <p class="lede">Cumulative allocation, so the quarters always add up to the year: q<sub>i</sub> = ⌈annual × cum<sub>i</sub>⌉ − ⌈annual × cum<sub>i−1</sub>⌉,
@@ -265,6 +271,15 @@ Top-ups are the items flagged for the quarter, and one that is already a pick is
 	return b.String()
 }
 
+// proposeButton offers the plan's population source, if it has one.
+func proposeButton(p Plan) string {
+	label := map[string]string{SourcePolicies: "Propose from policy documents due for review", SourceFindings: "Propose from open audit findings"}[p.PopulationSource]
+	if label == "" {
+		return ""
+	}
+	return `<button type="button" id="popPropose" data-source="` + esc(p.PopulationSource) + `" title="Fill the box with the proposed population and preview it; nothing is saved until you apply">` + esc(label) + `</button>`
+}
+
 func populationHTML(d planPageData) string {
 	p, v := d.Plan, d.Sampling
 	var b strings.Builder
@@ -284,17 +299,17 @@ func populationHTML(d planPageData) string {
 			accepted[it.StratumCode]++
 		}
 	}
-	b.WriteString(`<div class="table-wrap"><table><thead><tr><th>Stratum</th><th class="num">Wave Q1</th><th class="num">Wave Q2</th><th class="num">Wave Q3</th><th class="num">Wave Q4</th><th class="num">No wave</th><th class="num">Total</th><th class="num">Attested</th><th class="num">DQ accepted</th><th class="num">Selected</th></tr></thead><tbody>`)
+	b.WriteString(`<div class="table-wrap"><table><thead><tr><th>Stratum</th><th class="num">Wave Q1</th><th class="num">Wave Q2</th><th class="num">Wave Q3</th><th class="num">Wave Q4</th><th class="num">No wave</th><th class="num">In cycle</th><th class="num">Total</th><th class="num">Attested</th><th class="num">DQ accepted</th><th class="num">Selected</th></tr></thead><tbody>`)
 	for _, z := range v.Strata {
 		n := 0
 		if z.NSource == "population" {
-			n = z.N
+			n = z.N + z.InCycle
 		}
-		fmt.Fprintf(&b, `<tr><td>%s</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td></tr>`,
-			esc(z.Name), z.WaveCounts[0], z.WaveCounts[1], z.WaveCounts[2], z.WaveCounts[3], z.NoWave, n, attested[z.Code], accepted[z.Code], sum4(z.Selected))
+		fmt.Fprintf(&b, `<tr><td>%s</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td><td class="num">%d</td></tr>`,
+			esc(z.Name), z.WaveCounts[0], z.WaveCounts[1], z.WaveCounts[2], z.WaveCounts[3], z.NoWave, z.InCycle, n, attested[z.Code], accepted[z.Code], sum4(z.Selected))
 	}
 	if len(v.Strata) == 0 {
-		b.WriteString(`<tr><td colspan="10" class="muted">Define the strata on the Sampling tab before loading a population.</td></tr>`)
+		b.WriteString(`<tr><td colspan="11" class="muted">Define the strata on the Sampling tab before loading a population.</td></tr>`)
 	}
 	b.WriteString(`</tbody></table></div>`)
 
@@ -312,7 +327,7 @@ func populationHTML(d planPageData) string {
   <a href="/assurance-plans/` + strconv.FormatInt(p.ID, 10) + `/population.csv">Download CSV</a>
 </div>
 <div id="popEdit"></div>
-<div class="table-wrap" style="max-height:520px"><table class="ap-nowrap"><thead><tr><th>Item</th><th>Name</th><th>Stratum</th><th>CIF</th><th>Business line</th><th>Hosting</th><th>Internet-facing</th><th>Owner</th><th>Wave</th><th>Attested</th><th>DQ status</th><th>DQ reviewed</th><th>Top-up</th><th>Selected</th><th></th></tr></thead><tbody id="popRows"></tbody></table></div>`)
+<div class="table-wrap" style="max-height:520px"><table class="ap-nowrap"><thead><tr><th>Item</th><th>Name</th><th>Stratum</th><th>CIF</th><th>Business line</th><th>Hosting</th><th>Internet-facing</th><th>Owner</th><th>Wave</th><th>Last tested</th><th>Attested</th><th>DQ status</th><th>DQ reviewed</th><th>Top-up</th><th>Selected</th><th>Source</th><th></th></tr></thead><tbody id="popRows"></tbody></table></div>`)
 
 	if p.Status != StatusClosed {
 		b.WriteString(`<fieldset><legend>Load or update the population from CSV text</legend>
@@ -324,7 +339,7 @@ Comma, semicolon or tab separated; dates as YYYY-MM-DD; waves and top-ups as Q1 
 <div class="toolbar">
   <label class="ap-check"><input type="checkbox" id="popMerge"> Keep the items the paste leaves out (otherwise they are removed)</label>
   <span class="spacer"></span>
-  <button type="button" id="popFillCurrent">Fill with the current population</button>
+  ` + proposeButton(p) + `<button type="button" id="popFillCurrent">Fill with the current population</button>
   <button type="button" id="popFillExample" title="A made-up population sized to the strata's planned sizes, spread over the waves">Fill with an example population</button>
   <button type="button" id="popPreview">Preview changes</button>
   <button type="button" class="primary" id="popApply" disabled>Apply</button>
@@ -348,12 +363,14 @@ if (strataHost) {
     effort_per_test: s.effort_per_test, effort_per_review: s.effort_per_review,
     w1: +(s.waves[0] * 100).toFixed(4), w2: +(s.waves[1] * 100).toFixed(4), w3: +(s.waves[2] * 100).toFixed(4), w4: +(s.waves[3] * 100).toFixed(4),
     t1: s.top_ups[0], t2: s.top_ups[1], t3: s.top_ups[2], t4: s.top_ups[3], planned_size: s.planned_size,
+    cycle_years: s.cycle_years || 0, takes: (s.takes || []).join(', '),
   });
   const fromRow = r => ({
     code: r.code, name: r.name, definition: r.definition, sampling_enabled: r.sampling === 'yes',
     confidence: r.confidence / 100, tolerable_rate: r.tolerable / 100, floor_pct: r.floor / 100,
     effort_per_test: r.effort_per_test, effort_per_review: r.effort_per_review,
     waves: [r.w1 / 100, r.w2 / 100, r.w3 / 100, r.w4 / 100], top_ups: [r.t1, r.t2, r.t3, r.t4], planned_size: r.planned_size,
+    cycle_years: r.cycle_years, takes: String(r.takes || '').split(/[,;]/).map(x => x.trim()).filter(Boolean),
   });
   const n = (key, label) => ({ key, label, type: 'number', width: '54px' });
   const sed = editor(strataHost, [
@@ -364,8 +381,9 @@ if (strataHost) {
     n('effort_per_test', 'Effort / test'), n('effort_per_review', 'Effort / review'),
     n('w1', 'Wave Q1 %'), n('w2', 'Wave Q2 %'), n('w3', 'Wave Q3 %'), n('w4', 'Wave Q4 %'),
     n('t1', 'Top-ups Q1'), n('t2', 'Top-ups Q2'), n('t3', 'Top-ups Q3'), n('t4', 'Top-ups Q4'),
-    n('planned_size', 'Planned size'),
-  ], PLAN.strata.map(toRow), () => ({ sampling: 'yes', confidence: 95, tolerable: 5, floor: 0, effort_per_test: 1, effort_per_review: 0.25, w1: 25, w2: 25, w3: 25, w4: 25, t1: 0, t2: 0, t3: 0, t4: 0, planned_size: 0 }));
+    n('planned_size', 'Planned size'), n('cycle_years', 'Cycle (years)'),
+    { key: 'takes', label: 'Takes from the proposal', width: '110px' },
+  ], PLAN.strata.map(toRow), () => ({ sampling: 'yes', confidence: 95, tolerable: 5, floor: 0, effort_per_test: 1, effort_per_review: 0.25, w1: 25, w2: 25, w3: 25, w4: 25, t1: 0, t2: 0, t3: 0, t4: 0, planned_size: 0, cycle_years: 0, takes: '' }));
   document.getElementById('saveStrata').addEventListener('click', () =>
     act('PUT', base + '/strata', sed.rows().map(fromRow), () => { location.hash = 'sampling'; location.reload(); }));
 }
@@ -408,13 +426,19 @@ function drawPopulation() {
   const shown = rows.slice(0, 1000);
   popRows.innerHTML = shown.map(it => '<tr><td>' + h(it.item_ref) + '</td><td>' + h(it.name) + '</td><td>' + h(it.stratum) + '</td><td>' + h(it.cif) +
     '</td><td>' + h(it.business_line) + '</td><td>' + h(it.hosting) + '</td><td>' + (it.internet_facing ? 'Yes' : 'No') + '</td><td>' + h(it.owner) +
-    '</td><td>' + qLabel(it.wave) + '</td><td>' + h(it.attested_on) + '</td><td>' + (it.dq_status ? pill(it.dq_status) : '') + '</td><td>' + h(it.dq_reviewed_on) +
+    '</td><td>' + qLabel(it.wave) + '</td><td>' + h(it.last_tested_on) + '</td><td>' + h(it.attested_on) + '</td><td>' + (it.dq_status ? pill(it.dq_status) : '') + '</td><td>' + h(it.dq_reviewed_on) +
     '</td><td>' + (it.topup_quarter ? qLabel(it.topup_quarter) + ' <span class="muted">' + h(it.topup_rationale) + '</span>' : '') +
     '</td><td>' + (it.selected_quarter ? qLabel(it.selected_quarter) + ' ' + pill(it.selection_basis) : '') +
+    '</td><td>' + sourceLink(it) +
     '</td><td class="ctl">' + (PLAN.status === 'Closed' ? '' : '<button type="button" class="link-btn" data-edit="' + it.id + '" title="Edit ' + h(it.item_ref) + '">Edit</button>') + '</td></tr>').join('') ||
-    '<tr><td colspan="15" class="muted">No items' + (POP.length ? ' match the filters.' : ' yet: paste the population below.') + '</td></tr>';
+    '<tr><td colspan="17" class="muted">No items' + (POP.length ? ' match the filters.' : ' yet: paste the population below.') + '</td></tr>';
   document.getElementById('popCount').textContent = rows.length + ' of ' + POP.length + ' items' + (rows.length > shown.length ? ' (first 1000 shown)' : '');
   popRows.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editItem(POP.find(it => it.id === Number(b.dataset.edit)))));
+}
+function sourceLink(it) {
+  if (it.source_kind === 'policy_document' && /^\d+$/.test(it.source_ref)) return '<a href="/policies/' + it.source_ref + '/view">Policy document</a>';
+  if (it.source_kind === 'audit_finding' && /^\d+$/.test(it.source_ref)) return '<a href="/audit-findings#' + it.source_ref + '">Audit finding</a>';
+  return h([it.source_kind, it.source_ref].filter(Boolean).join(' '));
 }
 function pill(word) { return '<span class="ap-st ap-st-' + String(word).toLowerCase().replace(/[ \/]/g, '-') + '">' + h(word) + '</span>'; }
 filters.forEach(f => f && f.addEventListener('input', drawPopulation));
@@ -452,13 +476,28 @@ if (csvBox) {
   let previewed = null;
   const body = () => ({ csv: csvBox.value, merge: document.getElementById('popMerge').checked });
   const invalidate = () => { previewed = null; applyBtn.disabled = true; };
-  csvBox.addEventListener('input', invalidate);
+  let proposalNote = '';
+  csvBox.addEventListener('input', () => { proposalNote = ''; invalidate(); });
   document.getElementById('popMerge').addEventListener('change', invalidate);
   async function fill(url) {
-    try { const res = await fetch(url); if (!res.ok) throw new Error((await res.json()).error || 'HTTP ' + res.status); csvBox.value = await res.text(); invalidate(); say('Filled. Preview it to see what would change.'); }
+    try { const res = await fetch(url); if (!res.ok) throw new Error((await res.json()).error || 'HTTP ' + res.status); csvBox.value = await res.text(); proposalNote = ''; invalidate(); say('Filled. Preview it to see what would change.'); }
     catch (e) { say(e.message, true); }
   }
   document.getElementById('popFillCurrent').addEventListener('click', () => fill(base + '/population.csv'));
+  const proposeBtn = document.getElementById('popPropose');
+  if (proposeBtn) proposeBtn.addEventListener('click', async () => {
+    try {
+      say('Working out the proposal…');
+      const r = await call('POST', base + '/population/propose?source=' + encodeURIComponent(proposeBtn.dataset.source), {});
+      csvBox.value = r.csv;
+      document.getElementById('popMerge').checked = true;
+      invalidate();
+      proposalNote = '<h3>Proposal: ' + r.items + ' item(s), ' + r.new + ' new</h3>' +
+        (r.notes.length ? '<ul>' + r.notes.map(n => '<li>' + h(n) + '</li>').join('') + '</ul>' : '');
+      diffHost.innerHTML = proposalNote;
+      if (r.items) document.getElementById('popPreview').click(); else say('Nothing to propose.');
+    } catch (e) { say(e.message, true); }
+  });
   document.getElementById('popFillExample').addEventListener('click', () => fill(base + '/population/example.csv'));
   const list = (label, items) => items.length ? '<h3>' + h(label) + ' (' + items.length + ')</h3><p>' + items.slice(0, 60).map(h).join(', ') + (items.length > 60 ? ' … and ' + (items.length - 60) + ' more' : '') + '</p>' : '';
   function showDiff(d) {
@@ -475,7 +514,7 @@ if (csvBox) {
         d.changed.slice(0, 300).map(c => '<tr><td>' + h(c.item_ref) + '</td><td>' + h(c.fields.join('; ')) + '</td></tr>').join('') + '</tbody></table></div>';
     }
     html += '<p class="muted">' + d.unchanged + ' item(s) unchanged.</p>';
-    diffHost.innerHTML = html;
+    diffHost.innerHTML = proposalNote + html;
   }
   document.getElementById('popPreview').addEventListener('click', async () => {
     try {

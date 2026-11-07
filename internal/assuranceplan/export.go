@@ -48,9 +48,12 @@ type PlanExport struct {
 	PopulationFrozenAt string   `json:"population_frozen_at"`
 	SeedCommitment     string   `json:"seed_commitment"`
 	// Seed is present only once every quarter is drawn, as on the page.
-	Seed            string     `json:"seed"`
-	NonWorkingDates []string   `json:"non_working_dates"`
-	Parameters      Parameters `json:"parameters"`
+	Seed             string     `json:"seed"`
+	NonWorkingDates  []string   `json:"non_working_dates"`
+	Parameters       Parameters `json:"parameters"`
+	TestTypes        []string   `json:"test_types"`
+	CoverageBasis    string     `json:"coverage_basis"`
+	PopulationSource string     `json:"population_source"`
 
 	RegulatoryBasis []ExportBasis     `json:"regulatory_basis"`
 	Steps           []ExportStep      `json:"steps"`
@@ -125,7 +128,10 @@ type ExportStratum struct {
 	Waves            [4]float64 `json:"waves"`
 	TopUps           [4]int     `json:"top_ups"`
 	PlannedSize      int        `json:"planned_size"`
+	CycleYears       int        `json:"cycle_years"`
+	Takes            []string   `json:"takes"`
 	N                int        `json:"n"`
+	InCycle          int        `json:"in_cycle"`
 	NSource          string     `json:"n_source"`
 	N0               int        `json:"n0"`
 	FPC              int        `json:"fpc"`
@@ -178,6 +184,10 @@ type ExportItem struct {
 	DQReviewedOn    string `json:"dq_reviewed_on"`
 	TopUpQuarter    int    `json:"topup_quarter"`
 	TopUpRationale  string `json:"topup_rationale"`
+	LastTestedOn    string `json:"last_tested_on"`
+	CycleDue        string `json:"cycle_due"`
+	SourceKind      string `json:"source_kind"`
+	SourceRef       string `json:"source_ref"`
 	SelectedQuarter int    `json:"selected_quarter"`
 	SelectionBasis  string `json:"selection_basis"`
 	RankOrder       int    `json:"rank_order"`
@@ -195,6 +205,7 @@ type ExportResult struct {
 
 type ExportTest struct {
 	TestRef              string         `json:"test_ref"`
+	TestType             string         `json:"test_type"`
 	Quarter              int            `json:"quarter"`
 	ItemRef              string         `json:"item_ref"`
 	ItemName             string         `json:"item_name"`
@@ -230,6 +241,7 @@ type ExportDeviation struct {
 	Failures      []string `json:"failures"`
 	ExtendQuarter int      `json:"extend_quarter"`
 	ExtendBy      int      `json:"extend_by"`
+	FullCoverage  bool     `json:"full_coverage"`
 	RiskRef       string   `json:"risk_ref"`
 }
 
@@ -339,6 +351,7 @@ func buildExport(p Plan, pop []PopulationItem, sels []Selection, tests []Test, v
 		ApprovedBy: p.ApprovedBy, ApprovedAt: p.ApprovedAt, ActivatedAt: p.ActivatedAt, ClosedAt: p.ClosedAt,
 		LatestVersion: p.LatestVersion, PopulationFrozenAt: p.FrozenAt, SeedCommitment: p.SeedCommitment,
 		NonWorkingDates: splitList(p.NonWorkingDates), Parameters: p.Parameters,
+		TestTypes: nonNil(p.TestTypes), CoverageBasis: p.CoverageBasis, PopulationSource: p.PopulationSource,
 		RegulatoryBasis: []ExportBasis{}, Steps: []ExportStep{}, Quarters: []ExportQuarter{}, Strata: []ExportStratum{},
 		Attributes: []ExportAttribute{}, Population: []ExportItem{}, Tests: []ExportTest{}, Deviations: []ExportDeviation{},
 		Coverage: nonNil(dash.Coverage), Testing: nonNil(dash.Testing), Findings: []ExportFinding{},
@@ -379,9 +392,10 @@ func buildExport(p Plan, pop []PopulationItem, sels []Selection, tests []Test, v
 		es := ExportStratum{Code: st.Code, Name: st.Name, Definition: st.Definition, SamplingEnabled: st.SamplingEnabled,
 			Confidence: st.Confidence, TolerableRate: st.TolerableRate, FloorPct: st.FloorPct,
 			EffortPerTest: st.EffortPerTest, EffortPerReview: st.EffortPerReview, Waves: st.Waves, TopUps: st.TopUps,
-			PlannedSize: st.PlannedSize}
+			PlannedSize: st.PlannedSize, CycleYears: st.CycleYears, Takes: nonNil(st.Takes)}
 		if i < len(view.Strata) {
 			z := view.Strata[i]
+			es.InCycle = z.InCycle
 			es.N, es.NSource, es.N0, es.FPC, es.Floor, es.AnnualSample = z.N, z.NSource, z.Size.N0, z.Size.FPC, z.Size.Floor, z.Size.Annual
 			es.Statistical, es.Tests, es.TotalTests, es.ReviewsDue, es.Error = z.Statistical, z.Tests, z.TotalTests, z.ReviewsDue, z.Error
 			es.CoveragePct = guard(z.Coverage * 100)
@@ -407,8 +421,13 @@ func buildExport(p Plan, pop []PopulationItem, sels []Selection, tests []Test, v
 	for _, t := range tests {
 		testOf[t.ItemID] = t
 	}
+	strata := map[string]Stratum{}
+	for _, st := range p.Strata {
+		strata[st.Code] = st
+	}
 	for _, it := range pop {
-		ei := ExportItem{ItemRef: it.ItemRef, Name: it.Name, Stratum: it.StratumCode, CIF: it.CIF, BusinessLine: it.BusinessLine,
+		ei := ExportItem{LastTestedOn: it.LastTestedOn, CycleDue: cycleDue(strata[it.StratumCode], it),
+			SourceKind: it.SourceKind, SourceRef: it.SourceRef, ItemRef: it.ItemRef, Name: it.Name, Stratum: it.StratumCode, CIF: it.CIF, BusinessLine: it.BusinessLine,
 			Hosting: it.Hosting, InternetFacing: it.InternetFacing, Owner: it.Owner, Wave: it.WaveQuarter, AttestedOn: it.AttestedOn,
 			DQStatus: it.DQStatus, DQReviewedOn: it.DQReviewedOn, TopUpQuarter: it.TopUpQuarter, TopUpRationale: it.TopUpRationale,
 			SelectedQuarter: it.SelectedQuarter, SelectionBasis: it.SelectionBasis}
@@ -424,7 +443,7 @@ func buildExport(p Plan, pop []PopulationItem, sels []Selection, tests []Test, v
 	e.Totals.PopulationSize = len(pop)
 
 	for _, t := range tests {
-		et := ExportTest{TestRef: t.TestRef, Quarter: t.Quarter, ItemRef: t.ItemRef, ItemName: t.ItemName, Stratum: t.StratumCode,
+		et := ExportTest{TestRef: t.TestRef, TestType: t.TestType, Quarter: t.Quarter, ItemRef: t.ItemRef, ItemName: t.ItemName, Stratum: t.StratumCode,
 			Basis: t.Basis, Tester: t.Tester, EvidenceRequestedOn: t.EvidenceRequestedOn, EvidenceDueOn: t.EvidenceDueOn,
 			EvidenceReceivedOn: t.EvidenceReceivedOn, FieldworkCompletedOn: t.FieldworkCompletedOn, EvidenceSummary: t.EvidenceSummary,
 			QAReviewer: t.QAReviewer, QADate: t.QADate, QANote: t.QANote, Notes: t.Notes, Passes: t.Passes, Fails: t.Fails,
@@ -495,7 +514,8 @@ func exportDeviations(devs []Deviation) []ExportDeviation {
 	out := []ExportDeviation{}
 	for _, d := range devs {
 		ed := ExportDeviation{AttrRef: d.AttrRef, Domain: d.Domain, Stratum: d.StratumCode, Tested: d.Tested, Deviations: d.Fails,
-			Kind: d.Kind, Conclusion: d.Conclusion, Failures: nonNil(d.Failures), ExtendQuarter: d.ExtendQuarter, ExtendBy: d.ExtendBy}
+			Kind: d.Kind, Conclusion: d.Conclusion, Failures: nonNil(d.Failures), ExtendQuarter: d.ExtendQuarter, ExtendBy: d.ExtendBy,
+			FullCoverage: d.FullCoverage}
 		if d.Thematic != nil {
 			ed.RiskRef = d.Thematic.RiskRef
 		}
@@ -555,8 +575,8 @@ func (s *Service) ExportCSV(id int64, table string) (string, []byte, error) {
 		}
 	case "population":
 		rows = append(rows, []string{"item_ref", "name", "stratum", "cif", "business_line", "hosting", "internet_facing", "owner",
-			"wave", "attested_on", "dq_status", "dq_reviewed_on", "topup_quarter", "topup_rationale", "selected_quarter",
-			"selection_basis", "rank_order", "test_ref", "overall_result"})
+			"wave", "attested_on", "dq_status", "dq_reviewed_on", "topup_quarter", "topup_rationale", "last_tested_on", "cycle_due",
+			"source_kind", "source_ref", "selected_quarter", "selection_basis", "rank_order", "test_ref", "overall_result"})
 		for _, it := range e.Population {
 			rank := ""
 			if it.RankOrder > 0 {
@@ -564,10 +584,10 @@ func (s *Service) ExportCSV(id int64, table string) (string, []byte, error) {
 			}
 			rows = append(rows, []string{it.ItemRef, it.Name, it.Stratum, it.CIF, it.BusinessLine, it.Hosting, yesNo(it.InternetFacing),
 				it.Owner, quarterCell(it.Wave), it.AttestedOn, it.DQStatus, it.DQReviewedOn, quarterCell(it.TopUpQuarter), it.TopUpRationale,
-				quarterCell(it.SelectedQuarter), it.SelectionBasis, rank, it.TestRef, it.OverallResult})
+				it.LastTestedOn, it.CycleDue, it.SourceKind, it.SourceRef, quarterCell(it.SelectedQuarter), it.SelectionBasis, rank, it.TestRef, it.OverallResult})
 		}
 	case "tests":
-		rows = append(rows, []string{"test_ref", "quarter", "item_ref", "item_name", "stratum", "basis", "tester",
+		rows = append(rows, []string{"test_ref", "test_type", "quarter", "item_ref", "item_name", "stratum", "basis", "tester",
 			"evidence_requested_on", "evidence_due_on", "evidence_received_on", "evidence_late", "fieldwork_completed_on",
 			"qa_reviewer", "qa_date", "pass", "fail", "n_a", "pending", "overall", "failed_attributes", "findings", "evidence_summary"})
 		for _, t := range e.Tests {
@@ -580,7 +600,7 @@ func (s *Service) ExportCSV(id int64, table string) (string, []byte, error) {
 					findings = append(findings, r.FindingRef+" ("+r.Severity+")")
 				}
 			}
-			rows = append(rows, []string{t.TestRef, quarterCell(t.Quarter), t.ItemRef, t.ItemName, t.Stratum, t.Basis, t.Tester,
+			rows = append(rows, []string{t.TestRef, t.TestType, quarterCell(t.Quarter), t.ItemRef, t.ItemName, t.Stratum, t.Basis, t.Tester,
 				t.EvidenceRequestedOn, t.EvidenceDueOn, t.EvidenceReceivedOn, yesNo(t.EvidenceLate), t.FieldworkCompletedOn,
 				t.QAReviewer, t.QADate, strconv.Itoa(t.Passes), strconv.Itoa(t.Fails), strconv.Itoa(t.NotApplicable),
 				strconv.Itoa(t.Pending), t.Overall, strings.Join(failed, "; "), strings.Join(findings, "; "), t.EvidenceSummary})

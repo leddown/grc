@@ -579,10 +579,10 @@ func TestDashboardCoverageAgainstPlan(t *testing.T) {
 	t1 := d.Coverage[0]
 	q1, q2 := t1.Cells[0], t1.Cells[1]
 	// 23 of 80 attested by 31 March is 28.75% against 35%: 6.25 points behind.
-	if t1.Code != "T1" || q1.Attested != 23 || q1.PlannedPct != 35 || q1.ActualPct != 28.75 || q1.RAG != "Amber" || q1.Planned != 28 {
+	if t1.Code != "T1" || q1.Covered != 23 || q1.PlannedPct != 35 || q1.ActualPct != 28.75 || q1.RAG != "Amber" || q1.Planned != 28 {
 		t.Errorf("T1 Q1 = %+v", q1)
 	}
-	if q2.RAG != "Not due" || q2.Attested != 24 {
+	if q2.RAG != "Not due" || q2.Covered != 24 {
 		t.Errorf("T1 Q2 = %+v", q2)
 	}
 	if d.Coverage[1].Cells[0].RAG != "Red" {

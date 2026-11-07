@@ -215,11 +215,12 @@ snapshot only.
 One row per plan: identity, period, objective, roles, lifecycle and open
 revision, authorship and approval, the selection seed (drawn at the population
 freeze; readers see only its SHA-256 until every quarter is selected),
-non-working dates, the RACI role columns (JSON array) and the plan's
-parameters.
+non-working dates, the RACI role columns (JSON array), the plan type settings
+(the test types, what coverage is measured on, and where a population can be
+proposed from) and the plan's parameters.
 
 - **Key:** `id`. **Travels:** backup only.
-- **Columns** (text unless a type is given): `id integer`, `reference`, `title`, `plan_type`, `function_name`, `client_profile_id integer` (0 = none; `client_profiles.id` otherwise, not a foreign key), `period_start`, `period_end`, `mobilise_start`, `closing_date`, `objective`, `decisions_requested`, `regulatory_refs`, `owner_role`, `accountable_role`, `approval_forum`, `status`, `revision integer`, `revision_status`, `revision_author`, `change_reason`, `author`, `approved_by`, `approved_at`, `activated_at`, `closed_at`, `selection_seed`, `non_working_dates`, `raci_roles`, `tester_fte real`, `days_per_fte_quarter real`, `utilisation_threshold real`, `rag_amber_points real`, `result_partial_min integer`, `result_ineffective_min integer`, `deviation_extend_at integer`, `deviation_thematic_at integer`, `extend_pct real`, `evidence_sla_days integer`, `ai_generated integer`, `model`, `prompt_hash`, `created_at`, `created_by`, `updated_at`, `updated_by`.
+- **Columns** (text unless a type is given): `id integer`, `reference`, `title`, `plan_type`, `function_name`, `client_profile_id integer` (0 = none; `client_profiles.id` otherwise, not a foreign key), `period_start`, `period_end`, `mobilise_start`, `closing_date`, `objective`, `decisions_requested`, `regulatory_refs`, `owner_role`, `accountable_role`, `approval_forum`, `status`, `revision integer`, `revision_status`, `revision_author`, `change_reason`, `author`, `approved_by`, `approved_at`, `activated_at`, `closed_at`, `selection_seed`, `non_working_dates`, `raci_roles`, `test_types` (JSON array), `coverage_basis` (`attestation` or `tests`), `population_source` (empty, `policies` or `findings`), `tester_fte real`, `days_per_fte_quarter real`, `utilisation_threshold real`, `rag_amber_points real`, `result_partial_min integer`, `result_ineffective_min integer`, `deviation_extend_at integer`, `deviation_thematic_at integer`, `extend_pct real`, `evidence_sla_days integer`, `ai_generated integer`, `model`, `prompt_hash`, `created_at`, `created_by`, `updated_at`, `updated_by`.
 
 ### `assurance_plan_steps`
 
@@ -239,19 +240,19 @@ The quarterly operating cycle, one row per quarter (unique per plan), with the r
 
 ### `assurance_plan_strata`
 
-The population's strata (Tier 1, Tier 2…), one row per code (unique per plan), with the sampling parameters (confidence, tolerable rate, coverage floor, all shares between 0 and 1), effort per test and per review in person-days, the 1LoD wave shares per quarter, the planned risk-based top-ups per quarter, and the planned size that stands in for N until the population is loaded.
+The population's strata (Tier 1, Tier 2…), one row per code (unique per plan), with the sampling parameters (confidence, tolerable rate, coverage floor, all shares between 0 and 1), effort per test and per review in person-days, the 1LoD wave shares per quarter, the planned risk-based top-ups per quarter, the planned size that stands in for N until the population is loaded, a multi-year testing cycle (`cycle_years`, 0 = every year), and the document types or severities a proposed population places in it (`takes`, comma-separated).
 
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
-- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `ordinal integer`, `code`, `name`, `definition`, `sampling_enabled integer`, `confidence real`, `tolerable_rate real`, `floor_pct real`, `effort_per_test real`, `effort_per_review real`, `wave_q1 real`..`wave_q4 real`, `topup_q1 integer`..`topup_q4 integer`, `planned_size integer`.
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `ordinal integer`, `code`, `name`, `definition`, `sampling_enabled integer`, `confidence real`, `tolerable_rate real`, `floor_pct real`, `effort_per_test real`, `effort_per_review real`, `wave_q1 real`..`wave_q4 real`, `topup_q1 integer`..`topup_q4 integer`, `planned_size integer`, `cycle_years integer`, `takes`.
 
 ### `assurance_plan_population`
 
-The scope population: one row per item (`item_ref` unique per plan), in a stratum (`stratum_code` matches a stratum's `code`, not a foreign key) and a 1LoD wave (`wave_quarter`, 0 = none), with its description, the 1LoD attestation date, the 2LoD data-quality review, and a risk-based top-up flag (`topup_quarter`, 0 = none) with its rationale. `source_kind` / `source_ref` are for proposed populations (phase 5).
+The scope population: one row per item (`item_ref` unique per plan), in a stratum (`stratum_code` matches a stratum's `code`, not a foreign key) and a 1LoD wave (`wave_quarter`, 0 = none), with its description, the 1LoD attestation date, the 2LoD data-quality review, and a risk-based top-up flag (`topup_quarter`, 0 = none) with its rationale, the date it was last tested (the anchor of a multi-year cycle), and, for an item proposed from another module, its source (`source_kind` `policy_document` or `audit_finding`, `source_ref` the record's id; not a foreign key).
 
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id` (on delete cascade).
-- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `item_ref`, `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing integer`, `owner`, `wave_quarter integer`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter integer`, `topup_rationale`, `source_kind`, `source_ref`.
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `item_ref`, `name`, `stratum_code`, `cif`, `business_line`, `hosting`, `internet_facing integer`, `owner`, `wave_quarter integer`, `attested_on`, `dq_status`, `dq_reviewed_on`, `topup_quarter integer`, `topup_rationale`, `last_tested_on`, `source_kind`, `source_ref`.
 
 ### `assurance_plan_selections`
 
@@ -271,11 +272,11 @@ The test script: what 2LoD tests on every selected item. One row per attribute (
 
 ### `assurance_plan_tests`
 
-One test per frozen pick (`selection_id` unique), with its reference (`T27-Q1-001`, unique per plan), tester, the evidence requested, due (requested + the plan's evidence SLA in business days) and received dates, fieldwork completion, the evidence summary, and the QA sign-off (reviewer, date, and a note when the tester signed off their own test in single-user mode).
+One test per frozen pick (`selection_id` unique), with its reference (`T27-Q1-001`, unique per plan), its type (one of the plan's test types), tester, the evidence requested, due (requested + the plan's evidence SLA in business days) and received dates, fieldwork completion, the evidence summary, and the QA sign-off (reviewer, date, and a note when the tester signed off their own test in single-user mode).
 
 - **Key:** `id`. **Travels:** backup only.
 - **References:** `plan_id` → `assurance_plans.id`, `selection_id` → `assurance_plan_selections.id` (both on delete cascade).
-- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `selection_id integer`, `test_ref`, `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `qa_note`, `notes`, `created_at`, `created_by`, `updated_at`, `updated_by`.
+- **Columns** (text unless a type is given): `id integer`, `plan_id integer`, `selection_id integer`, `test_ref`, `test_type`, `tester`, `evidence_requested_on`, `evidence_due_on`, `evidence_received_on`, `fieldwork_completed_on`, `evidence_summary`, `qa_reviewer`, `qa_date`, `qa_note`, `notes`, `created_at`, `created_by`, `updated_at`, `updated_by`.
 
 ### `assurance_plan_results`
 

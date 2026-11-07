@@ -3,6 +3,217 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-07 (Assurance Plans, phase 5: RCSA, policy review, resilience testing and remediation roadmap types, multi-year cycles, proposed populations)
+
+Fifth of six phases on `feature/assurance-plans`. Four plan types join
+Controls testing and Blank. They are templates plus flags. The only new code
+that knows about a source is the proposal, which reads the policy library and
+Audit Findings. Every feature works with no model configured, and nothing is
+uploaded or parsed.
+
+- **Plan types** (`internal/assuranceplan/templates/`, new JSON):
+  - `rcsa.json`, the ICT risk assessment cycle: business units or processes
+    in two strata, Critical (BU-C) and Other (BU-O). 1LoD self-assesses 100%
+    in waves, and 2LoD reviews and challenges a sample through the same
+    engine. The default confidence is smaller than controls testing's:
+    90%/10% with a 20% floor for BU-C, 80%/15% with a 10% floor for BU-O.
+    Six review attributes, RC-01..RC-06.
+  - `policy-review.json`: Policies (POL) and Standards and procedures (STD),
+    with sampling off. Owner review, consultation, approval and publication
+    (PR-01..PR-04) are recorded as one test per document. Coverage is the
+    signed-off test. The population is proposed from the policy library.
+  - `resilience-testing.json` (DORA Arts. 24–25): Systems supporting critical
+    or important functions (SYS) and TLPT scopes (TLPT, a three-year cycle),
+    with sampling off. Six test types, from vulnerability assessment to TLPT.
+    Coverage is the share of systems with a signed-off test. RT-06 applies to
+    TLPT only. Steps T.1–T.5 track the TLPT.
+  - `remediation-roadmap.json`: open findings, Critical and High (F-CH) and
+    Medium and Low (F-ML). Each finding sits in the wave of the quarter it is
+    due. Closure validation (VR-01..VR-04) is the test. There are quarterly
+    milestones and a half-year Audit Committee report (step 2.7). The
+    population is proposed from Audit Findings.
+  - `controls-testing.json` and the 2027 example gained
+    `"test_types": ["Controls test"]` and `"coverage_basis": "attestation"`.
+  - **The regulatory basis rows are paraphrases and need your check against
+    the texts before a pack goes to a committee:** DORA Arts. 5(2)(b), 6(4),
+    6(5), 6(7), 8(2), 8(3), 9(4)(a), 11(6), 24(1), 24(2), 24(4), 24(5), 24(6),
+    25(1), 26(1); RTS (EU) 2024/1774 Arts. 2 and 27; ISO/IEC 27001:2022 A.5.1;
+    IIA Global Internal Audit Standards 15.2.
+- **Plan settings** (`assurance_plans.test_types` JSON, `coverage_basis`,
+  `population_source`; SQLite `ensureColumn`, PostgreSQL
+  `ADD COLUMN IF NOT EXISTS`). They are edited under "Plan type settings" in
+  the header.
+  - `test_types`: at most 20 types of up to 60 characters, deduplicated
+    without regard to case. A test records one of them.
+  - `coverage_basis` `attestation` | `tests`: what counts an item as covered
+    in the RAG, the dashboard, the reports and the knowledge record.
+  - `population_source` `policies` | `findings` | empty.
+  - A header save without these keys keeps them, so an older client cannot
+    wipe them; `"none"` clears the source. The history event names each one
+    that changed.
+- **Stratum flags** (`assurance_plan_strata.cycle_years`, `takes`):
+  - `cycle_years` is 0–10; 1 is stored as 0.
+  - `takes` is the document types or severities a proposal places in the
+    stratum. At most 20 values, each up to 40 characters with no separator.
+  - Both are edited in the strata editor on the Sampling tab.
+- **Multi-year cycle** (`assurance_plan_population.last_tested_on`):
+  - An item is due in the period when it was never tested, or when its last
+    test plus the cycle falls on or before the period end.
+  - An item not due and with no wave is counted as `in_cycle`: it is left out
+    of N, needs no wave at the freeze, and counts as covered until its cycle
+    lapses.
+  - On a cycle stratum, a change to `last_tested_on` is a membership change
+    under the population rules.
+  - Clone sets each item's `last_tested_on` to this year's QA sign-off date
+    when that is later, so the cycle runs on into next year.
+- **Full-coverage strata** (sampling off) are planned by their loaded waves.
+  - Before, the tests per quarter came from the wave percentages, so a wave
+    of 3 items under a 25% share planned 1 test while the selection took 3.
+  - Now, once the population is loaded, statistical picks, reviews due and
+    the cumulative target are the wave counts, and the plan agrees with the
+    selection. Before the population is loaded, the planned size and the
+    percentages still stand in.
+  - The `wave_counts` advisory applies to sampled strata only.
+- **Coverage on tests.** On the `tests` basis an item is covered on its test's
+  QA sign-off date, and an item in cycle counts as covered. A cycle stratum's
+  planned count for a quarter is the items in cycle at its end plus the items
+  with a wave up to that quarter.
+  - `CoverageCell.Attested` is renamed `Covered` (JSON `covered`).
+  - `CoverageRow` gains `basis`, `tested`, `covered`, `covered_pct`,
+    `in_cycle` and `cycle_years`.
+  - The dashboard's heading reads "Test coverage against plan" on that basis.
+- **Test type** (`assurance_plan_tests.test_type`):
+  - A new test takes the plan's first type.
+  - A save matches the type without regard to case and stores the plan's
+    spelling. A type the plan does not list is refused with 400. A blank type
+    keeps the current one.
+  - It appears in the Tests tab's column and editor, the search, the export,
+    the tests CSV, and the knowledge test record (body and field
+    `test_type`).
+- **Deviation rule without sampling.** One deviation in a full-coverage
+  stratum reads "1 deviation – full coverage, raise as findings", with no
+  extension (`full_coverage: true`). Two or more are still Not effective.
+- **Proposed populations** (`propose.go`, new; admin
+  `POST /assurance-plans/:id/population/propose?source=policies|findings`).
+  - The answer is CSV text in the import format, with its counts and notes.
+    It writes nothing. "Propose from …" on the Scope population tab fills the
+    box, turns merge on and runs the preview, so the proposal goes through the
+    same validation and diff as a paste.
+  - Policies: documents that are approved or approved and in review, not
+    letters, and of the plan's client profile. A document is due on its next
+    review date, or on its effective date plus its cadence. Those due by the
+    period end are proposed, each in the wave of its due quarter; an overdue
+    review goes into Q1. A document with no review clock is counted and left
+    out.
+  - Findings: the open findings (not Draft, Closed or Risk accepted), each in
+    the wave of its due quarter. An overdue or undated finding goes into Q1.
+    One due after the period is left for next year's roadmap and counted.
+  - An item already in the plan keeps its stratum and wave. A note says when
+    the source now places it elsewhere, so a second proposal adds only what
+    is new.
+  - The proposal refuses (400) a plan without a source, without period dates,
+    or where no stratum takes anything. It refuses (409) a closed plan or an
+    integration that is not wired.
+  - `Integrations` gained `Policies`, wired in `app.go`.
+  - Population CSV import and export gained `last_tested_on` (aliases
+    `last_test_date` and others), `source_kind` and `source_ref`. The export
+    adds `cycle_due`. The item table links an item to its policy document or
+    finding.
+- **Gate:**
+  - new advisories: `in_cycle`, `takes_unknown` (a value that is not a
+    document type or severity), `source_unmapped` (a source where no stratum
+    takes anything)
+  - `no_attributes` now fires for any plan with strata, not only a sampled one
+- **Outputs.**
+  - The approval pack's Approach, Sampling and Quarterly targets slides now
+    follow the plan's basis, sampling and cycles. Before, a policy review
+    plan's pack said 1LoD attests and 2LoD samples, and showed "Planned tests
+    0" for a full-coverage stratum. Now the slides show every item due, the
+    real planned tests, "tested and signed off by quarter end", and the cycle
+    line. The roadmap says "Wave: n item(s) due" and "selected" for such a
+    plan; so do the quarterly report's next-quarter line and the knowledge
+    record.
+  - The annual on the tests basis has the columns "Tested and signed off",
+    "In cycle" and "Covered". A plan with two or more test types adds "Tests
+    by type".
+  - The limitations follow the basis and whether the plan samples. The annual
+    sentence now reads "does not replace the work of the other assurance
+    plans, such as resilience testing, or of internal audit". The old wording
+    named the resilience programme, which is wrong in the resilience plan's
+    own report.
+  - The samples were regenerated with
+    `GRC_UPDATE_SAMPLES=1 go test ./internal/assuranceplan -run Payload`, and
+    `templates/out/` was re-rendered.
+- **Backup.** The new columns join the snapshot's column lists. A snapshot
+  without them restores with the defaults: the attestation basis, no types,
+  no source, no cycle. `SnapshotVersion` stays 16, because no build with the
+  module has been released.
+- **Tests** (`types_test.go`, new; additions to `knowledge_test.go`,
+  `exec_test.go` and `documents_test.go`):
+  - Every type instantiates for 2027 with no blocking finding, with:
+    - roles in steps and the RACI that are RACI roles
+    - attributes that apply to existing strata
+    - basis, cadence and escalations present
+    - at least 16 quarterly steps
+    - no `takes_unknown` or `source_unmapped`
+  - The header settings: kept when omitted, deduplicated, `none`, and bad
+    values refused (400).
+  - Stratum cycle and takes validation, and the normalisation of both.
+  - The policy proposal over nine documents:
+    - waves, owners and source refs
+    - overdue documents in Q1
+    - later, draft, retired, letter and no-clock documents left out
+    - apply, then a re-proposal that adds nothing and notes a moved due date
+  - The findings proposal: stratum by severity, waves, an overdue finding,
+    the risk-accepted finding and the one due later left out.
+  - The refusals: no source, nothing taken, a bad source, the integration
+    missing. The lint codes.
+  - The resilience year:
+    - N and in-cycle counts, wave-count planning, and a freeze with an
+      in-cycle item that has no wave
+    - Full coverage picks, the default test type, canonical spelling, the 400,
+      and a blank type kept
+    - coverage on QA dates, with Q1 Red before the April sign-off
+    - TLPT cells across the CIF-PAY lapse
+    - the full-coverage deviation
+    - the export fields and Tests by type
+    - the roadmap and next-quarter wording
+    - a clone carrying the QA date into `last_tested_on`
+  - A freeze refused for a lapsed TLPT scope with no wave, and the cycle
+    boundaries.
+  - The CSV columns and a bad `last_tested_on`.
+  - The propose route (400) and the page: the button present only with a
+    source, the settings fieldset, the coverage heading, the takes column.
+- **Manual check.** I ran a throwaway server: local mode, a temporary SQLite
+  database, port 18947.
+  - Findings were created through the API; policy documents were written into
+    the temporary database.
+  - Both proposals gave the expected CSV and notes, and the bad sources gave
+    400.
+  - The policy proposal was previewed and applied, keeping its source fields.
+  - A resilience plan was approved, frozen with an in-cycle scope that had no
+    wave, drawn and tested: penetration test canonicalised, the unknown type
+    400, QA signed off. The dashboard showed tests-basis coverage with the
+    TLPT cycle.
+  - Typst compiled the pack and annual for the policy review, resilience and
+    RCSA plans, and I read the resilience pack's slides 5–8.
+
+  The server, database, key file and payloads were removed.
+- **Gate.** `go fmt`, `go vet` and `go test ./...` are clean, including
+  TestGosec and TestGovulncheck. `npm audit --omit=dev` in `web/policy-studio`
+  found 0 vulnerabilities. PostgreSQL was reviewed, not run: the columns are in
+  its CREATE TABLEs and seven `ADD COLUMN IF NOT EXISTS`.
+- Docs:
+  - `ASSURANCE_PLANS.md`: build status; the new "Plan types" section;
+    columns; the gate; clone; full-coverage planning and the multi-year
+    cycle; the freeze; the deviation rule without sampling; coverage on
+    tests; the dashboard; Proposed populations (rewritten); the import
+    columns; the propose route; the export; the annual; the knowledge
+    fields; backup; sources
+  - HTTP_API (the propose route), DATA_MODEL (the seven columns), FEATURES,
+    ARCHITECTURE, the Help page, README, Agents.md, and AI_AGENT.md (the
+    `test_type` question)
+
 ## 2026-11-06 (Assurance Plans, phase 4: regulatory basis, exports, approval pack, quarterly and annual reports, knowledge kinds)
 
 Fourth of six phases on `feature/assurance-plans`. A plan now produces its

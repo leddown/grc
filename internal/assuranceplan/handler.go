@@ -64,6 +64,7 @@ func (h *Handler) RegisterAdminRoutes(r gin.IRouter) {
 	r.POST("/assurance-plans/:id/change-request", h.ChangeRequest)
 	r.POST("/assurance-plans/:id/clone", h.Clone)
 	r.PUT("/assurance-plans/:id/strata", h.ReplaceStrata)
+	r.POST("/assurance-plans/:id/population/propose", h.ProposePopulation)
 	r.POST("/assurance-plans/:id/population/preview", h.PreviewPopulation)
 	r.POST("/assurance-plans/:id/population", h.ApplyPopulation)
 	r.PATCH("/assurance-plans/:id/population/:itemID", h.UpdatePopulationItem)
@@ -555,6 +556,22 @@ func (h *Handler) populationImport(c *gin.Context) (int64, PopulationImport, boo
 		return 0, PopulationImport{}, false
 	}
 	return id, in, true
+}
+
+// ProposePopulation answers the CSV text of a proposed population, for the
+// preview: ?source=policies or ?source=findings, else the plan's own source.
+// It writes nothing.
+func (h *Handler) ProposePopulation(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	out, err := h.service.ProposePopulation(id, c.Query("source"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 func (h *Handler) PreviewPopulation(c *gin.Context) {

@@ -45,6 +45,11 @@
     "extend_pct": 50,
     "evidence_sla_days": 10
   },
+  "test_types": [
+    "Controls test"
+  ],
+  "coverage_basis": "attestation",
+  "population_source": "",
   "regulatory_basis": [
     {
       "requirement": "Assign the management and oversight of ICT risk to a control function with an appropriate level of independence, segregated from the first line and from internal audit.",
@@ -914,7 +919,10 @@
         1
       ],
       "planned_size": 80,
+      "cycle_years": 0,
+      "takes": [],
       "n": 80,
+      "in_cycle": 0,
       "n_source": "population",
       "n0": 59,
       "fpc": 35,
@@ -971,7 +979,10 @@
         1
       ],
       "planned_size": 240,
+      "cycle_years": 0,
+      "takes": [],
       "n": 240,
+      "in_cycle": 0,
       "n_source": "population",
       "n0": 22,
       "fpc": 21,
@@ -1396,6 +1407,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1409,6 +1421,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1422,6 +1435,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1435,6 +1449,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1448,6 +1463,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1461,6 +1477,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1474,6 +1491,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1487,6 +1505,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1500,6 +1519,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1513,6 +1533,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1526,6 +1547,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1539,6 +1561,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1552,6 +1575,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1565,6 +1589,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1578,6 +1603,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1591,6 +1617,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1604,6 +1631,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1617,6 +1645,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1630,6 +1659,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1643,6 +1673,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1656,6 +1687,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1669,6 +1701,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1682,6 +1715,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1695,6 +1729,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1708,6 +1743,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1721,6 +1757,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1734,6 +1771,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1747,6 +1785,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1760,6 +1799,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1773,6 +1813,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1786,6 +1827,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     },
     {
@@ -1799,6 +1841,7 @@
       "failures": [],
       "extend_quarter": 0,
       "extend_by": 0,
+      "full_coverage": false,
       "risk_ref": ""
     }
   ],
@@ -1806,10 +1849,16 @@
     {
       "stratum": "T1",
       "name": "Tier 1",
+      "basis": "attestation",
       "n": 80,
       "attested": 0,
-      "dq_accepted": 0,
       "attested_pct": 0,
+      "tested": 0,
+      "covered": 0,
+      "covered_pct": 0,
+      "in_cycle": 0,
+      "cycle_years": 0,
+      "dq_accepted": 0,
       "dq_accepted_pct": 0,
       "quarters": [
         {
@@ -1817,7 +1866,7 @@
           "quarter_end": "2027-03-31",
           "planned": 28,
           "planned_pct": 35,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -1827,7 +1876,7 @@
           "quarter_end": "2027-06-30",
           "planned": 56,
           "planned_pct": 70,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -1837,7 +1886,7 @@
           "quarter_end": "2027-09-30",
           "planned": 80,
           "planned_pct": 100,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -1847,7 +1896,7 @@
           "quarter_end": "2027-12-31",
           "planned": 80,
           "planned_pct": 100,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -1857,10 +1906,16 @@
     {
       "stratum": "T2",
       "name": "Tier 2",
+      "basis": "attestation",
       "n": 240,
       "attested": 0,
-      "dq_accepted": 0,
       "attested_pct": 0,
+      "tested": 0,
+      "covered": 0,
+      "covered_pct": 0,
+      "in_cycle": 0,
+      "cycle_years": 0,
+      "dq_accepted": 0,
       "dq_accepted_pct": 0,
       "quarters": [
         {
@@ -1868,7 +1923,7 @@
           "quarter_end": "2027-03-31",
           "planned": 36,
           "planned_pct": 15,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -1878,7 +1933,7 @@
           "quarter_end": "2027-06-30",
           "planned": 108,
           "planned_pct": 45,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -1888,7 +1943,7 @@
           "quarter_end": "2027-09-30",
           "planned": 180,
           "planned_pct": 75,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -1898,7 +1953,7 @@
           "quarter_end": "2027-12-31",
           "planned": 240,
           "planned_pct": 100,
-          "attested": 0,
+          "covered": 0,
           "actual_pct": 0,
           "due": false,
           "rag": "Not due"
@@ -2162,7 +2217,7 @@
       "approved_by": "bob",
       "approved_at": "2026-11-06T09:00:00Z",
       "change_reason": "",
-      "snapshot_sha256": "0afca7d6c2478a97b263093bed3bb3d624712a608d7fe8ce90421c2155f06b1f"
+      "snapshot_sha256": "a75e8aa1436affa01e2f2998e9a38c244a040d5d79ff3d99e71e14716d111115"
     }
   ],
   "gate_findings": [
