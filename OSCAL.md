@@ -6,10 +6,21 @@ official SP 800-53 catalog from OSCAL, and exports its catalogs and
 crosswalks as OSCAL JSON for other tools. OSCAL is a serializer, as
 `POLICY_MODULE_FRAMEWORK.md` puts it; it never becomes the store.
 
-Status: phase 1 (the foundation and the 800-53 catalog import), phase 2 (the
-catalog, profile, NFR and Regulation Coverage exports) and phase 3 (the
-Assessment Plan, Assessment Results and POA&M exports) are built; the trestle
-check and the signing design follow.
+Status: built. The SP 800-53 catalog import; the catalog, profile, NFR and
+Regulation Coverage exports; the Assessment Plan, Assessment Results and
+POA&M exports; and an optional compliance-trestle check in the tests.
+[Signing](#signing-design-not-built) is designed here and not built.
+
+| Section | What it covers |
+|---|---|
+| [What is imported](#what-is-imported) | NIST's SP 800-53 catalog and baselines into the Control Editor |
+| [What is exported](#what-is-exported) | The catalog, baseline, NFR and Regulation Coverage documents |
+| [Assurance results](#assurance-results) | The Assessment Plan, Assessment Results and POA&M |
+| [Versions, identifiers and bytes](#versions-identifiers-and-bytes) | One OSCAL version, deterministic UUIDs, canonical bytes |
+| [grc's namespace](#grcs-namespace) | Every grc prop and part name, by document |
+| [Not exported](#not-exported) | What stays out of OSCAL, and why |
+| [Checking an export with compliance-trestle](#checking-an-export-with-compliance-trestle) | By hand, and in the tests |
+| [Signing (design, not built)](#signing-design-not-built) | DSSE signatures over the exports, the approval snapshots and the scope file |
 
 ## What is imported
 
@@ -153,12 +164,19 @@ back-matter is not stored, so the catalog has none.
 
 ### The baseline profiles
 
-One per baseline, in the shape of NIST's own baseline profiles: `imports` the
-catalog export through a back-matter resource, `include-controls` `with-ids`
-every control the catalog marks in that baseline, and `merge` `as-is`. The
-title names the baseline, so the import accepts it in its slot. A baseline no
-control is in is a 404: an import with no selection reads as nothing, or to
-some tools as everything.
+One per baseline (`low`, `moderate`, `high`, `privacy`), in the shape of
+NIST's own baseline profiles:
+
+| OSCAL | From grc |
+|---|---|
+| metadata | `title` "grc: NIST SP 800-53 <BASELINE> baseline", which names the baseline so the import accepts the file in its slot; `remarks` say the profile holds the controls grc's catalog marks in that baseline, and give the tier rule below. |
+| `imports` | One import of the catalog export, `href` `#<uuid>` of a back-matter resource whose rlink is `/controls/oscal/catalog.json`. |
+| `include-controls` / `with-ids` | Every control the catalog marks in that baseline (`in_low` … `in_privacy`), as NIST tokens in control-id order (`controlid.Sort`). |
+| `merge` | `as-is` `true`, as NIST's profiles have it. |
+| `back-matter` | The catalog resource. |
+
+A baseline no control is in is a 404: an import with no selection reads as
+nothing, or to some tools as everything.
 
 The remarks record the Asset Types page's tier rule, which is not a profile of
 its own: TIER 1 and TIER 2 take HIGH, TIER 3 MODERATE, TIER 4 LOW, and TIER 0
@@ -177,22 +195,20 @@ none). The rule lives in that page's script (`baselineForTier` in
 
 ### The NFR to SP 800-53 mapping collection
 
-One mapping from the NFR catalog export to the 800-53 catalog export, both
-named through back-matter resources, with a map per NFR and the control a
-reference in its NIST mapping resolved to (the NFR-Control Links table,
-overrides included).
+One mapping from the NFR catalog export to the 800-53 catalog export, with a
+map per NFR and the control a reference in its NIST mapping resolved to (the
+NFR-Control Links table, overrides included):
 
-- A map's grc props: `override` `yes` when an administrator's override
-  decided it, and `written-as` when the NFR wrote another id (`AU-11`
-  overridden to `AU-12`).
-- `source-gap-summary` lists the NFRs that resolved no control,
-  `target-gap-summary` the catalog's controls no NFR maps to.
-- A reference that resolved to nothing is not a map; the mapping's remarks
-  name it.
-- Provenance: method `human` (an NFR's author wrote the mapping),
-  matching-rationale `semantic` (meaning matched to meaning), status
-  `complete` when every NFR resolved a control and every reference resolved,
-  `not-complete` otherwise.
+| OSCAL | From grc |
+|---|---|
+| metadata | `title` "grc: Security NFRs to NIST SP 800-53"; `remarks` say that every map's relationship is grc's own `related`. |
+| `provenance` | `method` `human` (an NFR's author wrote the mapping), `matching-rationale` `semantic` (meaning matched to meaning), `status` `complete` when every NFR resolved a control and every reference resolved, `not-complete` otherwise, and a `mapping-description`. |
+| `mappings[0]` `source-resource` / `target-resource` | `type` `catalog`, `href` `#<uuid>` of the back-matter resources for `/security-nfrs/oscal/catalog.json` and `/controls/oscal/catalog.json`. |
+| `maps` | One per resolved NFR-control pair: source `nfr-<key>` (type `control`), target the NIST token (type `control`), `relationship` `related` in grc's namespace ([below](#the-relationship)), `matching-rationale` `semantic`. grc props: `override` `yes` when an administrator's override decided it, `written-as` when the NFR wrote another id (`AU-11` overridden to `AU-12`). |
+| `source-gap-summary` | The NFRs that resolved no control, when there are any. |
+| `target-gap-summary` | The catalog's controls no NFR maps to. |
+| the mapping's `remarks` | Each reference that resolved to nothing, which is not a map. |
+| `back-matter` | The two catalog resources. |
 
 ### A Regulation Coverage version
 
@@ -211,8 +227,16 @@ appear, and a control per section, in position order:
 
 The mapping collection has one mapping to the NFR catalog export and one to
 the 800-53 catalog export, each only when it has a map, with a map per
-section and catalog item the finding maps it to. The source and targets are
-named through back-matter resources.
+section and catalog item the finding maps it to:
+
+| OSCAL | From the version's snapshot |
+|---|---|
+| metadata | `title` "<regulation>: Regulation Coverage mappings", `version` the report version; `remarks` say what the relationship and the confidence mean and that the targets are the live catalogs. |
+| `provenance` | `method` `human`, `automation` or `hybrid` by who made the maps; `matching-rationale` `semantic`; `status` as below; a `mapping-description` naming the version. |
+| `mappings` | Up to two, NFRs first: source the version's own catalog export, target the live NFR or 800-53 catalog export, both through back-matter resources. |
+| `maps` | One per section and catalog item: source the section's control id (`dora-art-6`), target `nfr-<key>` or the NIST token, `relationship` `related` in grc's namespace, `confidence-score` the report's category, `remarks` the rationale, grc prop `source`. |
+| `source-gap-summary` | The relevant sections with no map to that catalog. |
+| `back-matter` | The version's catalog and each target catalog. |
 
 - A map's `confidence-score` category is the report's (`high`, `medium`,
   `low`), its remarks the rationale, and its grc prop `source` says who made
@@ -325,8 +349,10 @@ top-level `local-definitions` cannot hold inventory items; a result's own
 - **POA&M.** There is no `import-ssp`. The `system-id` has the grc namespace
   as its `identifier-type` and `audit-findings` as its value, and the
   remarks say the POA&M covers grc's Audit Findings register, not a system.
-- **Not yet known:** whether trestle follows `import-ssp` and refuses a
-  target that is not an SSP. Phase 4's trestle check will show it.
+- **trestle does not follow `import-ssp`**, or `import-ap` or a profile's
+  import. compliance-trestle 5.2.0's import and validate read each document
+  on its own, and accept these three as they are
+  ([below](#checking-an-export-with-compliance-trestle)).
 
 ### Routes
 
@@ -467,7 +493,8 @@ Observation as EXAMINE. Building it changed these details:
   input and compare).
 - **grc's namespace.** Content that is grc's rather than OSCAL's or NIST's
   goes into props and parts with `ns` set to
-  `https://carelockconsulting.com/ns/oscal/grc`.
+  `https://carelockconsulting.com/ns/oscal/grc`
+  ([grc's namespace](#grcs-namespace) lists every name).
 - **Canonical bytes.** Exports are written through `oscal.Canonical`, RFC 8785
   (JSON Canonicalization Scheme), so the same data gives the same bytes.
 - **Mappings as an array.** The 1.2.1 schema lets a mapping collection's
@@ -475,6 +502,372 @@ Observation as EXAMINE. Building it changed these details:
   holds only one. grc always writes an array, through a small struct of its
   own around go-oscal's `Mapping` type, because a Regulation Coverage version
   has two.
+
+## grc's namespace
+
+Content that is grc's, not OSCAL's or NIST's, goes into props and parts whose
+`ns` is `https://carelockconsulting.com/ns/oscal/grc` (`oscal.Namespace`).
+OSCAL's own allowed-values constraints apply only to names in OSCAL's
+namespace, so these names are grc's to define. Rules for every one:
+
+- A name is a lower-case token. A prop's value is a single line (whitespace
+  runs, line breaks included, become one space), because OSCAL's string type
+  cannot span lines. Long text goes in a part's prose instead.
+- A prop with nothing to say is left out, not written empty. A flag is
+  `yes` or `no` where both carry meaning (`confidentiality`), and otherwise
+  only `yes` (`override`, `ai-generated`, `acceptance-expired`).
+- A list is the prop repeated, one value each, in the stored order
+  (`threat`, `control`, `linked-risk`, `takes`, `also-reviews`, `applies-to`,
+  `role`).
+- Dates are `YYYY-MM-DD` as grc stores them; numbers are written as stored,
+  without trailing zeros.
+
+| Document | Where | grc props | grc parts |
+|---|---|---|---|
+| SP 800-53 catalog | control | `confidentiality`, `integrity`, `availability`, `threat`, `potentially-common-inheritable` | `cia-justification`; `appendix`, with a sub-part per appendix field named after the field (`control-objective`, `risk-mitigated`, `kri`, `kpi`, `nist-csf-v2.0`, `references`, …) |
+| SP 800-53 catalog | statement or guidance part | `prose` = `grc-text`: the text is grc's, not NIST's structure | |
+| Baseline profiles | | none | none |
+| Security NFR catalog | control | `record-key`, `issue-type`, `domain`, `weight` | `implementation`, `additional-details`, `nist-mapping` |
+| NFR mapping collection | map | `override`, `written-as` | |
+| Regulation catalog | metadata | `framework`, `framework-name`, `source-ref`, `text-sha256` | |
+| Regulation catalog | control | `ref`, `category`, `segment-confidence` | `finding` (props `relevant`, `grounded`, `confidence`, `model`, `prompt-hash`, `revision`; sub-parts `requirement`, `commentary`, `gaps`, `quote`) |
+| Regulation mapping collection | map | `source` (`seed` or `model`) | |
+| Assessment Plan | metadata | `reference`, `plan-type`, `function`, `client`, `period-start`, `period-end`, `approval-version`, `approved-by`, `change-reason`, `coverage-basis`, `population-source`, `seed-commitment`, `ai-generated`, `model`, `prompt-hash` | |
+| Assessment Plan | back-matter resource | `kind` = `approval-snapshot` | |
+| Assessment Plan | inventory item | `item-ref`, `stratum`, `cif`, `business-line`, `hosting`, `internet-facing`, `owner`, `wave`, `last-tested-on`, `source-kind`, `source-ref` | |
+| Assessment Plan | local objective | `attribute`, `also-reviews` | `evidence-requested` |
+| Assessment Plan | activity | `method` (grc's word, beside OSCAL's), `attribute`, `applies-to`, `regulatory-refs`, `ai-generated`, `model`, `prompt-hash` | |
+| Assessment Plan | assessment subject | `code`, `name` | |
+| Assessment Plan | task | `step-ref`, `phase`, `quarter`, `responsible-role`, `accountable-role`, `deliverable`, `refs` | |
+| Assessment Plan | terms and conditions | in `parameters`, one prop per plan parameter, named as the plan names it; on a `stratum`, `sampling-enabled`, `confidence`, `tolerable-rate`, `floor-pct`, `effort-per-test`, `effort-per-review`, `wave-q1`–`wave-q4`, `top-up-q1`–`top-up-q4`, `planned-size`, `cycle-years`, `takes`; on a `quarter`, `lod1-window-start`, `lod1-deadline`, `selection-date`, `fieldwork-start`, `fieldwork-end`, `findings-agreed-by`, `report-date`, `committee`, `retest-days`, `overhead-days`; on `raci`, `role`, and on its `activity`, `responsible`, `accountable`, `consulted`, `informed`; on a `forum`, `frequency`, `owner`; on an `escalation`, `escalate-to`, `within`; on a `requirement`, `reference` | `parameters`, `sampling` (`stratum`), `quarterly-cycle` (`quarter`), `raci` (`activity`), `cadence` (`forum`), `escalations` (`escalation`), `regulatory-basis` (`requirement`), `decisions-requested` |
+| Assessment Results | metadata | `reference`, `quarter`, `committee` | |
+| Assessment Results | result | `quarter`, `plan-version` | |
+| Assessment Results | observation | `result`, `attribute`, `test-ref`, `test-type`, `tester`, `qa-reviewer`, `qa-date`, `stratum`, `basis` | |
+| Assessment Results | finding | `audit-finding`, `severity` | |
+| Assessment Results | inventory item (late) | as in the Assessment Plan | |
+| POA&M | metadata | `status-filter` (the `?status=` asked for) | |
+| POA&M | poam-item | `reference`, `status`, `severity`, `finding-type`, `deficiency-type`, `source`, `engagement`, `auditor`, `root-cause-category`, `business-unit`, `process-area`, `owner`, `management-response`, `identified-date`, `report-date`, `original-due-date`, `due-date`, `extension-count`, `extension-reason`, `repeat-finding`, `prior-reference`, `origin-ref`, `framework-refs`, `acceptance-expired`, `control`, `linked-risk` | |
+| POA&M | observation | `source`, `reference` | |
+| POA&M | risk | `accepted-by`, `acceptance-expiry`, `validated-by`, `validation-date`, `closed-date` | |
+| POA&M | action task | `action-type`, `owner`, `status`, `completed-date`, `evidence` | |
+
+The SP 800-53 catalog's `prose` = `grc-text` is the one grc prop an import
+reads: it says a statement's or guidance's prose is grc's text, to take
+verbatim. The import ignores every other grc prop and part.
+
+## Not exported
+
+These stay out of OSCAL on purpose. Each would need content grc does not
+hold, or a model OSCAL does not have.
+
+| Not exported | Why |
+|---|---|
+| System security plan (SSP) | grc describes no system: it has no system characteristics, authorization boundary, users or per-system implementation of controls. An SSP made from what grc does hold would be invented. The Assessment Plan's required `import-ssp` points at the plan's approval snapshot instead ([above](#meeting-import-ssp-and-import-ap-without-an-ssp)). |
+| Component definitions | grc has no catalog of components and the controls each implements. |
+| Policy Studio documents | A policy is prose with control claims. OSCAL has no policy model: the claims would be an SSP's or a component definition's implemented requirements, both out of scope. The policies' coverage stays in grc (`/policies/coverage`). |
+| Crisis exercises | An exercise rehearses a scenario. Its objectives and findings cite the controls they touch, but nothing in it tests a control against an assessment objective with a method and a result, which is what an Assessment Results observation and finding state. Exported as one, it would claim an assessment that did not happen. |
+| The risk register | OSCAL has no risk register model: it has risks only inside Assessment Results and a POA&M, each tied to the observations behind it. grc's register is a standing register, each risk scored and owned on its own (`RISK_REGISTER_FRAMEWORK.md`), not a set of risks an assessment found. The Assessment Plans' thematic conclusions go to the register and so are not exported either. |
+
+Not imported, likewise: OSCAL into the risk register, Audit Findings or
+Assurance Plans. grc imports one thing from OSCAL, NIST's catalog and its
+baselines, and imports and exports JSON only: no XML, no YAML. OSCAL is not in
+the knowledge API. The application never fetches anything: an administrator
+posts NIST's files ([What is imported](#what-is-imported) says where to get
+them), and a document grc exports names its neighbours by root-relative href
+for the reader to follow.
+
+## Checking an export with compliance-trestle
+
+[compliance-trestle](https://github.com/oscal-compass/compliance-trestle)
+(Apache-2.0, Python) reads OSCAL with its own model. It is a second reader
+besides the JSON schema the tests validate against, and is entirely optional:
+grc never needs it, or Python, to build or run. Version 5.2.0 is built against
+OSCAL 1.2.1, grc's version.
+
+### By hand
+
+```sh
+python3 -m venv ~/.local/share/compliance-trestle
+~/.local/share/compliance-trestle/bin/pip install 'compliance-trestle==5.2.0'
+ln -s ~/.local/share/compliance-trestle/bin/trestle ~/.local/bin/trestle
+
+mkdir trestle-check && cd trestle-check && trestle init
+trestle import -f ~/Downloads/grc-poam-2026-11-09.oscal.json -o poam
+trestle validate -a
+trestle canonicalize -f ~/Downloads/grc-poam-2026-11-09.oscal.json | cmp - ~/Downloads/grc-poam-2026-11-09.oscal.json
+```
+
+- Download the export from its module page or from Help. `trestle import`
+  refuses a file from inside the workspace, so keep downloads outside it.
+- `import` reads the document into trestle's model and refuses it on any
+  error, including a field the model does not have. `validate -a` validates
+  every model in the workspace and prints `VALID: Model …` for each.
+- `canonicalize` writes the document in RFC 8785 form. `cmp` printing nothing
+  means grc's bytes are already canonical, which they should always be.
+
+What to expect from trestle 5.2.0:
+
+- **A warning, not a failure:** "Resources have N uuids and N are not
+  referenced by model." trestle's link check recognises only version-4 UUIDs
+  in an `#uuid` href (`UUID_REGEX` in `trestle/common/const.py`), and grc's are
+  version 5 ([deterministic](#versions-identifiers-and-bytes)). OSCAL allows
+  both (`[45]` in the schema's UUID pattern). The check only ever warns.
+- **trestle does not follow hrefs.** It reads `import-ssp`, `import-ap` and a
+  profile's import as they are, so it neither resolves grc's back-matter
+  resources nor objects that `import-ssp` names an approval snapshot.
+- **Neither trestle nor the JSON schema checks OSCAL's allowed values.** The
+  allowed-value lists are in the metaschemas, and neither reader enforces
+  them. Both accepted a risk status `nonsense`, an observation method `GUESS`
+  and any map `relationship`. grc's mappers write only listed values, and its
+  unit tests pin the mapped ones (the methods, the risk statuses). Otherwise
+  the two agreed on every broken document tried: a missing `import-ssp`, a
+  field the model lacks, a prop value or title over two lines, a bad prop
+  name, a date without a time, a version-1 UUID.
+
+### In the tests
+
+Two tests run trestle when it is on `PATH`, and are skipped under `-short` or
+without it. Both go through `oscaltest.Trestle`
+(`internal/oscal/oscaltest/trestle.go`), which finds trestle with
+`exec.LookPath` and runs it with `exec.CommandContext`, as
+`internal/doctemplate` runs its engines:
+
+- `TestExportsPassTrestle` (`internal/oscal`) covers the nine kinds of
+  document built from the samples, which carry what a database seeded for a
+  test does not reach: attributes naming NFRs, items that joined after
+  approval, every finding status.
+- `TestOSCALExportsPassTrestle` (`internal/app`) seeds a temporary database
+  from the fixtures: the shipped JSON catalog, NIST's catalog and its LOW and
+  MODERATE baselines through the OSCAL import, the shipped NFRs, a Regulation
+  Coverage version, the example plan approved and its first quarter tested
+  and signed off with a Fail raised, and a second finding with an action. It
+  then fetches every export the routes serve (the catalog, the four
+  baselines, the NFR catalog and mapping, the regulation catalog and mapping,
+  the Assessment Plan, the Q1 Assessment Results and the POA&M, twelve
+  documents) over HTTP.
+
+The helper writes each document to a file, runs `trestle import` on each (side
+by side, as each import writes only its own model directory), then `trestle
+validate -a`, and fails unless every import succeeds and validate reports
+every model valid. It also runs `trestle canonicalize` on each and fails
+unless the output is the same bytes: an independent check of `oscal.Canonical`.
+
+The test is in `internal/app` as well as `internal/oscal` because the
+adapters that turn the database into export input live in `internal/app`;
+`internal/oscal` cannot reach a seeded database without them.
+
+## Signing (design, not built)
+
+Nothing in this section is built. It proposes signing what grc exports, so
+that a reader can check that a file is unchanged and that this grc
+installation produced it. Today a reader can do the first only partly, and
+the second not at all: the approval snapshot's SHA-256 and the Exceptions
+scope file's checksum show a change, but anyone can compute them, so they
+prove nothing about who made a file (`docs/FEATURES.md` says so of the scope
+file).
+
+### What is signed
+
+| Artifact | What the signature covers | When |
+|---|---|---|
+| The OSCAL exports (every route under [What is exported](#what-is-exported)) | The served document, which is already RFC 8785 | When it is served |
+| Assurance Plan approval snapshots (`assurance_plan_versions.snapshot_json`) | The stored JSON in RFC 8785 form | At approval, in the transaction that writes the version |
+| The Exceptions scope file (`security-nfr-scope-YYYY-MM-DD.json`) | The file in RFC 8785 form | When a user asks, after the server has checked the file |
+
+### The envelope
+
+A detached DSSE envelope (Dead Simple Signing Envelope, v1) whose payload is
+an in-toto Statement v1, in exactly the shape compliance-trestle's `trestle
+sign` writes, so that `trestle verify` checks it:
+
+```json
+{"payloadType": "application/vnd.in-toto+json",
+ "payload": "<base64 of the Statement>",
+ "signatures": [{"keyid": "<grc key id>", "sig": "<base64 Ed25519 signature>"}]}
+```
+
+```json
+{"_type": "https://in-toto.io/Statement/v1",
+ "subject": [{"name": "grc-poam-2026-11-09.oscal.json", "digest": {"sha256": "<hex>"}}],
+ "predicateType": "https://oscal-compass.github.io/compliance-trestle/predicates/oscal-signing/v1",
+ "predicate": {"canonicalization": "RFC8785", "digestAlgorithm": "sha256",
+               "digestSource": "canonical-json", "tool": "grc"}}
+```
+
+- **Signature:** Ed25519 over DSSE's pre-authentication encoding,
+  `DSSEv1 <len(type)> <type> <len(payload)> <payload>`. The payload is the
+  Statement as RFC 8785 bytes.
+- **Digest:** SHA-256 over the RFC 8785 form of the signed JSON. The exports
+  are RFC 8785 already (the trestle check holds that), so for an export it is
+  the SHA-256 of the file as downloaded.
+- **Subject name:** the download name. trestle checks it against the file's
+  name unless told otherwise.
+- **Detached.** The envelope is a sidecar, `<download name>.dsse.json`. The
+  signed file does not change, so an export's bytes, UUIDs and metadata
+  version are the same with signing or without it.
+- **Standard library only:** `crypto/ed25519`, `crypto/sha256`, `crypto/x509`
+  for the PEM public key, `encoding/base64`, and `oscal.Canonical`. No new
+  dependency and no cgo.
+- **Nothing grc-specific in the Statement.** trestle's predicate has no place
+  for who downloaded a file or which plan version it is, and that is not what
+  the signature attests. The signing log holds it (below).
+
+### The key, through `internal/secrets`
+
+- **One active Ed25519 key per installation.** Its 32-byte seed comes from
+  `crypto/rand`. It is sealed with the master key (`secrets.Keyring.Seal`,
+  which binds the ciphertext to the name `oscal-signing-key`) and kept in
+  `app_secrets`, as the settings store keeps the Jira token. No route returns
+  it, and dbsync leaves it out as it leaves out every app secret: the master
+  key that opens it never travels.
+- **The public keys are in the clear**, in a new table `oscal_signing_keys`:
+  key id, SPKI public key as PEM, status (`active`, `retired`, `revoked`),
+  created, retired and revoked dates, and a reason. dbsync carries it, so a
+  second installation can verify the first's envelopes. The key id is the hex
+  SHA-256 of the SPKI DER.
+- **No master key, no signing.** Without a keyring (`secrets.ErrNoKey`) the
+  exports are served unsigned, as today, and the verification route says that
+  this installation has no key.
+
+### Key rotation
+
+- **Rotate:** an administrator rotates the key from Settings. A new key
+  becomes active and the old one is retired: its sealed seed is deleted, so it
+  never signs again, and its public key is kept for good, so every envelope it
+  made still verifies.
+- **A master key that changes or is lost** leaves the sealed seed unreadable.
+  grc retires that key, keeping its public part, and makes a new one the next
+  time it signs. Earlier signatures keep verifying.
+- **Revoke:** after a compromise, an administrator marks the key revoked, with
+  a date and a reason. grc has no trusted timestamp and no transparency log
+  (both would mean outbound calls), so nothing dates a signature before the
+  revocation: verification reports every signature by a revoked key as
+  untrusted. The signing log softens this on this installation. An envelope
+  whose digest the log recorded before the revocation was made by grc, and the
+  verification route says so.
+- **Several installations** each sign with their own key. The verifier tries
+  the key the envelope names, then every key it knows.
+
+### The signing log and the routes
+
+- **`oscal_signatures`** records each signature: digest, subject name, key
+  id, envelope, what was signed (a route or a snapshot), for whom (the user
+  who downloaded or approved), and when. There is one row per distinct
+  digest. An immutable export (a report version, an approved plan version) is
+  the same bytes every time, and Ed25519 signatures are deterministic, so it
+  has one row and one envelope. A live export, dated by the export, gets a row
+  per download.
+- **`GET /oscal/signatures/:sha256.dsse.json`** returns the envelope for bytes
+  grc served. Every export response carries `X-Content-SHA256`, so a script can
+  fetch the pair. grc signs only bytes it generated or checked: no route signs
+  a digest someone posts.
+- **`GET /oscal/signing-keys`** lists the keys and their status.
+  **`GET /oscal/signing-keys/:id.pem`** serves a public key in the PEM form
+  trestle reads.
+- **`POST /oscal/verify`** takes `{"document": "…", "envelope": "…"}` (up to
+  the import's 32 MB) and writes nothing. It reports:
+  - whether the signature is valid, and why not;
+  - the key id and its status;
+  - the subject name;
+  - whether the digest matches the document's RFC 8785 form, and whether the
+    document's bytes were already canonical;
+  - from the log, when grc signed it and for whom.
+- All four are for signed-in users, under the same test that every OSCAL
+  route refuses an anonymous request. The Help page explains them.
+
+### Existing hashes stay valid
+
+No stored hash is recomputed, and none changes how it is computed:
+
+- **`assurance_plan_versions.snapshot_sha256`** stays the SHA-256 of the
+  stored `snapshot_json` bytes, which `encoding/json` wrote and which are not
+  RFC 8785. It is still served as `X-Snapshot-SHA256` and is still the hash in
+  the Assessment Plan's `import-ssp` resource. The snapshot is never rewritten
+  into canonical form, because that would change the hash.
+- **The envelope's digest is a different number:** the SHA-256 of the same
+  JSON in RFC 8785 form, which is what trestle checks. The verification route
+  shows both for a snapshot. Both hold, because the stored bytes never change.
+- **The scope file's `checksum`** keeps its rule (the page's SHA-256 over the
+  content in a fixed order) and the file stays format version 2. Import Scope
+  refuses a field it does not know, so a signature inside the file would break
+  every existing reader. The signature is a sidecar.
+- **`policy_versions.snapshot_sha256`**, the text hashes of regulations and
+  NFR source documents, and the export UUIDs keyed on a content digest are
+  untouched.
+
+### The approval snapshot
+
+A snapshot is signed at approval. A version approved before signing existed
+stays unsigned: signing it later would attest what the database holds today,
+not what the committee approved. An administrator may countersign old
+versions. The log then records the date of the countersignature, never the
+approval's.
+
+### The Exceptions scope file
+
+Today the file is written in the browser and nothing is sent to the
+application. "Export Scope (signed)" would post the file to
+`POST /exceptions/scope-file/sign`. The server signs only what it can check
+against its own records:
+
+- the file passes every check Import Scope makes;
+- every key is an NFR of the catalog;
+- each id and summary are the catalog's.
+
+The envelope then attests that this installation's catalog held exactly that
+listing when it signed, and the log records who asked. This needs the page's
+checks in Go as well. A test would run both on the same files under node, as
+`internal/app/exceptions_scopefile_test.go` already runs the page's script.
+
+### `trestle verify`
+
+Yes, with conditions. A throwaway prototype, built only with Go's standard
+library and kept out of the repository, signed a served POA&M as above.
+compliance-trestle 5.2.0 gave these results:
+
+- the POA&M as served: `trestle verify --beta` passed;
+- the same document re-indented: passed, because trestle digests the
+  canonical form;
+- a changed file: refused;
+- another key: refused.
+
+```sh
+trestle verify --beta -f grc-poam-2026-11-09.oscal.json \
+  --signature grc-poam-2026-11-09.oscal.json.dsse.json \
+  --public-key grc-signing-<key id>.pem
+```
+
+The conditions:
+
+- **Signing is a beta feature in trestle 5.2.0.** Pass `--beta`, or enable
+  the `json-signing` feature in the workspace.
+- **The predicate type is trestle's.** A later trestle may change it. grc
+  would pin the URI, and the trestle check would sign and verify through
+  trestle to show when it moves.
+- **trestle ignores the key id** and takes one public key per run.
+- **A renamed file** needs `--subject-name <download name>`.
+- **Several files:** `trestle verify-manifest` checks a package of files under
+  one envelope. grc could sign a set that way later, such as the catalog with
+  its baselines.
+
+### What a signature does not show
+
+A signature does not show that the content is right, or that the export says
+anything beyond what grc's database held at the time. It shows that this
+installation produced the bytes, or for a scope file checked them, and that
+they have not changed since.
+
+### What building it would touch
+
+- `internal/oscal`: the envelope, signing and verification, with no import
+  beyond the standard library.
+- The two tables: both schema files, `syncOrder` for `oscal_signing_keys`
+  only, and `docs/DATA_MODEL.md`.
+- The keyring wiring in `app.go`.
+- The routes, with `docs/HTTP_API.md`, `api_docs.go`, Help and the access
+  tests.
+- Rotation on the Settings page.
+- The scope-file page.
 
 ## The dependency
 
@@ -485,4 +878,6 @@ through `internal/app/oscal_adapter.go`. The module's CLI (cobra), schema
 generator and validator are not linked into the binary
 (`TestBinaryLinksOnlyTheOSCALTypes`); the validator, with its embedded
 schemas, is used by tests through `internal/oscal/oscaltest`.
-compliance-trestle is not a dependency.
+compliance-trestle is not a dependency: it is an optional program that two
+tests run when it is installed
+([Checking an export with compliance-trestle](#checking-an-export-with-compliance-trestle)).

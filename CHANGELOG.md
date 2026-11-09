@@ -3,6 +3,125 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-09 (OSCAL, phase 4: compliance-trestle check, OSCAL.md in full, signing design)
+
+The last phase. No route, table or column changes, and nothing changes in
+what the application does or serves. Two optional tests, the complete module
+document, the documents that point to it, and a signing design that is not
+built.
+
+- **compliance-trestle check.** `oscaltest.Trestle`
+  (`internal/oscal/oscaltest/trestle.go`) finds `trestle` with
+  `exec.LookPath` and runs it with `exec.CommandContext` (`#nosec G204`
+  justified), as `internal/doctemplate` runs its engines. Tests that use it
+  skip under `-short` and when trestle is not on `PATH`. It:
+  - creates a temporary workspace (`trestle init`);
+  - imports each document (`trestle import -f … -o …`), side by side, since
+    each import writes only its own model directory;
+  - validates the workspace (`trestle validate -a`) and requires one
+    `VALID` line per document;
+  - canonicalizes each document (`trestle canonicalize`) and requires the
+    same bytes back. That makes trestle's RFC 8785 implementation an
+    independent check of `oscal.Canonical`, which a signature would rely on.
+
+  Two tests use it:
+  - `TestExportsPassTrestle` (`internal/oscal`) covers the nine kinds of
+    document from the samples, shared with the schema test through the new
+    `sampleExports`.
+  - `TestOSCALExportsPassTrestle` (`internal/app`) seeds a temporary
+    database from the fixtures and fetches the twelve exports the routes
+    serve over HTTP. The seed is the shipped catalog; NIST's catalog with
+    LOW and MODERATE through the OSCAL import; the shipped NFRs; a
+    Regulation Coverage version with control and NFR maps; the example plan
+    approved, with Q1 tested, a Fail raised and QA signed off; and a finding
+    with an action.
+
+  The test is in `internal/app` as well as `internal/oscal` because the
+  adapters from the database to export input live there. The plan-testing
+  steps and the regulation seeding moved into helpers (`selectQ1`,
+  `failAndSignOff`, `doraRegulation`, `cutRegulationVersion`) that the
+  existing tests now use too.
+- **What trestle 5.2.0 showed:**
+  - It accepts every export, and its canonical form of each is grc's bytes,
+    byte for byte. That held for 21 documents: the 12 served and the 9
+    samples.
+  - It warns "Resources have N uuids and N are not referenced by model".
+    Its link check only recognises version-4 UUIDs, and grc's are version 5;
+    OSCAL allows both, and the check only warns.
+  - It does not follow `import-ssp`, `import-ap` or a profile import, so it
+    neither resolves grc's back-matter references nor objects that
+    `import-ssp` names an approval snapshot. This answers the open question
+    in phase 3's design.
+  - Neither trestle nor the JSON schema checks OSCAL's allowed values: both
+    accepted a risk status `nonsense` and an observation method `GUESS`. On
+    seven other broken documents the two agreed.
+- **`OSCAL.md` in full.** New sections:
+  - a contents table;
+  - mapping tables for the baseline profiles and both mapping collections,
+    so that every model has one;
+  - **grc's namespace**: the value rules and every grc prop and part name,
+    by document and object, checked against the code and the served
+    documents;
+  - **Not exported**: SSP, component definitions, Policy Studio documents,
+    crisis exercises and the risk register, each with its reason;
+  - **Checking an export with compliance-trestle**: by hand and in the
+    tests;
+  - **Signing (design, not built)**.
+- **Signing design.** Detached DSSE envelopes over an in-toto Statement v1,
+  in the shape `trestle sign` writes, with Ed25519 from the standard library.
+  It covers the exports (signed when served), approval snapshots (at
+  approval) and the Exceptions scope file (on request, after server-side
+  checks).
+  - The key is an Ed25519 seed sealed with `secrets.Keyring` in
+    `app_secrets`, which dbsync never carries. The public keys go in a synced
+    table.
+  - Rotation keeps retired public keys. Revocation untrusts every signature
+    by the revoked key, since grc has no trusted timestamp; a signing log
+    softens this.
+  - Routes: `POST /oscal/verify`, the key list and PEMs, and envelope
+    lookup by digest. Nothing signs a posted digest.
+  - No stored hash changes. `snapshot_sha256` stays the hash of the stored
+    bytes; the envelope's canonical digest is a second number. The scope
+    file stays format 2 with its checksum, and the signature is a sidecar.
+  - `trestle verify` works, with conditions. A throwaway Go prototype,
+    standard library only and kept out of the repository, built an envelope
+    over a served POA&M. It passed `trestle verify --beta` and still passed
+    with the file re-indented; it failed with the file changed and with
+    another key. The conditions: trestle's signing is beta in 5.2.0, its
+    predicate URI is trestle's, and it ignores the key id.
+- **Docs:**
+  - `README.md` and `Agents.md` (package lists, now with the assessment
+    exports and trestle);
+  - `docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md` (a Trestle tests row;
+    `-short` skips them);
+  - `docs/FEATURES.md` (a pointer to the trestle section);
+  - `docs/PROJECT_OVERVIEW.md` (`OSCAL.md` in the document map, glossary
+    entries for OSCAL and compliance-trestle; the direct dependencies
+    already listed go-oscal);
+  - `POLICY_MODULE_FRAMEWORK.md`: item 6 is built for the catalogs,
+    crosswalks and assurance results, not for policy documents, with three
+    decisions;
+  - `POLICY_STUDIO.md`: the deferred "OSCAL hooks" now point to `OSCAL.md`.
+
+  `docs/HTTP_API.md` and `docs/DATA_MODEL.md` needed no change.
+- **Verified:**
+  - `go fmt`, `go vet` and `go test ./...` are clean, with gosec and
+    govulncheck run, and both trestle tests ran and passed against trestle
+    5.2.0;
+  - `-short`, and a `PATH` without trestle, skip both trestle tests;
+  - three throwaway mutations each failed the helper as they should: a
+    missing `import-ssp`, a field the model lacks, and a re-indented
+    document;
+  - `npm audit --omit=dev` in `web/policy-studio` found 0 vulnerabilities.
+
+  trestle 5.2.0 was installed for this check into its own virtual
+  environment, `~/.local/share/compliance-trestle`, linked from
+  `~/.local/bin/trestle`; it is not part of the repository.
+- **Not verified:**
+  - an older or newer trestle;
+  - the signing design beyond the one prototype envelope;
+  - PostgreSQL, which the trestle test does not use.
+
 ## 2026-11-09 (OSCAL, phase 3: Assessment Plan, Assessment Results and POA&M exports)
 
 Builds the reviewed design, with the six open points taken as proposed. Three

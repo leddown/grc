@@ -33,51 +33,52 @@ func mustRead(t *testing.T, path string) []byte {
 }
 
 // Every document grc writes validates against the OSCAL 1.2.1 schema.
-func TestExportsAreValidOSCAL(t *testing.T) {
-	catalog, err := oscal.ExportCatalog(oscal.SampleCatalogExport(t))
-	if err != nil {
-		t.Fatal(err)
+// sampleExports are the documents every exporter builds from the samples,
+// named as trestle workspace models.
+func sampleExports(t *testing.T) map[string][]byte {
+	t.Helper()
+	docs := map[string][]byte{}
+	add := func(name string, body []byte, err error) {
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		docs[name] = body
 	}
-	profile, err := oscal.ExportProfile(oscal.ProfileExport{Baseline: "moderate", Title: "grc: NIST SP 800-53 MODERATE baseline",
+	body, err := oscal.ExportCatalog(oscal.SampleCatalogExport(t))
+	add("catalog", body, err)
+	body, err = oscal.ExportProfile(oscal.ProfileExport{Baseline: "moderate", Title: "grc: NIST SP 800-53 MODERATE baseline",
 		LastModified: oscal.SampleTime, CatalogHref: "/controls/oscal/catalog.json", ControlIDs: []string{"AC-1", "AC-2", "AC-2(1)"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	nfrCatalog, err := oscal.ExportNFRCatalog(oscal.NFRCatalogExport{Title: "grc: Security NFR catalog", LastModified: oscal.SampleTime, NFRs: oscal.SampleNFRs()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	nfrMapping, err := oscal.ExportNFRMapping(oscal.SampleNFRMapping())
-	if err != nil {
-		t.Fatal(err)
-	}
-	regCatalog, err := oscal.ExportRegulationCatalog(oscal.SampleRegulation(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	regMapping, err := oscal.ExportRegulationMapping(oscal.SampleRegulation(true), oscal.SampleRegulationHrefs())
-	if err != nil {
-		t.Fatal(err)
-	}
-	assessmentPlan, err := oscal.ExportAssessmentPlan(oscal.SamplePlan(), oscal.SampleCatalogHrefs())
-	if err != nil {
-		t.Fatal(err)
-	}
-	assessmentResults, err := oscal.ExportAssessmentResults(oscal.SampleQuarterResults(), oscal.SampleAssessmentPlanRef(), oscal.SampleCatalogHrefs())
-	if err != nil {
-		t.Fatal(err)
-	}
-	poam, err := oscal.ExportPOAM(oscal.SamplePOAM())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, body := range map[string][]byte{
-		"catalog": catalog, "profile": profile, "nfr catalog": nfrCatalog,
-		"nfr mapping": nfrMapping, "regulation catalog": regCatalog, "regulation mapping": regMapping,
-		"assessment plan": assessmentPlan, "assessment results": assessmentResults, "poam": poam,
-	} {
+	add("profile", body, err)
+	body, err = oscal.ExportNFRCatalog(oscal.NFRCatalogExport{Title: "grc: Security NFR catalog", LastModified: oscal.SampleTime, NFRs: oscal.SampleNFRs()})
+	add("nfr-catalog", body, err)
+	body, err = oscal.ExportNFRMapping(oscal.SampleNFRMapping())
+	add("nfr-mapping", body, err)
+	body, err = oscal.ExportRegulationCatalog(oscal.SampleRegulation(true))
+	add("regulation-catalog", body, err)
+	body, err = oscal.ExportRegulationMapping(oscal.SampleRegulation(true), oscal.SampleRegulationHrefs())
+	add("regulation-mapping", body, err)
+	body, err = oscal.ExportAssessmentPlan(oscal.SamplePlan(), oscal.SampleCatalogHrefs())
+	add("assessment-plan", body, err)
+	body, err = oscal.ExportAssessmentResults(oscal.SampleQuarterResults(), oscal.SampleAssessmentPlanRef(), oscal.SampleCatalogHrefs())
+	add("assessment-results", body, err)
+	body, err = oscal.ExportPOAM(oscal.SamplePOAM())
+	add("poam", body, err)
+	return docs
+}
+
+func TestExportsAreValidOSCAL(t *testing.T) {
+	for name, body := range sampleExports(t) {
 		if err := oscaltest.Validate(body); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
+}
+
+// compliance-trestle reads every kind of document grc exports with its own
+// model, a second reading besides the schema. The samples carry what a
+// seeded database does not reach (TestOSCALExportsPassTrestle in internal/app
+// runs the served documents): attributes naming NFRs, items that joined after
+// approval, every finding status.
+func TestExportsPassTrestle(t *testing.T) {
+	oscaltest.Trestle(t, sampleExports(t))
 }

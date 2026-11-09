@@ -219,28 +219,12 @@ func TestOSCALNFRExports(t *testing.T) {
 func TestOSCALRegulationExports(t *testing.T) {
 	a := newFullApp(t, Options{})
 	repo := regcoverage.NewSQLiteRepository(a.conn)
-	reg, err := repo.CreateRegulation(regcoverage.Regulation{Title: "Digital Operational Resilience Act", Framework: "dora", SHA256: "abc123", Status: regcoverage.StatusAnalyzed}, "text",
-		[]regcoverage.Section{{Ref: "DORA-ART-6", Label: "Article 6", Title: "ICT risk management framework", Body: "Financial entities shall have a sound framework."}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	reg := doraRegulation(t, repo)
 	if rec := a.asAdmin(http.MethodGet, "/regulation-coverage/"+itoa(reg.ID)+"/oscal/catalog.json", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("a regulation with no version: %d %s", rec.Code, rec.Body.String())
 	}
 	cut := func(note, createdAt string, grounded bool, refs ...string) {
-		v, err := repo.CreateVersion(regcoverage.Version{RegulationID: reg.ID, Note: note, CreatedAt: createdAt})
-		if err != nil {
-			t.Fatal(err)
-		}
-		finding := &regcoverage.Finding{Relevant: true, Grounded: grounded, Requirement: "Keep a framework.", Confidence: "high", Model: "m"}
-		for _, ref := range refs {
-			finding.Mappings = append(finding.Mappings, regcoverage.Mapping{Kind: regcoverage.KindControl, Ref: ref, Source: regcoverage.SourceSeed, Confidence: "high", Known: true})
-		}
-		report := regcoverage.Report{Regulation: reg, Version: v, Sections: []regcoverage.Entry{{Section: regcoverage.Section{Ref: "DORA-ART-6", Label: "Article 6", Title: "ICT risk management framework", Body: "Financial entities shall have a sound framework."}, Finding: finding}}}
-		snapshot, _ := json.Marshal(report)
-		if err := repo.SaveVersionSnapshot(v.ID, string(snapshot)); err != nil {
-			t.Fatal(err)
-		}
+		cutRegulationVersion(t, repo, reg, note, createdAt, grounded, refs...)
 	}
 	cut("Initial analysis", "2026-10-01T08:00:00Z", true, "RA-3")
 	cut("Revised", "2026-10-05T09:30:00Z", true, "RA-3", "PM-9")
@@ -275,6 +259,46 @@ func TestOSCALRegulationExports(t *testing.T) {
 		t.Errorf("a version with only unverified mappings: %d %s", rec.Code, rec.Body.String())
 	}
 	oscalDownload(t, a, base+"catalog.json?version=3", "regulation-"+id+"-v3-catalog")
+}
+
+// doraRegulation stores one analysed regulation with one article and no
+// report version yet.
+func doraRegulation(t *testing.T, repo *regcoverage.SQLiteRepository) regcoverage.Regulation {
+	t.Helper()
+	reg, err := repo.CreateRegulation(regcoverage.Regulation{Title: "Digital Operational Resilience Act", Framework: "dora", SHA256: "abc123", Status: regcoverage.StatusAnalyzed}, "text",
+		[]regcoverage.Section{doraArticle6})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reg
+}
+
+var doraArticle6 = regcoverage.Section{Ref: "DORA-ART-6", Label: "Article 6", Title: "ICT risk management framework", Body: "Financial entities shall have a sound framework."}
+
+// cutRegulationVersion saves a report version of reg whose one finding maps
+// the article to refs, controls or (with an "NFR " prefix) Security NFRs.
+func cutRegulationVersion(t *testing.T, repo *regcoverage.SQLiteRepository, reg regcoverage.Regulation, note, createdAt string, grounded bool, refs ...string) {
+	t.Helper()
+	v, err := repo.CreateVersion(regcoverage.Version{RegulationID: reg.ID, Note: note, CreatedAt: createdAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := &regcoverage.Finding{Relevant: true, Grounded: grounded, Requirement: "Keep a framework.", Confidence: "high", Model: "m"}
+	for _, ref := range refs {
+		kind := regcoverage.KindControl
+		if key, ok := strings.CutPrefix(ref, "NFR "); ok {
+			kind, ref = regcoverage.KindNFR, key
+		}
+		finding.Mappings = append(finding.Mappings, regcoverage.Mapping{Kind: kind, Ref: ref, Source: regcoverage.SourceSeed, Confidence: "high", Known: true})
+	}
+	report := regcoverage.Report{Regulation: reg, Version: v, Sections: []regcoverage.Entry{{Section: doraArticle6, Finding: finding}}}
+	snapshot, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveVersionSnapshot(v.ID, string(snapshot)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // The profiles' remarks repeat the Asset Types page's tier rule, which lives

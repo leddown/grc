@@ -131,53 +131,9 @@ func TestOSCALAssessmentExportsFollowAPlanThroughItsQuarter(t *testing.T) {
 	oscalStatus(t, a, base+"assessment-plan.json?version=x", http.StatusBadRequest, "invalid version")
 
 	// Q1: select, test one item with one Fail, raise it, and have QA sign off.
-	if _, err := plans.FreezePopulation(p.ID, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := plans.SelectQuarter(p.ID, 1, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	tests, err := plans.CreateTests(p.ID, assuranceplan.CreateTestsInput{Quarter: 1, Tester: "tess", EvidenceRequestedOn: "2027-03-02"}, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
+	test := selectQ1(t, plans, p.ID)
 	oscalStatus(t, a, base+"assessment-results/q1.json", http.StatusNotFound, "signed off by QA yet")
-
-	current, err := plans.Get(p.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	test := tests[0]
-	var results []assuranceplan.ResultInput
-	var nfr04 int64
-	for _, attr := range current.Attributes {
-		if len(attr.AppliesTo) > 0 && !slices.Contains(attr.AppliesTo, test.StratumCode) {
-			continue
-		}
-		result := assuranceplan.ResultPass
-		if attr.AttrRef == "NFR-04" {
-			result, nfr04 = assuranceplan.ResultFail, attr.ID
-		}
-		results = append(results, assuranceplan.ResultInput{AttributeID: attr.ID, Result: result, Note: "note on " + attr.AttrRef})
-	}
-	saved, err := plans.SaveTest(p.ID, test.ID, assuranceplan.TestInput{Tester: "tess", FieldworkCompletedOn: "2027-03-20",
-		EvidenceSummary: "Recertification log.", Results: results}, "tess")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var failID int64
-	for _, r := range saved.Test.Results {
-		if r.AttributeID == nfr04 {
-			failID = r.ID
-		}
-	}
-	raised, err := plans.RaiseFinding(p.ID, failID, assuranceplan.RaiseInput{Severity: "High"}, "tess")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := plans.SignOffQA(p.ID, test.ID, "quinn"); err != nil {
-		t.Fatal(err)
-	}
+	results, raised := failAndSignOff(t, plans, p.ID, test)
 
 	body = oscalDownload(t, a, base+"assessment-results/q1.json", "assessment-results-"+strings.ToLower(p.Reference)+"-q1")
 	var ar struct {
@@ -187,8 +143,8 @@ func TestOSCALAssessmentExportsFollowAPlanThroughItsQuarter(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := ar.AssessmentResults.Results[0]
-	if result.Observations == nil || len(*result.Observations) != len(results) {
-		t.Fatalf("observations = %v, want %d", result.Observations, len(results))
+	if result.Observations == nil || len(*result.Observations) != results {
+		t.Fatalf("observations = %v, want %d", result.Observations, results)
 	}
 	if result.Findings == nil || len(*result.Findings) != 1 {
 		t.Fatalf("findings = %v", result.Findings)
@@ -234,6 +190,65 @@ func TestOSCALAssessmentExportsFollowAPlanThroughItsQuarter(t *testing.T) {
 	oscalStatus(t, a, "/audit-findings/oscal/poam.json?status=Draft", http.StatusBadRequest, "not exported")
 	oscalStatus(t, a, "/audit-findings/oscal/poam.json?status=Done", http.StatusBadRequest, "use one of")
 	oscalStatus(t, a, "/audit-findings/oscal/poam.json?status=Closed", http.StatusNotFound, "no audit finding has the status Closed")
+}
+
+// selectQ1 freezes an approved plan's population, selects its first quarter
+// and opens the tests, returning the first.
+func selectQ1(t *testing.T, plans *assuranceplan.Service, planID int64) assuranceplan.Test {
+	t.Helper()
+	if _, err := plans.FreezePopulation(planID, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plans.SelectQuarter(planID, 1, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	tests, err := plans.CreateTests(planID, assuranceplan.CreateTestsInput{Quarter: 1, Tester: "tess", EvidenceRequestedOn: "2027-03-02"}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tests[0]
+}
+
+// failAndSignOff records a result for every attribute that applies to test,
+// all Pass but NFR-04, which fails and is raised as a High finding, then has
+// QA sign the test off. It returns the number of results and the raise.
+func failAndSignOff(t *testing.T, plans *assuranceplan.Service, planID int64, test assuranceplan.Test) (int, assuranceplan.RaiseResult) {
+	t.Helper()
+	current, err := plans.Get(planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var results []assuranceplan.ResultInput
+	var nfr04 int64
+	for _, attr := range current.Attributes {
+		if len(attr.AppliesTo) > 0 && !slices.Contains(attr.AppliesTo, test.StratumCode) {
+			continue
+		}
+		result := assuranceplan.ResultPass
+		if attr.AttrRef == "NFR-04" {
+			result, nfr04 = assuranceplan.ResultFail, attr.ID
+		}
+		results = append(results, assuranceplan.ResultInput{AttributeID: attr.ID, Result: result, Note: "note on " + attr.AttrRef})
+	}
+	saved, err := plans.SaveTest(planID, test.ID, assuranceplan.TestInput{Tester: "tess", FieldworkCompletedOn: "2027-03-20",
+		EvidenceSummary: "Recertification log.", Results: results}, "tess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failID int64
+	for _, r := range saved.Test.Results {
+		if r.AttributeID == nfr04 {
+			failID = r.ID
+		}
+	}
+	raised, err := plans.RaiseFinding(planID, failID, assuranceplan.RaiseInput{Severity: "High"}, "tess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plans.SignOffQA(planID, test.ID, "quinn"); err != nil {
+		t.Fatal(err)
+	}
+	return len(results), raised
 }
 
 // The POA&M maps every Audit Findings status but Draft to an OSCAL risk

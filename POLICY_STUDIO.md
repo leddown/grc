@@ -29,7 +29,10 @@ suggestions a person accepts or rejects.
 The owner accepted the recommendations for Q1–Q10 on 2026-09-28
 ([§11](#11-open-questions-for-the-owner)). For Phase 5 the owner chose four of
 the brief's extras on 2026-09-29; server-side suggestion injection, OSCAL hooks
-and the Yjs v14 attribution evaluation are deferred. [§13](#13-operator-guide)
+and the Yjs v14 attribution evaluation are deferred. OSCAL import and export
+were later built outside the Studio, for the catalogs, crosswalks and
+assurance results; Studio documents are not exported, and
+[`OSCAL.md`](OSCAL.md#not-exported) says why. [§13](#13-operator-guide)
 is the operator guide. The Phase 0 spike code lives on
 the throwaway branch `spike/policy-studio`.
 
@@ -463,7 +466,7 @@ Phase 1 is by far the largest, so a split is proposed.
 | 2 | Presence, suggest mode, Suggestions panel + keyboard review, decision audit, comments on relative positions with visibility, provenance view, `pending_suggestions` lint, suggest mode in review | 7–9 |
 | 3 | `StopReason` + structured format in `aiprovider`; `internal/policyai` (context, prompts, validation, anchoring, provenance, `ai_policy`, limits); inline actions; dock page-context hook, policy-agent routing, proposal cards, private or shared placement; settings; `AI_AGENT.md` | 9–11 |
 | 4 | Share links, guest sessions, chromeless guest Studio with CSP, guest authorization everywhere, roles (no suggester), audit, Sharing panel with kick and revoke, LOCAL_MODE refusal, external-host nginx example, workshop mode | 8–10 |
-| 5 | Chosen with the owner: compare and redline, Word export through Pandoc, start from a library document, streamed AI answers. Deferred: server-side suggestion injection, OSCAL hooks, the Yjs v14 attribution evaluation | 5–6 |
+| 5 | Chosen with the owner: compare and redline, Word export through Pandoc, start from a library document, streamed AI answers. Deferred: server-side suggestion injection, OSCAL hooks (see [`OSCAL.md`](OSCAL.md)), the Yjs v14 attribution evaluation | 5–6 |
 
 **Risks, highest first:**
 

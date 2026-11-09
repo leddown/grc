@@ -51,7 +51,10 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
   unchanged catalog differ only in `last-modified`. grc's own analysis goes
   with it in the grc namespace: the CIA flags, each threat and the potentially
   common/inheritable marker as props, the CIA justification and the appendix
-  (References included) as parts.
+  (References included) as parts. Every OSCAL export, here and in the
+  modules below, can be checked by hand with compliance-trestle, an optional
+  Python tool that two tests also run when it is installed (`OSCAL.md`,
+  "Checking an export with compliance-trestle").
 - **Import** (`POST /controls/import`, admin; "Import JSON" on the Control
   Editor): loads a catalog file in the shape of the shipped one, keyed by
   record, with the control under `nist` (the older flat shape is read too).

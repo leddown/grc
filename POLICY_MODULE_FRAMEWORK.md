@@ -452,7 +452,23 @@ thing is.
    should not be: the LaTeX template is generated from the payload instead, so
    the two engines render the same document from the same data and neither has
    to be converted into the other.
-6. **OSCAL export.** Structural, if 1–2 are done right.
+6. **OSCAL export.** Structural, if 1–2 are done right. **Built for the
+   catalogs, the crosswalks and the assurance results; not for policy
+   documents** ([`OSCAL.md`](OSCAL.md)). grc imports NIST's SP 800-53 catalog
+   and baselines from OSCAL. It exports the 800-53 catalog and baselines, the
+   Security NFR catalog and its 800-53 mapping, Regulation Coverage versions,
+   Assurance Plans as Assessment Plans and Assessment Results, and Audit
+   Findings as a POA&M. Three decisions worth recording:
+   - **The database stays the record; OSCAL is a serializer.** Exports are
+     read-only views, the one import writes through the control catalog's
+     service, and nothing is fetched from NIST.
+   - **Nothing is invented.** grc describes no system, so it writes no SSP.
+     The Assessment Plan's required `import-ssp` points at the plan's approval
+     snapshot, with its hash. A link grc does not grade is grc's own
+     relationship `related`, not an OSCAL relationship that claims more.
+   - **A policy is not exported.** Its control claims would be an SSP's or a
+     component definition's implemented requirements, and OSCAL has no policy
+     model; coverage stays at `/policies/coverage`.
 
 ### 4.5 Open decisions I'd want settled before writing code
 
