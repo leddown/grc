@@ -20,6 +20,14 @@ type Repository interface {
 	DeleteByControlID(controlID string) error
 	ListFamilyVisibility() ([]FamilyVisibility, error)
 	SetFamilyVisibility(family string, enabled bool) error
+
+	// The OSCAL import's reads and its one write. Unexported: the import's
+	// guarantees (which columns it may touch, the digest check) live in their
+	// implementation, not in a contract another type could satisfy loosely.
+	oscalColumns() (map[string]oscalColumns, error)
+	oscalColumnsOf(controlID string) (oscalColumns, error)
+	catalogDigest() (string, error)
+	applyOSCAL(writes []oscalWrite, expectDigest string) error
 }
 
 type FamilyVisibility struct {

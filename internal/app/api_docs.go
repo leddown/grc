@@ -74,6 +74,20 @@ func openAPIJSON(c *gin.Context) {
 					"security": []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
+			"/controls/import-oscal/preview": gin.H{
+				"post": gin.H{
+					"summary":     "Preview an OSCAL catalog import",
+					"description": "Body {\"catalog\": \"<OSCAL catalog JSON text>\", \"profiles\": {\"low\"|\"moderate\"|\"high\"|\"privacy\": \"<OSCAL profile JSON text>\"}}. Returns the problems, the added, changed, unchanged and absent controls, and the base an apply needs. Writes nothing.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/controls/import-oscal": gin.H{
+				"post": gin.H{
+					"summary":     "Apply an OSCAL catalog import",
+					"description": "The preview's body plus \"base\" from the preview. 400 when the files have problems, 409 when the catalog or the files changed since the preview. Never deletes a control and never changes CIA, justification, threats, potentially common/inheritable, the appendix or the record key; rebuilds the NFR-control links.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
 			"/security-nfrs/data": gin.H{
 				"get": gin.H{
 					"summary":     "List security NFRs",

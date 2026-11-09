@@ -315,6 +315,7 @@ func buildHandlers(sqliteDB *db.Conn) (*user.Handler, *authn.Service, *authn.Han
 	controlService := controlcatalog.NewService(controlRepo, controlDataPath)
 	nfrLinkService := nfrlink.NewService(sqliteDB)
 	controlHandler := controlcatalog.NewHandler(controlService, nfrLinkService)
+	controlHandler.SetOSCALReader(readOSCALCatalog)
 
 	securityNFRRepo := securitynfr.NewSQLiteRepository(sqliteDB)
 	securityNFRService := securitynfr.NewService(securityNFRRepo, securityNFRDataPath)
@@ -869,6 +870,8 @@ func registerAdminRoutes(r gin.IRouter, userHandler *user.Handler, authHandler *
 	admin.PUT("/controls/:controlID", controlHandler.UpdateControl)
 	admin.DELETE("/controls/:controlID", controlHandler.DeleteControl)
 	admin.POST("/controls/import", controlHandler.ImportControls)
+	admin.POST("/controls/import-oscal/preview", controlHandler.PreviewOSCALImport)
+	admin.POST("/controls/import-oscal", controlHandler.ImportOSCAL)
 	admin.PUT("/security-nfrs/:key", securityNFRHandler.UpdateNFR)
 	admin.PUT("/security-nfrs/:key/weight", securityNFRHandler.SetNFRWeight)
 	admin.DELETE("/security-nfrs/:key", securityNFRHandler.DeleteNFR)

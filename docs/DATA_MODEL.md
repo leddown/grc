@@ -29,7 +29,7 @@ Three mechanisms move data, and they cover different sets of tables
 | Mechanism | What it is | Covers |
 |---|---|---|
 | Sync (`-sync-to`, `-sync-from`) | Copies between two live databases, SQLite or PostgreSQL in either direction, table by table. | Tables marked *merged by key* below, and the derived link table, which is rebuilt. |
-| JSON snapshot (Utilities → Export / Import; format version 15) | One file, imported as a full replace in one transaction. | Every table except the five marked *not transferred*. |
+| JSON snapshot (Utilities → Export / Import; format version 17) | One file, imported as a full replace in one transaction. | Every table except the five marked *not transferred*. |
 | Raw backup (Utilities → Backup) | A `VACUUM INTO` copy of the SQLite file. SQLite only. | Everything. |
 
 *Backup only* tables are records made of rows joined by autoincrement ids
@@ -103,10 +103,12 @@ Code: `internal/controlcatalog`, `internal/securitynfr`, `internal/nfrlink`.
 
 ### `nist_controls`
 
-The NIST SP 800-53 Rev 5 control catalog: one row per control or enhancement, with its family, baseline membership (low, moderate, high, privacy), the confidentiality / integrity / availability ratings, the threats it addresses (`threats_json`), requirements, discussion, related controls and the NIST appendix. Seeded from the embedded JSON; reseeded when that file's hash changes.
+The NIST SP 800-53 Rev 5 control catalog: one row per control or enhancement, with its family, baseline membership (low, moderate, high, privacy), the confidentiality / integrity / availability ratings, the threats it addresses (`threats_json`), requirements, discussion, related controls and the NIST appendix. Filled by the JSON import (`POST /controls/import`) and the OSCAL import (`POST /controls/import-oscal`); a new database starts empty.
 
-- **Key:** `id`. **Travels:** merged by key (`control_id`).
-- **Columns** (text unless a type is given): `id integer`, `source_key`, `control_id`, `control_type`, `name`, `family`, `in_low integer`, `in_moderate integer`, `in_high integer`, `in_privacy integer`, `mapping_baselines_json`, `threats_json`, `confidentiality_status`, `integrity_status`, `availability_status`, `justification`, `potentially_common_inheritable`, `requirements`, `discussion`, `related_controls_json`, `appendix_json`.
+`params_json`, `statement_json` and `assessment_json` hold the upstream OSCAL structure the OSCAL import stores, as compact OSCAL JSON: the control's `params` array (the organization-defined parameters, with their labels, selections, guidelines and `aggregates` props), its `statement` part, and its `assessment-objective` and `assessment-method` parts (SP 800-53A), in document order. Each is `'null'` for a control never imported from OSCAL. Only the OSCAL import writes them; the JSON import, the editor and `Rewrite JSON` leave them as they are, and the control file format does not carry them. The OSCAL import never writes `confidentiality_status`, `integrity_status`, `availability_status`, `justification`, `threats_json`, `potentially_common_inheritable`, `appendix_json` or `source_key` of an existing row.
+
+- **Key:** `id`. **Travels:** merged by key (`control_id`). A snapshot older than version 17 restores the three OSCAL columns as `'null'`.
+- **Columns** (text unless a type is given): `id integer`, `source_key`, `control_id`, `control_type`, `name`, `family`, `in_low integer`, `in_moderate integer`, `in_high integer`, `in_privacy integer`, `mapping_baselines_json`, `threats_json`, `confidentiality_status`, `integrity_status`, `availability_status`, `justification`, `potentially_common_inheritable`, `requirements`, `discussion`, `related_controls_json`, `appendix_json`, `params_json`, `statement_json`, `assessment_json`.
 
 ### `nist_stride_mappings`
 

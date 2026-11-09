@@ -32,7 +32,11 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
   requirements, discussion, related controls, the threats it addresses, and
   the NIST appendix.
 - **Detail page** (`/controls/detail/:controlID`): one control on a page of
-  its own, linked from everywhere a control id is shown.
+  its own, linked from everywhere a control id is shown. For a control
+  imported from OSCAL it adds "Parameters (ODPs)" (each organization-defined
+  parameter's 800-53A label, what it asks for and its guideline) and
+  "Assessment objectives (800-53A)" (the objectives, and the examine,
+  interview and test objects).
 - **Export** (`/controls/export?format=csv|excel`): the filtered list as CSV
   or as Excel 2003 XML.
 - **Import** (`POST /controls/import`, admin; "Import JSON" on the Control
@@ -44,6 +48,26 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
   with no name is refused before anything is written. Every import rebuilds
   the NFR-control links. `GET /controls/family-json/data` returns the catalog
   in the same shape, so an export imports back.
+- **OSCAL import** (`POST /controls/import-oscal/preview` and
+  `POST /controls/import-oscal`, admin; "Import OSCAL" on the Control
+  Editor): reads NIST's own SP 800-53 Rev. 5 catalog in OSCAL JSON
+  (`NIST_SP-800-53_rev5_catalog.json` from usnistgov/oscal-content) and,
+  optionally, any of its four baseline profiles. The administrator downloads
+  the files and picks them; the application fetches nothing. The preview lists
+  every problem, then the added, changed (with a before/after for text),
+  unchanged and absent controls; apply writes only a preview without problems,
+  and refuses (409) if the catalog or the files changed since it. The import
+  sets type, name, requirements (the statement rendered into the catalog's
+  text, `[Assignment: organization-defined …]` and `[Selection (one or more):
+  …]`), discussion, related controls and, for each posted profile, that
+  baseline's flags; it stores the parameters (ODPs) and the 800-53A assessment
+  objectives and methods, which the detail page shows. It never changes the
+  CIA ratings and justification, threats, potentially common/inheritable, the
+  appendix (References included) or the record key, never deletes a control,
+  and leaves a baseline whose profile was not posted as it is. A withdrawn
+  control keeps empty requirements and takes NIST's title as its name
+  (`OSCAL.md`). Every apply rebuilds the NFR-control links. Code: `internal/oscal` reads the files;
+  `internal/controlcatalog` works out and applies the change.
 - **Control Editor** (`/controls/manage`, admin to save): edit any field of a
   control or delete one. A save or delete rebuilds the NFR-control links.
   With `ALLOW_JSON_SAVE=true`, "Rewrite JSON" writes the catalog to

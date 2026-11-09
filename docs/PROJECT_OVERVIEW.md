@@ -82,7 +82,9 @@ The sidebar groups are the product's own map of itself.
 | Security gates | `gosec` and `govulncheck` run as Go tests, so `go test ./...` is the gate. |
 
 Direct Go dependencies: gin, pgx, modernc sqlite, ygo, gorilla/websocket,
-chromedp, goldmark, yaml.v3, x/crypto, x/text, and gosec and x/vuln as tools.
+chromedp, goldmark, yaml.v3, x/crypto, x/text, go-oscal (its generated OSCAL
+1.2.1 types only; see `OSCAL.md`), google/uuid (UUIDv5 for OSCAL identifiers),
+and gosec and x/vuln as tools.
 
 ## Size
 

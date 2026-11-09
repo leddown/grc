@@ -59,6 +59,12 @@ import (
 // v9 added Audit Findings & Remediation (audit_findings, audit_finding_actions,
 // audit_finding_history). A v8-or-older backup restores with those empty.
 //
+// v17 added the upstream OSCAL structure on nist_controls (params_json,
+// statement_json, assessment_json), filled by an OSCAL catalog import. A
+// v16-or-older backup restores with all three at their default 'null', which
+// reads as "not imported from OSCAL yet"; nothing else about the controls
+// changes, and an OSCAL import fills them again.
+//
 // v16 added Assurance Plans (assurance_plans and its steps, quarters, strata,
 // population, selections, attributes, tests, results, thematic pushes, RACI,
 // cadence, escalations, history and versions) and audit_findings.origin_ref.
@@ -93,7 +99,7 @@ import (
 // an existing backup unrestorable — that was the effect when the handler
 // compared for equality, and it is the failure mode to watch for on the next
 // bump.
-const SnapshotVersion = 16
+const SnapshotVersion = 17
 
 // Snapshot is a portable, engine-independent dump of every managed table — the
 // same tables (and columns) dbsync.Sync copies. It is the on-the-wire format

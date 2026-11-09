@@ -162,6 +162,12 @@ func helpPage(c *gin.Context) {
               detail page of its own.</li>
             <li>Edit rows, add controls and correct classifications in
               <a href="/controls/manage">Control Editor</a>.</li>
+            <li>Bring the catalog up to NIST's current text with <strong>Import OSCAL</strong> on the
+              Control Editor: choose NIST's SP 800-53 Rev. 5 OSCAL catalog (and, if the baselines
+              should follow NIST, its LOW, MODERATE, HIGH and PRIVACY profiles), preview, and apply.
+              The preview shows every change before anything is written; the import never deletes a
+              control and never touches the CIA ratings, threats or the appendix. The detail page then
+              shows each control's parameters (ODPs) and 800-53A assessment objectives.</li>
             <li>Read the catalog as family → control → enhancement in
               <a href="/controls/hierarchy">Hierarchy</a>, and export that view as RTF for a
               document.</li>

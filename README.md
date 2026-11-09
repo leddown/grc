@@ -55,6 +55,8 @@ package and how a request is served. In short:
 - `internal/user` — basic user CRUD (distinct from `internal/authn`'s auth users)
 - `internal/controlcatalog`, `internal/securitynfr`, `internal/nfrlink` — NIST
   control catalog, security NFR catalog, and their cross-linking
+- `internal/oscal` — OSCAL interchange: imports NIST's SP 800-53 OSCAL catalog
+  and baseline profiles (the only importer of go-oscal); see `OSCAL.md`
 - `internal/riskregister`, `internal/reports` — risk register and reporting
   dashboards
 - `internal/reporting` — HTML/CSS-to-PDF GRC report generation (see its

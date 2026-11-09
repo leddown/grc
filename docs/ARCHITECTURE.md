@@ -51,7 +51,8 @@ is set (`internal/doctemplate/remote.go`, `DOCUMENT_TEMPLATES.md`).
      NFR-control link table. Nothing is loaded into the catalogs at startup:
      a new database has empty catalogs until an administrator imports the
      800-53 and Security NFR JSON files (`POST /controls/import`,
-     `POST /security-nfrs/import`), and each import rebuilds the links.
+     `POST /security-nfrs/import`) or NIST's OSCAL catalog
+     (`POST /controls/import-oscal`), and each import rebuilds the links.
    - `gin.Default()` plus `themeMiddleware`, plus `pageAccessMiddleware`
      unless in local mode.
    - Registers the core routes, then each module's routes through a
@@ -102,6 +103,7 @@ tests.
 |---|---|---|
 | `internal/controlcatalog` | 4,100 | NIST controls: list, detail, hierarchy, editor, family visibility, CSV / Excel-XML / RTF exports. |
 | `internal/controlfile`, `internal/controlid` | 390 | The control JSON file format; control id normalisation and natural ordering. |
+| `internal/oscal` | 1,300 | The OSCAL interchange layer and the only importer of go-oscal (its OSCAL 1.2.1 types): reads NIST's 800-53 OSCAL catalog and baseline profiles into neutral types (`ReadCatalogImport`, the statement rendered into the catalog's text), deterministic UUIDv5s under a fixed grc namespace, the grc props namespace, a metadata builder, and an RFC 8785 canonical JSON writer for export bytes. `internal/app/oscal_adapter.go` hands its result to `controlcatalog`, which never imports it. `oscaltest` validates against the OSCAL JSON schema in tests only. See `OSCAL.md`. |
 | `internal/securitynfr`, `internal/nfrfile` | 2,200 | Security NFRs: list, detail, editor, weights; the NFR JSON file format. |
 | `internal/nfrlink` | 930 | Derives NFR-control links from the NIST mapping text; overrides. |
 | `internal/reports` | 1,200 | The linked / unlinked controls report. |

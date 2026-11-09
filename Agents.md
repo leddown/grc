@@ -48,6 +48,11 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   users
 - `internal/controlcatalog`, `internal/securitynfr`, `internal/nfrlink` —
   NIST control catalog, security NFR catalog, and their cross-linking
+- `internal/oscal` — OSCAL interchange, and the only package that imports
+  go-oscal (its generated types only). It reads NIST's 800-53 OSCAL catalog
+  and profiles into neutral types that `internal/app/oscal_adapter.go` hands
+  to `controlcatalog`; domain modules never import it or go-oscal. OSCAL is a
+  serializer around the database, never the store — see `OSCAL.md`
 - `internal/riskregister`, `internal/reports` — risk register and
   reporting dashboards
 - `internal/exceptionbook`, `internal/xlsx` — the Exceptions Workbook

@@ -107,6 +107,8 @@ The home page, sign-in, build information and the in-app documentation.
 | GET | `/controls` | signed in | `controlcatalog.(*Handler).Page` |
 | DELETE | `/controls/:controlID` | admin | `controlcatalog.(*Handler).DeleteControl` |
 | POST | `/controls/import` | admin | `controlcatalog.(*Handler).ImportControls` |
+| POST | `/controls/import-oscal/preview` | admin | `controlcatalog.(*Handler).PreviewOSCALImport` |
+| POST | `/controls/import-oscal` | admin | `controlcatalog.(*Handler).ImportOSCAL` |
 | PUT | `/controls/:controlID` | admin | `controlcatalog.(*Handler).UpdateControl` |
 | GET | `/controls/data` | signed in | `controlcatalog.(*Handler).ListControls` |
 | GET | `/controls/data/:controlID` | signed in | `controlcatalog.(*Handler).GetControl` |
@@ -120,6 +122,15 @@ The home page, sign-in, build information and the in-app documentation.
 | GET | `/controls/hierarchy/export` | signed in | `controlcatalog.(*Handler).ExportHierarchyRTF` |
 | GET | `/controls/manage` | signed in | `controlcatalog.(*Handler).ManagePage` |
 | POST | `/controls/save` | admin (only with `ALLOW_JSON_SAVE`) | `controlcatalog.(*Handler).SaveControlsToJSON` |
+
+The OSCAL import takes one JSON body, `{"catalog": "<file text>",
+"profiles": {"low": "<file text>", "moderate": …, "high": …, "privacy": …},
+"base": "<from the preview>"}`, up to 32 MB. The preview returns the problems,
+notes, added, changed (with the fields and, for text, before and after),
+unchanged and absent controls, and `base`; the apply needs that `base` and
+answers 400 when the files have problems, 409 when the catalog or the files
+changed since the preview, and 200 with the same result, `applied` and
+`links_rebuilt`. A file that is not an OSCAL catalog is a 400 on both.
 
 ## Security NFR catalog and NFR-control links
 

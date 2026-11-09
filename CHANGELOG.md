@@ -3,6 +3,264 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-09 (OSCAL, phase 1: the foundation and the SP 800-53 catalog import)
+
+First of four phases on `feature/oscal`. An administrator downloads NIST's
+official SP 800-53 Rev. 5 catalog in OSCAL JSON from usnistgov/oscal-content,
+with any of its baseline profiles, and picks the files on the Control Editor.
+grc previews what an import would change, then applies it through the control
+catalog service. The database stays the system of record; OSCAL is an
+interchange format. The application fetches nothing, and reads no XML or YAML.
+No AI is involved. See `OSCAL.md`.
+
+- **Dependency decision: go-oscal.** `github.com/defenseunicorns/go-oscal
+  v0.7.2` is the one module this work adds. It met each condition:
+  - the licence is Apache-2.0 (the module's `LICENSE`)
+  - `CGO_ENABLED=0 go build ./cmd/api` succeeds
+  - TestGosec and TestGovulncheck pass with it
+  - the binary links only its generated types package `src/types/oscal-1-2-1`,
+    which imports nothing but `time`. Against `main`, `go list -deps
+    ./cmd/api` differs by exactly that package and `grc/internal/oscal`, and
+    `TestBinaryLinksOnlyTheOSCALTypes` keeps it so. The linux/amd64 binary grew
+    by 351,322 bytes (62,130,820 → 62,482,142), grc's own new code included.
+
+  Its validator (`src/pkg/validation`, with embedded schemas and
+  `santhosh-tekuri/jsonschema/v6`, which is why that module shows in `go.mod`
+  as indirect) is used only by tests, through `internal/oscal/oscaltest`. Its
+  cobra CLI is not linked. The YAML packages in the build (goccy/go-yaml,
+  yaml.v3) were already linked on `main` through Gin; this work adds none.
+  `github.com/google/uuid v1.6.0` was already in the module graph and the
+  binary, and is now a direct requirement (UUIDv5); nothing new is linked for
+  it. compliance-trestle stays out of the build (it is Python), and phase 4
+  uses it only as an optional out-of-process check in one test.
+- **One OSCAL version: 1.2.1** (`oscal.Version`), the default the prompt set.
+  I diffed 1.2.1 against 1.2.3 first. go-oscal's generated 1.2.1, 1.2.2 and
+  1.2.3 types are identical apart from the package name and the version
+  constant. The 1.2.1 and 1.2.3 JSON schemas differ only in two
+  component-type enumerations. NIST's 5.2.0 catalog declares 1.2.3 and parses
+  into the 1.2.1 types without losing a field. An `oscal-version` that is not
+  1.x is a preview problem.
+- **`internal/oscal`** (new; the only importer of go-oscal):
+  - `oscal.go`: the version, the props namespace
+    `https://carelockconsulting.com/ns/oscal/grc`, and aliases for the pinned
+    types
+  - `uuid.go`: `UUID(kind, key)`, a UUIDv5 under the fixed namespace
+    `2e98bbc8-0256-4a99-a220-1f7b4c3f60a6`, keyed on the kind and a stable key
+  - `metadata.go`: the metadata builder (UTC to the second, the version
+    declared) and `GRCProps`, which skips empty values
+  - `canonical.go`: an RFC 8785 (JCS) writer. Keys sort by UTF-16 code units,
+    numbers use the ECMAScript format, and HTML is not escaped. Phase 2's
+    exports write through it.
+  - `render.go`: renders a statement or guidance into the catalog's text.
+    - Each item is `label prose` on its own line, depth first.
+    - A parameter becomes `[Assignment: organization-defined <label>]`, or
+      `[Selection: …; …]` / `[Selection (one or more): …; …]`.
+    - A link becomes its text, and NIST's space before punctuation after an
+      insert is dropped.
+    - Nesting is limited to 6, so a parameter that inserts itself terminates.
+    - A parameter defined by another control resolves (IA-13(3) inserts
+      `ia-13_odp.01`).
+  - `catalogimport.go`: `ReadCatalogImport(catalog, profiles)` maps the
+    documents onto neutral types (see the mapping below) and lists the
+    problems:
+    - a duplicate id, a missing title, or a parameter nobody defines
+    - a profile in the wrong slot (its title names another baseline)
+    - a profile that names a control the catalog lacks, uses `matching`
+      patterns, or cannot be read
+    - an unknown slot
+    - a document that is not a catalog or a profile (refused with an error)
+  - `oscaltest/validate.go`: schema validation for tests (go-oscal's
+    validator at version 1.2.1)
+- **The mapping onto `nist_controls`.**
+  - `control_id` comes from the `label` prop with no class, through
+    `controlid.Normalize`, or from the id token when there is no label.
+  - The type follows nesting: Control in a group, Control Enhancement in a
+    control.
+  - `name` is the `title`.
+  - `requirements` is the rendered statement; `discussion` is the rendered
+    guidance.
+  - `related_controls_json` comes from `rel="related"` links.
+  - The baseline flags and `mapping_baselines_json` are set only for a slot
+    whose profile was posted. That handles `with-ids`,
+    `with-child-controls: yes`, `exclude-controls` and `include-all`. If no
+    profile is posted, the preview says the baselines are untouched.
+  - A withdrawn control (the `status` prop) is mapped like any other. There is
+    no withdrawn column, and NIST gives a withdrawn control no statement
+    except CP-10(3) and SC-19, whose statements grc already holds.
+  - Never written on an existing control: the CIA flags and justification,
+    `threats_json`, `potentially_common_inheritable`, `appendix_json`
+    (`References` included, which the DORA Report and the Exceptions Workbook
+    read) and `source_key`.
+  - A control the catalog lacks gets `source_key` `<id>: <title>`, empty
+    threats and a null appendix.
+  - Nothing is deleted. Controls the file does not carry are listed as absent.
+- **Schema.** `nist_controls` gains `params_json`, `statement_json` and
+  `assessment_json` (TEXT NOT NULL DEFAULT `'null'`). They hold the control's
+  `params`, its `statement` part, and the `assessment-objective` and
+  `assessment-method` parts (800-53A) as OSCAL JSON, in document order.
+  - The columns were added to both `sqlite.go` (CREATE TABLE plus
+    `ensureColumn` for an existing database) and `postgres.go` (CREATE TABLE
+    plus `ADD COLUMN IF NOT EXISTS`).
+  - `dbsync` copies them (`syncOrder` columns), and the snapshot format is
+    now version 17.
+  - `statement_json` goes beyond the prompt's example columns: phase 2's
+    catalog export needs the statement's structure, not only its text.
+- **Control catalog** (`internal/controlcatalog`):
+  - `oscal_import.go` (new): `PreviewOSCAL` and `ApplyOSCAL(catalog, base)`.
+    - The plan is computed over the whole stored catalog, hidden families
+      included.
+    - Each changed control lists the fields that change. A text field
+      carries before and after, and is marked when the change is whitespace
+      only.
+    - The preview also gives counts per field, the unchanged and absent
+      controls, the notes, and a `base`: the SHA-256 of the stored catalog's
+      digest and the posted files' hashes.
+    - Apply refuses with `ErrOSCALProblems` while there is a problem, and with
+      `ErrOSCALConflict` when `base` is empty or no longer matches.
+  - `repository_oscal.go` (new): the digest is a SHA-256 over every column
+    of every row, in `control_id` order. `applyOSCAL` recomputes it inside
+    the write transaction, so a change that lands between the check and the
+    write is caught. The update statement names only the columns the import
+    owns.
+  - `handler_oscal.go` (new): one JSON body
+    `{"catalog", "profiles": {"low", "moderate", "high", "privacy"}, "base"}`
+    of at most 32 MB.
+    - The preview answers 200.
+    - Apply answers 200, 400 (problems, with the result), 409 (stale, with the
+      result) or 500. On success it rebuilds the NFR-control links and
+      reports `links_rebuilt`.
+    - With no reader wired, both routes answer 503.
+  - `pages_oscal.go` (new):
+    - The Control Editor's "Import OSCAL" panel holds the catalog file and the
+      four profile slots, with Preview and Apply.
+    - The result shows files, problems, notes, counts, and changes filterable
+      by field, with a before/after loaded on open; then the unchanged and
+      absent controls.
+    - A 409 discards the preview. Text is escaped with `esc()`, and colours
+      come from theme tokens.
+    - The detail page gains "Parameters (ODPs)" (each ODP's 800-53A label,
+      what it asks for, what it aggregates, and its guideline) and
+      "Assessment objectives (800-53A)" (the objectives as a nested list, and
+      the methods with their objects).
+  - `service.go`: `Control` gains `params`, `statement` and `assessment`.
+    They are filled only by `Get`, so the list and the JSON import stay as
+    they were.
+- **Routes** (admin): `POST /controls/import-oscal/preview` and
+  `POST /controls/import-oscal`. The admin group covers both.
+  `internal/app/oscal_adapter.go` (new) converts `internal/oscal`'s types into
+  the control catalog's, so no domain module imports go-oscal. Both routes are
+  wired in `app.go`, with OpenAPI entries in `api_docs.go` and an Import OSCAL
+  step on the Help page.
+- **Fixture** (`internal/oscal/testdata/`, 101 KB in all, with a README giving
+  the full source files' SHA-256s). It is cut from NIST's 5.2.0 files:
+  - the catalog with AC-1, AC-2 with only AC-2(1), the withdrawn AC-13, SA-24
+    and the 11 back-matter resources they cite
+  - the LOW profile rows (AC-1, AC-2)
+  - the MODERATE profile rows (AC-1, AC-2, AC-2(1))
+
+  The full NIST files are not committed, and nothing downloads them.
+- **Tests.**
+  - `internal/oscal`:
+    - canonical JSON: the RFC 8785 example, the UTF-16 sort example, the
+      Appendix B number table, NaN and Inf refused, and struct stability
+    - UUIDs: determinism, version 5, and the namespace and one value pinned
+      (checked against Python's `uuid5`)
+    - rendering: parameters, links, an unknown parameter, a self-insert, and
+      a parameter defined by another control
+    - import: the source metadata; the control mapping; AC-1, AC-2, AC-2(1)
+      and AC-13 rendered identical to the shipped catalog; the stored
+      structure; baselines; profile problems; non-catalogs refused;
+      determinism
+    - all 1,193 shipped ids resolve to themselves, through the label and
+      through the id token
+    - the fixtures validate against the 1.2.1 schema
+    - the binary's linked packages
+  - `internal/controlcatalog`:
+    - the preview writes nothing
+    - apply leaves grc's own columns byte-identical. The seeded raw JSON is
+      deliberately not canonical, so even a rewrite with the same meaning
+      shows. I added `justification = TRIM(justification)` to the update
+      statement and the test caught it.
+    - without profiles the baselines are untouched; with one profile only its
+      slot changes
+    - stale, other-file and missing bases are refused with 409, and problems
+      with 400
+    - the repository's in-transaction digest check
+    - the detail sections
+  - `internal/db`: the columns on a fresh and an upgraded database, with
+    `'null'` on an existing row.
+  - `internal/app`:
+    - every new route refuses an anonymous request (401) and a non-admin one
+      (403)
+    - the whole path: a JSON import of the shipped AC-1, AC-2, AC-2(1) and
+      AC-13, an OSCAL preview showing SA-24 added, apply with grc's own
+      columns unchanged, a second apply answering 409, the detail page, the
+      data route and the Editor markup
+- **Gate.** `go fmt` and `go vet` are clean. `go test ./...` passes, including
+  TestGosec and TestGovulncheck (both run, not skipped). `npm audit
+  --omit=dev` in `web/policy-studio` found 0 vulnerabilities. PostgreSQL was
+  reviewed, not run.
+- **Manual check.** I ran a throwaway server: the `CGO_ENABLED=0` binary in
+  local mode, a temporary SQLite database in the session scratch directory,
+  port 18731.
+  - I loaded the shipped catalog (1,193) and NFRs (109): 238 links, 237
+    matched.
+  - Preview of the full NIST 5.2.0 catalog (10.4 MB) with all four profiles:
+    1.5 s, a 798 KB answer, no problems.
+    - 3 added (SA-15(13), SA-24, SI-2(7)), 1,171 changed, 22 unchanged,
+      0 absent, 182 withdrawn in the file.
+    - Fields changed: assessment 1,011, statement structure 1,013, parameters
+      677, name 178, discussion 166 (40 whitespace only), requirements 162
+      (7 whitespace only), related controls 33, baselines 0.
+  - Requirements: 1,031 of the 1,193 render identical to the shipped text.
+    - 7 differ only in whitespace.
+    - 155 differ in substance. In 142 of them the difference is only inside
+      the brackets, where NIST 5.2.0 has shorter ODP labels (88), different
+      selection wording (47) or both (7). 8 differ outside the brackets, and
+      in 5 one side is empty.
+  - Names: 178 change.
+    - 159 are withdrawn controls. 157 of them go from the shipped file's
+      `<parent title> | <title>` to NIST's title alone; IR-10 and MA-4(2)
+      carry other names.
+    - 19 are live controls: 18 en dashes become NIST's em dashes, and IA-2(6)
+      takes NIST's `—separate`.
+  - Apply: 1.7 s. A hash of every row's grc-owned columns and baseline
+    columns was the same before and after.
+    - The stored structure: 1,196 rows, with 679 holding parameters, 1,016 a
+      statement and 1,014 assessment parts; 3.3 MB in all.
+    - Links unchanged (238 / 237).
+    - The same base again answered 409. A second preview found 0 added,
+      0 changed, 1,196 unchanged.
+  - Headless Chrome at 1280×900 in the dark theme:
+    - On the Control Editor: the panel, the file pickers, a preview and an
+      expanded change.
+    - AC-2's detail page with both sections, the objectives opened.
+
+  The server, database, WAL, log, key file, request bodies and binary were
+  removed, along with a temporary comparison test and screenshot program.
+  The screenshots and NIST's files stay in the session scratch directory,
+  outside the repository.
+
+  Not checked: PostgreSQL; the 1024×640 window; the light themes; the HIGH
+  and PRIVACY profiles beyond their posting in the full run.
+- **What differed from the prompt.**
+  - The prompt's 1,193 controls are the shipped catalog. NIST's release 5.2.0
+    (2026-10-22) has 1,196.
+  - Withdrawn controls keep their (empty) text, but not the shipped names.
+    Under the title rule, 159 are renamed.
+  - The text renderer cannot reproduce the shipped requirements for 155
+    controls, because NIST's own 5.2.0 text differs from the release the
+    shipped file was built from.
+- Docs:
+  - `OSCAL.md` (new)
+  - HTTP_API (two routes and the body/status paragraph)
+  - DATA_MODEL (the three columns; snapshot format 17; the stale "seeded from
+    embedded JSON" line corrected)
+  - FEATURES (the OSCAL import, and the detail page sections)
+  - ARCHITECTURE (the `internal/oscal` row and the startup text)
+  - PROJECT_OVERVIEW (direct dependencies)
+  - README and Agents.md (the package list)
+
 ## 2026-11-07 (Assurance Plans, phase 6: AI assist — plan drafts, test attributes, committee narrative)
 
 Last of six phases on `feature/assurance-plans`. Three optional assists on a

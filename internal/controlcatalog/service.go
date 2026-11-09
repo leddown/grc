@@ -2,6 +2,7 @@ package controlcatalog
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -38,6 +39,13 @@ type Control struct {
 	Discussion                   string         `json:"discussion"`
 	RelatedControls              []string       `json:"related_controls"`
 	Appendix                     map[string]any `json:"appendix"`
+	// The upstream OSCAL structure an OSCAL import stored: the params array,
+	// the statement part and the assessment parts, as OSCAL JSON. Empty for a
+	// control never imported from OSCAL. Only Get fills them; a list would
+	// otherwise carry the whole 800-53A text with every control.
+	Params     json.RawMessage `json:"params,omitempty"`
+	Statement  json.RawMessage `json:"statement,omitempty"`
+	Assessment json.RawMessage `json:"assessment,omitempty"`
 }
 
 type FamilySetting struct {
@@ -200,8 +208,22 @@ func (s *Service) Get(controlID string) (Control, error) {
 		}
 		return Control{}, err
 	}
-
+	cols, err := s.repo.oscalColumnsOf(controlID)
+	if err != nil {
+		return Control{}, err
+	}
+	control.Params = storedJSON(cols.Params)
+	control.Statement = storedJSON(cols.Statement)
+	control.Assessment = storedJSON(cols.Assessment)
 	return control, nil
+}
+
+func storedJSON(value string) json.RawMessage {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "null" {
+		return nil
+	}
+	return json.RawMessage(value)
 }
 
 func (s *Service) Update(controlID string, control Control) (Control, error) {

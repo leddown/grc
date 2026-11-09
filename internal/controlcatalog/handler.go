@@ -22,6 +22,7 @@ import (
 type Handler struct {
 	service     *Service
 	linkBuilder linkBuilder
+	oscalReader OSCALReader
 }
 
 type linkBuilder interface {
@@ -500,7 +501,7 @@ func (h *Handler) DetailPage(c *gin.Context) {
     }
     @media (max-width: 980px) {
       .summary-row { grid-template-columns: 1fr; }
-    }
+    }` + oscalDetailCSS + `
   </style>
 </head>
 <body>
@@ -533,6 +534,7 @@ Availability: ` + detailHTMLEscape(orNA(control.Availability)) + `</div>
         <div id="linkedNFRs"><div class="text">Loading linked Security NFRs...</div></div>
       </article>
       ` + detailNISTCardsHTML(control.Requirements, control.Discussion, control.Appendix) + `
+      ` + detailOSCALSections(control) + `
       <article class="card">
         <h2>Justification</h2>
         <div class="text">` + detailHTMLEscape(orNA(control.Justification)) + `</div>
@@ -2540,7 +2542,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
     p { color: var(--muted); }
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) auto auto auto auto;
+      grid-template-columns: minmax(260px, 1fr) auto auto auto auto auto;
       gap: 12px;
       margin: 22px 0 18px;
     }
@@ -2678,7 +2680,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
     @media (max-width: 980px) {
       .layout, .grid { grid-template-columns: 1fr; }
       .rows { max-height: 45vh; }
-    }
+    }` + oscalImportCSS + `
   </style>
 </head>
 <body>
@@ -2693,8 +2695,10 @@ func (h *Handler) ManagePage(c *gin.Context) {
       <label class="import-replace" title="Delete entries the file does not carry"><input id="importReplace" type="checkbox"> Replace</label>
       <button id="importBtn" class="secondary" type="button">Import JSON</button>
       <input id="importFile" type="file" accept=".json,application/json" hidden>
+      <button id="oscalBtn" class="secondary" type="button" title="Import NIST's OSCAL catalog and baseline profiles, with a preview">Import OSCAL</button>
       <button id="exportBtn" type="button">Rewrite JSON</button>
     </section>
+` + oscalImportPanelHTML + `
 
     <section class="layout">
       <div class="panel">
@@ -3221,7 +3225,7 @@ func (h *Handler) ManagePage(c *gin.Context) {
     });
 
     loadControls();
-  </script>
+  </script>` + oscalImportScript + `
 </body>
 </html>`
 
