@@ -275,10 +275,10 @@ OSCAL value says more than that. Even `intersects-with`, the weakest, says
 that neither side contains the other. Every map therefore carries grc's own
 relationship, `related`, with the map's `ns` set to grc's namespace, which the
 schema provides for ("This allows different organizations to associate
-distinct semantics for relationships with the same name"). If a consumer needs
-an OSCAL value, `intersects-with` is the closest; the change is
-`oscal.Relationship` and the map `ns`. The matching-rationale, which OSCAL
-also requires, is `semantic`.
+distinct semantics for relationships with the same name"). The owner
+confirmed `related` on 2026-11-09. If a consumer ever needs an OSCAL value,
+`intersects-with` is the closest; the change is `oscal.Relationship` and the
+map `ns`. The matching-rationale, which OSCAL also requires, is `semantic`.
 
 ## Assurance results
 
@@ -666,6 +666,16 @@ scope file's checksum show a change, but anyone can compute them, so they
 prove nothing about who made a file (`docs/FEATURES.md` says so of the scope
 file).
 
+The owner settled two choices on 2026-11-09:
+
+- **The envelope uses trestle's predicate type**, so that `trestle verify`
+  checks it, accepting that it belongs to a beta trestle feature. The build
+  pins the URI, and the trestle check signs and verifies through trestle, so
+  a trestle release that changes it shows up as a failing test.
+- **A scope file is signed only after the server has checked it** with the
+  page's own checks written again in Go, held to the page's by a test under
+  node ([below](#the-exceptions-scope-file)).
+
 ### What is signed
 
 | Artifact | What the signature covers | When |
@@ -815,9 +825,10 @@ against its own records:
 - each id and summary are the catalog's.
 
 The envelope then attests that this installation's catalog held exactly that
-listing when it signed, and the log records who asked. This needs the page's
-checks in Go as well. A test would run both on the same files under node, as
-`internal/app/exceptions_scopefile_test.go` already runs the page's script.
+listing when it signed, and the log records who asked. The page's checks are
+written again in Go for this, as decided. A test runs both on the same files
+under node, as `internal/app/exceptions_scopefile_test.go` already runs the
+page's script, so the two cannot drift apart.
 
 ### `trestle verify`
 
@@ -841,9 +852,9 @@ The conditions:
 
 - **Signing is a beta feature in trestle 5.2.0.** Pass `--beta`, or enable
   the `json-signing` feature in the workspace.
-- **The predicate type is trestle's.** A later trestle may change it. grc
-  would pin the URI, and the trestle check would sign and verify through
-  trestle to show when it moves.
+- **The predicate type is trestle's**, as decided. A later trestle may
+  change it. The build pins the URI, and the trestle check signs and verifies
+  through trestle to show when it moves.
 - **trestle ignores the key id** and takes one public key per run.
 - **A renamed file** needs `--subject-name <download name>`.
 - **Several files:** `trestle verify-manifest` checks a package of files under

@@ -3,6 +3,26 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-09 (OSCAL: the owner's decisions after phase 4, recorded)
+
+Documentation only, in `OSCAL.md`; no code changed. The owner took the
+recommendations on the three open design points:
+
+- **Signing uses trestle's predicate type**, so `trestle verify` can check
+  grc's envelopes, accepting that it belongs to a beta trestle feature. When
+  signing is built, the URI is pinned and the trestle check signs and
+  verifies through trestle, so a trestle release that changes it fails a
+  test. Recorded in "Signing (design, not built)" and its `trestle verify`
+  section.
+- **A scope file is signed only after the server checks it**, with the
+  page's checks written again in Go and held to the page's by a test under
+  node. Recorded in "The Exceptions scope file".
+- **A map's relationship stays grc's own `related`**, with
+  `intersects-with` as the closest OSCAL value should a consumer need one.
+  Recorded in "The relationship". This was open since phase 2.
+
+`feature/oscal` is merged into `main` after this entry.
+
 ## 2026-11-09 (OSCAL, phase 4: compliance-trestle check, OSCAL.md in full, signing design)
 
 The last phase. No route, table or column changes, and nothing changes in
