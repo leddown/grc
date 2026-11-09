@@ -641,7 +641,8 @@ func (h *Handler) Page(c *gin.Context) {
   <main>
 	    ` + pageui.Nav("/security-nfrs") + `
     <h1>Security NFRs</h1>
-    <p>The Security NFR catalog in the database. Import or edit it on the <a href="/security-nfrs/manage">editor page</a>.</p>
+    <p>The Security NFR catalog in the database. Import or edit it on the <a href="/security-nfrs/manage">editor page</a>.
+      Download as OSCAL: <a href="/security-nfrs/oscal/catalog.json">NFR catalog</a>, <a href="/security-nfrs/oscal/mapping.json">NFR to 800-53 mapping</a>.</p>
 
     <section id="filters" class="filters">
       <button id="filtersToggle" class="filters-header" type="button" aria-expanded="true" aria-controls="filtersBody">

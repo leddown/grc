@@ -162,12 +162,25 @@ func helpPage(c *gin.Context) {
               detail page of its own.</li>
             <li>Edit rows, add controls and correct classifications in
               <a href="/controls/manage">Control Editor</a>.</li>
+            <li>Bring the catalog up to NIST's current text with <strong>Import OSCAL</strong> on the
+              Control Editor: choose NIST's SP 800-53 Rev. 5 OSCAL catalog (and, if the baselines
+              should follow NIST, its LOW, MODERATE, HIGH and PRIVACY profiles), preview, and apply.
+              The preview shows every change before anything is written; the import never deletes a
+              control and never touches the CIA ratings, threats or the appendix. The detail page then
+              shows each control's parameters (ODPs) and 800-53A assessment objectives.</li>
             <li>Read the catalog as family → control → enhancement in
               <a href="/controls/hierarchy">Hierarchy</a>, and export that view as RTF for a
               document.</li>
             <li>Hide the families this organisation does not use from every filter in
               <a href="/controls/family-visibility">Family Filters</a>.</li>
             <li>Export the filtered catalog as Excel or CSV from the Controls page.</li>
+            <li>Hand the catalog to another tool as OSCAL JSON from the links on the Controls page:
+              the <a href="/controls/oscal/catalog.json">catalog</a> and a profile per baseline
+              (<a href="/controls/oscal/profile/low.json">LOW</a>,
+              <a href="/controls/oscal/profile/moderate.json">MODERATE</a>,
+              <a href="/controls/oscal/profile/high.json">HIGH</a>,
+              <a href="/controls/oscal/profile/privacy.json">PRIVACY</a>). The catalog export imports
+              back through Import OSCAL without a change.</li>
           </ol>
         </div>
       </article>
@@ -187,6 +200,9 @@ func helpPage(c *gin.Context) {
               <a href="/security-nfrs/links">NFR-Control Links</a>. The table is derived from the
               NIST mapping text, and an admin can override a single pairing or rebuild the whole
               table.</li>
+            <li>Download the <a href="/security-nfrs/oscal/catalog.json">NFR catalog</a> and the
+              <a href="/security-nfrs/oscal/mapping.json">NFR to 800-53 mapping</a> as OSCAL JSON
+              from the Security NFRs page.</li>
           </ol>
         </div>
       </article>
@@ -256,6 +272,10 @@ func helpPage(c *gin.Context) {
               extending a due date asks for the reason and approver.</li>
             <li>Close it on independent validation with evidence, or record a time-bound risk
               acceptance.</li>
+            <li>Hand the open findings to another tool as an OSCAL plan of action and milestones:
+              the <a href="/audit-findings/oscal/poam.json">OSCAL POA&amp;M</a> link on the Audit
+              Findings page. It carries every issued finding that is not closed, with its action
+              plan; <code>?status=</code> picks one status instead. Drafts are never exported.</li>
           </ol>
           <p class="note">Practice and lifecycle rules are in
           <a href="/knowledge/audit-findings">AUDIT_FINDINGS.md</a>.</p>
@@ -300,6 +320,11 @@ func helpPage(c *gin.Context) {
               pack, each quarter's progress report and the annual conclusion as PDFs (or their
               sources and data), and the plan as JSON or one CSV per table. The pack's regulatory
               slide is the Governance tab's regulatory basis.</li>
+            <li>The same table links the OSCAL exports. The OSCAL Assessment Plan is the latest
+              approved version, and the History tab links each version's. A quarter's OSCAL results
+              hold only the tests QA has signed off, with a finding per Fail that names its Audit
+              Findings record. An Assessment Plan must list the controls it reviews, so a plan
+              whose attributes name no control or NFR cannot be exported until they do.</li>
             <li>Optionally, the AI assist tab drafts a plan from a brief, proposes test attributes
               from a shortlist of the NFR catalog, the controls and Regulation Coverage, or drafts
               the executive summary and speaker notes for the pack or a report. Each answer is a
@@ -419,7 +444,9 @@ func helpPage(c *gin.Context) {
             <li>Run the analysis: every article is mapped against this installation's Security NFRs
               and 800-53 — what it requires, what already satisfies it, what does not, and how to
               close the gap.</li>
-            <li>Read the report, download it as PDF, and keep the version history.</li>
+            <li>Read the report, download it as PDF, and keep the version history. Each version
+              also downloads as OSCAL JSON from the report page: the regulation as a catalog with
+              grc's findings, and its mappings to the NFRs and 800-53.</li>
             <li>Question the report in conversation and have it revised where you disagree; each
               revision is a new version rather than an overwrite.</li>
           </ol>

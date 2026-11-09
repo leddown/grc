@@ -97,6 +97,78 @@ func TestOpenSQLite_RenamesLegacyControlTable(t *testing.T) {
 	}
 }
 
+// The OSCAL catalog import stores upstream structure in three columns. A new
+// database has them, and a database made before them gains them on open with
+// 'null' in every existing row, which reads as "not imported from OSCAL".
+func TestOpenSQLite_AddsTheOSCALColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pre-oscal.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE nist_controls (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			control_id TEXT NOT NULL UNIQUE,
+			family TEXT NOT NULL,
+			mapping_baselines_json TEXT NOT NULL,
+			threats_json TEXT NOT NULL,
+			appendix_json TEXT NOT NULL DEFAULT 'null'
+		)`,
+		`INSERT INTO nist_controls (control_id, family, mapping_baselines_json, threats_json) VALUES ('AC-1', 'AC', '{}', '[]')`,
+	} {
+		if _, err := raw.Exec(statement); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	fresh, err := OpenSQLite(filepath.Join(t.TempDir(), "fresh.db"))
+	if err != nil {
+		t.Fatalf("OpenSQLite: %v", err)
+	}
+	t.Cleanup(func() { _ = fresh.Close() })
+	upgraded, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatalf("OpenSQLite: %v", err)
+	}
+	t.Cleanup(func() { _ = upgraded.Close() })
+
+	for name, conn := range map[string]*Conn{"fresh": fresh, "upgraded": upgraded} {
+		defaults := map[string]string{}
+		rows, err := conn.Query(`SELECT name, COALESCE(dflt_value, '') FROM pragma_table_info('nist_controls')`)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for rows.Next() {
+			var column, def string
+			if err := rows.Scan(&column, &def); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			defaults[column] = def
+		}
+		_ = rows.Close()
+		for _, column := range []string{"params_json", "statement_json", "assessment_json"} {
+			if defaults[column] != "'null'" {
+				t.Errorf("%s: column %s default %q, want 'null'", name, column, defaults[column])
+			}
+		}
+		if defaults["withdrawn"] != "0" {
+			t.Errorf("%s: column withdrawn default %q, want 0", name, defaults["withdrawn"])
+		}
+	}
+	var params, statement, assessment string
+	var withdrawn int
+	if err := upgraded.QueryRow(`SELECT params_json, statement_json, assessment_json, withdrawn FROM nist_controls WHERE control_id = 'AC-1'`).Scan(&params, &statement, &assessment, &withdrawn); err != nil {
+		t.Fatal(err)
+	}
+	if params != "null" || statement != "null" || assessment != "null" || withdrawn != 0 {
+		t.Errorf("an existing row got %q %q %q %d, want null in each and withdrawn 0", params, statement, assessment, withdrawn)
+	}
+}
+
 // TestFTS5IsCompiledIn proves the claim /version makes.
 //
 // FTS5 used to depend on -tags fts5, and a binary built without it failed only

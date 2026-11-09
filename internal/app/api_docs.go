@@ -74,6 +74,74 @@ func openAPIJSON(c *gin.Context) {
 					"security": []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
+			"/controls/import-oscal/preview": gin.H{
+				"post": gin.H{
+					"summary":     "Preview an OSCAL catalog import",
+					"description": "Body {\"catalog\": \"<OSCAL catalog JSON text>\", \"profiles\": {\"low\"|\"moderate\"|\"high\"|\"privacy\": \"<OSCAL profile JSON text>\"}}. Returns the problems, the added, changed, unchanged and absent controls, and the base an apply needs. Writes nothing.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/controls/import-oscal": gin.H{
+				"post": gin.H{
+					"summary":     "Apply an OSCAL catalog import",
+					"description": "The preview's body plus \"base\" from the preview. 400 when the files have problems, 409 when the catalog or the files changed since the preview. Never deletes a control and never changes CIA, justification, threats, potentially common/inheritable, the appendix or the record key; rebuilds the NFR-control links.",
+					"security":    []gin.H{{"AdminBearer": []string{}}},
+				},
+			},
+			"/controls/oscal/catalog.json": gin.H{
+				"get": gin.H{
+					"summary":     "The SP 800-53 catalog as an OSCAL 1.2.1 catalog",
+					"description": "A download (grc-sp800-53-catalog-<date>.oscal.json). Deterministic: two exports of an unchanged catalog differ only in last-modified. Imports back through /controls/import-oscal without a change. 404 when the catalog is empty.",
+				},
+			},
+			"/controls/oscal/profile/{baseline}.json": gin.H{
+				"get": gin.H{
+					"summary":     "One baseline as an OSCAL profile of the catalog export",
+					"description": "baseline is low, moderate, high or privacy. 404 for another name, or when no control is in the baseline.",
+				},
+			},
+			"/security-nfrs/oscal/catalog.json": gin.H{
+				"get": gin.H{
+					"summary":     "The Security NFR catalog as an OSCAL catalog",
+					"description": "A group per domain, a control per NFR; grc's fields in the grc namespace. 404 when the catalog is empty.",
+				},
+			},
+			"/security-nfrs/oscal/mapping.json": gin.H{
+				"get": gin.H{
+					"summary":     "The NFR to SP 800-53 links as an OSCAL mapping collection",
+					"description": "A map per NFR and control it resolved to, with gap summaries both ways. 404 when no NFR resolved to a control.",
+				},
+			},
+			"/regulation-coverage/{id}/oscal/catalog.json": gin.H{
+				"get": gin.H{
+					"summary":     "A Regulation Coverage report version as an OSCAL catalog",
+					"description": "?version=N, the latest without it. A control per section, with grc's finding in the grc namespace; read from the version's snapshot and dated by it. 404 before the first analysis.",
+				},
+			},
+			"/regulation-coverage/{id}/oscal/mapping.json": gin.H{
+				"get": gin.H{
+					"summary":     "A Regulation Coverage report version's mappings as an OSCAL mapping collection",
+					"description": "?version=N, the latest without it. One mapping to the NFR catalog and one to SP 800-53, each when it has a map. An earlier version is superseded. 404 before the first analysis or when the version maps nothing.",
+				},
+			},
+			"/assurance-plans/{id}/oscal/assessment-plan.json": gin.H{
+				"get": gin.H{
+					"summary":     "An approved version of an Assurance Plan as an OSCAL Assessment Plan",
+					"description": "?version=N, the latest approval without it. Built from the approval snapshot and dated by the approval, so the same bytes every time. import-ssp points at the snapshot (grc holds no SSP). 409 when the plan was never approved or no attribute names a control or NFR that resolved; 404 for an unknown version.",
+				},
+			},
+			"/assurance-plans/{id}/oscal/assessment-results/q{n}.json": gin.H{
+				"get": gin.H{
+					"summary":     "A quarter's signed-off tests as OSCAL Assessment Results",
+					"description": "n is 1 to 4. Only tests QA has signed off; an observation per attribute result and a finding per Fail, naming its AF-YYYY-NNN record. import-ap is the Assessment Plan export of the version the quarter was selected under. 409 when the quarter is not selected or its plan version cannot be exported; 404 when no test is signed off yet.",
+				},
+			},
+			"/audit-findings/oscal/poam.json": gin.H{
+				"get": gin.H{
+					"summary":     "The Audit Findings register as an OSCAL plan of action and milestones",
+					"description": "Findings that are Open, In Remediation, Pending Validation, Reopened or Risk Accepted; ?status= picks one status (Closed only this way). Drafts are never exported (400). A poam-item, an observation and a risk per finding. 404 when no finding matches.",
+				},
+			},
 			"/security-nfrs/data": gin.H{
 				"get": gin.H{
 					"summary":     "List security NFRs",

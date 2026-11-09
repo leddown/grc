@@ -888,6 +888,13 @@ spend need admin, the same split as the risk register and Audit Findings.
   "proposals"}`, newest first; `GET /assurance-plans/:id/ai/proposals/:pid`:
   one proposal (see [AI assist](#ai-assist-optional))
 - `GET /assurance-plans/:id/export.json`: the whole plan (see below)
+- `GET /assurance-plans/:id/oscal/assessment-plan.json?version=N` (the latest
+  approval without it): the approval snapshot as an OSCAL 1.2.1 Assessment
+  Plan, the same bytes every time; 409 for a plan never approved or one whose
+  attributes name no control or NFR that resolved at approval.
+  `GET /assurance-plans/:id/oscal/assessment-results/q<N>.json`: the quarter's
+  tests signed off by QA as OSCAL Assessment Results; 409 before the quarter
+  is selected, 404 before a test is signed off. See [OSCAL.md](OSCAL.md).
 - `GET /assurance-plans/:id/export/:file`: one table as CSV. `:file` is
   `steps.csv`, `quarters.csv`, `population.csv`, `tests.csv` or
   `deviations.csv`; any other name ending in `.csv` answers 400, and one that

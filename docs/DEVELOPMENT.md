@@ -43,8 +43,8 @@ package runs `gosec` and `govulncheck` over the module (both pinned in
 network, so the root package's tests need network access and can start
 failing without a code change when an advisory is published.
 
-`go test -short ./...` skips the two security scans, the browser tests and
-the LibreOffice test. It is for the inner loop, not for a commit.
+`go test -short ./...` skips the two security scans, the browser tests, the
+LibreOffice test and the trestle tests. It is for the inner loop, not for a commit.
 
 ## Tests
 
@@ -57,6 +57,7 @@ the LibreOffice test. It is for the inner loop, not for a commit.
 | Route-table tests | Walk the router and assert every route under `/collab/` and `/shared/` passes its gate. | Nothing |
 | Browser tests | `internal/app/*_e2e_test.go` (four files) drive the Policy Studio in headless Chrome through `chromedp`: co-editing, suggestions, lists, templates, guests. | Chrome on `PATH`; skipped otherwise and in `-short` |
 | Workbook test | `internal/exceptionbook`: LibreOffice recalculates the Exceptions Workbook and every cell is compared with the Go statement of the logic. | LibreOffice 7.2 or later; skipped otherwise and in `-short` |
+| Trestle tests | `TestExportsPassTrestle` (`internal/oscal`, the sample documents) and `TestOSCALExportsPassTrestle` (`internal/app`, every export served from a seeded database): compliance-trestle imports and validates each OSCAL export, and its RFC 8785 canonicalization must give back the same bytes (`OSCAL.md`). | `trestle` on `PATH` (compliance-trestle 5.2.0, Python, never needed to build or run); skipped otherwise and in `-short` |
 | Security scans | `security_test.go` | Network |
 | Theme test | `ui_background_test.go`: no page stylesheet may hard-code a white or near-white background, because every theme is dark. Printed output is exempt by name. | Nothing |
 | Bundle and schema tests | The embedded editor files must match their manifest; the Go schema must match `web/policy-studio/schema.snapshot.json`; fixtures shared between Go and JavaScript must project identically. | Nothing |

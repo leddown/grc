@@ -92,6 +92,7 @@ func pageHTML() string {
       <label class="check"><input type="checkbox" id="fOpen" checked> Open only</label>
       <label class="check"><input type="checkbox" id="fOverdue"> Overdue only</label>
       <span style="flex:1"></span>
+      <a href="/audit-findings/oscal/poam.json" title="Every issued finding that is not closed, as an OSCAL 1.2.1 plan of action and milestones">OSCAL POA&amp;M</a>
       <button class="primary" id="newBtn" type="button">New finding</button>
     </div>
     <div class="table-wrap">

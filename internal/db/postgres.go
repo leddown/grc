@@ -84,8 +84,19 @@ CREATE TABLE IF NOT EXISTS nist_controls (
 	requirements TEXT NOT NULL DEFAULT '',
 	discussion TEXT NOT NULL DEFAULT '',
 	related_controls_json TEXT NOT NULL DEFAULT '[]',
-	appendix_json TEXT NOT NULL DEFAULT 'null'
+	appendix_json TEXT NOT NULL DEFAULT 'null',
+	params_json TEXT NOT NULL DEFAULT 'null',
+	statement_json TEXT NOT NULL DEFAULT 'null',
+	assessment_json TEXT NOT NULL DEFAULT 'null',
+	withdrawn INTEGER NOT NULL DEFAULT 0
 );
+
+-- Added with the OSCAL catalog import; ADD COLUMN IF NOT EXISTS upgrades an
+-- existing database.
+ALTER TABLE nist_controls ADD COLUMN IF NOT EXISTS params_json TEXT NOT NULL DEFAULT 'null';
+ALTER TABLE nist_controls ADD COLUMN IF NOT EXISTS statement_json TEXT NOT NULL DEFAULT 'null';
+ALTER TABLE nist_controls ADD COLUMN IF NOT EXISTS assessment_json TEXT NOT NULL DEFAULT 'null';
+ALTER TABLE nist_controls ADD COLUMN IF NOT EXISTS withdrawn INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS control_family_visibility (
 	family TEXT PRIMARY KEY,

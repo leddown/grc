@@ -222,6 +222,7 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 		Policies: policyService,
 	}, docRenderer(templateService), aiRouter, knowledgeService, adminMiddleware, options.LocalMode)
 	knowledgeService.WithAssurancePlans(planService.KnowledgePlans, planService.KnowledgeTests)
+	registerOSCALAssessmentRoutes(router, planService, findingService)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	return router, studioService, nil
@@ -315,6 +316,7 @@ func buildHandlers(sqliteDB *db.Conn) (*user.Handler, *authn.Service, *authn.Han
 	controlService := controlcatalog.NewService(controlRepo, controlDataPath)
 	nfrLinkService := nfrlink.NewService(sqliteDB)
 	controlHandler := controlcatalog.NewHandler(controlService, nfrLinkService)
+	controlHandler.SetOSCALReader(readOSCALCatalog)
 
 	securityNFRRepo := securitynfr.NewSQLiteRepository(sqliteDB)
 	securityNFRService := securitynfr.NewService(securityNFRRepo, securityNFRDataPath)
@@ -396,6 +398,8 @@ func registerRegulationCoverageRoutes(
 
 	handler := regcoverage.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)
+	r.GET("/regulation-coverage/:id/oscal/catalog.json", regulationOSCAL(service, "catalog"))
+	r.GET("/regulation-coverage/:id/oscal/mapping.json", regulationOSCAL(service, "mapping"))
 
 	admin := r.Group("/")
 	if !localMode {
@@ -820,6 +824,12 @@ func registerDomainReadRoutes(r gin.IRouter, userHandler *user.Handler, controlH
 	r.GET("/controls/data/:controlID", controlHandler.GetControl)
 	r.GET("/controls/export", controlHandler.ExportControls)
 
+	oscalExport := newOSCALExports(controlHandler.Service(), securityNFRHandler.Service(), nfrLinkHandler.Service())
+	r.GET(oscalCatalogPath, oscalExport.catalog)
+	r.GET("/controls/oscal/profile/:file", oscalExport.profile)
+	r.GET(oscalNFRCatalogPath, oscalExport.nfrCatalog)
+	r.GET(oscalNFRMappingPath, oscalExport.nfrMapping)
+
 	r.GET("/security-nfrs", securityNFRHandler.Page)
 	r.GET("/security-nfrs/manage", securityNFRHandler.ManagePage)
 	r.GET("/security-nfrs/detail/:key", securityNFRHandler.DetailPage)
@@ -869,6 +879,8 @@ func registerAdminRoutes(r gin.IRouter, userHandler *user.Handler, authHandler *
 	admin.PUT("/controls/:controlID", controlHandler.UpdateControl)
 	admin.DELETE("/controls/:controlID", controlHandler.DeleteControl)
 	admin.POST("/controls/import", controlHandler.ImportControls)
+	admin.POST("/controls/import-oscal/preview", controlHandler.PreviewOSCALImport)
+	admin.POST("/controls/import-oscal", controlHandler.ImportOSCAL)
 	admin.PUT("/security-nfrs/:key", securityNFRHandler.UpdateNFR)
 	admin.PUT("/security-nfrs/:key/weight", securityNFRHandler.SetNFRWeight)
 	admin.DELETE("/security-nfrs/:key", securityNFRHandler.DeleteNFR)

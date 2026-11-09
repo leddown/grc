@@ -569,10 +569,12 @@ func documentsHTML(p Plan) string {
 	}
 	row("Approval pack", "The "+firstNonEmpty(p.ApprovalForum, "approval forum")+": 13 slides, 16:9", pdf("/pack.pdf"))
 	for q := 1; q <= 4; q++ {
-		row(fmt.Sprintf("Q%d progress report", q), "Coverage, testing, deviations and findings for the quarter", pdf(fmt.Sprintf("/report/quarter/%d.pdf", q)))
+		row(fmt.Sprintf("Q%d progress report", q), "Coverage, testing, deviations and findings for the quarter",
+			pdf(fmt.Sprintf("/report/quarter/%d.pdf", q))+` · `+link(fmt.Sprintf("%s/oscal/assessment-results/q%d.json", base, q), "OSCAL results"))
 	}
 	row("Annual conclusion", "Input to the ICT risk management framework review report (RTS (EU) 2024/1774 Art. 27)", pdf("/report/annual.pdf"))
 	row("Plan export", "The whole plan as one JSON file, without database ids", link(base+"/export.json", "JSON"))
+	row("OSCAL Assessment Plan", "The latest approved version as an OSCAL 1.2.1 Assessment Plan; each version's is under History", link(base+"/oscal/assessment-plan.json", "OSCAL JSON"))
 	tables := []string{}
 	for _, t := range ExportTables {
 		tables = append(tables, link(base+"/export/"+t+".csv", t))
@@ -753,7 +755,7 @@ func historyHTML(d planPageData) string {
 	b.WriteString(`<h2>Approved versions</h2><p class="lede">Each approval stores the plan as approved, as JSON with its SHA-256. A version is never rewritten.</p>`)
 	b.WriteString(`<div class="table-wrap"><table><thead><tr><th>Version</th><th>Approved by</th><th>Approved at</th><th>Change reason / note</th><th>SHA-256</th><th></th></tr></thead><tbody>`)
 	for _, v := range d.Versions {
-		fmt.Fprintf(&b, `<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><code>%s…</code></td><td><a href="/assurance-plans/%d/versions/%d">JSON</a></td></tr>`,
+		fmt.Fprintf(&b, `<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><code>%s…</code></td><td><a href="/assurance-plans/%[6]d/versions/%[7]d">JSON</a> · <a href="/assurance-plans/%[6]d/oscal/assessment-plan.json?version=%[7]d">OSCAL</a></td></tr>`,
 			esc(v.Label), esc(v.ApprovedBy), esc(v.ApprovedAt), esc(v.ChangeReason), esc(clip(v.SnapshotSHA256, 16)), d.Plan.ID, v.Number)
 	}
 	if len(d.Versions) == 0 {

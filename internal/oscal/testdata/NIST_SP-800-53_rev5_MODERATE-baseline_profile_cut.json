@@ -1,0 +1,50 @@
+{
+ "profile": {
+  "uuid": "ac467e37-2b54-4c21-a813-c2b4acb65c8d",
+  "metadata": {
+   "title": "Electronic (OSCAL) Version of NIST Special Publication 800-53 Revision 5.2.0 MODERATE IMPACT BASELINE",
+   "last-modified": "2026-10-22T11:30:00.00000-00:00",
+   "version": "5.2.0",
+   "oscal-version": "1.2.3"
+  },
+  "imports": [
+   {
+    "href": "#84cbf061-eb87-4ec1-8112-1f529232e907",
+    "include-controls": [
+     {
+      "with-ids": [
+       "ac-1",
+       "ac-2",
+       "ac-2.1"
+      ]
+     }
+    ]
+   }
+  ],
+  "merge": {
+   "as-is": true
+  },
+  "back-matter": {
+   "resources": [
+    {
+     "uuid": "84cbf061-eb87-4ec1-8112-1f529232e907",
+     "description": "NIST Special Publication 800-53 Revision 5: Security and Privacy Controls for Federal Information Systems and Organizations",
+     "rlinks": [
+      {
+       "href": "../../../../nist.gov/SP800-53/rev5/xml/NIST_SP-800-53_rev5_catalog.xml",
+       "media-type": "application/oscal.catalog+xml"
+      },
+      {
+       "href": "../../../../nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+       "media-type": "application/oscal.catalog+json"
+      },
+      {
+       "href": "../../../../nist.gov/SP800-53/rev5/yaml/NIST_SP-800-53_rev5_catalog.yaml",
+       "media-type": "application/oscal.catalog+yaml"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

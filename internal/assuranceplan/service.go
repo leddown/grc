@@ -124,6 +124,46 @@ func (s *Service) Version(id int64, number int) (Version, error) {
 	return v, mapNotFound(err)
 }
 
+// ApprovedPlan is an approval snapshot read back: the plan as approved and
+// the population it was approved on.
+type ApprovedPlan struct {
+	Version    Version
+	Plan       Plan
+	Population []PopulationItem
+}
+
+// ApprovedPlan reads approval snapshot number of the plan, or the latest when
+// number is 0. A plan never approved is a ConflictError; an unknown version is
+// ErrNotFound.
+func (s *Service) ApprovedPlan(id int64, number int) (ApprovedPlan, error) {
+	p, err := s.Get(id)
+	if err != nil {
+		return ApprovedPlan{}, err
+	}
+	versions, err := s.repo.Versions(id)
+	if err != nil {
+		return ApprovedPlan{}, err
+	}
+	if len(versions) == 0 {
+		return ApprovedPlan{}, conflict("%s has never been approved: it has no approved version to export", p.Reference)
+	}
+	if number == 0 {
+		number = versions[0].Number
+	}
+	v, err := s.Version(id, number)
+	if errors.Is(err, ErrNotFound) {
+		return ApprovedPlan{}, fmt.Errorf("%w: %s has no version %d", ErrNotFound, p.Reference, number)
+	}
+	if err != nil {
+		return ApprovedPlan{}, err
+	}
+	var snap planSnapshot
+	if err := json.Unmarshal([]byte(v.SnapshotJSON), &snap); err != nil {
+		return ApprovedPlan{}, fmt.Errorf("decode the snapshot of %s version %d: %w", p.Reference, number, err)
+	}
+	return ApprovedPlan{Version: v, Plan: snap.Plan, Population: snap.Population}, nil
+}
+
 func (s *Service) Lint(id int64) ([]LintFinding, error) {
 	p, err := s.Get(id)
 	if err != nil {

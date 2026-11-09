@@ -82,7 +82,9 @@ The sidebar groups are the product's own map of itself.
 | Security gates | `gosec` and `govulncheck` run as Go tests, so `go test ./...` is the gate. |
 
 Direct Go dependencies: gin, pgx, modernc sqlite, ygo, gorilla/websocket,
-chromedp, goldmark, yaml.v3, x/crypto, x/text, and gosec and x/vuln as tools.
+chromedp, goldmark, yaml.v3, x/crypto, x/text, go-oscal (its generated OSCAL
+1.2.1 types only; see `OSCAL.md`), google/uuid (UUIDv5 for OSCAL identifiers),
+and gosec and x/vuln as tools.
 
 ## Size
 
@@ -148,6 +150,7 @@ Module documents at the repository root go deeper than FEATURES.md:
 | REGULATION_COVERAGE.md | Regulation Coverage |
 | AUDIT_FINDINGS.md | Audit Findings & Remediation |
 | ASSURANCE_PLANS.md | Assurance Plans: practice, data model, lifecycle, sampling method |
+| OSCAL.md | OSCAL import and export: every mapping, grc's namespace, the trestle check, the signing design |
 | RISK_REGISTER_FRAMEWORK.md | The risk register's model and scoring |
 | JIRA_CONNECTOR.md | The Jira Cloud client |
 | AI_AGENT.md | The knowledge API and the Wintermute agent |
@@ -167,6 +170,8 @@ Module documents at the repository root go deeper than FEATURES.md:
 | Weight | A number from 1 to 5 on each NFR saying how much it counts. Default 3. |
 | Exception set | A selection of NFRs that a system does not meet. The Exceptions page shows which controls, ratings and threats the selection touches. |
 | C / I / A | Whether a control carries a confidentiality, integrity or availability rating. |
+| OSCAL | NIST's Open Security Controls Assessment Language: JSON models for catalogs, baselines (profiles), mappings, assessment plans and results, and POA&Ms. Here an interchange format around the database, never the store: grc imports NIST's SP 800-53 catalog from it and exports its catalogs, crosswalks and assurance results as OSCAL 1.2.1 (`OSCAL.md`). |
+| compliance-trestle | An open-source Python tool that reads and validates OSCAL. Optional: two tests run it when it is installed. grc never needs it to build or run. |
 | Wintermute, `wintermuted` | The owner's separate AI server: agents, backends, document library. Not in this repository. |
 | Agent | A profile on the Wintermute server: a document library plus the sources a question may be answered from. This application can name three: a general one, one for Crisis Exercises and one for the Policy Studio. |
 | Library | An agent's documents on the Wintermute server. This application reads extracted text from it and never accepts an upload itself. |

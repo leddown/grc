@@ -32,9 +32,29 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
   requirements, discussion, related controls, the threats it addresses, and
   the NIST appendix.
 - **Detail page** (`/controls/detail/:controlID`): one control on a page of
-  its own, linked from everywhere a control id is shown.
+  its own, linked from everywhere a control id is shown. For a control
+  imported from OSCAL it adds "Parameters (ODPs)" (each organization-defined
+  parameter's 800-53A label, what it asks for and its guideline) and
+  "Assessment objectives (800-53A)" (the objectives, and the examine,
+  interview and test objects). A control the OSCAL import marked withdrawn
+  says "Withdrawn by NIST".
 - **Export** (`/controls/export?format=csv|excel`): the filtered list as CSV
   or as Excel 2003 XML.
+- **OSCAL export** (signed in; linked from the Controls page and Help): the
+  whole catalog, hidden families included, as an OSCAL 1.2.1 catalog
+  (`GET /controls/oscal/catalog.json`), and each baseline as an OSCAL profile
+  of it (`GET /controls/oscal/profile/{low,moderate,high,privacy}.json`,
+  importing the catalog through a back-matter resource as NIST's profiles do,
+  with the Asset Types tier rule in its remarks). The catalog is the OSCAL
+  import run backwards: an export imports back without a change, a control
+  edited after an OSCAL import carries its edited text, and two exports of an
+  unchanged catalog differ only in `last-modified`. grc's own analysis goes
+  with it in the grc namespace: the CIA flags, each threat and the potentially
+  common/inheritable marker as props, the CIA justification and the appendix
+  (References included) as parts. Every OSCAL export, here and in the
+  modules below, can be checked by hand with compliance-trestle, an optional
+  Python tool that two tests also run when it is installed (`OSCAL.md`,
+  "Checking an export with compliance-trestle").
 - **Import** (`POST /controls/import`, admin; "Import JSON" on the Control
   Editor): loads a catalog file in the shape of the shipped one, keyed by
   record, with the control under `nist` (the older flat shape is read too).
@@ -44,6 +64,26 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
   with no name is refused before anything is written. Every import rebuilds
   the NFR-control links. `GET /controls/family-json/data` returns the catalog
   in the same shape, so an export imports back.
+- **OSCAL import** (`POST /controls/import-oscal/preview` and
+  `POST /controls/import-oscal`, admin; "Import OSCAL" on the Control
+  Editor): reads NIST's own SP 800-53 Rev. 5 catalog in OSCAL JSON
+  (`NIST_SP-800-53_rev5_catalog.json` from usnistgov/oscal-content) and,
+  optionally, any of its four baseline profiles. The administrator downloads
+  the files and picks them; the application fetches nothing. The preview lists
+  every problem, then the added, changed (with a before/after for text),
+  unchanged and absent controls; apply writes only a preview without problems,
+  and refuses (409) if the catalog or the files changed since it. The import
+  sets type, name, requirements (the statement rendered into the catalog's
+  text, `[Assignment: organization-defined …]` and `[Selection (one or more):
+  …]`), discussion, related controls and, for each posted profile, that
+  baseline's flags; it stores the parameters (ODPs) and the 800-53A assessment
+  objectives and methods, which the detail page shows. It never changes the
+  CIA ratings and justification, threats, potentially common/inheritable, the
+  appendix (References included) or the record key, never deletes a control,
+  and leaves a baseline whose profile was not posted as it is. A withdrawn
+  control keeps empty requirements, takes NIST's title as its name, and is
+  marked withdrawn (`OSCAL.md`). Every apply rebuilds the NFR-control links. Code: `internal/oscal` reads the files;
+  `internal/controlcatalog` works out and applies the change.
 - **Control Editor** (`/controls/manage`, admin to save): edit any field of a
   control or delete one. A save or delete rebuilds the NFR-control links.
   With `ALLOW_JSON_SAVE=true`, "Rewrite JSON" writes the catalog to
@@ -83,6 +123,13 @@ records. Code: `internal/securitynfr`.
   weight set in the application survives unless the file carries its own; a
   file whose weight is outside 1-5, or with an NFR without a summary, is
   refused before anything is written. Every import rebuilds the links.
+- **OSCAL export** (signed in; linked from the page and Help): the catalog as
+  an OSCAL catalog (`GET /security-nfrs/oscal/catalog.json`: a group per
+  domain, a control per NFR, grc's fields, the domain included, in the grc
+  namespace), and the
+  NFR-control links as an OSCAL mapping collection
+  (`GET /security-nfrs/oscal/mapping.json`: a map per NFR and control it
+  resolved to, gap summaries both ways, unresolved references named).
 
 An NFR has a `record_key` (the stable identity), an NFR id such as `1.4`, a
 summary, an issue type, a domain, description, additional details,
@@ -185,6 +232,15 @@ close. Code: `internal/auditfinding`; detail in `AUDIT_FINDINGS.md`.
   high, repeat findings, extended findings, risk acceptances (flagging
   expired ones) and closures in the last 90 days, and groups open findings by
   age.
+- **OSCAL export** (signed in; linked from the page and Help): the register
+  as an OSCAL 1.2.1 plan of action and milestones
+  (`GET /audit-findings/oscal/poam.json`): every finding that is Open, In
+  Remediation, Pending Validation, Reopened or Risk Accepted, or one status
+  with `?status=` (Closed only this way; Draft never). A poam-item per finding
+  whose description holds the criteria, condition, cause and effect, an
+  observation (the condition) and a risk (the effect, the due date as its
+  deadline, the recommendation and the action plan with a task per action).
+  An expired risk acceptance exports as an open risk.
 
 
 ### Assurance Plans (`/assurance-plans`)
@@ -301,6 +357,23 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
     with formula-like cells prefixed so a spreadsheet reads them as text
 
   Each PDF also comes as its sources and as its data (`?format=json`).
+- **OSCAL export** (signed in; linked from the Documents and exports table,
+  each version on the History tab, and Help):
+  - an approved version as an OSCAL 1.2.1 **Assessment Plan**
+    (`GET /assurance-plans/:id/oscal/assessment-plan.json`, `?version=N` or
+    the latest approval), built from the approval snapshot and dated by it.
+    Its attributes are the objectives and activities, their resolved 800-53
+    and NFR references the reviewed controls, the population the inventory
+    items, and each stratum with items a subject. Sampling, the quarterly
+    cycle, RACI, cadence, escalations and the regulatory basis are grc parts.
+    grc holds no SSP: `import-ssp` points at the approval snapshot, with its
+    SHA-256. A plan never approved, or whose attributes name no control or
+    NFR, is a 409.
+  - a quarter as OSCAL **Assessment Results**
+    (`…/oscal/assessment-results/q<N>.json`), from the tests QA has signed
+    off only: an observation per attribute result and a finding per Fail
+    that names its Audit Findings record. `import-ap` is the Assessment Plan
+    of the version the quarter was selected under.
 - **Regulatory basis** (Governance tab): what the regulation asks of the
   control function and how the plan meets it. It is the pack's regulatory
   slide; every built-in type carries its own rows.
@@ -568,6 +641,15 @@ NIST 800-53. Code: `internal/regcoverage`, `internal/regmap`; detail in
 6. The **report** is versioned and immutable, as a page, a PDF and JSON.
    **Chat** (admin) asks questions about it. **Revise** (admin) re-analyses
    one section with an instruction and writes the next version.
+7. **OSCAL export** (signed in; linked from the report page): a version as an
+   OSCAL catalog (`GET /regulation-coverage/:id/oscal/catalog.json`, a control
+   per section, grouped by category, with grc's finding) and its mappings as
+   an OSCAL mapping collection (`…/oscal/mapping.json`, one mapping to the NFR
+   catalog and one to 800-53), `?version=N` or the latest. Both read the
+   version's snapshot and carry its date; an earlier version's mapping is
+   `superseded`. A mapping to a reference the catalog does not hold, or on a
+   finding whose quote was not verified, is left out, and the remarks count
+   and name it.
 
 ### Wiz Rules (`/wiz-rules`)
 

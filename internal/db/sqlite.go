@@ -70,7 +70,11 @@ func OpenSQLite(path string) (*Conn, error) {
 		requirements TEXT NOT NULL DEFAULT '',
 		discussion TEXT NOT NULL DEFAULT '',
 		related_controls_json TEXT NOT NULL DEFAULT '[]',
-		appendix_json TEXT NOT NULL DEFAULT 'null'
+		appendix_json TEXT NOT NULL DEFAULT 'null',
+		params_json TEXT NOT NULL DEFAULT 'null',
+		statement_json TEXT NOT NULL DEFAULT 'null',
+		assessment_json TEXT NOT NULL DEFAULT 'null',
+		withdrawn INTEGER NOT NULL DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS control_family_visibility (
@@ -1480,6 +1484,18 @@ func OpenSQLite(path string) (*Conn, error) {
 		return nil, err
 	}
 	if err := ensureColumn(db, "nist_controls", "appendix_json", "TEXT NOT NULL DEFAULT 'null'"); err != nil {
+		return nil, err
+	}
+	// The upstream OSCAL structure an OSCAL catalog import stores: the control's
+	// params, its statement part and its 800-53A assessment parts, as JSON.
+	for _, column := range []string{"params_json", "statement_json", "assessment_json"} {
+		if err := ensureColumn(db, "nist_controls", column, "TEXT NOT NULL DEFAULT 'null'"); err != nil {
+			return nil, err
+		}
+	}
+	// NIST's status of the control, which only an OSCAL import knows: the JSON
+	// catalog file has no withdrawn flag.
+	if err := ensureColumn(db, "nist_controls", "withdrawn", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return nil, err
 	}
 	// Added after policy_documents shipped, so existing databases need the

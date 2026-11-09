@@ -440,6 +440,16 @@ func reportPageHTML(data reportPageData) string {
 			id, report.Version.Number)
 	}
 
+	// The OSCAL exports read a version's snapshot, so they exist from the first
+	// analysis on.
+	oscalChips := ""
+	if report.Version.Number > 0 {
+		oscalChips = fmt.Sprintf(
+			`<a class="chip" href="/regulation-coverage/%[1]d/oscal/catalog.json?version=%[2]d">OSCAL catalog</a>`+
+				`<a class="chip" href="/regulation-coverage/%[1]d/oscal/mapping.json?version=%[2]d">OSCAL mapping</a>`,
+			id, report.Version.Number)
+	}
+
 	aiChip := `<span class="chip off">AI: not configured</span>`
 	if data.AIConfigured {
 		aiChip = `<span class="chip on">AI: ` + esc(data.Model) + `</span>`
@@ -489,6 +499,7 @@ func reportPageHTML(data reportPageData) string {
       ` + aiChip + pdfButton + `
       <a class="chip" href="/regulation-coverage/` + fmt.Sprint(id) + `/report.json?version=` +
 		fmt.Sprint(report.Version.Number) + `">JSON</a>
+      ` + oscalChips + `
       <select id="versionPicker" style="width:auto">` + versionOptions.String() + `</select>
     </div>
 

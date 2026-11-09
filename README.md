@@ -55,6 +55,14 @@ package and how a request is served. In short:
 - `internal/user` — basic user CRUD (distinct from `internal/authn`'s auth users)
 - `internal/controlcatalog`, `internal/securitynfr`, `internal/nfrlink` — NIST
   control catalog, security NFR catalog, and their cross-linking
+- `internal/oscal` — OSCAL interchange: imports NIST's SP 800-53 OSCAL catalog
+  and baseline profiles, and exports the 800-53 catalog and baselines, the
+  Security NFR catalog and its 800-53 mapping, Regulation Coverage versions, an
+  Assurance Plan's approved version as an Assessment Plan, a quarter's
+  signed-off tests as Assessment Results, and the Audit Findings register as a
+  POA&M (the only importer of go-oscal). `oscaltest` checks the exports against
+  the OSCAL schema and, when it is installed, compliance-trestle; see
+  `OSCAL.md`
 - `internal/riskregister`, `internal/reports` — risk register and reporting
   dashboards
 - `internal/reporting` — HTML/CSS-to-PDF GRC report generation (see its

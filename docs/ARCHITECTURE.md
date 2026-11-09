@@ -51,7 +51,8 @@ is set (`internal/doctemplate/remote.go`, `DOCUMENT_TEMPLATES.md`).
      NFR-control link table. Nothing is loaded into the catalogs at startup:
      a new database has empty catalogs until an administrator imports the
      800-53 and Security NFR JSON files (`POST /controls/import`,
-     `POST /security-nfrs/import`), and each import rebuilds the links.
+     `POST /security-nfrs/import`) or NIST's OSCAL catalog
+     (`POST /controls/import-oscal`), and each import rebuilds the links.
    - `gin.Default()` plus `themeMiddleware`, plus `pageAccessMiddleware`
      unless in local mode.
    - Registers the core routes, then each module's routes through a
@@ -100,8 +101,9 @@ tests.
 
 | Package | Lines | Responsibility |
 |---|---|---|
-| `internal/controlcatalog` | 4,100 | NIST controls: list, detail, hierarchy, editor, family visibility, CSV / Excel-XML / RTF exports. |
+| `internal/controlcatalog` | 5,700 | NIST controls: list, detail, hierarchy, editor, family visibility, CSV / Excel-XML / RTF exports. |
 | `internal/controlfile`, `internal/controlid` | 390 | The control JSON file format; control id normalisation and natural ordering. |
+| `internal/oscal` | 5,500 | The OSCAL interchange layer and the only importer of go-oscal (its OSCAL 1.2.1 types). Reads NIST's 800-53 OSCAL catalog and baseline profiles into neutral types (`ReadCatalogImport`, the statement rendered into the catalog's text). Writes grc's exports from neutral input: the 800-53 catalog and its baseline profiles (`ExportCatalog`, `ExportProfile`, the import run backwards), the Security NFR catalog and the NFR→800-53 mapping collection (`ExportNFRCatalog`, `ExportNFRMapping`), and a Regulation Coverage version as a catalog and a mapping collection (`ExportRegulationCatalog`, `ExportRegulationMapping`). It also writes an Assurance Plan's approval snapshot as an Assessment Plan (`ExportAssessmentPlan`), a quarter's signed-off tests as Assessment Results (`ExportAssessmentResults`) and the Audit Findings register as a POA&M (`ExportPOAM`). Deterministic UUIDv5s under a fixed grc namespace (a document's from its content digest), the grc props namespace, a metadata builder, and an RFC 8785 canonical JSON writer for every export. `internal/app/oscal_adapter.go` hands the import's result to `controlcatalog`, and `internal/app/oscal_export.go` and `oscal_assessment.go` read the modules' services for the exports, so no domain module imports it. `oscaltest` validates against the OSCAL JSON schema in tests only, and runs compliance-trestle's import, validate and canonicalize over the exports when trestle is on `PATH` (`oscaltest.Trestle`). See `OSCAL.md`. |
 | `internal/securitynfr`, `internal/nfrfile` | 2,200 | Security NFRs: list, detail, editor, weights; the NFR JSON file format. |
 | `internal/nfrlink` | 930 | Derives NFR-control links from the NIST mapping text; overrides. |
 | `internal/reports` | 1,200 | The linked / unlinked controls report. |
@@ -125,7 +127,7 @@ tests.
 
 | Package | Lines | Responsibility |
 |---|---|---|
-| `internal/regcoverage` | 4,800 | Import a regulation from the library, analyse each article against the catalogs, versioned report, chat, revision. |
+| `internal/regcoverage` | 5,000 | Import a regulation from the library, analyse each article against the catalogs, versioned report, chat, revision. |
 | `internal/regmap/*`, `regmap/profiles` | 1,700 | Framework profiles (YAML) and what they turn a regulation's requirements into: ids, categories, seed crosswalk. |
 | `internal/nfrenrich` | 3,100 | Import a security document, retrieve passages with BM25, propose NFR text with citations, review. Its BM25 ranker is reused by `knowledge`, `regcoverage` and `policyai`. |
 | `internal/crisisexercise` | 11,300 | Exercises: scenario library, phases, injects, responses, decisions, DORA classification and notification clocks, findings, references, coverage, versions, AI generation and expert personas, PDF / CSV / Markdown outputs. |

@@ -48,6 +48,17 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   users
 - `internal/controlcatalog`, `internal/securitynfr`, `internal/nfrlink` —
   NIST control catalog, security NFR catalog, and their cross-linking
+- `internal/oscal` — OSCAL interchange, and the only package that imports
+  go-oscal (its generated types only). It reads NIST's 800-53 OSCAL catalog
+  and profiles into neutral types that `internal/app/oscal_adapter.go` hands
+  to `controlcatalog`, and writes the exports (800-53 catalog and profiles,
+  NFR catalog and mapping, Regulation Coverage catalog and mapping, Assessment
+  Plan, Assessment Results, POA&M) from neutral input that
+  `internal/app/oscal_export.go` and `oscal_assessment.go` read through the
+  modules' services; domain modules never import it or go-oscal. OSCAL is a
+  serializer around the database, never the store — see `OSCAL.md`.
+  compliance-trestle (Python) is never a dependency: two tests run it when it
+  is on `PATH` (`oscaltest.Trestle`) and skip otherwise
 - `internal/riskregister`, `internal/reports` — risk register and
   reporting dashboards
 - `internal/exceptionbook`, `internal/xlsx` — the Exceptions Workbook

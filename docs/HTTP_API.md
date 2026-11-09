@@ -107,6 +107,8 @@ The home page, sign-in, build information and the in-app documentation.
 | GET | `/controls` | signed in | `controlcatalog.(*Handler).Page` |
 | DELETE | `/controls/:controlID` | admin | `controlcatalog.(*Handler).DeleteControl` |
 | POST | `/controls/import` | admin | `controlcatalog.(*Handler).ImportControls` |
+| POST | `/controls/import-oscal/preview` | admin | `controlcatalog.(*Handler).PreviewOSCALImport` |
+| POST | `/controls/import-oscal` | admin | `controlcatalog.(*Handler).ImportOSCAL` |
 | PUT | `/controls/:controlID` | admin | `controlcatalog.(*Handler).UpdateControl` |
 | GET | `/controls/data` | signed in | `controlcatalog.(*Handler).ListControls` |
 | GET | `/controls/data/:controlID` | signed in | `controlcatalog.(*Handler).GetControl` |
@@ -119,7 +121,31 @@ The home page, sign-in, build information and the in-app documentation.
 | GET | `/controls/hierarchy` | signed in | `controlcatalog.(*Handler).HierarchyPage` |
 | GET | `/controls/hierarchy/export` | signed in | `controlcatalog.(*Handler).ExportHierarchyRTF` |
 | GET | `/controls/manage` | signed in | `controlcatalog.(*Handler).ManagePage` |
+| GET | `/controls/oscal/catalog.json` | signed in | `app.(*oscalExports).catalog` |
+| GET | `/controls/oscal/profile/:baseline.json` | signed in | `app.(*oscalExports).profile` — `low`, `moderate`, `high` or `privacy` |
 | POST | `/controls/save` | admin (only with `ALLOW_JSON_SAVE`) | `controlcatalog.(*Handler).SaveControlsToJSON` |
+
+The OSCAL import takes one JSON body, `{"catalog": "<file text>",
+"profiles": {"low": "<file text>", "moderate": …, "high": …, "privacy": …},
+"base": "<from the preview>"}`, up to 32 MB. The preview returns the problems,
+notes, added, changed (with the fields and, for text, before and after),
+unchanged and absent controls, and `base`; the apply needs that `base` and
+answers 400 when the files have problems, 409 when the catalog or the files
+changed since the preview, and 200 with the same result, `applied` and
+`links_rebuilt`. A file that is not an OSCAL catalog is a 400 on both.
+
+The OSCAL exports here, under Security NFRs, Regulation Coverage, Audit
+Findings and Assurance Plans are downloads (`Content-Disposition: attachment;
+filename="grc-<kind>-<yyyy-mm-dd>.oscal.json"`, dated by the document's
+`last-modified`) of OSCAL 1.2.1 JSON in RFC 8785 canonical form. They answer
+404 with a JSON error when there is nothing to export: an empty catalog, a
+baseline no control is in, no NFR linked to a control, a regulation before its
+first analysis, a version with no map (none of its mappings names a catalog
+item on a finding with a verified quote), a quarter with no test signed off by
+QA, or no audit finding to carry. The assessment exports answer 409 for a plan
+in a state that cannot be exported: never approved, a test script that names
+no control or NFR that resolved at approval, or a quarter not selected. See
+`OSCAL.md`.
 
 ## Security NFR catalog and NFR-control links
 
@@ -143,6 +169,8 @@ The home page, sign-in, build information and the in-app documentation.
 | DELETE | `/security-nfrs/links/overrides/:nfrKey/:mappingControlID` | admin | `nfrlink.(*Handler).DeleteOverride` |
 | POST | `/security-nfrs/links/rebuild` | admin | `nfrlink.(*Handler).Rebuild` |
 | GET | `/security-nfrs/manage` | signed in | `securitynfr.(*Handler).ManagePage` |
+| GET | `/security-nfrs/oscal/catalog.json` | signed in | `app.(*oscalExports).nfrCatalog` |
+| GET | `/security-nfrs/oscal/mapping.json` | signed in | `app.(*oscalExports).nfrMapping` |
 | POST | `/security-nfrs/save` | admin (only with `ALLOW_JSON_SAVE`) | `securitynfr.(*Handler).SaveNFRsToJSON` |
 
 ## NFR Enrichment
@@ -199,6 +227,7 @@ Pages rendered by `internal/app` that work in the browser over the catalog endpo
 | GET | `/audit-findings/data/:id` | signed in | `auditfinding.(*Handler).GetOne` |
 | GET | `/audit-findings/summary` | signed in | `auditfinding.(*Handler).SummaryData` |
 | GET | `/audit-findings/vocabulary` | signed in | `auditfinding.(*Handler).VocabularyData` |
+| GET | `/audit-findings/oscal/poam.json` | signed in | `app.(*oscalAssessments).poam` — `?status=` one status; 400 for `Draft` or an unknown status |
 
 ## Assurance plans
 
@@ -282,6 +311,8 @@ still malformed after one repair turn is 502. `ai/proposals` answers
 | POST | `/assurance-plans/:id/thematic` | admin | `assuranceplan.(*Handler).PushThematic` |
 | GET | `/assurance-plans/:id/versions` | signed in | `assuranceplan.(*Handler).Versions` |
 | GET | `/assurance-plans/:id/versions/:n` | signed in | `assuranceplan.(*Handler).Version` |
+| GET | `/assurance-plans/:id/oscal/assessment-plan.json` | signed in | `app.(*oscalAssessments).assessmentPlan` — `?version=N`, the latest approval without it |
+| GET | `/assurance-plans/:id/oscal/assessment-results/:file` | signed in | `app.(*oscalAssessments).assessmentResults` — `q1.json` to `q4.json` |
 | GET | `/assurance-plans/data` | signed in | `assuranceplan.(*Handler).List` |
 | GET | `/assurance-plans/data/:id` | signed in | `assuranceplan.(*Handler).GetOne` |
 | GET | `/assurance-plans/types` | signed in | `assuranceplan.(*Handler).Types` |
@@ -434,6 +465,8 @@ still malformed after one repair turn is 502. `ai/proposals` answers
 | DELETE | `/regulation-coverage/:id/chat` | admin | `regcoverage.(*Handler).ClearChat` |
 | GET | `/regulation-coverage/:id/chat` | signed in | `regcoverage.(*Handler).ListChat` |
 | POST | `/regulation-coverage/:id/chat` | admin | `regcoverage.(*Handler).Ask` |
+| GET | `/regulation-coverage/:id/oscal/catalog.json` | signed in | `app.regulationOSCAL` — `?version=N`, the latest without it |
+| GET | `/regulation-coverage/:id/oscal/mapping.json` | signed in | `app.regulationOSCAL` — `?version=N`, the latest without it |
 | GET | `/regulation-coverage/:id/report.json` | signed in | `regcoverage.(*Handler).ReportJSON` |
 | GET | `/regulation-coverage/:id/report.pdf` | signed in | `regcoverage.(*Handler).ReportPDF` |
 | POST | `/regulation-coverage/:id/revise` | admin | `regcoverage.(*Handler).Revise` |
