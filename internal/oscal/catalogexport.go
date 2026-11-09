@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,17 @@ type ExportControl struct {
 	ParamsJSON     string
 	StatementJSON  string
 	AssessmentJSON string
+
+	// grc's own analysis of the control, which no OSCAL import writes: the CIA
+	// flags, the threats, the potentially common/inheritable marker, the CIA
+	// justification and the appendix (References included).
+	Confidentiality              bool
+	Integrity                    bool
+	Availability                 bool
+	Threats                      []string
+	PotentiallyCommonInheritable string
+	Justification                string
+	Appendix                     map[string]any
 }
 
 // CatalogExport is grc's SP 800-53 catalog as an export writes it.
@@ -49,7 +61,10 @@ type CatalogExport struct {
 //     requirements, and otherwise grc's text in a statement marked with the grc
 //     prose prop, which the import takes verbatim;
 //   - the guidance is the stored discussion, marked the same way: grc does not
-//     store NIST's guidance part, only its text.
+//     store NIST's guidance part, only its text;
+//   - grc's own analysis goes into the grc namespace: the CIA flags, each
+//     threat and the potentially common/inheritable marker as props, the CIA
+//     justification and the appendix as parts. The import ignores them.
 func ExportCatalog(in CatalogExport) ([]byte, error) {
 	controls := append([]ExportControl(nil), in.Controls...)
 	for i := range controls {
@@ -141,7 +156,9 @@ func ExportCatalog(in CatalogExport) ([]byte, error) {
 			Title: in.Title,
 			Remarks: "Exported from grc, whose database is the system of record for this catalog. " +
 				"A statement or guidance part with the grc prop \"prose\" = \"grc-text\" holds grc's stored text verbatim " +
-				"(plain text, not OSCAL markup); any other statement is NIST's structure as an OSCAL import stored it.",
+				"(plain text, not OSCAL markup); any other statement is NIST's structure as an OSCAL import stored it. " +
+				"Props and parts in the grc namespace are grc's own analysis of each control (CIA flags, threats, " +
+				"potentially common/inheritable, the CIA justification and the appendix, References included), as plain text.",
 		}),
 	}}
 	if len(groups) > 0 {
@@ -163,6 +180,15 @@ func exportControl(c ExportControl, own []Parameter, global map[string]Parameter
 	if c.Withdrawn {
 		props = append(props, Property{Name: "status", Value: "withdrawn"})
 	}
+	props = append(props, GRCProps(
+		NamedValue{Name: "confidentiality", Value: yesNo(c.Confidentiality)},
+		NamedValue{Name: "integrity", Value: yesNo(c.Integrity)},
+		NamedValue{Name: "availability", Value: yesNo(c.Availability)},
+	)...)
+	for _, t := range c.Threats {
+		props = append(props, grcProp("threat", t)...)
+	}
+	props = append(props, grcProp("potentially-common-inheritable", c.PotentiallyCommonInheritable)...)
 	oc.Props = &props
 	if len(own) > 0 {
 		oc.Params = &own
@@ -184,6 +210,14 @@ func exportControl(c ExportControl, own []Parameter, global map[string]Parameter
 		}
 		parts = append(parts, assessment...)
 	}
+	if j := strings.TrimSpace(c.Justification); j != "" {
+		parts = append(parts, Part{ID: token + "_cia", Name: "cia-justification", Ns: Namespace, Prose: j})
+	}
+	if appendix, err := appendixPart(c, token); err != nil {
+		return nil, err
+	} else if appendix != nil {
+		parts = append(parts, *appendix)
+	}
 	oc.Parts = partsOrNil(parts)
 
 	var links []Link
@@ -196,6 +230,42 @@ func exportControl(c ExportControl, own []Parameter, global map[string]Parameter
 		oc.Links = &links
 	}
 	return oc, nil
+}
+
+// appendixPart writes the appendix as a grc part with a sub-part per field:
+// the field's name as the title (it carries spaces and capitals no token can),
+// a token of it as the part name, and its text as the prose. Fields are in name
+// order, since the stored appendix is an object; an empty field is left out.
+func appendixPart(c ExportControl, token string) (*Part, error) {
+	keys := make([]string, 0, len(c.Appendix))
+	for k := range c.Appendix {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var fields []Part
+	for _, k := range keys {
+		var text string
+		switch v := c.Appendix[k].(type) {
+		case nil:
+			continue
+		case string:
+			text = v
+		default:
+			raw, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("%s: appendix field %q cannot be written: %w", c.ID, k, err)
+			}
+			text = string(raw)
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			continue
+		}
+		fields = append(fields, Part{Name: Token("field", k), Ns: Namespace, Title: strings.TrimSpace(k), Prose: text})
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	return &Part{ID: token + "_apx", Name: "appendix", Ns: Namespace, Parts: &fields}, nil
 }
 
 // exportStatement writes NIST's statement structure when it still renders to
@@ -293,14 +363,20 @@ type ProfileExport struct {
 	Baseline     string
 	Title        string
 	LastModified time.Time
-	// CatalogHref is where the profile's catalog is served.
-	CatalogHref string
-	ControlIDs  []string
+	// CatalogHref is where the profile's catalog is served, and CatalogTitle
+	// its title, for the back-matter resource the import points at.
+	CatalogHref  string
+	CatalogTitle string
+	// TierNote says which asset tiers grc applies the baseline to. It goes into
+	// the remarks: a tier is not a profile of its own.
+	TierNote   string
+	ControlIDs []string
 }
 
-// ExportProfile writes one baseline as an OSCAL profile of grc's catalog: an
-// import of the catalog that includes each control in the baseline by id, as
-// NIST's own baseline profiles do, with the controls merged as they are.
+// ExportProfile writes one baseline as an OSCAL profile of grc's catalog, in
+// the shape of NIST's own baseline profiles: an import of the catalog through
+// a back-matter resource, including each control in the baseline by id, with
+// the controls merged as they are.
 func ExportProfile(in ProfileExport) ([]byte, error) {
 	if !isBaseline(in.Baseline) {
 		return nil, fmt.Errorf("%q is not a baseline grc knows", in.Baseline)
@@ -321,18 +397,21 @@ func ExportProfile(in ProfileExport) ([]byte, error) {
 	for i, id := range ids {
 		tokens[i] = ControlToken(id)
 	}
+	remarks := "Exported from grc: the controls grc's catalog marks as in the " + strings.ToUpper(in.Baseline) + " baseline."
+	if note := strings.TrimSpace(in.TierNote); note != "" {
+		remarks += " " + note
+	}
+	catalog, ref := documentResource(in.CatalogTitle, in.CatalogHref)
 	doc := struct {
 		Profile *Profile `json:"profile"`
 	}{Profile: &Profile{
-		Metadata: NewMetadata(MetadataInput{
-			Title:   in.Title,
-			Remarks: "Exported from grc: the controls grc's catalog marks as in the " + strings.ToUpper(in.Baseline) + " baseline.",
-		}),
+		Metadata: NewMetadata(MetadataInput{Title: in.Title, Remarks: remarks}),
 		Imports: []Import{{
-			Href:            in.CatalogHref,
+			Href:            ref,
 			IncludeControls: &[]SelectControlByID{{WithIds: &tokens}},
 		}},
-		Merge: &Merge{AsIs: true},
+		Merge:      &Merge{AsIs: true},
+		BackMatter: backMatter(catalog),
 	}}
 	return finishDocument("profile", "sp800-53-"+in.Baseline, &doc, &doc.Profile.UUID, &doc.Profile.Metadata, in.LastModified)
 }

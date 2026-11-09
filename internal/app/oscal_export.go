@@ -87,6 +87,14 @@ func (e *oscalExports) exportControls() ([]oscal.ExportControl, error) {
 			ParamsJSON:     string(c.Params),
 			StatementJSON:  string(c.Statement),
 			AssessmentJSON: string(c.Assessment),
+
+			Confidentiality:              strings.TrimSpace(c.Confidentiality) != "",
+			Integrity:                    strings.TrimSpace(c.Integrity) != "",
+			Availability:                 strings.TrimSpace(c.Availability) != "",
+			Threats:                      c.Threats,
+			PotentiallyCommonInheritable: c.PotentiallyCommonInheritable,
+			Justification:                c.Justification,
+			Appendix:                     c.Appendix,
 		})
 	}
 	return out, nil
@@ -143,6 +151,8 @@ func (e *oscalExports) profile(c *gin.Context) {
 		Title:        "grc: NIST SP 800-53 " + strings.ToUpper(baseline) + " baseline",
 		LastModified: now,
 		CatalogHref:  oscalCatalogPath,
+		CatalogTitle: oscalCatalogTitle,
+		TierNote:     oscalTierNote(baseline),
 		ControlIDs:   ids,
 	})
 	if errors.Is(err, oscal.ErrEmptyBaseline) {
@@ -154,6 +164,25 @@ func (e *oscalExports) profile(c *gin.Context) {
 		return
 	}
 	writeOSCAL(c, "sp800-53-"+baseline+"-profile", now, body)
+}
+
+// oscalBaselineTiers is the Asset Types page's tier rule (baselineForTier in
+// asset_types.go), which the profiles record in their remarks rather than as
+// profiles of their own. A test holds the two together.
+var oscalBaselineTiers = map[string]string{
+	"high":     "TIER 1 and TIER 2 assets",
+	"moderate": "TIER 3 assets",
+	"low":      "TIER 4 assets",
+}
+
+const oscalTierRule = "TIER 1 and TIER 2 take HIGH, TIER 3 MODERATE, TIER 4 LOW; TIER 0 and Other take no baseline."
+
+func oscalTierNote(baseline string) string {
+	applies := "no asset tier"
+	if t := oscalBaselineTiers[baseline]; t != "" {
+		applies = t
+	}
+	return "grc's Asset Types page applies this baseline to " + applies + ". Its rule: " + oscalTierRule
 }
 
 func isOSCALBaseline(b string) bool {
@@ -245,7 +274,9 @@ func (e *oscalExports) nfrMapping(c *gin.Context) {
 		Links:        links,
 		ControlIDs:   ids,
 		SourceHref:   oscalNFRCatalogPath,
+		SourceTitle:  oscalNFRCatalogTitle,
 		TargetHref:   oscalCatalogPath,
+		TargetTitle:  oscalCatalogTitle,
 	})
 	if errors.Is(err, oscal.ErrNothingMapped) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no Security NFR is linked to a control in the catalog"})
@@ -291,13 +322,16 @@ func regulationOSCAL(service *regcoverage.Service, doc string) gin.HandlerFunc {
 			body, err = oscal.ExportRegulationCatalog(reg)
 		default:
 			body, err = oscal.ExportRegulationMapping(reg, oscal.RegulationHrefs{
-				Catalog:        oscalRegulationPath(id, "catalog", reg.Version),
-				NFRCatalog:     oscalNFRCatalogPath,
-				ControlCatalog: oscalCatalogPath,
+				Catalog:             oscalRegulationPath(id, "catalog", reg.Version),
+				CatalogTitle:        fmt.Sprintf("%s: Regulation Coverage, version %d", strings.TrimSpace(reg.Title), reg.Version),
+				NFRCatalog:          oscalNFRCatalogPath,
+				NFRCatalogTitle:     oscalNFRCatalogTitle,
+				ControlCatalog:      oscalCatalogPath,
+				ControlCatalogTitle: oscalCatalogTitle,
 			})
 		}
 		if errors.Is(err, oscal.ErrNothingMapped) {
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("version %d of this report maps no section to a catalog item", reg.Version)})
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("version %d of this report has no map to export: no mapping names a catalog item on a finding with a verified quote", reg.Version)})
 			return
 		}
 		if err != nil {

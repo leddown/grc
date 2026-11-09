@@ -107,10 +107,14 @@ carry the version's own timestamp, and are the same bytes every time;
 `?version=N` picks a version and its absence the latest. The live catalogs
 are dated by the export.
 
-Documents that refer to one another use root-relative hrefs to these routes
-(`/controls/oscal/catalog.json`), which resolve against the server that
-served them. A saved copy has to be pointed at its neighbours by whoever
-saved it.
+Documents that refer to one another do it the way NIST's profiles do: through
+a back-matter resource, referenced as `#<resource uuid>`, whose one rlink is
+the other export's root-relative route (`/controls/oscal/catalog.json`, media
+type `application/oscal.catalog+json`) and whose title is the other document's.
+The resource UUID is keyed on that href, so a document is the same resource in
+every export that names it. A root-relative href resolves against the server
+that served the document; a saved copy has to be pointed at its neighbours by
+whoever saved it.
 
 ### The SP 800-53 catalog
 
@@ -125,26 +129,36 @@ OSCAL and one edited afterwards.
 | `controls` | A control in its family, an enhancement nested in its parent (at the family's top level when the parent is missing, which reads back as a Control). |
 | `id`, `class` | NIST's token (`ac-2.1`); `SP800-53` or `SP800-53-enhancement`. |
 | `title` | `name`. |
-| `props` | `label` (`AC-2(1)`), `sort-id` (`ac-02.01`), and `status` `withdrawn` when `withdrawn` is 1. |
+| `props` | `label` (`AC-2(1)`), `sort-id` (`ac-02.01`), and `status` `withdrawn` when `withdrawn` is 1. Then grc's: `confidentiality`, `integrity` and `availability` (`yes` or `no`, the stored flags), a `threat` per threat in stored order, and `potentially-common-inheritable` when set. |
 | `params` | `params_json`, as stored. |
 | `parts`: statement | `statement_json` as stored while it still renders to the stored `requirements`. Otherwise (a control never imported from OSCAL, or edited since) a statement whose prose is `requirements`, with the grc prop `prose` = `grc-text`. The database is the record: an edit wins over NIST's structure, and the structure stays stored for when the text is NIST's again. |
 | `parts`: guidance | `discussion`, with the grc prop `prose` = `grc-text`: grc stores the text of NIST's guidance, not its part. |
 | `parts`: assessment | `assessment_json`, as stored. |
+| `parts`: grc `cia-justification` | The CIA justification, when there is one. |
+| `parts`: grc `appendix` | A sub-part per non-empty appendix field, in name order (the stored appendix is an object): `title` the field's name as stored (`NIST CSF v2.0`), `name` a token of it (`nist-csf-v2.0`), `prose` its text. `References`, which the DORA Report and the Exceptions Workbook read, is one of them. |
 | `links` | `rel="related"` to `#<token>` for each related control. |
 
-Not exported: the CIA ratings, justification, threats, potentially
-common/inheritable, the appendix and the record key, which are grc's own
-analysis of a control rather than the catalog. NIST's back-matter is not
-stored, so the export has none.
+grc's own parts and props are plain text, like the `grc-text` statements, and
+the import ignores them: it never writes the CIA flags, threats, potentially
+common/inheritable, justification or appendix, so they do not affect the
+round trip. Not exported: the record key (`source_key`), and the baseline
+flags and `mapping_baselines_json`, which the profiles carry. NIST's
+back-matter is not stored, so the catalog has none.
 
 ### The baseline profiles
 
-One per baseline: `imports` the catalog export by href, `include-controls`
-`with-ids` every control the catalog marks in that baseline, and `merge`
-`as-is`, the shape of NIST's own baseline profiles. The title names the
-baseline, so the import accepts it in its slot. A baseline no control is in
-is a 404: an import with no selection reads as nothing, or to some tools as
-everything.
+One per baseline, in the shape of NIST's own baseline profiles: `imports` the
+catalog export through a back-matter resource, `include-controls` `with-ids`
+every control the catalog marks in that baseline, and `merge` `as-is`. The
+title names the baseline, so the import accepts it in its slot. A baseline no
+control is in is a 404: an import with no selection reads as nothing, or to
+some tools as everything.
+
+The remarks record the Asset Types page's tier rule, which is not a profile of
+its own: TIER 1 and TIER 2 take HIGH, TIER 3 MODERATE, TIER 4 LOW, and TIER 0
+and Other no baseline; each profile also says which tiers it serves (PRIVACY,
+none). The rule lives in that page's script (`baselineForTier` in
+`internal/app/asset_types.go`), and a test holds the profile note to it.
 
 ### The Security NFR catalog
 
@@ -152,14 +166,15 @@ everything.
 |---|---|
 | `groups` | One per domain (`id` `domain-<slug>`, `class` `domain`), ordered by name. An NFR without a domain is a control at the catalog's top level. |
 | control `id`, `class`, `title` | `nfr-<record key>`, `security-nfr`, the summary. |
-| `props` | `label` the NFR id (`1.4`, the record key when there is none); grc's `record-key`, `issue-type` and `weight`. |
+| `props` | `label` the NFR id (`1.4`, the record key when there is none); grc's `record-key`, `issue-type`, `domain` and `weight`. |
 | `parts` | `statement` the description; grc's `implementation`, `additional-details` and `nist-mapping` (the mapping text as written). |
 
 ### The NFR to SP 800-53 mapping collection
 
-One mapping from the NFR catalog export to the 800-53 catalog export, with a
-map per NFR and the control a reference in its NIST mapping resolved to (the
-NFR-Control Links table, overrides included).
+One mapping from the NFR catalog export to the 800-53 catalog export, both
+named through back-matter resources, with a map per NFR and the control a
+reference in its NIST mapping resolved to (the NFR-Control Links table,
+overrides included).
 
 - A map's grc props: `override` `yes` when an administrator's override
   decided it, and `written-as` when the NFR wrote another id (`AU-11`
@@ -175,10 +190,12 @@ NFR-Control Links table, overrides included).
 
 ### A Regulation Coverage version
 
-The catalog has a control per section, in position order:
+The catalog has a group per category, in the order the categories first
+appear, and a control per section, in position order:
 
 | OSCAL | From the version's snapshot |
 |---|---|
+| `groups` | One per category: `id` `category-<slug>`, `class` `category`, `title` the category. A section without a category is a control at the catalog's top level. |
 | control `id` | The section's ref as a token (`dora-art-6`), with `-<position>` when two refs give one id. |
 | `title` | The section's title, or its label when it has none. |
 | `props` | `label`, `sort-id` (the position); grc's `ref`, `category` and `segment-confidence`. |
@@ -188,32 +205,50 @@ The catalog has a control per section, in position order:
 
 The mapping collection has one mapping to the NFR catalog export and one to
 the 800-53 catalog export, each only when it has a map, with a map per
-section and catalog item the finding maps it to.
+section and catalog item the finding maps it to. The source and targets are
+named through back-matter resources.
 
 - A map's `confidence-score` category is the report's (`high`, `medium`,
   `low`), its remarks the rationale, and its grc prop `source` says who made
   it: `seed` (a curated crosswalk) or `model`.
 - The mapping's method follows: `human` for seeds only, `automation` for the
   model only, `hybrid` for both.
-- A mapping to a reference the catalog does not hold (`known` false) is not a
-  map; the remarks name it.
+- Only what the report's own mapping holds is used, and only a mapping whose
+  reference the catalog holds (`known`) on a finding whose quote was verified
+  against the text (`grounded`; the report shows the others as "unverified
+  quote") becomes a map. Each mapping's remarks count what was left out and
+  name each one, by reason. A catalog every mapping to which was left out has
+  no mapping, and the collection's remarks say so.
 - `source-gap-summary` lists the relevant sections with no map to that
   catalog.
-- Status: `superseded` for any version but the latest; the latest is
-  `complete` when every section has a finding, `not-complete` otherwise.
+- Status: `superseded` for any version but the latest. The latest is
+  `complete` when every section has a finding and nothing was left out, and
+  `not-complete` otherwise; a mapping's status counts only what it left out.
 - The source href is the version's own catalog export
   (`…/oscal/catalog.json?version=N`); the targets are the live NFR and 800-53
   exports, which may have moved since the version was cut.
 
 ### The relationship
 
-OSCAL requires a relationship on every map, and NIST IR 8477 defines them as
-set relations: equivalent, subset, superset, intersecting. grc does not
-assess that: it records that a target addresses a source. Every map
-therefore carries grc's own relationship, `related`, with `ns` set to grc's
-namespace, which OSCAL allows for exactly this ("different organizations to
-associate distinct semantics"). Picking an IR 8477 value would be inventing
-one. The matching-rationale, which OSCAL also requires, is `semantic`.
+OSCAL requires a relationship on every map. The 1.2.1 metaschema
+(`oscal_mapping-common_metaschema.xml`) allows six values for a relationship
+in OSCAL's namespace, and defines them as set relations after NIST IR 8477:
+`equal-to` (the same), `equivalent-to` (similar, not necessarily identical),
+`subset-of`, `superset-of`, `intersects-with` ("some overlap, but each
+includes content that the other does not") and `no-relationship`. The JSON
+schema leaves the field a free token, and the constraint applies only to a
+relationship in OSCAL's namespace.
+
+grc's links are ungraded: an NFR's author, a curated crosswalk or the
+analysis recorded that a target addresses a source, and nothing more. Every
+OSCAL value says more than that. Even `intersects-with`, the weakest, says
+that neither side contains the other. Every map therefore carries grc's own
+relationship, `related`, with the map's `ns` set to grc's namespace, which the
+schema provides for ("This allows different organizations to associate
+distinct semantics for relationships with the same name"). If a consumer needs
+an OSCAL value, `intersects-with` is the closest; the change is
+`oscal.Relationship` and the map `ns`. The matching-rationale, which OSCAL
+also requires, is `semantic`.
 
 ## Versions, identifiers and bytes
 

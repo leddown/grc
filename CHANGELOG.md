@@ -3,6 +3,123 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-09 (OSCAL, phase 2 completed: what the phase 2 commit left out of the prompt)
+
+When I re-read the prompt's phase 2 section before designing phase 3, I found
+that the phase 2 commit (`f601230`) missed several things it asked for. This
+change adds them. The routes, the schema and the round trip are unchanged.
+
+- **The SP 800-53 catalog carries grc's enrichment** in the grc namespace, as
+  the prompt asked. Phase 2 had left it out ("grc's own analysis rather than
+  the catalog"), and that was wrong.
+  - Props: `confidentiality`, `integrity` and `availability` (`yes`/`no`,
+    the stored flags); a `threat` per threat, in stored order; and
+    `potentially-common-inheritable` when set.
+  - Parts: `cia-justification`, and `appendix`, with a sub-part per
+    non-empty field in name order. The sub-part's title is the field's name
+    as stored (`NIST CSF v2.0`), its name a token of that name
+    (`nist-csf-v2.0`), and its prose the text. `References` is included.
+
+  The import never writes these fields, so the round trip is unaffected.
+  The catalog's remarks say grc's parts are plain text.
+- **Back-matter resources.** The baseline profiles now import the catalog as
+  `#<uuid>`, through a back-matter resource whose rlink is
+  `/controls/oscal/catalog.json` with media type
+  `application/oscal.catalog+json`. This is the shape of NIST's own
+  profiles. The NFR mapping and the Regulation Coverage mapping name their
+  source and target catalogs the same way, as the prompt asked. A resource's
+  UUID is keyed on its href. The mapping collection struct gains
+  `back-matter`.
+- **The asset-tier rule in the profiles' remarks** (not as profiles): TIER 1
+  and TIER 2 take HIGH, TIER 3 MODERATE, TIER 4 LOW, and TIER 0 and Other no
+  baseline, plus which tiers each profile serves (PRIVACY: none). I checked
+  the rule against `baselineForTier` in `internal/app/asset_types.go`. TIER 0
+  and Other are not in the prompt's version of the rule, but they are in the
+  code. A test holds `oscalBaselineTiers` to the page's script.
+- **The NFR catalog** gains the grc prop `domain`. The prompt listed it with
+  weight and issue type; the domain was already the group.
+- **Regulation Coverage.**
+  - The catalog has a group per category (`category-<slug>`, class
+    `category`), in first-appearance order. A section with no category stays
+    at the top level.
+  - The mapping leaves out a mapping on a finding whose quote was not
+    verified (`grounded` false, which the report tags "unverified quote"),
+    as it already did for an unknown reference. Each mapping's remarks count
+    what was left out and name each one, by reason.
+  - A catalog whose every mapping was left out gets no mapping, and the
+    collection's remarks say so.
+  - Status: `not-complete` when anything was left out (per mapping, and for
+    the collection).
+  - The collection's remarks now say that the targets are the live catalogs.
+    The phase 2 entry claimed this, but only `OSCAL.md` said it.
+  - The 404 for a version with no map now gives that reason.
+- **Files.**
+  - `internal/oscal`: `export.go` (`documentResource`, `backMatter`,
+    `CatalogMediaType`), `catalogexport.go` (the new `ExportControl` fields,
+    `appendixPart`, and `ProfileExport.CatalogTitle` and `TierNote`),
+    `nfrexport.go`, `regexport.go` (`leftOut`, the groups, the statuses).
+  - `internal/app/oscal_export.go`: passes the new fields, the titles and
+    the tier note.
+- **Tests.**
+  - `internal/oscal`:
+    - AC-2's grc props and parts (an empty threat, a whitespace-only field
+      and a nil field are skipped; fields come in name order) while the
+      export still reads back as stored
+    - each profile and mapping reference resolved through the back-matter
+    - the tier note
+    - the domain prop
+    - the category groups
+    - complete / not-complete / left-out remarks, and a catalog with nothing
+      left to map
+    - all six exports still pass the 1.2.1 schema
+  - `internal/app`:
+    - the shipped AC-2's threat, CIA and References in the full round trip
+      (still 0 changes)
+    - the HIGH profile's tier note
+    - a version with only unverified mappings answers 404 while its catalog
+      is still served
+    - `TestOSCALTierRuleMatchesTheAssetTypesPage`
+
+  Mutation checks: with the unverified-quote exclusion disabled, the
+  regulation test failed. With HIGH's tiers narrowed to "TIER 1 assets",
+  both tier tests failed. Both files were restored.
+- **Gate.** `go fmt` and `go vet` are clean. `go test ./...` passes, with
+  TestGosec and TestGovulncheck run uncached. `npm audit --omit=dev` found 0
+  vulnerabilities earlier today, and no JavaScript changed.
+- **Manual check.** A throwaway server (port 18733, temporary database):
+  shipped catalog and NFRs, then NIST 5.2.0 with all four profiles.
+  - Catalog export: 5,729,002 bytes in 1.62 s (4.53 MB before this change).
+    715 controls carry an appendix part and 714 a References field, the
+    number of shipped entries with non-blank References. There are 193
+    threat props, the number of non-blank shipped threats.
+  - The four profiles import `#0e9d9488-…`, which resolves to
+    `/controls/oscal/catalog.json`.
+  - The export re-imported with 0 problems, added, changed and absent, and
+    1,196 unchanged.
+  - NFR catalog: 168,491 bytes. Mapping: 63,904 bytes, 237 maps, with both
+    resources in the back-matter.
+  - All seven downloads passed `oscaltest.Validate` through a temporary test.
+
+  The server, database, binary, script, downloads and temporary test were
+  removed. Not run again: the regulation exports on a server (the app test
+  covers them) and the page screenshots (no page changed).
+- **The relationship stays grc's `related`, and I am putting it to you.**
+  The prompt asked for the allowed value that claims the least, expecting
+  `intersects-with`. The 1.2.1 metaschema allows six values for a
+  relationship in OSCAL's namespace: `equal-to`, `equivalent-to`,
+  `subset-of`, `superset-of`, `intersects-with` and `no-relationship`. It
+  defines `intersects-with` as "some overlap, but each includes content that
+  the other does not". That is a claim grc's ungraded links never make. The
+  JSON schema leaves the field a free token, and the map's `ns` exists for
+  "distinct semantics", so grc's own token is valid and claims nothing.
+  Switching means changing `oscal.Relationship` and the map `ns`. `OSCAL.md`
+  ("The relationship") has the details.
+- Docs: `OSCAL.md` (the cross-references, the catalog's grc rows replacing
+  "Not exported", profiles, NFR props, the NFR mapping, the regulation groups
+  and left-out rules, the relationship); FEATURES (Controls, NFRs, Regulation
+  Coverage step 7); HTTP_API (the 404 reason); ARCHITECTURE (`internal/oscal`
+  at 3,400 lines).
+
 ## 2026-11-09 (OSCAL, phase 2: the exports — SP 800-53 catalog and baselines, Security NFRs and their mapping, Regulation Coverage)
 
 Second of four phases on `feature/oscal`. Any signed-in user who can open a

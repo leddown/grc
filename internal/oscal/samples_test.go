@@ -39,7 +39,9 @@ func SampleNFRMapping() NFRMappingExport {
 		Links:        SampleNFRLinks(),
 		ControlIDs:   []string{"SI-2", "RA-5", "AU-2", "AU-12", "AC-1"},
 		SourceHref:   "/security-nfrs/oscal/catalog.json",
+		SourceTitle:  "grc: Security NFR catalog",
 		TargetHref:   "/controls/oscal/catalog.json",
+		TargetTitle:  "grc: NIST SP 800-53 control catalog",
 	}
 }
 
@@ -67,9 +69,12 @@ func SampleRegulation(latest bool) ExportRegulation {
 
 func SampleRegulationHrefs() RegulationHrefs {
 	return RegulationHrefs{
-		Catalog:        "/regulation-coverage/7/oscal/catalog.json?version=2",
-		NFRCatalog:     "/security-nfrs/oscal/catalog.json",
-		ControlCatalog: "/controls/oscal/catalog.json",
+		Catalog:             "/regulation-coverage/7/oscal/catalog.json?version=2",
+		CatalogTitle:        "Digital Operational Resilience Act: Regulation Coverage, version 2",
+		NFRCatalog:          "/security-nfrs/oscal/catalog.json",
+		NFRCatalogTitle:     "grc: Security NFR catalog",
+		ControlCatalog:      "/controls/oscal/catalog.json",
+		ControlCatalogTitle: "grc: NIST SP 800-53 control catalog",
 	}
 }
 

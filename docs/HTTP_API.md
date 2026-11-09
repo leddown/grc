@@ -140,7 +140,8 @@ filename="grc-<kind>-<yyyy-mm-dd>.oscal.json"`, dated by the document's
 `last-modified`) of OSCAL 1.2.1 JSON in RFC 8785 canonical form. They answer
 404 with a JSON error when there is nothing to export: an empty catalog, a
 baseline no control is in, no NFR linked to a control, a regulation before its
-first analysis or a version that maps nothing. See `OSCAL.md`.
+first analysis, or a version with no map (none of its mappings names a catalog
+item on a finding with a verified quote). See `OSCAL.md`.
 
 ## Security NFR catalog and NFR-control links
 

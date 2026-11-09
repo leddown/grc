@@ -43,10 +43,15 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
 - **OSCAL export** (signed in; linked from the Controls page and Help): the
   whole catalog, hidden families included, as an OSCAL 1.2.1 catalog
   (`GET /controls/oscal/catalog.json`), and each baseline as an OSCAL profile
-  of it (`GET /controls/oscal/profile/{low,moderate,high,privacy}.json`). The
-  catalog is the OSCAL import run backwards: an export imports back without a
-  change, a control edited after an OSCAL import carries its edited text, and
-  two exports of an unchanged catalog differ only in `last-modified`.
+  of it (`GET /controls/oscal/profile/{low,moderate,high,privacy}.json`,
+  importing the catalog through a back-matter resource as NIST's profiles do,
+  with the Asset Types tier rule in its remarks). The catalog is the OSCAL
+  import run backwards: an export imports back without a change, a control
+  edited after an OSCAL import carries its edited text, and two exports of an
+  unchanged catalog differ only in `last-modified`. grc's own analysis goes
+  with it in the grc namespace: the CIA flags, each threat and the potentially
+  common/inheritable marker as props, the CIA justification and the appendix
+  (References included) as parts.
 - **Import** (`POST /controls/import`, admin; "Import JSON" on the Control
   Editor): loads a catalog file in the shape of the shipped one, keyed by
   record, with the control under `nist` (the older flat shape is read too).
@@ -117,7 +122,8 @@ records. Code: `internal/securitynfr`.
   refused before anything is written. Every import rebuilds the links.
 - **OSCAL export** (signed in; linked from the page and Help): the catalog as
   an OSCAL catalog (`GET /security-nfrs/oscal/catalog.json`: a group per
-  domain, a control per NFR, grc's fields in the grc namespace), and the
+  domain, a control per NFR, grc's fields, the domain included, in the grc
+  namespace), and the
   NFR-control links as an OSCAL mapping collection
   (`GET /security-nfrs/oscal/mapping.json`: a map per NFR and control it
   resolved to, gap summaries both ways, unresolved references named).
@@ -608,10 +614,13 @@ NIST 800-53. Code: `internal/regcoverage`, `internal/regmap`; detail in
    one section with an instruction and writes the next version.
 7. **OSCAL export** (signed in; linked from the report page): a version as an
    OSCAL catalog (`GET /regulation-coverage/:id/oscal/catalog.json`, a control
-   per section with grc's finding) and its mappings as an OSCAL mapping
-   collection (`…/oscal/mapping.json`, one mapping to the NFR catalog and one
-   to 800-53), `?version=N` or the latest. Both read the version's snapshot
-   and carry its date; an earlier version's mapping is `superseded`.
+   per section, grouped by category, with grc's finding) and its mappings as
+   an OSCAL mapping collection (`…/oscal/mapping.json`, one mapping to the NFR
+   catalog and one to 800-53), `?version=N` or the latest. Both read the
+   version's snapshot and carry its date; an earlier version's mapping is
+   `superseded`. A mapping to a reference the catalog does not hold, or on a
+   finding whose quote was not verified, is left out, and the remarks count
+   and name it.
 
 ### Wiz Rules (`/wiz-rules`)
 

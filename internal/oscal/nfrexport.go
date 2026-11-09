@@ -122,6 +122,7 @@ func nfrControl(n ExportNFR) Control {
 	props = append(props, GRCProps(
 		NamedValue{Name: "record-key", Value: n.Key},
 		NamedValue{Name: "issue-type", Value: n.IssueType},
+		NamedValue{Name: "domain", Value: n.Domain},
 		NamedValue{Name: "weight", Value: strconv.Itoa(n.Weight)},
 	)...)
 	var parts []Part
@@ -165,10 +166,12 @@ type NFRMappingExport struct {
 	Links        []ExportNFRLink
 	// ControlIDs are the catalog's controls, for the target gap summary.
 	ControlIDs []string
-	// SourceHref and TargetHref are where the NFR catalog and the SP 800-53
-	// catalog exports are served.
-	SourceHref string
-	TargetHref string
+	// Where the NFR catalog and the SP 800-53 catalog exports are served, and
+	// their titles, for the back-matter resources the mapping points at.
+	SourceHref  string
+	SourceTitle string
+	TargetHref  string
+	TargetTitle string
 }
 
 // Relationship is the map relationship grc writes, in its own namespace: grc
@@ -189,6 +192,7 @@ type mappingCollection struct {
 	Metadata   Metadata          `json:"metadata"`
 	Provenance MappingProvenance `json:"provenance"`
 	Mappings   []Mapping         `json:"mappings"`
+	BackMatter *BackMatter       `json:"back-matter,omitempty"`
 }
 
 // ErrNothingMapped is returned for a mapping collection with no map in it,
@@ -288,14 +292,16 @@ func ExportNFRMapping(in NFRMappingExport) ([]byte, error) {
 		status = "not-complete"
 	}
 	description := "Which SP 800-53 controls each Security NFR maps to, as the NFR's NIST mapping states it and the NFR-control links resolved it in grc."
+	source, sourceRef := documentResource(in.SourceTitle, in.SourceHref)
+	target, targetRef := documentResource(in.TargetTitle, in.TargetHref)
 	mapping := Mapping{
 		UUID:               UUID("mapping", "security-nfrs/sp800-53"),
 		Method:             "human",
 		MatchingRationale:  "semantic",
 		Status:             status,
 		MappingDescription: description,
-		SourceResource:     MappingResourceReference{Type: "catalog", Href: in.SourceHref},
-		TargetResource:     MappingResourceReference{Type: "catalog", Href: in.TargetHref},
+		SourceResource:     MappingResourceReference{Type: "catalog", Href: sourceRef},
+		TargetResource:     MappingResourceReference{Type: "catalog", Href: targetRef},
 		Maps:               maps,
 		SourceGapSummary:   gapSummary("nfr-gap", "security-nfrs/sp800-53/source", unmappedNFRs),
 		TargetGapSummary:   gapSummary("nfr-gap", "security-nfrs/sp800-53/target", untargeted),
@@ -315,7 +321,8 @@ func ExportNFRMapping(in NFRMappingExport) ([]byte, error) {
 			Status:             status,
 			MappingDescription: description,
 		},
-		Mappings: []Mapping{mapping},
+		Mappings:   []Mapping{mapping},
+		BackMatter: backMatter(source, target),
 	}}
 	return finishDocument("mapping-collection", "security-nfrs/sp800-53", &doc, &doc.MappingCollection.UUID, &doc.MappingCollection.Metadata, in.LastModified)
 }

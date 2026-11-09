@@ -93,6 +93,26 @@ func NFRToken(key string) string {
 	return Token("nfr", "nfr-"+slug(key))
 }
 
+// CatalogMediaType is the rlink media type of an OSCAL catalog in JSON, as
+// NIST's own profiles give it.
+const CatalogMediaType = "application/oscal.catalog+json"
+
+// documentResource is a back-matter resource for another grc export, and the
+// "#uuid" reference that points at it. Its UUID is keyed on the href, so the
+// same document is the same resource in every export that names it.
+func documentResource(title, href string) (Resource, string) {
+	r := Resource{
+		UUID:   UUID("resource", href),
+		Title:  title,
+		Rlinks: &[]ResourceLink{{Href: href, MediaType: CatalogMediaType}},
+	}
+	return r, "#" + r.UUID
+}
+
+func backMatter(resources ...Resource) *BackMatter {
+	return &BackMatter{Resources: &resources}
+}
+
 func grcProp(name, value string) []Property {
 	return GRCProps(NamedValue{Name: name, Value: value})
 }

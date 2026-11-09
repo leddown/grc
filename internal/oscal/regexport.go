@@ -67,11 +67,15 @@ type ExportRegMapping struct {
 }
 
 // RegulationHrefs are where the documents a regulation mapping joins are
-// served.
+// served, with their titles, for the back-matter resources the mapping points
+// at.
 type RegulationHrefs struct {
-	Catalog        string
-	NFRCatalog     string
-	ControlCatalog string
+	Catalog             string
+	CatalogTitle        string
+	NFRCatalog          string
+	NFRCatalogTitle     string
+	ControlCatalog      string
+	ControlCatalogTitle string
 }
 
 func (r ExportRegulation) key() string {
@@ -97,15 +101,36 @@ func sectionTokens(sections []ExportSection) []string {
 	return out
 }
 
-// ExportRegulationCatalog writes a report version as an OSCAL catalog: a
-// control per section, its text as the statement, and grc's finding (what the
-// section requires, the commentary, the gaps, the grounding quote, and who
-// produced it) as a part in the grc namespace.
+// ExportRegulationCatalog writes a report version as an OSCAL catalog: a group
+// per category, in the order the categories first appear (a section without
+// one sits at the catalog's top level), a control per section, its text as the
+// statement, and grc's finding (what the section requires, the commentary, the
+// gaps, the grounding quote, and who produced it) as a part in the grc
+// namespace.
 func ExportRegulationCatalog(r ExportRegulation) ([]byte, error) {
 	tokens := sectionTokens(r.Sections)
-	controls := make([]Control, 0, len(r.Sections))
+	var controls []Control
+	var groups []Group
+	byCategory := map[string]int{}
 	for i, s := range r.Sections {
-		controls = append(controls, sectionControl(s, tokens[i]))
+		c := sectionControl(s, tokens[i])
+		category := strings.TrimSpace(s.Category)
+		if category == "" {
+			controls = append(controls, c)
+			continue
+		}
+		gi, ok := byCategory[category]
+		if !ok {
+			groups = append(groups, Group{ID: Token("category", "category-"+category), Class: "category", Title: category})
+			gi = len(groups) - 1
+			byCategory[category] = gi
+		}
+		var list []Control
+		if groups[gi].Controls != nil {
+			list = *groups[gi].Controls
+		}
+		list = append(list, c)
+		groups[gi].Controls = &list
 	}
 	remarks := fmt.Sprintf("Version %d of grc's Regulation Coverage report on this regulation: its sections as grc read them, each with grc's finding.", r.Version)
 	if note := strings.TrimSpace(r.VersionNote); note != "" {
@@ -126,6 +151,9 @@ func ExportRegulationCatalog(r ExportRegulation) ([]byte, error) {
 			},
 		}),
 	}}
+	if len(groups) > 0 {
+		doc.Catalog.Groups = &groups
+	}
 	if len(controls) > 0 {
 		doc.Catalog.Controls = &controls
 	}
@@ -188,37 +216,51 @@ func sectionControl(s ExportSection, token string) Control {
 // SP 800-53 catalog (each only when it has a map), a map per section and
 // catalog item.
 //
+// Only a mapping whose reference the catalog holds, on a finding whose quote
+// was verified against the text (grounded), becomes a map. The others are
+// left out, and each mapping's remarks count and name them.
+//
 // Provenance is what the report records. A map's grc "source" prop says
 // whether a curated crosswalk ("seed") or the model the finding names
 // ("model") made it, which decides the method: human, automation, or hybrid
-// for a mix. A superseded version is "superseded"; the latest is "complete"
-// when every section has a finding and "not-complete" otherwise. A reference
-// the catalog does not hold is left out of the maps and named in the remarks.
+// for a mix. A superseded version is "superseded". The latest is "complete"
+// when every section has a finding and nothing was left out, and
+// "not-complete" otherwise.
 func ExportRegulationMapping(r ExportRegulation, hrefs RegulationHrefs) ([]byte, error) {
 	tokens := sectionTokens(r.Sections)
-	status := "complete"
+	analysed := true
 	for _, s := range r.Sections {
 		if s.Finding == nil {
-			status = "not-complete"
+			analysed = false
 			break
 		}
 	}
-	if !r.Latest {
-		status = "superseded"
+	statusOf := func(complete bool) string {
+		switch {
+		case !r.Latest:
+			return "superseded"
+		case complete:
+			return "complete"
+		}
+		return "not-complete"
 	}
+	catalog, catalogRef := documentResource(hrefs.CatalogTitle, hrefs.Catalog)
+	resources := []Resource{catalog}
+	collectionComplete := analysed
 
 	kinds := []struct {
-		kind, name, target string
-		token              func(string) string
+		kind, name, target, targetTitle string
+		token                           func(string) string
 	}{
-		{"nfr", "Security NFRs", hrefs.NFRCatalog, NFRToken},
-		{"control", "SP 800-53 controls", hrefs.ControlCatalog, ControlToken},
+		{"nfr", "Security NFRs", hrefs.NFRCatalog, hrefs.NFRCatalogTitle, NFRToken},
+		{"control", "SP 800-53 controls", hrefs.ControlCatalog, hrefs.ControlCatalogTitle, ControlToken},
 	}
 	var mappings []Mapping
+	var dropped []string
 	sources := map[string]bool{}
 	for _, k := range kinds {
 		var maps []Map
-		var unresolved, gaps []string
+		var unresolved, unverified, gaps []string
 		used := map[string]bool{}
 		for i, s := range r.Sections {
 			if s.Finding == nil {
@@ -235,6 +277,10 @@ func ExportRegulationMapping(r ExportRegulation, hrefs RegulationHrefs) ([]byte,
 				}
 				if !m.Known {
 					unresolved = append(unresolved, fmt.Sprintf("%s → %s", firstNonEmpty(s.Label, s.Ref), ref))
+					continue
+				}
+				if !s.Finding.Grounded {
+					unverified = append(unverified, fmt.Sprintf("%s → %s", firstNonEmpty(s.Label, s.Ref), ref))
 					continue
 				}
 				pair := s.Ref + "\x00" + ref
@@ -265,28 +311,40 @@ func ExportRegulationMapping(r ExportRegulation, hrefs RegulationHrefs) ([]byte,
 			}
 		}
 		if len(maps) == 0 {
+			if note := leftOut(unresolved, unverified); note != "" {
+				collectionComplete = false
+				dropped = append(dropped, "No map to the "+k.name+": "+note)
+			}
 			continue
 		}
+		complete := analysed && len(unresolved) == 0 && len(unverified) == 0
+		collectionComplete = collectionComplete && complete
+		target, targetRef := documentResource(k.targetTitle, k.target)
+		resources = append(resources, target)
 		mapping := Mapping{
 			UUID:               UUID("mapping", r.key()+"/"+k.kind),
 			Method:             methodOf(maps),
 			MatchingRationale:  "semantic",
-			Status:             status,
+			Status:             statusOf(complete),
 			MappingDescription: fmt.Sprintf("Which %s address each section of %s, from version %d of grc's Regulation Coverage report.", k.name, strings.TrimSpace(r.Title), r.Version),
-			SourceResource:     MappingResourceReference{Type: "catalog", Href: hrefs.Catalog},
-			TargetResource:     MappingResourceReference{Type: "catalog", Href: k.target},
+			SourceResource:     MappingResourceReference{Type: "catalog", Href: catalogRef},
+			TargetResource:     MappingResourceReference{Type: "catalog", Href: targetRef},
 			Maps:               maps,
 			SourceGapSummary:   gapSummary("regulation-gap", r.key()+"/"+k.kind, gaps),
 		}
-		if len(unresolved) > 0 {
-			mapping.Remarks = "Mappings to references the catalog does not hold, left out of the maps: " + strings.Join(unresolved, "; ") + "."
-		}
+		mapping.Remarks = leftOut(unresolved, unverified)
 		mappings = append(mappings, mapping)
 	}
 	if len(mappings) == 0 {
 		return nil, ErrNothingMapped
 	}
 
+	remarks := "Exported from grc. The relationship of every map is grc's own token \"" + Relationship + "\" (ns " + Namespace + "): " +
+		"the target addresses the section. grc does not assess the NIST IR 8477 set relationship. A map's confidence-score is the report's. " +
+		"The targets are grc's live Security NFR and SP 800-53 catalog exports, which may have changed since this version was cut."
+	for _, d := range dropped {
+		remarks += " " + d
+	}
 	method := "hybrid"
 	switch {
 	case sources["seed"] && !sources["model"]:
@@ -298,19 +356,34 @@ func ExportRegulationMapping(r ExportRegulation, hrefs RegulationHrefs) ([]byte,
 		Metadata: NewMetadata(MetadataInput{
 			Title:   r.Title + ": Regulation Coverage mappings",
 			Version: strconv.Itoa(r.Version),
-			Remarks: "Exported from grc. The relationship of every map is grc's own token \"" + Relationship + "\" (ns " + Namespace + "): " +
-				"the target addresses the section. grc does not assess the NIST IR 8477 set relationship. A map's confidence-score is the report's. " +
-				"The targets are grc's live Security NFR and SP 800-53 catalog exports, which may have changed since this version was cut.",
+			Remarks: remarks,
 		}),
 		Provenance: MappingProvenance{
 			Method:             method,
 			MatchingRationale:  "semantic",
-			Status:             status,
+			Status:             statusOf(collectionComplete),
 			MappingDescription: fmt.Sprintf("Version %d of grc's Regulation Coverage report on %s: which Security NFRs and SP 800-53 controls address each section.", r.Version, strings.TrimSpace(r.Title)),
 		},
-		Mappings: mappings,
+		Mappings:   mappings,
+		BackMatter: backMatter(resources...),
 	}}
 	return finishDocument("mapping-collection", r.key(), &doc, &doc.MappingCollection.UUID, &doc.MappingCollection.Metadata, r.LastModified)
+}
+
+// leftOut is a mapping's account of what it did not map: how many of the
+// report's mappings to the catalog were left out, and each one, by reason.
+func leftOut(unresolved, unverified []string) string {
+	if len(unresolved) == 0 && len(unverified) == 0 {
+		return ""
+	}
+	out := fmt.Sprintf("%d of the report's mappings to this catalog are left out of the maps.", len(unresolved)+len(unverified))
+	if len(unresolved) > 0 {
+		out += fmt.Sprintf(" %d name a reference the catalog does not hold: %s.", len(unresolved), strings.Join(unresolved, "; "))
+	}
+	if len(unverified) > 0 {
+		out += fmt.Sprintf(" %d are on a finding whose quote was not verified against the text: %s.", len(unverified), strings.Join(unverified, "; "))
+	}
+	return out
 }
 
 func methodOf(maps []Map) string {

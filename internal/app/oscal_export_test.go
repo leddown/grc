@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"grc/internal/oscal"
 	"grc/internal/oscal/oscaltest"
 	"grc/internal/regcoverage"
 )
@@ -81,6 +82,21 @@ func TestOSCALCatalogExportRoundTripsWithoutAChange(t *testing.T) {
 	}
 	if again := a.asAdmin(http.MethodGet, "/controls/oscal/catalog.json", "").Body.Bytes(); lastModifiedField.ReplaceAllString(string(again), "") != lastModifiedField.ReplaceAllString(string(catalog), "") {
 		t.Error("two exports of the same catalog differ beyond last-modified")
+	}
+	// grc's own analysis of AC-2 travels in the grc namespace: the shipped
+	// threats as one prop each, the CIA flags, and the appendix with References.
+	for _, want := range []string{
+		`{"name":"threat","ns":"` + oscal.Namespace + `","value":"Spoofing"}`,
+		`{"name":"confidentiality","ns":"` + oscal.Namespace + `","value":"yes"}`,
+		`"id":"ac-2_apx","name":"appendix","ns":"` + oscal.Namespace + `"`,
+		`"name":"references","ns":"` + oscal.Namespace + `"`,
+	} {
+		if !strings.Contains(string(catalog), want) {
+			t.Errorf("the catalog export lacks %s", want)
+		}
+	}
+	if !strings.Contains(profiles["high"], "applies this baseline to TIER 1 and TIER 2 assets") {
+		t.Error("the HIGH profile should record the asset tiers it serves in its remarks")
 	}
 
 	body, _ := json.Marshal(map[string]any{"catalog": string(catalog), "profiles": profiles})
@@ -211,12 +227,12 @@ func TestOSCALRegulationExports(t *testing.T) {
 	if rec := a.asAdmin(http.MethodGet, "/regulation-coverage/"+itoa(reg.ID)+"/oscal/catalog.json", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("a regulation with no version: %d %s", rec.Code, rec.Body.String())
 	}
-	cut := func(note, createdAt string, refs ...string) {
+	cut := func(note, createdAt string, grounded bool, refs ...string) {
 		v, err := repo.CreateVersion(regcoverage.Version{RegulationID: reg.ID, Note: note, CreatedAt: createdAt})
 		if err != nil {
 			t.Fatal(err)
 		}
-		finding := &regcoverage.Finding{Relevant: true, Requirement: "Keep a framework.", Confidence: "high", Model: "m"}
+		finding := &regcoverage.Finding{Relevant: true, Grounded: grounded, Requirement: "Keep a framework.", Confidence: "high", Model: "m"}
 		for _, ref := range refs {
 			finding.Mappings = append(finding.Mappings, regcoverage.Mapping{Kind: regcoverage.KindControl, Ref: ref, Source: regcoverage.SourceSeed, Confidence: "high", Known: true})
 		}
@@ -226,8 +242,8 @@ func TestOSCALRegulationExports(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cut("Initial analysis", "2026-10-01T08:00:00Z", "RA-3")
-	cut("Revised", "2026-10-05T09:30:00Z", "RA-3", "PM-9")
+	cut("Initial analysis", "2026-10-01T08:00:00Z", true, "RA-3")
+	cut("Revised", "2026-10-05T09:30:00Z", true, "RA-3", "PM-9")
 
 	base := "/regulation-coverage/" + itoa(reg.ID) + "/oscal/"
 	id := itoa(reg.ID)
@@ -250,6 +266,39 @@ func TestOSCALRegulationExports(t *testing.T) {
 	}
 	if page := a.asAdmin(http.MethodGet, "/regulation-coverage/"+id, "").Body.String(); !strings.Contains(page, base+"mapping.json?version=2") {
 		t.Error("the report page should link the exports of the version it shows")
+	}
+
+	// A finding whose quote was not verified maps nothing: its version has a
+	// catalog but no mapping to export.
+	cut("Unverified", "2026-10-09T10:00:00Z", false, "RA-3")
+	if rec := a.asAdmin(http.MethodGet, base+"mapping.json?version=3", ""); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "verified quote") {
+		t.Errorf("a version with only unverified mappings: %d %s", rec.Code, rec.Body.String())
+	}
+	oscalDownload(t, a, base+"catalog.json?version=3", "regulation-"+id+"-v3-catalog")
+}
+
+// The profiles' remarks repeat the Asset Types page's tier rule, which lives
+// in that page's script; this holds the two together.
+func TestOSCALTierRuleMatchesTheAssetTypesPage(t *testing.T) {
+	a := newFullApp(t, Options{})
+	page := a.asAdmin(http.MethodGet, "/asset-types", "").Body.String()
+	for baseline, rule := range map[string]string{
+		"high":     "if (type === 'TIER 1' || type === 'TIER 2') return 'High';",
+		"moderate": "if (type === 'TIER 3') return 'Moderate';",
+		"low":      "if (type === 'TIER 4') return 'Low';",
+	} {
+		if !strings.Contains(page, rule) {
+			t.Errorf("the Asset Types page no longer says %q: update oscalBaselineTiers", rule)
+		}
+		condition := strings.SplitN(rule, ")", 2)[0]
+		for _, tier := range regexp.MustCompile(`TIER \d`).FindAllString(condition, -1) {
+			if !strings.Contains(oscalBaselineTiers[baseline], tier) {
+				t.Errorf("%s: the profile note %q omits %s", baseline, oscalBaselineTiers[baseline], tier)
+			}
+		}
+	}
+	if !strings.Contains(oscalTierNote("privacy"), "applies this baseline to no asset tier") {
+		t.Errorf("PRIVACY has no tier: %q", oscalTierNote("privacy"))
 	}
 }
 
