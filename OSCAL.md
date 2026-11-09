@@ -8,8 +8,8 @@ crosswalks as OSCAL JSON for other tools. OSCAL is a serializer, as
 
 Status: phase 1 (the foundation and the 800-53 catalog import) and phase 2
 (the catalog, profile, NFR and Regulation Coverage exports) are built. The
-assurance results (phase 3, designed here before it is built), the trestle
-check and the signing design follow.
+assurance results (phase 3) are designed below, for review before anything
+is built; the trestle check and the signing design follow.
 
 ## What is imported
 
@@ -249,6 +249,166 @@ distinct semantics for relationships with the same name"). If a consumer needs
 an OSCAL value, `intersects-with` is the closest; the change is
 `oscal.Relationship` and the map `ns`. The matching-rationale, which OSCAL
 also requires, is `semantic`.
+
+## Assurance results: design for review (phase 3, not built)
+
+This section is the design for exporting Assurance Plans and Audit Findings
+as an OSCAL Assessment Plan, Assessment Results and Plan of Action and
+Milestones. Nothing in it is built yet; it is written down for review first.
+
+### What OSCAL 1.2.1 requires
+
+These requirements come from go-oscal's embedded 1.2.1 JSON schema, which is
+the one the tests validate against, and from the 1.2.1 metaschemas.
+
+| Model | Required by the schema | Required by the model's own remarks |
+|---|---|---|
+| assessment-plan | `uuid`, `metadata`, `import-ssp` (`href`), `reviewed-controls` with at least one `control-selection`, each `include-all` or `include-controls` | None. `import-ssp`'s `href` may be a back-matter fragment `#uuid` |
+| assessment-results | `uuid`, `metadata`, `import-ap` (`href`), `results`, each with `uuid`, `title`, `description`, `start` and `reviewed-controls` | None |
+| plan-of-action-and-milestones | `uuid`, `metadata`, `poam-items`, each with `title` and `description` | "Either an OSCAL-based SSP must be imported, or a unique system-id must be specified." A poam-item without a `uuid` is a warning |
+
+The parts these documents are built from have requirements of their own:
+
+| Part | Required |
+|---|---|
+| `observation` | `uuid`, `description`, `methods` (EXAMINE, INTERVIEW, TEST, UNKNOWN), `collected` |
+| `finding` | `uuid`, `title`, `description`, and exactly one `target`: a `type` (`statement-id` or `objective-id`), a `target-id`, and `status.state` `satisfied` or `not-satisfied` |
+| `risk` | `uuid`, `title`, `description`, `statement` (the impact), and `status`: `open`, `investigating`, `remediating`, `deviation-requested`, `deviation-approved` or `closed` |
+| `response` (a remediation) | `uuid`, `title`, `description`, and `lifecycle`: `recommendation`, `planned` or `completed` |
+| `task` | `uuid`, `title`, and `type` `milestone` or `action` |
+| `assessment-subject` | `include-all` or `include-subjects` |
+| `local-objective` | `control-id` and at least one part |
+
+`poam-item`, `finding`, `observation` and `risk` have **no `parts`**. Their
+long text slots are `description`, `statement` (risk) and `remarks`, and a
+prop value cannot span lines.
+
+### Meeting `import-ssp` and `import-ap` without an SSP
+
+- **Assessment Plan, `import-ssp`.** The href is `#<uuid>`, pointing at a
+  back-matter resource that is the plan's scope population, not an SSP:
+  - The resource is titled "Scope population of AP-2027-001 as approved in
+    version 2 (not a system security plan)" and carries the grc prop `kind`
+    = `approval-snapshot`.
+  - Its one rlink is `/assurance-plans/:id/versions/:n`, media type
+    `application/json`. That route serves the approval snapshot's stored
+    bytes (the plan's design and its population).
+  - The rlink's `hashes` give the stored `snapshot_sha256` (SHA-256), so a
+    reader can check that the bytes are the ones approved.
+  - The `import-ssp` remarks say plainly that grc holds no system security
+    plan, and that this plan's scope is its population as approved.
+
+  The population items are also in the plan itself, as `local-definitions`
+  inventory items. The model provides those for "data objects … that do not
+  appear in the referenced SSP".
+- **Assessment Results, `import-ap`.** The href is `#<uuid>`, pointing at a
+  back-matter resource whose rlink is grc's own Assessment Plan export for
+  the plan version the quarter's sample was selected under
+  (`/assurance-plans/:id/oscal/assessment-plan.json?version=N`, read from
+  the selections' `plan_version`). That plan is a real one, so nothing is
+  pretended.
+- **POA&M.** There is no `import-ssp`. The `system-id` has the grc namespace
+  as its `identifier-type` and `audit-findings` as its value, and the
+  remarks say the POA&M covers grc's Audit Findings register, not a system.
+- **Not yet known:** whether trestle follows `import-ssp` and refuses a
+  target that is not an SSP. Phase 4's trestle check will show it.
+
+### Routes
+
+| Route | Document | `last-modified` | Refused with |
+|---|---|---|---|
+| `GET /assurance-plans/:id/oscal/assessment-plan.json` (`?version=N`, the latest approval when absent) | Assessment Plan built from approval snapshot N | The version's `approved_at` (a snapshot never changes) | **409** when the plan was never approved, or no attribute names a control or NFR; 404 for an unknown version |
+| `GET /assurance-plans/:id/oscal/assessment-results/q<N>.json` | Assessment Results for quarter N | The export (a signed-off test can still be reopened) | 409 when the quarter has no selection, or its Assessment Plan cannot be exported; 404 for a quarter that is not 1–4 |
+| `GET /audit-findings/oscal/poam.json` (`?status=`) | POA&M | The export | 400 for an unknown status; 404 when no finding matches |
+
+- Download names: `grc-assessment-plan-<ref>-v<n>-<date>`,
+  `grc-assessment-results-<ref>-q<n>-<date>` and `grc-poam-<date>`, each
+  `.oscal.json`.
+- All three are read-only and open to signed-in users under the existing
+  prefixes (both are protected). The tests check that each refuses an
+  anonymous request.
+- They are linked from the plan page, the Audit Findings page and Help.
+- UUIDs are keyed on what each object is:
+  - an inventory item on the plan reference and item ref, so it is the same
+    item in every plan version that holds it, and an Assessment Results
+    subject resolves in any of them;
+  - an observation or a finding on the test ref and attribute ref;
+  - a poam-item, its risk and its observation on the AF reference.
+
+### Assessment Plan
+
+| OSCAL | From the approval snapshot |
+|---|---|
+| metadata | `title` is the plan's title, `version` the approval number (`v2`), and `remarks` the objective. grc props: `reference`, `plan-type`, `function`, `client`, `period-start`, `period-end`, `approved-by`, `coverage-basis`, `population-source`, `seed-commitment` (the seed itself is not in the snapshot), and the AI provenance (`ai-generated`, `model`, `prompt-hash`). No parties and no roles. |
+| `import-ssp` | The scope-population resource above. |
+| `reviewed-controls` | One `control-selection` per catalog the attributes name: the SP 800-53 ids as NIST tokens, and the NFR keys as `nfr-<key>`. Each has a description naming the catalog and a link to its export. **`include-all` is never used.** When no attribute names a reference, the export is a 409 ("no attribute names a control or NFR"). |
+| `local-definitions` / `inventory-items` | One per population item in the snapshot. `description` is the item name. grc props: `item-ref`, `stratum`, `cif`, `business-line`, `hosting`, `internet-facing`, `owner`, `wave`, `last-tested-on`, `source-kind`, `source-ref`. The owner is a prop, not a party. |
+| `local-definitions` / `objectives-and-methods` | One `local-objective` per attribute that names a reference. `control-id` is its first reference (the 800-53 ids in order, then the NFR), and `description` is the requirement. Parts: `assessment-objective` with id `<attr>_obj` and the pass criteria as prose, and the grc part `evidence-requested`. The other references are grc props `also-reviews`. |
+| `local-definitions` / `activities` | One per attribute. `title` is the attribute ref and domain, `description` the requirement, and one step holds the procedure. The prop `method` is OSCAL's: Inspection and Observation → `EXAMINE`, Inquiry → `INTERVIEW`, Re-performance → `TEST`; the grc prop `method` keeps grc's own word. `related-controls` lists its references. grc props: `applies-to` (a stratum code each), `regulatory-refs`, and the AI provenance. |
+| `assessment-subjects` | One per stratum that has items in the snapshot: `type` `inventory-item`, `include-subjects` the stratum's items, `description` its definition, and grc props `code` and `name`. A stratum approved on its planned size alone, with no items yet, is not a subject: OSCAL would need `include-all`, which claims everything. |
+| `tasks` | One per plan step, the generated quarter steps included. `type` is `milestone` for a milestone step and `action` otherwise. `timing` is `within-date-range` (start, end) or `on-date`. grc props: `step-ref`, `phase`, `responsible-role`, `accountable-role`, `deliverable`, `refs`, `status`. |
+| `terms-and-conditions` / grc parts | These go in grc's namespace, as the prompt asks (the allowed-values constraint covers only parts in OSCAL's namespace): `parameters` (the per-plan thresholds as props); `sampling` (a sub-part per stratum, items or not, with confidence, tolerable rate, floor, efforts, waves Q1–Q4, top-ups, cycle years, planned size and takes); `quarterly-cycle` (a sub-part per quarter: the 1LoD window and deadline, selection, fieldwork start and end, findings agreed, report, committee, retest and overhead days); `raci` (a sub-part per activity, a prop per role holding its letter); `cadence`; `escalations`; `regulatory-basis`; `decisions-requested`. |
+| `back-matter` | The scope-population resource. |
+
+### Assessment Results (one per quarter)
+
+| OSCAL | From the quarter's tests |
+|---|---|
+| metadata | `title` "<plan>: Q<n> results". grc props: `reference`, `quarter`, `committee`. |
+| `import-ap` | The resource above, for the plan version the quarter was selected under. |
+| `results` | One. `title` is "Quarter N" and `description` gives the counts. `start` is the quarter's fieldwork start (or its selection date), and `end` its fieldwork end. `reviewed-controls` holds the references of the attributes with results this quarter. |
+| Which tests | Only tests signed off by QA (`qa_date` set). Tests selected but not signed off are counted and named in the result's remarks. |
+| `observations` | One per attribute result of a signed-off test (Pass, Fail, N/A; a blank is skipped). `title` is "<test ref> / <attr ref>", and `description` the result note, or the result itself when there is no note. `methods` comes from the attribute, as above, and `types` is `control-objective`. `subjects` is the item, using the inventory-item UUID the plan defines. `collected` is the fieldwork completion date, or the QA date when that is blank. `relevant-evidence` is the evidence summary. grc props: `result`, `test-ref`, `test-type`, `tester`, `qa-reviewer`, `qa-date`, `stratum`, `basis`. |
+| `findings` | One per Fail. `target` is `objective-id` `<attr>_obj`, the attribute's objective in the plan, with state `not-satisfied` and reason `fail`. `related-observations` is that observation. grc props: `audit-finding` (the `AF-YYYY-NNN` record the Fail was raised as) and `severity`; a Fail not yet raised has no such prop, and the remarks say so. A Fail on an attribute that names no reference has no objective to target, so it stays an observation and is counted in the remarks. |
+| Not exported | Thematic conclusions, which go to the risk register (out of scope), and the deviation rule's yearly conclusions. |
+
+### POA&M
+
+The POA&M covers findings with status Open, In Remediation, Pending
+Validation, Reopened or Risk Accepted. `?status=` picks one status instead.
+Draft is never exported, because it has not been issued; Closed is exported
+only when asked for.
+
+| OSCAL | From the finding |
+|---|---|
+| `system-id` | As above. |
+| `poam-items` | One per finding. `title` is the finding's title. **`description` holds the criteria, condition, cause and effect as four labelled paragraphs, verbatim and as plain text**, because a poam-item has no parts. grc props: `reference` (AF-YYYY-NNN), `status`, `severity`, `finding-type`, `deficiency-type`, `source`, `engagement`, `auditor`, `root-cause-category`, `business-unit`, `process-area`, `owner`, `management-response`, `identified-date`, `report-date`, `original-due-date`, `due-date`, `extension-count`, `repeat-finding`, `prior-reference`, `origin-ref`, and a `control` per linked control. `related-observations` and `related-risks` point to the two objects below. |
+| `observations` | One per finding. `description` is the condition and `collected` the identified date. `methods` is `UNKNOWN`: grc does not record how an auditor found something, and OSCAL defines that value for this case. grc prop: `source`. |
+| `risks` | One per finding. `title` is the title, `description` the condition, `statement` the effect, `status` per the table below, and `deadline` the due date. Remediations: the recommendation as a `recommendation` response, and the management action plan as a `planned` response (`completed` once every action is Validated or Cancelled and at least one is Validated). The plan's description is the management response text, and it has a `task` (type `action`) per action, with `on-date` timing at the action's due date. The task's grc props are `action-type`, `owner`, `status`, `completed-date` and `evidence`. Risk acceptance and closure go in grc props (`accepted-by`, `acceptance-expiry`, `validated-by`, `validation-date`), with the acceptance rationale and the closure evidence in `remarks`. |
+
+| grc status | OSCAL risk status |
+|---|---|
+| Open, Reopened | `open` |
+| In Remediation | `remediating` |
+| Pending Validation | `remediating`: the fix is in, and OSCAL has no "validating" state. The grc `status` prop says Pending Validation. |
+| Risk Accepted, acceptance in force | `deviation-approved` (OSCAL: an open risk with an approved deviation) |
+| Risk Accepted, acceptance expired | `open`, with the grc prop `acceptance-expired` `yes` |
+| Closed (only with `?status=Closed`) | `closed` |
+| Draft | Not exported |
+
+### Where this differs from the prompt, and what is open
+
+1. **No parts.** The prompt asked for criteria, condition, cause and effect
+   as parts, but none of poam-item, risk, observation or finding has parts
+   in 1.2.1. The proposal uses the native slots instead: the condition as
+   the observation and the risk's description, the effect as the risk's
+   statement, the recommendation and the action plan as responses. All four
+   texts also go, labelled, in the poam-item's description.
+2. **Plans whose attributes name no control or NFR cannot honestly give an
+   Assessment Plan.** That is 4 of the 6 built-in templates as shipped:
+   policy review, RCSA, remediation roadmap and resilience testing. OSCAL
+   requires reviewed controls, and `include-all` would claim every control.
+   The proposal is a 409 that names the gap, and with no Assessment Plan
+   there are no Assessment Results either. The alternative is to give
+   those templates' attributes their references first.
+3. **The POA&M's `system-id`** (`audit-findings` in grc's namespace) meets
+   the "unique system-id" rule with an identifier for the register, not a
+   system. It is unique to grc, not to the installation.
+4. **An expired risk acceptance** exports as `open`, not
+   `deviation-approved`.
+5. **RACI** goes in the grc namespace, as the prompt asks, rather than as
+   OSCAL roles, even though the role names are stored.
+6. **Observation → EXAMINE.** 800-53A's EXAMINE includes observing.
 
 ## Versions, identifiers and bytes
 

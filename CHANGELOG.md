@@ -3,6 +3,28 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-09 (OSCAL, phase 3 design: Assessment Plan, Assessment Results and POA&M, for review)
+
+The design only, in `OSCAL.md` ("Assurance results: design for review"). No
+code changed, and nothing is built until the design is reviewed.
+
+- What OSCAL 1.2.1 requires of the three models. I took this from
+  go-oscal's embedded 1.2.1 JSON schema and the 1.2.1 metaschemas: the AP
+  needs `import-ssp` and `reviewed-controls`, the AR needs `import-ap` and
+  `results`, and the POA&M needs `poam-items`, plus "an imported SSP or a
+  unique system-id".
+- How to meet `import-ssp` without an SSP. It points at a back-matter
+  resource that is the plan's approval snapshot (design and population),
+  served by `/assurance-plans/:id/versions/:n` with its stored SHA-256 as
+  the rlink hash. The population is also in the plan as `local-definitions`
+  inventory items. `import-ap` points at grc's own Assessment Plan export
+  for the version the quarter was selected under.
+- Routes, mapping tables, the grc status to risk status table, and six
+  points where the design differs from the prompt or is open. The main ones:
+  - poam-items, risks, observations and findings have no parts
+  - plans whose attributes name no control or NFR (4 of the 6 built-in
+    templates as shipped) cannot honestly give an Assessment Plan
+
 ## 2026-11-09 (OSCAL, phase 2 completed: what the phase 2 commit left out of the prompt)
 
 When I re-read the prompt's phase 2 section before designing phase 3, I found
