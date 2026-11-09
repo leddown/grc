@@ -77,6 +77,11 @@ admin, the same split as the risk register.
   (supports `page` / `per_page`)
 - `GET /audit-findings/data/:id`: returns the finding with its actions and history
 - `GET /audit-findings/summary`, `GET /audit-findings/vocabulary`
+- `GET /audit-findings/oscal/poam.json?status=`: the register as an OSCAL
+  1.2.1 plan of action and milestones. Without `status`, every finding that is
+  Open, In Remediation, Pending Validation, Reopened or Risk Accepted; Closed
+  only when asked for, Draft never (400). An expired risk acceptance is an
+  open risk. See [OSCAL.md](OSCAL.md).
 - `POST /audit-findings`, `PUT /audit-findings/:id` (the full finding, with the
   action plan as `actions`), `DELETE /audit-findings/:id`
 

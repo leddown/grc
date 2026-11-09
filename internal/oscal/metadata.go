@@ -47,15 +47,23 @@ func NewMetadata(in MetadataInput) Metadata {
 }
 
 // GRCProps turns name/value pairs into props in the grc namespace, skipping
-// empty values: a prop with no value is not a statement of anything.
+// empty values: a prop with no value is not a statement of anything. A prop
+// value is OSCAL's string type, which cannot span lines, so each run of
+// whitespace becomes one space.
 func GRCProps(values ...NamedValue) []Property {
 	out := make([]Property, 0, len(values))
 	for _, v := range values {
-		value := strings.TrimSpace(v.Value)
+		value := oneLine(v.Value)
 		if value == "" {
 			continue
 		}
 		out = append(out, Property{Name: v.Name, Ns: Namespace, Value: value})
 	}
 	return out
+}
+
+// oneLine is s with each run of whitespace, line breaks included, as one
+// space: the shape of an OSCAL string or markup-line value.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }

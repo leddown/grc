@@ -124,6 +124,24 @@ func openAPIJSON(c *gin.Context) {
 					"description": "?version=N, the latest without it. One mapping to the NFR catalog and one to SP 800-53, each when it has a map. An earlier version is superseded. 404 before the first analysis or when the version maps nothing.",
 				},
 			},
+			"/assurance-plans/{id}/oscal/assessment-plan.json": gin.H{
+				"get": gin.H{
+					"summary":     "An approved version of an Assurance Plan as an OSCAL Assessment Plan",
+					"description": "?version=N, the latest approval without it. Built from the approval snapshot and dated by the approval, so the same bytes every time. import-ssp points at the snapshot (grc holds no SSP). 409 when the plan was never approved or no attribute names a control or NFR that resolved; 404 for an unknown version.",
+				},
+			},
+			"/assurance-plans/{id}/oscal/assessment-results/q{n}.json": gin.H{
+				"get": gin.H{
+					"summary":     "A quarter's signed-off tests as OSCAL Assessment Results",
+					"description": "n is 1 to 4. Only tests QA has signed off; an observation per attribute result and a finding per Fail, naming its AF-YYYY-NNN record. import-ap is the Assessment Plan export of the version the quarter was selected under. 409 when the quarter is not selected or its plan version cannot be exported; 404 when no test is signed off yet.",
+				},
+			},
+			"/audit-findings/oscal/poam.json": gin.H{
+				"get": gin.H{
+					"summary":     "The Audit Findings register as an OSCAL plan of action and milestones",
+					"description": "Findings that are Open, In Remediation, Pending Validation, Reopened or Risk Accepted; ?status= picks one status (Closed only this way). Drafts are never exported (400). A poam-item, an observation and a risk per finding. 404 when no finding matches.",
+				},
+			},
 			"/security-nfrs/data": gin.H{
 				"get": gin.H{
 					"summary":     "List security NFRs",

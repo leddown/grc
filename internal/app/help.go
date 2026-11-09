@@ -272,6 +272,10 @@ func helpPage(c *gin.Context) {
               extending a due date asks for the reason and approver.</li>
             <li>Close it on independent validation with evidence, or record a time-bound risk
               acceptance.</li>
+            <li>Hand the open findings to another tool as an OSCAL plan of action and milestones:
+              the <a href="/audit-findings/oscal/poam.json">OSCAL POA&amp;M</a> link on the Audit
+              Findings page. It carries every issued finding that is not closed, with its action
+              plan; <code>?status=</code> picks one status instead. Drafts are never exported.</li>
           </ol>
           <p class="note">Practice and lifecycle rules are in
           <a href="/knowledge/audit-findings">AUDIT_FINDINGS.md</a>.</p>
@@ -316,6 +320,11 @@ func helpPage(c *gin.Context) {
               pack, each quarter's progress report and the annual conclusion as PDFs (or their
               sources and data), and the plan as JSON or one CSV per table. The pack's regulatory
               slide is the Governance tab's regulatory basis.</li>
+            <li>The same table links the OSCAL exports. The OSCAL Assessment Plan is the latest
+              approved version, and the History tab links each version's. A quarter's OSCAL results
+              hold only the tests QA has signed off, with a finding per Fail that names its Audit
+              Findings record. An Assessment Plan must list the controls it reviews, so a plan
+              whose attributes name no control or NFR cannot be exported until they do.</li>
             <li>Optionally, the AI assist tab drafts a plan from a brief, proposes test attributes
               from a shortlist of the NFR catalog, the controls and Regulation Coverage, or drafts
               the executive summary and speaker notes for the pack or a report. Each answer is a

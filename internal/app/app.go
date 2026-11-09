@@ -222,6 +222,7 @@ func buildRouter(sqliteDB *db.Conn, options Options) (*gin.Engine, *policystudio
 		Policies: policyService,
 	}, docRenderer(templateService), aiRouter, knowledgeService, adminMiddleware, options.LocalMode)
 	knowledgeService.WithAssurancePlans(planService.KnowledgePlans, planService.KnowledgeTests)
+	registerOSCALAssessmentRoutes(router, planService, findingService)
 	registerUtilitiesRoutes(router, sqliteDB, knowledgeService, adminMiddleware, options.LocalMode)
 
 	return router, studioService, nil

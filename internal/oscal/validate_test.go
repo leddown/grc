@@ -59,9 +59,22 @@ func TestExportsAreValidOSCAL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assessmentPlan, err := oscal.ExportAssessmentPlan(oscal.SamplePlan(), oscal.SampleCatalogHrefs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assessmentResults, err := oscal.ExportAssessmentResults(oscal.SampleQuarterResults(), oscal.SampleAssessmentPlanRef(), oscal.SampleCatalogHrefs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	poam, err := oscal.ExportPOAM(oscal.SamplePOAM())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, body := range map[string][]byte{
 		"catalog": catalog, "profile": profile, "nfr catalog": nfrCatalog,
 		"nfr mapping": nfrMapping, "regulation catalog": regCatalog, "regulation mapping": regMapping,
+		"assessment plan": assessmentPlan, "assessment results": assessmentResults, "poam": poam,
 	} {
 		if err := oscaltest.Validate(body); err != nil {
 			t.Errorf("%s: %v", name, err)

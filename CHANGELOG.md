@@ -3,6 +3,103 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-09 (OSCAL, phase 3: Assessment Plan, Assessment Results and POA&M exports)
+
+Builds the reviewed design, with the six open points taken as proposed. Three
+read-only routes, open to signed-in users under the modules' own prefixes. No
+schema change, and no domain module imports `internal/oscal`.
+
+- **`GET /assurance-plans/:id/oscal/assessment-plan.json`** (`?version=N`,
+  the latest approval without it). `internal/oscal.ExportAssessmentPlan`
+  builds it from the approval snapshot, which the new
+  `assuranceplan.(*Service).ApprovedPlan` reads back. It is dated by the
+  approval, so it is the same bytes every time.
+  - `import-ssp` points at a back-matter resource titled "Scope population
+    of … (not a system security plan)". Its rlink is
+    `/assurance-plans/:id/versions/:n` with the stored SHA-256 as its hash.
+    The test fetches that route and checks the hash against the bytes.
+  - The test script's resolved 800-53 and NFR references are the reviewed
+    controls: one selection per catalog, never `include-all`. A reference
+    that did not resolve at approval is left out and named.
+  - Each attribute with a reference is a local objective (part
+    `<attr>_obj` holding the pass criteria). Each attribute is an activity,
+    with OSCAL's method: Inspection and Observation are EXAMINE, Inquiry is
+    INTERVIEW, Re-performance is TEST.
+  - The population is the inventory items, keyed on plan and item so they
+    are the same across versions. Each stratum with items is a subject, and
+    each step is a task.
+  - Sampling, the quarterly cycle, RACI, cadence, escalations, the
+    regulatory basis and the decisions requested are grc parts in the terms
+    and conditions.
+  - 409 for a plan never approved, or one with no resolved reference (4 of
+    the 6 built-in templates as shipped, and any plan approved before the
+    catalog was loaded). 404 for an unknown version.
+- **`GET /assurance-plans/:id/oscal/assessment-results/q<N>.json`**
+  (`ExportAssessmentResults`). It holds only tests QA has signed off; the
+  ones not signed off, and items selected with no test, are named in the
+  remarks.
+  - An observation per attribute result, whose subject is the plan's
+    inventory item.
+  - A finding per Fail, targeting the attribute's objective, with an
+    `audit-finding` prop naming its AF-YYYY-NNN record. A Fail whose
+    attribute has no objective in the imported plan stays an observation.
+  - `import-ap` points at the Assessment Plan export of the version the
+    quarter was selected under.
+  - An item that joined after that approval is defined in the result's
+    local-definitions.
+  - Dated by the export, since a signed-off test can be reopened. 409 before
+    the quarter is selected; 404 before any test is signed off.
+- **`GET /audit-findings/oscal/poam.json`** (`?status=`, `ExportPOAM`).
+  - Without a filter it carries every finding that is Open, In Remediation,
+    Pending Validation, Reopened or Risk Accepted. Closed appears only when
+    asked for, and Draft never (400).
+  - Per finding: a poam-item whose description holds the criteria,
+    condition, cause and effect as labelled paragraphs; an observation (the
+    condition, method UNKNOWN); and a risk (statement the effect, deadline
+    the due date). The risk's remediations are the recommendation and the
+    management action plan, with an action task per action due on its date.
+  - Risk status: Open and Reopened are open; In Remediation and Pending
+    Validation are remediating; Risk Accepted is deviation-approved while
+    in force and open once expired (marked `acceptance-expired`); Closed is
+    closed.
+  - `system-id` is `audit-findings` in grc's namespace.
+  - A test holds the status table to Audit Findings' statuses.
+- **Where the build differs from the design**, also in `OSCAL.md`:
+  - A risk has no `remarks` in 1.2.1, so the acceptance rationale,
+    validation notes and closure evidence are on the poam-item.
+  - RACI props are named by the letter (`responsible`, `accountable`,
+    `consulted`, `informed`) and hold the role, since a role name is not a
+    token.
+  - The Assessment Results' top-level local-definitions cannot hold
+    inventory items, so late items sit in the result's own.
+  - Step status is not exported: it is progress, frozen at approval.
+- **Every grc prop is written on one line** (`GRCProps` collapses
+  whitespace), across all exports, because a prop value with a line break
+  does not validate. Before this, a stored value with a line break would
+  have made an export invalid; the exports of the shipped catalogs checked
+  in phase 2 held none.
+- **Links**:
+  - the plan page's Documents and exports table (the Assessment Plan, and an
+    "OSCAL results" link per quarter);
+  - each version on the History tab;
+  - the Audit Findings toolbar;
+  - Help.
+
+  The OpenAPI document lists the three routes.
+- **Tests**:
+  - unit tests for each document (`assessment_test.go`);
+  - schema validation of all three;
+  - cross-document checks: every finding targets an objective the plan
+    defines, and every subject is an inventory item of the plan or result;
+  - an app test that takes the worked example through approval, a Q1 test
+    with a raised Fail and QA sign-off, and reads all three exports over
+    HTTP (409, 404 and 400 included);
+  - the anonymous and scoped-reader check for the new routes.
+  - Eight mutations of the key rules were each caught.
+- Docs: `OSCAL.md` (the design section is now the reference),
+  `docs/HTTP_API.md`, `docs/FEATURES.md`, `docs/ARCHITECTURE.md`,
+  `ASSURANCE_PLANS.md`, `AUDIT_FINDINGS.md`.
+
 ## 2026-11-09 (OSCAL, phase 3 design: Assessment Plan, Assessment Results and POA&M, for review)
 
 The design only, in `OSCAL.md` ("Assurance results: design for review"). No

@@ -27,6 +27,9 @@ var oscalRoutes = []struct {
 	{http.MethodGet, "/security-nfrs/oscal/mapping.json", false},
 	{http.MethodGet, "/regulation-coverage/1/oscal/catalog.json", false},
 	{http.MethodGet, "/regulation-coverage/1/oscal/mapping.json", false},
+	{http.MethodGet, "/assurance-plans/1/oscal/assessment-plan.json", false},
+	{http.MethodGet, "/assurance-plans/1/oscal/assessment-results/q1.json", false},
+	{http.MethodGet, "/audit-findings/oscal/poam.json", false},
 }
 
 func TestOSCALRoutesRefuseAnonymousAndNonAdminRequests(t *testing.T) {

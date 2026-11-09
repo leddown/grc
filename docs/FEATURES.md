@@ -229,6 +229,15 @@ close. Code: `internal/auditfinding`; detail in `AUDIT_FINDINGS.md`.
   high, repeat findings, extended findings, risk acceptances (flagging
   expired ones) and closures in the last 90 days, and groups open findings by
   age.
+- **OSCAL export** (signed in; linked from the page and Help): the register
+  as an OSCAL 1.2.1 plan of action and milestones
+  (`GET /audit-findings/oscal/poam.json`): every finding that is Open, In
+  Remediation, Pending Validation, Reopened or Risk Accepted, or one status
+  with `?status=` (Closed only this way; Draft never). A poam-item per finding
+  whose description holds the criteria, condition, cause and effect, an
+  observation (the condition) and a risk (the effect, the due date as its
+  deadline, the recommendation and the action plan with a task per action).
+  An expired risk acceptance exports as an open risk.
 
 
 ### Assurance Plans (`/assurance-plans`)
@@ -345,6 +354,23 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
     with formula-like cells prefixed so a spreadsheet reads them as text
 
   Each PDF also comes as its sources and as its data (`?format=json`).
+- **OSCAL export** (signed in; linked from the Documents and exports table,
+  each version on the History tab, and Help):
+  - an approved version as an OSCAL 1.2.1 **Assessment Plan**
+    (`GET /assurance-plans/:id/oscal/assessment-plan.json`, `?version=N` or
+    the latest approval), built from the approval snapshot and dated by it.
+    Its attributes are the objectives and activities, their resolved 800-53
+    and NFR references the reviewed controls, the population the inventory
+    items, and each stratum with items a subject. Sampling, the quarterly
+    cycle, RACI, cadence, escalations and the regulatory basis are grc parts.
+    grc holds no SSP: `import-ssp` points at the approval snapshot, with its
+    SHA-256. A plan never approved, or whose attributes name no control or
+    NFR, is a 409.
+  - a quarter as OSCAL **Assessment Results**
+    (`…/oscal/assessment-results/q<N>.json`), from the tests QA has signed
+    off only: an observation per attribute result and a finding per Fail
+    that names its Audit Findings record. `import-ap` is the Assessment Plan
+    of the version the quarter was selected under.
 - **Regulatory basis** (Governance tab): what the regulation asks of the
   control function and how the plan meets it. It is the pack's regulatory
   slide; every built-in type carries its own rows.
