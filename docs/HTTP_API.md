@@ -121,6 +121,8 @@ The home page, sign-in, build information and the in-app documentation.
 | GET | `/controls/hierarchy` | signed in | `controlcatalog.(*Handler).HierarchyPage` |
 | GET | `/controls/hierarchy/export` | signed in | `controlcatalog.(*Handler).ExportHierarchyRTF` |
 | GET | `/controls/manage` | signed in | `controlcatalog.(*Handler).ManagePage` |
+| GET | `/controls/oscal/catalog.json` | signed in | `app.(*oscalExports).catalog` |
+| GET | `/controls/oscal/profile/:baseline.json` | signed in | `app.(*oscalExports).profile` — `low`, `moderate`, `high` or `privacy` |
 | POST | `/controls/save` | admin (only with `ALLOW_JSON_SAVE`) | `controlcatalog.(*Handler).SaveControlsToJSON` |
 
 The OSCAL import takes one JSON body, `{"catalog": "<file text>",
@@ -131,6 +133,14 @@ unchanged and absent controls, and `base`; the apply needs that `base` and
 answers 400 when the files have problems, 409 when the catalog or the files
 changed since the preview, and 200 with the same result, `applied` and
 `links_rebuilt`. A file that is not an OSCAL catalog is a 400 on both.
+
+The OSCAL exports here, under Security NFRs and under Regulation Coverage are
+downloads (`Content-Disposition: attachment;
+filename="grc-<kind>-<yyyy-mm-dd>.oscal.json"`, dated by the document's
+`last-modified`) of OSCAL 1.2.1 JSON in RFC 8785 canonical form. They answer
+404 with a JSON error when there is nothing to export: an empty catalog, a
+baseline no control is in, no NFR linked to a control, a regulation before its
+first analysis or a version that maps nothing. See `OSCAL.md`.
 
 ## Security NFR catalog and NFR-control links
 
@@ -154,6 +164,8 @@ changed since the preview, and 200 with the same result, `applied` and
 | DELETE | `/security-nfrs/links/overrides/:nfrKey/:mappingControlID` | admin | `nfrlink.(*Handler).DeleteOverride` |
 | POST | `/security-nfrs/links/rebuild` | admin | `nfrlink.(*Handler).Rebuild` |
 | GET | `/security-nfrs/manage` | signed in | `securitynfr.(*Handler).ManagePage` |
+| GET | `/security-nfrs/oscal/catalog.json` | signed in | `app.(*oscalExports).nfrCatalog` |
+| GET | `/security-nfrs/oscal/mapping.json` | signed in | `app.(*oscalExports).nfrMapping` |
 | POST | `/security-nfrs/save` | admin (only with `ALLOW_JSON_SAVE`) | `securitynfr.(*Handler).SaveNFRsToJSON` |
 
 ## NFR Enrichment
@@ -445,6 +457,8 @@ still malformed after one repair turn is 502. `ai/proposals` answers
 | DELETE | `/regulation-coverage/:id/chat` | admin | `regcoverage.(*Handler).ClearChat` |
 | GET | `/regulation-coverage/:id/chat` | signed in | `regcoverage.(*Handler).ListChat` |
 | POST | `/regulation-coverage/:id/chat` | admin | `regcoverage.(*Handler).Ask` |
+| GET | `/regulation-coverage/:id/oscal/catalog.json` | signed in | `app.regulationOSCAL` — `?version=N`, the latest without it |
+| GET | `/regulation-coverage/:id/oscal/mapping.json` | signed in | `app.regulationOSCAL` — `?version=N`, the latest without it |
 | GET | `/regulation-coverage/:id/report.json` | signed in | `regcoverage.(*Handler).ReportJSON` |
 | GET | `/regulation-coverage/:id/report.pdf` | signed in | `regcoverage.(*Handler).ReportPDF` |
 | POST | `/regulation-coverage/:id/revise` | admin | `regcoverage.(*Handler).Revise` |

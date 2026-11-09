@@ -20,8 +20,8 @@ type oscalColumns struct {
 
 // oscalWrite is one control an OSCAL import inserts or updates. An update
 // sets only the columns OSCAL owns: type, name, family, requirements,
-// discussion, related controls, the three structure columns, and the baseline
-// columns when Baselines is set. It never names the CIA flags, justification,
+// discussion, related controls, the three structure columns, withdrawn, and
+// the baseline columns when Baselines is set. It never names the CIA flags, justification,
 // threats, potentially_common_inheritable, appendix_json or source_key, so it
 // cannot change them.
 type oscalWrite struct {
@@ -103,12 +103,12 @@ func catalogDigestOf(q rowQuerier) (string, error) {
 const insertOSCALControlSQL = `INSERT INTO nist_controls (
 		source_key, control_id, control_type, name, family, in_low, in_moderate, in_high, in_privacy,
 		mapping_baselines_json, threats_json, requirements, discussion, related_controls_json, appendix_json,
-		params_json, statement_json, assessment_json
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, 'null', ?, ?, ?)`
+		params_json, statement_json, assessment_json, withdrawn
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, 'null', ?, ?, ?, ?)`
 
 const updateOSCALControlSQL = `UPDATE nist_controls SET
 		control_type = ?, name = ?, family = ?, requirements = ?, discussion = ?, related_controls_json = ?,
-		params_json = ?, statement_json = ?, assessment_json = ?
+		params_json = ?, statement_json = ?, assessment_json = ?, withdrawn = ?
 	WHERE control_id = ?`
 
 const updateOSCALBaselinesSQL = `UPDATE nist_controls SET
@@ -158,7 +158,7 @@ func (r *SQLiteRepository) applyOSCAL(writes []oscalWrite, expectDigest string) 
 				c.SourceKey, c.ID, c.Type, c.Name, c.Family,
 				boolToInt(len(b.Low) > 0), boolToInt(len(b.Moderate) > 0), boolToInt(len(b.High) > 0), boolToInt(len(b.Privacy) > 0),
 				string(mapping), c.Requirements, c.Discussion, string(related),
-				w.Columns.Params, w.Columns.Statement, w.Columns.Assessment,
+				w.Columns.Params, w.Columns.Statement, w.Columns.Assessment, boolToInt(c.Withdrawn),
 			); err != nil {
 				return fmt.Errorf("insert %s: %w", c.ID, err)
 			}
@@ -166,7 +166,7 @@ func (r *SQLiteRepository) applyOSCAL(writes []oscalWrite, expectDigest string) 
 		}
 		res, err := tx.Exec(updateOSCALControlSQL,
 			c.Type, c.Name, c.Family, c.Requirements, c.Discussion, string(related),
-			w.Columns.Params, w.Columns.Statement, w.Columns.Assessment, c.ID)
+			w.Columns.Params, w.Columns.Statement, w.Columns.Assessment, boolToInt(c.Withdrawn), c.ID)
 		if err != nil {
 			return fmt.Errorf("update %s: %w", c.ID, err)
 		}

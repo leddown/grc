@@ -37,6 +37,11 @@ type OSCALControl struct {
 	Params       string
 	Statement    string
 	Assessment   string
+	// KeepStatement is set when the file's statement is grc's own text
+	// (grc's export writes one for a control whose text is not, or no longer,
+	// the rendering of NIST's structure). Requirements then come from that text
+	// and the stored statement structure is left as it is.
+	KeepStatement bool
 }
 
 // OSCALCatalog is what an OSCALReader makes of the posted files.
@@ -116,6 +121,7 @@ const (
 	fieldParams       = "parameters"
 	fieldStatement    = "statement structure"
 	fieldAssessment   = "assessment (800-53A)"
+	fieldWithdrawn    = "withdrawn"
 )
 
 // PreviewOSCAL works out what importing in would do to the catalog, without
@@ -236,8 +242,12 @@ func (s *Service) planOSCAL(in OSCALCatalog) (OSCALImportResult, oscalPlan, erro
 			Requirements:    strings.TrimSpace(oc.Requirements),
 			Discussion:      strings.TrimSpace(oc.Discussion),
 			RelatedControls: uniqueSorted(oc.Related),
+			Withdrawn:       oc.Withdrawn,
 		}
 		cols := oscalColumns{Params: jsonOrNull(oc.Params), Statement: jsonOrNull(oc.Statement), Assessment: jsonOrNull(oc.Assessment)}
+		if oc.KeepStatement {
+			cols.Statement = jsonOrNull(stored[id].Statement)
+		}
 
 		have, exists := current[id]
 		if !exists {
@@ -265,6 +275,9 @@ func (s *Service) planOSCAL(in OSCALCatalog) (OSCALImportResult, oscalPlan, erro
 		text(fieldRequirements, have.Requirements, incoming.Requirements)
 		text(fieldDiscussion, have.Discussion, incoming.Discussion)
 		text(fieldRelated, strings.Join(have.RelatedControls, ", "), strings.Join(incoming.RelatedControls, ", "))
+		if have.Withdrawn != incoming.Withdrawn {
+			fields = append(fields, OSCALFieldChange{Field: fieldWithdrawn, Before: yesNo(have.Withdrawn), After: yesNo(incoming.Withdrawn)})
+		}
 		was := stored[id]
 		for _, f := range []struct {
 			field, before, after string

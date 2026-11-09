@@ -174,6 +174,13 @@ func helpPage(c *gin.Context) {
             <li>Hide the families this organisation does not use from every filter in
               <a href="/controls/family-visibility">Family Filters</a>.</li>
             <li>Export the filtered catalog as Excel or CSV from the Controls page.</li>
+            <li>Hand the catalog to another tool as OSCAL JSON from the links on the Controls page:
+              the <a href="/controls/oscal/catalog.json">catalog</a> and a profile per baseline
+              (<a href="/controls/oscal/profile/low.json">LOW</a>,
+              <a href="/controls/oscal/profile/moderate.json">MODERATE</a>,
+              <a href="/controls/oscal/profile/high.json">HIGH</a>,
+              <a href="/controls/oscal/profile/privacy.json">PRIVACY</a>). The catalog export imports
+              back through Import OSCAL without a change.</li>
           </ol>
         </div>
       </article>
@@ -193,6 +200,9 @@ func helpPage(c *gin.Context) {
               <a href="/security-nfrs/links">NFR-Control Links</a>. The table is derived from the
               NIST mapping text, and an admin can override a single pairing or rebuild the whole
               table.</li>
+            <li>Download the <a href="/security-nfrs/oscal/catalog.json">NFR catalog</a> and the
+              <a href="/security-nfrs/oscal/mapping.json">NFR to 800-53 mapping</a> as OSCAL JSON
+              from the Security NFRs page.</li>
           </ol>
         </div>
       </article>
@@ -425,7 +435,9 @@ func helpPage(c *gin.Context) {
             <li>Run the analysis: every article is mapped against this installation's Security NFRs
               and 800-53 — what it requires, what already satisfies it, what does not, and how to
               close the gap.</li>
-            <li>Read the report, download it as PDF, and keep the version history.</li>
+            <li>Read the report, download it as PDF, and keep the version history. Each version
+              also downloads as OSCAL JSON from the report page: the regulation as a catalog with
+              grc's findings, and its mappings to the NFRs and 800-53.</li>
             <li>Question the report in conversation and have it revised where you disagree; each
               revision is a new version rather than an overwrite.</li>
           </ol>

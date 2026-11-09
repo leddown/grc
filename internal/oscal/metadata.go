@@ -7,7 +7,10 @@ import (
 
 // MetadataInput is what an export knows about the document it is writing.
 type MetadataInput struct {
-	Title   string
+	Title string
+	// Version is the document's version. Left empty, the export writes the
+	// first 12 hex digits of its content digest, so the version changes exactly
+	// when the content does.
 	Version string
 	// LastModified is the source's own timestamp for an immutable source (a
 	// report version, an approval snapshot) and the time of the export
@@ -36,9 +39,6 @@ func NewMetadata(in MetadataInput) Metadata {
 		OscalVersion: Version,
 		LastModified: in.LastModified.UTC().Truncate(time.Second),
 		Remarks:      strings.TrimSpace(in.Remarks),
-	}
-	if m.Version == "" {
-		m.Version = "1"
 	}
 	if props := GRCProps(in.Props...); len(props) > 0 {
 		m.Props = &props

@@ -1,6 +1,6 @@
 // Package oscal is grc's OSCAL interchange layer: it reads NIST's OSCAL
-// content into neutral types the catalog modules understand, and (from phase 2)
-// writes grc's catalogs, crosswalks and assurance results out as OSCAL JSON.
+// content into neutral types the catalog modules understand, and writes grc's
+// catalogs and crosswalks out as OSCAL JSON.
 // The database stays the system of record; OSCAL is a serializer around it.
 //
 // This is the only package that imports go-oscal. Domain modules never do:
@@ -41,6 +41,18 @@ type (
 	Profile            = oscaltypes.Profile
 	BackMatter         = oscaltypes.BackMatter
 	Resource           = oscaltypes.Resource
+	ResourceLink       = oscaltypes.ResourceLink
+	Citation           = oscaltypes.Citation
 	// SelectControlByID is a profile's control selector.
 	SelectControlByID = oscaltypes.SelectControlById
+	Import            = oscaltypes.Import
+	Merge             = oscaltypes.Merge
+
+	Mapping                  = oscaltypes.Mapping
+	Map                      = oscaltypes.Map
+	MappingItem              = oscaltypes.MappingItem
+	MappingProvenance        = oscaltypes.MappingProvenance
+	MappingResourceReference = oscaltypes.MappingResourceReference
+	GapSummary               = oscaltypes.GapSummary
+	ConfidenceScore          = oscaltypes.ConfidenceScore
 )

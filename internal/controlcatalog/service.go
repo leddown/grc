@@ -39,6 +39,10 @@ type Control struct {
 	Discussion                   string         `json:"discussion"`
 	RelatedControls              []string       `json:"related_controls"`
 	Appendix                     map[string]any `json:"appendix"`
+	// Withdrawn is NIST's status of the control. Only an OSCAL import sets it
+	// (the JSON catalog file carries no such flag); a save or a JSON import
+	// leaves it as it is.
+	Withdrawn bool `json:"withdrawn"`
 	// The upstream OSCAL structure an OSCAL import stored: the params array,
 	// the statement part and the assessment parts, as OSCAL JSON. Empty for a
 	// control never imported from OSCAL. Only Get fills them; a list would
@@ -217,6 +221,30 @@ func (s *Service) Get(controlID string) (Control, error) {
 	control.Assessment = storedJSON(cols.Assessment)
 	return control, nil
 }
+
+// ListWithOSCAL returns the whole catalog, hidden families included, each
+// control with the OSCAL structure an import stored. The OSCAL exports read
+// it: an export of the catalog is the catalog, not what the list page shows.
+func (s *Service) ListWithOSCAL() ([]Control, error) {
+	controls, err := s.repo.List("", "", "")
+	if err != nil {
+		return nil, err
+	}
+	cols, err := s.repo.oscalColumns()
+	if err != nil {
+		return nil, err
+	}
+	for i := range controls {
+		c := cols[controls[i].ID]
+		controls[i].Params = storedJSON(c.Params)
+		controls[i].Statement = storedJSON(c.Statement)
+		controls[i].Assessment = storedJSON(c.Assessment)
+	}
+	return controls, nil
+}
+
+// FamilyName is a family's title ("AC" → "Access Control").
+func FamilyName(family string) string { return controlFamilyName(family) }
 
 func storedJSON(value string) json.RawMessage {
 	value = strings.TrimSpace(value)

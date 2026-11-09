@@ -43,6 +43,10 @@ type ImportedControl struct {
 	ParamsJSON     string
 	StatementJSON  string
 	AssessmentJSON string
+	// KeepStatement is set when the statement is grc's own text (the grc
+	// prose prop): Requirements is that text verbatim, StatementJSON stays
+	// "null", and the importer leaves the stored statement structure alone.
+	KeepStatement bool
 }
 
 // CatalogImport is everything a catalog import reads from the posted files.
@@ -186,19 +190,33 @@ func ReadCatalogImport(catalogJSON []byte, profiles map[string][]byte) (CatalogI
 			ic.ParamsJSON = compactJSON(*c.Params)
 		}
 		var assessment []Part
+		var haveStatement, haveGuidance bool
 		if c.Parts != nil {
 			for i := range *c.Parts {
 				part := (*c.Parts)[i]
 				switch part.Name {
 				case "statement":
-					if ic.StatementJSON == "null" {
-						ic.StatementJSON = compactJSON(part)
-						ic.Requirements = r.statement(&part)
+					if haveStatement {
+						continue
 					}
+					haveStatement = true
+					if isGRCText(part.Props) {
+						ic.Requirements = strings.TrimSpace(part.Prose)
+						ic.KeepStatement = true
+						continue
+					}
+					ic.StatementJSON = compactJSON(part)
+					ic.Requirements = r.statement(&part)
 				case "guidance":
-					if ic.Discussion == "" {
-						ic.Discussion = strings.TrimSpace(r.text(part.Prose, 0))
+					if haveGuidance {
+						continue
 					}
+					haveGuidance = true
+					if isGRCText(part.Props) {
+						ic.Discussion = strings.TrimSpace(part.Prose)
+						continue
+					}
+					ic.Discussion = strings.TrimSpace(r.text(part.Prose, 0))
 				case "assessment-objective", "assessment-method":
 					assessment = append(assessment, part)
 				}

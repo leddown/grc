@@ -106,7 +106,7 @@ var syncOrder = []tableSpec{
 			"confidentiality_status", "integrity_status", "availability_status",
 			"justification", "potentially_common_inheritable", "requirements",
 			"discussion", "related_controls_json", "appendix_json",
-			"params_json", "statement_json", "assessment_json",
+			"params_json", "statement_json", "assessment_json", "withdrawn",
 		},
 		conflictCols: []string{"control_id"},
 	},

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"grc/internal/oscal"
 	"grc/internal/oscal/oscaltest"
 )
 
@@ -29,4 +30,41 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// Every document grc writes validates against the OSCAL 1.2.1 schema.
+func TestExportsAreValidOSCAL(t *testing.T) {
+	catalog, err := oscal.ExportCatalog(oscal.SampleCatalogExport(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := oscal.ExportProfile(oscal.ProfileExport{Baseline: "moderate", Title: "grc: NIST SP 800-53 MODERATE baseline",
+		LastModified: oscal.SampleTime, CatalogHref: "/controls/oscal/catalog.json", ControlIDs: []string{"AC-1", "AC-2", "AC-2(1)"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nfrCatalog, err := oscal.ExportNFRCatalog(oscal.NFRCatalogExport{Title: "grc: Security NFR catalog", LastModified: oscal.SampleTime, NFRs: oscal.SampleNFRs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nfrMapping, err := oscal.ExportNFRMapping(oscal.SampleNFRMapping())
+	if err != nil {
+		t.Fatal(err)
+	}
+	regCatalog, err := oscal.ExportRegulationCatalog(oscal.SampleRegulation(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	regMapping, err := oscal.ExportRegulationMapping(oscal.SampleRegulation(true), oscal.SampleRegulationHrefs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string][]byte{
+		"catalog": catalog, "profile": profile, "nfr catalog": nfrCatalog,
+		"nfr mapping": nfrMapping, "regulation catalog": regCatalog, "regulation mapping": regMapping,
+	} {
+		if err := oscaltest.Validate(body); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
 }

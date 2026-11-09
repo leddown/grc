@@ -509,7 +509,7 @@ func (h *Handler) DetailPage(c *gin.Context) {
     ` + pageui.Nav("/controls/detail/"+control.ID) + `
 
     <h1>` + detailHTMLEscape(control.ID) + ` - ` + detailHTMLEscape(control.Name) + `</h1>
-    <div class="meta">Family ` + detailHTMLEscape(control.Family) + ` | Type ` + detailHTMLEscape(orNA(control.Type)) + `</div>
+    <div class="meta">Family ` + detailHTMLEscape(control.Family) + ` | Type ` + detailHTMLEscape(orNA(control.Type)) + detailWithdrawn(control.Withdrawn) + `</div>
 
     <section class="grid">
       <div class="summary-row">
@@ -959,7 +959,10 @@ func (h *Handler) Page(c *gin.Context) {
   <main>
 	    ` + pageui.Nav("/controls") + `
     <h1>Control Database</h1>
-    <p>Unified SQLite view of the flat NIST control dataset, including names, baseline mappings, threats, and CIA classification.</p>
+    <p>Unified SQLite view of the flat NIST control dataset, including names, baseline mappings, threats, and CIA classification.
+      Download as OSCAL: <a href="/controls/oscal/catalog.json">catalog</a>, baseline profile
+      <a href="/controls/oscal/profile/low.json">LOW</a>, <a href="/controls/oscal/profile/moderate.json">MODERATE</a>,
+      <a href="/controls/oscal/profile/high.json">HIGH</a>, <a href="/controls/oscal/profile/privacy.json">PRIVACY</a>.</p>
 
     <section class="toolbar">
       <input id="searchInput" type="search" placeholder="Search control id or family, e.g. AC-2 or SI">

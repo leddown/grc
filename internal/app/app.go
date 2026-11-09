@@ -397,6 +397,8 @@ func registerRegulationCoverageRoutes(
 
 	handler := regcoverage.NewHandler(service, sessionUsername)
 	handler.RegisterRoutes(r)
+	r.GET("/regulation-coverage/:id/oscal/catalog.json", regulationOSCAL(service, "catalog"))
+	r.GET("/regulation-coverage/:id/oscal/mapping.json", regulationOSCAL(service, "mapping"))
 
 	admin := r.Group("/")
 	if !localMode {
@@ -820,6 +822,12 @@ func registerDomainReadRoutes(r gin.IRouter, userHandler *user.Handler, controlH
 	r.GET("/controls/data", controlHandler.ListControls)
 	r.GET("/controls/data/:controlID", controlHandler.GetControl)
 	r.GET("/controls/export", controlHandler.ExportControls)
+
+	oscalExport := newOSCALExports(controlHandler.Service(), securityNFRHandler.Service(), nfrLinkHandler.Service())
+	r.GET(oscalCatalogPath, oscalExport.catalog)
+	r.GET("/controls/oscal/profile/:file", oscalExport.profile)
+	r.GET(oscalNFRCatalogPath, oscalExport.nfrCatalog)
+	r.GET(oscalNFRMappingPath, oscalExport.nfrMapping)
 
 	r.GET("/security-nfrs", securityNFRHandler.Page)
 	r.GET("/security-nfrs/manage", securityNFRHandler.ManagePage)

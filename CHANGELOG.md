@@ -3,6 +3,217 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-09 (OSCAL, phase 2: the exports — SP 800-53 catalog and baselines, Security NFRs and their mapping, Regulation Coverage)
+
+Second of four phases on `feature/oscal`. Any signed-in user who can open a
+module's pages can now download it as OSCAL 1.2.1 JSON: the control catalog,
+its four baseline profiles, the Security NFR catalog, the NFR to 800-53
+mapping, and a Regulation Coverage report version as a catalog and a mapping
+collection. The exports are read-only. Each reads through its module's
+service and hands `internal/oscal` small input types, so no domain module
+imports go-oscal. The database stays the system of record. Nothing is fetched,
+and nothing is AI. See `OSCAL.md` ("What is exported").
+
+- **Decisions on phase 1's open questions** (not answered, so I took the
+  defaults I had recommended):
+  - Names: NIST's titles, as phase 1 imports them.
+  - Edits after an import: the catalog export writes NIST's statement
+    structure while it still renders to the stored `requirements`. Otherwise
+    it writes grc's text in a statement marked with the grc prop `prose` =
+    `grc-text`. The import takes that text verbatim and keeps the stored
+    structure (`KeepStatement`). So the database wins, and the structure is
+    still there when the text is NIST's again. The guidance is always grc's
+    stored text, marked the same way, because grc stores no guidance part.
+  - Withdrawn: a new `withdrawn` column, set only by an OSCAL import. This
+    replaces phase 1's "there is no withdrawn column".
+- **Routes** (GET). Each returns `application/json` with `Cache-Control:
+  no-store` and `Content-Disposition: attachment;
+  filename="grc-<kind>-<yyyy-mm-dd>.oscal.json"`:
+  - `/controls/oscal/catalog.json` (kind `sp800-53-catalog`)
+  - `/controls/oscal/profile/:baseline.json` for `low`, `moderate`, `high`
+    and `privacy` (kind `sp800-53-<baseline>-profile`)
+  - `/security-nfrs/oscal/catalog.json` (kind `nfr-catalog`)
+  - `/security-nfrs/oscal/mapping.json` (kind `nfr-mapping`)
+  - `/regulation-coverage/:id/oscal/catalog.json` and `…/mapping.json`, with
+    `?version=N` (the latest when absent; kind `regulation-<id>-v<n>-<doc>`)
+
+  They sit under the existing `/controls`, `/security-nfrs` and
+  `/regulation-coverage` prefixes, so the page access rules apply: 401 for an
+  anonymous request, and a user granted only `/controls` gets the control
+  exports and nothing else. A 404 (with a JSON reason) covers:
+  - an empty catalog
+  - an unknown baseline, or a baseline with no control in it
+  - no NFR linked to a control
+  - an unknown regulation or version, or a version that maps nothing
+- **Dating and identity.** `last-modified` is the export time for the
+  catalogs and the mapping, which can change at any time. A Regulation
+  Coverage version is immutable, so its exports carry the version's own
+  `created_at`, read from the snapshot through the new
+  `regcoverage.Service.VersionReport`.
+  - A document's UUID is a UUIDv5 of its kind and its content digest: the
+    SHA-256 of the canonical bytes with the UUID blanked and `last-modified`
+    zeroed.
+  - The metadata `version`, when the source has none, is the first 12 hex
+    digits of that digest.
+  - Maps and mappings are keyed on what they relate, so they keep their UUIDs
+    across revisions.
+  - Every export is RFC 8785 canonical JSON (`oscal.Canonical`). Two exports
+    of unchanged data differ only in `last-modified`.
+  - Hrefs between documents are root-relative (`/controls/oscal/catalog.json`).
+- **`internal/oscal`**:
+  - `export.go` (new): `finishDocument` (the digest, UUID, version and
+    canonical bytes), the token helpers (`ControlToken` "AC-2(1)" → "ac-2.1";
+    `NFRToken` → `nfr-<key>`), and the grc prose prop.
+  - `catalogexport.go` (new): `ExportCatalog` and `ExportProfile`:
+    - a group per family
+    - enhancements nested in their parent
+    - `label`, `sort-id` and `status` `withdrawn` props
+    - the stored params and assessment parts
+    - the statement rule above
+    - related links
+    - baseline profiles shaped like NIST's own (`include-controls` `with-ids`,
+      `merge` `as-is`)
+  - `nfrexport.go` (new): `ExportNFRCatalog` (domain groups; grc props
+    `record-key`, `issue-type`, `weight`; grc parts `implementation`,
+    `additional-details`, `nist-mapping`). It refuses two NFRs that would
+    share a token. `ExportNFRMapping` writes a map per NFR and the control it
+    resolved to, carrying `override` and `written-as` props. It adds source
+    and target gap summaries, names unresolved references in the remarks, and
+    sets status `complete` or `not-complete`.
+  - `regexport.go` (new): `ExportRegulationCatalog` (a control per section,
+    with the finding as a grc part) and `ExportRegulationMapping` (one mapping
+    per catalog that has maps):
+    - `confidence-score` from the report
+    - a grc `source` prop
+    - method `human`, `automation` or `hybrid` from the sources
+    - status `superseded` for an old version
+  - `catalogimport.go`: a statement or guidance marked `grc-text` is read
+    verbatim (`KeepStatement`). `metadata.go`: an empty version is no longer
+    defaulted to "1". `oscal.go`: aliases for the profile and mapping types.
+- **Schema.** `nist_controls.withdrawn INTEGER NOT NULL DEFAULT 0`, in both
+  `sqlite.go` (CREATE TABLE plus `ensureColumn`) and `postgres.go` (CREATE
+  TABLE plus `ADD COLUMN IF NOT EXISTS`), with `dbsync`'s column list.
+  The snapshot format stays at 17, because phase 1 is unreleased and 17 now
+  includes the column. An older snapshot restores it as 0.
+- **Modules.**
+  - `controlcatalog`: `Control.Withdrawn` is read by List, ListByFamily and
+    Get. The OSCAL import writes and compares it (a `withdrawn` field
+    change). New `ListWithOSCAL` and `FamilyName`. The detail page says
+    "Withdrawn by NIST". The Controls page intro links the catalog and the
+    four profiles.
+  - `securitynfr`: the Security NFRs page intro links both NFR exports.
+  - `regcoverage`: `VersionReport` and `LatestVersionNumber`. The report
+    toolbar gains "OSCAL catalog" and "OSCAL mapping" chips for the version
+    shown.
+  - `app`: `oscal_export.go` (new; the handlers and the conversion), routes
+    in `app.go`, six OpenAPI entries in `api_docs.go`, and export steps in the
+    Help page's control catalog, NFR and Regulation Coverage panels.
+- **Tests.**
+  - `internal/oscal`:
+    - tokens
+    - the fixture catalog exported and read back identical
+    - each profile read back as its baseline
+    - determinism: a shifted clock and reversed input give the same bytes
+      apart from `last-modified`, and changed content gives a new UUID and
+      version
+    - the NFR catalog and mapping (override, written-as, unresolved
+      reference, gaps, status)
+    - both regulation documents (superseded, sources and method, unknown
+      references, duplicate refs)
+    - all six exports validated against the 1.2.1 schema. I checked that the
+      validator does reject a bad `method` and a mapping without maps.
+
+    Mutation check: I made the statement rule ignore the render comparison,
+    and the read-back test failed.
+  - `internal/controlcatalog`: grc-text keeps the stored statement (AC-1
+    changes only its requirements); AC-13 changes only `withdrawn`; a new
+    control gets a null statement.
+  - `internal/db`: the `withdrawn` default on a fresh and an upgraded database.
+  - `internal/app`:
+    - the round trip. Shipped JSON import, then the fixture OSCAL import with
+      LOW and MODERATE, then a hand edit of AC-2 through the Control Editor
+      route. The catalog and four profiles are exported and validated, and
+      the re-import preview shows 0 problems, added, changed and absent.
+      Mutation check: disabling `KeepStatement` in the adapter made this test
+      fail on AC-2's statement structure.
+    - the NFR exports
+    - two regulation versions (superseded, dated by the version, the
+      version's catalog href, identical bytes on a repeat, the toolbar link)
+    - an unknown baseline answering 404
+    - the page links
+    - every new route answering 401 anonymously, and the `/controls`-only
+      user refused only the other modules' exports
+    - AC-13's detail page and data route showing it withdrawn
+- **Gate.** `go fmt` and `go vet` are clean. `go test ./...` passes, including
+  TestGosec, TestGovulncheck and TestBinaryLinksOnlyTheOSCALTypes (run
+  uncached, not skipped). `npm audit --omit=dev` in `web/policy-studio` found
+  0 vulnerabilities. PostgreSQL was reviewed, not run.
+- **Manual check.** I ran a throwaway server: the binary in local mode, a
+  temporary SQLite database in the session scratch directory, port 18732.
+  - Shipped catalog (1,193) and NFRs (109) loaded. NIST 5.2.0 imported with
+    all four profiles: 3 added, 1,193 changed, 182 now withdrawn.
+  - Catalog export: 4,526,922 bytes in 1.57 s. It has 1,196 controls in 20
+    groups, and 1,016 statements, all NIST's structure. The profiles hold
+    LOW 149, MODERATE 287, HIGH 370 and PRIVACY 96 ids, the same sets as
+    NIST's own profiles. Re-importing the export found 0 problems, added,
+    changed and absent, with 1,196 unchanged.
+  - After re-importing the shipped JSON (its text over NIST's), the export
+    held 855 NIST-structure and 162 grc-text statements (4,535,726 bytes).
+    Its re-import again found 0 changes.
+  - NFR catalog: 157,813 bytes, 109 NFRs (14 domain groups and 8 without a
+    domain). Mapping: 63,484 bytes, 237 maps, matching the 237 matched links.
+    The source gap is 0 and the target gap 1,093 controls. Status is
+    `not-complete`, because the remarks name NFR 6.2's `AR-8`, which is not
+    in Rev. 5.
+  - Regulation Coverage: I wrote a regulation with two versions straight
+    into the database, because a real analysis needs the Wintermute server.
+    - The latest version's files are named
+      `grc-regulation-1-v2-<doc>-2026-10-15.oscal.json`, dated by the
+      version.
+    - Version 1 is `superseded` and dated 2026-10-01.
+    - An unknown version and an unknown regulation answer 404.
+  - All 11 downloads (the catalog, four profiles, two NFR documents, and four
+    regulation documents) passed the 1.2.1 schema, checked with
+    `oscaltest.Validate` through a temporary test.
+  - Headless Chrome, dark theme: the Controls page at 1280×800 and 1024×640,
+    the Security NFRs page, the report toolbar at both sizes, and the Help
+    links. All the links are present and the toolbars fit.
+
+  The server, database, WAL, log, key file, binary, downloads, seed script,
+  temporary test and screenshot program were removed.
+
+  Not checked:
+  - PostgreSQL
+  - the light themes
+  - the regulation exports from a real analysis (the seeded versions had
+    snapshots but no live findings, so the report page itself showed them
+    unanalysed)
+  - a third-party tool resolving the profiles (compliance-trestle is phase 4)
+- **What differed from the prompt or upstream.**
+  - go-oscal 0.7.2 types `MappingCollection.mappings` as a single object,
+    but the 1.2.1 schema allows an object or an array. grc writes the
+    collection through its own struct with an array, and the schema check
+    accepts it.
+  - IR 8477's relationships (equivalent, subset, superset, intersects) are
+    set relations grc never assessed. Every map therefore carries grc's own
+    `related` in grc's namespace, which OSCAL allows, rather than an invented
+    IR 8477 value.
+  - The targets of an old Regulation Coverage version are the live NFR and
+    800-53 exports, which may have moved since it was cut. The remarks say so.
+  - Seen, not fixed (it is older than this work): a Control Editor save
+    (`updateControlRequest`) has no `potentially_common_inheritable` field,
+    so a save blanks it.
+- Docs:
+  - `OSCAL.md`: status; the `withdrawn` and `grc-text` import rows; "What is
+    exported" with a table per document; the relationship; document UUID and
+    version from the digest; the mappings array
+  - HTTP_API: six routes and the downloads paragraph
+  - DATA_MODEL: `withdrawn`, and the snapshot note
+  - FEATURES: the export bullets, and the withdrawn marker
+  - ARCHITECTURE: the `internal/oscal` row and the line counts
+  - REGULATION_COVERAGE: step 3
+  - README and Agents.md: the package entries
+
 ## 2026-11-09 (OSCAL, phase 1: the foundation and the SP 800-53 catalog import)
 
 First of four phases on `feature/oscal`. An administrator downloads NIST's

@@ -18,7 +18,7 @@ const (
 	shippedCatalog  = "../data/merged_nist_controls_master_replaced_from_controls_all.json"
 )
 
-func readFixture(t *testing.T, path string) []byte {
+func readFixture(t testing.TB, path string) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {

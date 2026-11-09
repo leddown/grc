@@ -36,6 +36,8 @@ func readOSCALCatalog(catalog []byte, profiles map[string][]byte) (controlcatalo
 			Params:       c.ParamsJSON,
 			Statement:    c.StatementJSON,
 			Assessment:   c.AssessmentJSON,
+
+			KeepStatement: c.KeepStatement,
 		})
 	}
 	return out, nil

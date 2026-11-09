@@ -155,13 +155,17 @@ func TestOpenSQLite_AddsTheOSCALColumns(t *testing.T) {
 				t.Errorf("%s: column %s default %q, want 'null'", name, column, defaults[column])
 			}
 		}
+		if defaults["withdrawn"] != "0" {
+			t.Errorf("%s: column withdrawn default %q, want 0", name, defaults["withdrawn"])
+		}
 	}
 	var params, statement, assessment string
-	if err := upgraded.QueryRow(`SELECT params_json, statement_json, assessment_json FROM nist_controls WHERE control_id = 'AC-1'`).Scan(&params, &statement, &assessment); err != nil {
+	var withdrawn int
+	if err := upgraded.QueryRow(`SELECT params_json, statement_json, assessment_json, withdrawn FROM nist_controls WHERE control_id = 'AC-1'`).Scan(&params, &statement, &assessment, &withdrawn); err != nil {
 		t.Fatal(err)
 	}
-	if params != "null" || statement != "null" || assessment != "null" {
-		t.Errorf("an existing row got %q %q %q, want null in each", params, statement, assessment)
+	if params != "null" || statement != "null" || assessment != "null" || withdrawn != 0 {
+		t.Errorf("an existing row got %q %q %q %d, want null in each and withdrawn 0", params, statement, assessment, withdrawn)
 	}
 }
 

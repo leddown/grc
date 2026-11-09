@@ -140,7 +140,7 @@ func (r *SQLiteRepository) List(search, baseline, cia string) ([]Control, error)
 		source_key, control_id, control_type, name, family, in_low, in_moderate, in_high, in_privacy,
 		mapping_baselines_json, threats_json,
 		confidentiality_status, integrity_status, availability_status,
-		justification, potentially_common_inheritable, requirements, discussion, related_controls_json, appendix_json
+		justification, potentially_common_inheritable, requirements, discussion, related_controls_json, appendix_json, withdrawn
 	FROM nist_controls WHERE 1=1`
 
 	args := make([]any, 0, 4)
@@ -207,7 +207,7 @@ func (r *SQLiteRepository) ListByFamily(family string) ([]Control, error) {
 			source_key, control_id, control_type, name, family, in_low, in_moderate, in_high, in_privacy,
 			mapping_baselines_json, threats_json,
 			confidentiality_status, integrity_status, availability_status,
-			justification, potentially_common_inheritable, requirements, discussion, related_controls_json, appendix_json
+			justification, potentially_common_inheritable, requirements, discussion, related_controls_json, appendix_json, withdrawn
 		FROM nist_controls
 		WHERE UPPER(TRIM(family)) = ?`,
 		family,
@@ -243,7 +243,7 @@ func (r *SQLiteRepository) GetByControlID(controlID string) (Control, error) {
 			source_key, control_id, control_type, name, family, in_low, in_moderate, in_high, in_privacy,
 			mapping_baselines_json, threats_json,
 			confidentiality_status, integrity_status, availability_status,
-			justification, potentially_common_inheritable, requirements, discussion, related_controls_json, appendix_json
+			justification, potentially_common_inheritable, requirements, discussion, related_controls_json, appendix_json, withdrawn
 		FROM nist_controls
 		WHERE control_id = ?`,
 		controlID,
@@ -337,6 +337,7 @@ func scanControl(scanner interface{ Scan(dest ...any) error }) (Control, error) 
 	var threatsRaw string
 	var relatedControlsRaw string
 	var appendixRaw string
+	var withdrawn int
 
 	if err := scanner.Scan(
 		&control.SourceKey,
@@ -359,9 +360,11 @@ func scanControl(scanner interface{ Scan(dest ...any) error }) (Control, error) 
 		&control.Discussion,
 		&relatedControlsRaw,
 		&appendixRaw,
+		&withdrawn,
 	); err != nil {
 		return Control{}, err
 	}
+	control.Withdrawn = withdrawn == 1
 
 	control.Baselines = make([]string, 0, 4)
 	if inLow == 1 {

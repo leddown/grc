@@ -60,10 +60,11 @@ import (
 // audit_finding_history). A v8-or-older backup restores with those empty.
 //
 // v17 added the upstream OSCAL structure on nist_controls (params_json,
-// statement_json, assessment_json), filled by an OSCAL catalog import. A
-// v16-or-older backup restores with all three at their default 'null', which
-// reads as "not imported from OSCAL yet"; nothing else about the controls
-// changes, and an OSCAL import fills them again.
+// statement_json, assessment_json) and NIST's withdrawn status (withdrawn),
+// filled by an OSCAL catalog import. A v16-or-older backup restores with the
+// three at their default 'null' and withdrawn 0, which reads as "not imported
+// from OSCAL yet"; nothing else about the controls changes, and an OSCAL
+// import fills them again.
 //
 // v16 added Assurance Plans (assurance_plans and its steps, quarters, strata,
 // population, selections, attributes, tests, results, thematic pushes, RACI,

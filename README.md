@@ -56,7 +56,9 @@ package and how a request is served. In short:
 - `internal/controlcatalog`, `internal/securitynfr`, `internal/nfrlink` — NIST
   control catalog, security NFR catalog, and their cross-linking
 - `internal/oscal` — OSCAL interchange: imports NIST's SP 800-53 OSCAL catalog
-  and baseline profiles (the only importer of go-oscal); see `OSCAL.md`
+  and baseline profiles, and exports the 800-53 catalog and baselines, the
+  Security NFR catalog and its 800-53 mapping, and Regulation Coverage versions
+  (the only importer of go-oscal); see `OSCAL.md`
 - `internal/riskregister`, `internal/reports` — risk register and reporting
   dashboards
 - `internal/reporting` — HTML/CSS-to-PDF GRC report generation (see its

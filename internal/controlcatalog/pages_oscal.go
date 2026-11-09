@@ -425,3 +425,12 @@ func oscalInline(prose string, labels map[string]string) string {
 		return sub[2]
 	})
 }
+
+// detailWithdrawn marks a control NIST has withdrawn, which only an OSCAL
+// import records.
+func detailWithdrawn(withdrawn bool) string {
+	if !withdrawn {
+		return ""
+	}
+	return " | <strong>Withdrawn by NIST</strong>"
+}

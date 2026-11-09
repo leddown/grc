@@ -88,6 +88,42 @@ func openAPIJSON(c *gin.Context) {
 					"security":    []gin.H{{"AdminBearer": []string{}}},
 				},
 			},
+			"/controls/oscal/catalog.json": gin.H{
+				"get": gin.H{
+					"summary":     "The SP 800-53 catalog as an OSCAL 1.2.1 catalog",
+					"description": "A download (grc-sp800-53-catalog-<date>.oscal.json). Deterministic: two exports of an unchanged catalog differ only in last-modified. Imports back through /controls/import-oscal without a change. 404 when the catalog is empty.",
+				},
+			},
+			"/controls/oscal/profile/{baseline}.json": gin.H{
+				"get": gin.H{
+					"summary":     "One baseline as an OSCAL profile of the catalog export",
+					"description": "baseline is low, moderate, high or privacy. 404 for another name, or when no control is in the baseline.",
+				},
+			},
+			"/security-nfrs/oscal/catalog.json": gin.H{
+				"get": gin.H{
+					"summary":     "The Security NFR catalog as an OSCAL catalog",
+					"description": "A group per domain, a control per NFR; grc's fields in the grc namespace. 404 when the catalog is empty.",
+				},
+			},
+			"/security-nfrs/oscal/mapping.json": gin.H{
+				"get": gin.H{
+					"summary":     "The NFR to SP 800-53 links as an OSCAL mapping collection",
+					"description": "A map per NFR and control it resolved to, with gap summaries both ways. 404 when no NFR resolved to a control.",
+				},
+			},
+			"/regulation-coverage/{id}/oscal/catalog.json": gin.H{
+				"get": gin.H{
+					"summary":     "A Regulation Coverage report version as an OSCAL catalog",
+					"description": "?version=N, the latest without it. A control per section, with grc's finding in the grc namespace; read from the version's snapshot and dated by it. 404 before the first analysis.",
+				},
+			},
+			"/regulation-coverage/{id}/oscal/mapping.json": gin.H{
+				"get": gin.H{
+					"summary":     "A Regulation Coverage report version's mappings as an OSCAL mapping collection",
+					"description": "?version=N, the latest without it. One mapping to the NFR catalog and one to SP 800-53, each when it has a map. An earlier version is superseded. 404 before the first analysis or when the version maps nothing.",
+				},
+			},
 			"/security-nfrs/data": gin.H{
 				"get": gin.H{
 					"summary":     "List security NFRs",

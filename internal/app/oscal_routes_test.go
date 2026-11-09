@@ -21,6 +21,12 @@ var oscalRoutes = []struct {
 }{
 	{http.MethodPost, "/controls/import-oscal/preview", true},
 	{http.MethodPost, "/controls/import-oscal", true},
+	{http.MethodGet, "/controls/oscal/catalog.json", false},
+	{http.MethodGet, "/controls/oscal/profile/low.json", false},
+	{http.MethodGet, "/security-nfrs/oscal/catalog.json", false},
+	{http.MethodGet, "/security-nfrs/oscal/mapping.json", false},
+	{http.MethodGet, "/regulation-coverage/1/oscal/catalog.json", false},
+	{http.MethodGet, "/regulation-coverage/1/oscal/mapping.json", false},
 }
 
 func TestOSCALRoutesRefuseAnonymousAndNonAdminRequests(t *testing.T) {
@@ -37,13 +43,40 @@ func TestOSCALRoutesRefuseAnonymousAndNonAdminRequests(t *testing.T) {
 	}
 	readerCookie := &http.Cookie{Name: authn.AuthSessionCookie, Value: session.Token}
 
+	// A reader granted only the Controls page reads its exports and not the
+	// NFR or regulation ones: the exports sit under each module's own prefix.
+	scoped, err := auth.CreateUserWithAccess("controls-only", "very-strong-pass-3", false, []string{"/controls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopedSession, err := auth.CreateSession(scoped.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopedCookie := &http.Cookie{Name: authn.AuthSessionCookie, Value: scopedSession.Token}
+
 	for _, r := range oscalRoutes {
-		if rec := a.do(r.method, r.path, `{}`); rec.Code != http.StatusUnauthorized {
+		body := `{}`
+		if r.method == http.MethodGet {
+			body = ""
+		}
+		if rec := a.do(r.method, r.path, body); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without a session: %d, want 401", r.method, r.path, rec.Code)
 		}
-		rec := a.do(r.method, r.path, `{}`, readerCookie)
-		if r.adminOnly && rec.Code != http.StatusForbidden {
+		rec := a.do(r.method, r.path, body, readerCookie)
+		switch {
+		case r.adminOnly && rec.Code != http.StatusForbidden:
 			t.Errorf("%s %s as a non-admin: %d, want 403", r.method, r.path, rec.Code)
+		case !r.adminOnly && (rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden):
+			t.Errorf("%s %s should be open to any signed-in user: %d", r.method, r.path, rec.Code)
+		}
+		if r.adminOnly {
+			continue
+		}
+		rec = a.do(r.method, r.path, body, scopedCookie)
+		underControls := strings.HasPrefix(r.path, "/controls/")
+		if denied := rec.Code == http.StatusForbidden; denied == underControls {
+			t.Errorf("%s %s for a reader granted /controls only: %d", r.method, r.path, rec.Code)
 		}
 	}
 }
@@ -183,8 +216,10 @@ func TestOSCALImportThroughTheApp(t *testing.T) {
 			t.Errorf("AC-1 should not change %s", f)
 		}
 	}
-	if len(changed["AC-13"]) != 0 {
-		t.Errorf("the withdrawn AC-13 is already as NIST states it; changes %v", changed["AC-13"])
+	// The shipped AC-13 matches NIST's text; only NIST's withdrawn status,
+	// which the JSON file does not carry, is new.
+	if strings.Join(changed["AC-13"], ",") != "withdrawn" {
+		t.Errorf("the withdrawn AC-13 should change only its withdrawn status; changes %v", changed["AC-13"])
 	}
 
 	body, _ = json.Marshal(map[string]any{
@@ -221,6 +256,10 @@ func TestOSCALImportThroughTheApp(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("the AC-1 detail page lacks %q", want)
 		}
+	}
+	if !strings.Contains(a.asAdmin(http.MethodGet, "/controls/detail/AC-13", "").Body.String(), "Withdrawn by NIST") ||
+		!strings.Contains(a.asAdmin(http.MethodGet, "/controls/data/AC-13", "").Body.String(), `"withdrawn":true`) {
+		t.Error("AC-13 should read as withdrawn after the import")
 	}
 	rec = a.asAdmin(http.MethodGet, "/controls/data/SA-24", "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"params":[`) {

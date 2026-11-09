@@ -36,9 +36,17 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
   imported from OSCAL it adds "Parameters (ODPs)" (each organization-defined
   parameter's 800-53A label, what it asks for and its guideline) and
   "Assessment objectives (800-53A)" (the objectives, and the examine,
-  interview and test objects).
+  interview and test objects). A control the OSCAL import marked withdrawn
+  says "Withdrawn by NIST".
 - **Export** (`/controls/export?format=csv|excel`): the filtered list as CSV
   or as Excel 2003 XML.
+- **OSCAL export** (signed in; linked from the Controls page and Help): the
+  whole catalog, hidden families included, as an OSCAL 1.2.1 catalog
+  (`GET /controls/oscal/catalog.json`), and each baseline as an OSCAL profile
+  of it (`GET /controls/oscal/profile/{low,moderate,high,privacy}.json`). The
+  catalog is the OSCAL import run backwards: an export imports back without a
+  change, a control edited after an OSCAL import carries its edited text, and
+  two exports of an unchanged catalog differ only in `last-modified`.
 - **Import** (`POST /controls/import`, admin; "Import JSON" on the Control
   Editor): loads a catalog file in the shape of the shipped one, keyed by
   record, with the control under `nist` (the older flat shape is read too).
@@ -65,8 +73,8 @@ holds 1,193 controls and enhancements. Code: `internal/controlcatalog`.
   CIA ratings and justification, threats, potentially common/inheritable, the
   appendix (References included) or the record key, never deletes a control,
   and leaves a baseline whose profile was not posted as it is. A withdrawn
-  control keeps empty requirements and takes NIST's title as its name
-  (`OSCAL.md`). Every apply rebuilds the NFR-control links. Code: `internal/oscal` reads the files;
+  control keeps empty requirements, takes NIST's title as its name, and is
+  marked withdrawn (`OSCAL.md`). Every apply rebuilds the NFR-control links. Code: `internal/oscal` reads the files;
   `internal/controlcatalog` works out and applies the change.
 - **Control Editor** (`/controls/manage`, admin to save): edit any field of a
   control or delete one. A save or delete rebuilds the NFR-control links.
@@ -107,6 +115,12 @@ records. Code: `internal/securitynfr`.
   weight set in the application survives unless the file carries its own; a
   file whose weight is outside 1-5, or with an NFR without a summary, is
   refused before anything is written. Every import rebuilds the links.
+- **OSCAL export** (signed in; linked from the page and Help): the catalog as
+  an OSCAL catalog (`GET /security-nfrs/oscal/catalog.json`: a group per
+  domain, a control per NFR, grc's fields in the grc namespace), and the
+  NFR-control links as an OSCAL mapping collection
+  (`GET /security-nfrs/oscal/mapping.json`: a map per NFR and control it
+  resolved to, gap summaries both ways, unresolved references named).
 
 An NFR has a `record_key` (the stable identity), an NFR id such as `1.4`, a
 summary, an issue type, a domain, description, additional details,
@@ -592,6 +606,12 @@ NIST 800-53. Code: `internal/regcoverage`, `internal/regmap`; detail in
 6. The **report** is versioned and immutable, as a page, a PDF and JSON.
    **Chat** (admin) asks questions about it. **Revise** (admin) re-analyses
    one section with an instruction and writes the next version.
+7. **OSCAL export** (signed in; linked from the report page): a version as an
+   OSCAL catalog (`GET /regulation-coverage/:id/oscal/catalog.json`, a control
+   per section with grc's finding) and its mappings as an OSCAL mapping
+   collection (`…/oscal/mapping.json`, one mapping to the NFR catalog and one
+   to 800-53), `?version=N` or the latest. Both read the version's snapshot
+   and carry its date; an earlier version's mapping is `superseded`.
 
 ### Wiz Rules (`/wiz-rules`)
 

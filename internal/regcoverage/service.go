@@ -571,6 +571,37 @@ func (s *Service) Report(id int64, version int) (*Report, error) {
 	return buildReport(reg, latest, sections, findings, s.timestamp()), nil
 }
 
+// VersionReport is a version of the report exactly as it was cut, read from
+// its snapshot, the latest included (version 0 means the latest). Unlike
+// Report it never rebuilds from the live findings, so what it returns cannot
+// change: the OSCAL exports read it and date it by the version.
+func (s *Service) VersionReport(id int64, version int) (*Report, error) {
+	if _, err := s.repo.GetRegulation(id); err != nil {
+		return nil, err
+	}
+	if version <= 0 {
+		latest, err := s.repo.LatestVersion(id)
+		if err != nil {
+			return nil, err
+		}
+		version = latest.Number
+	}
+	return s.snapshotReport(id, version)
+}
+
+// LatestVersionNumber is the regulation's latest version, 0 before the first
+// analysis.
+func (s *Service) LatestVersionNumber(id int64) (int, error) {
+	latest, err := s.repo.LatestVersion(id)
+	if err != nil {
+		if isNotFound(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return latest.Number, nil
+}
+
 func (s *Service) snapshotReport(id int64, version int) (*Report, error) {
 	v, err := s.repo.GetVersion(id, version)
 	if err != nil {

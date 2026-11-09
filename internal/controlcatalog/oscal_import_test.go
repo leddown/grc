@@ -320,3 +320,57 @@ func TestDetailSectionsRenderTheStoredStructure(t *testing.T) {
 		t.Fatal("a control never imported from OSCAL must show neither section")
 	}
 }
+
+// A statement that is grc's own text (grc's export writes one for a control
+// whose text is not NIST's rendering) sets the requirements and leaves the
+// stored structure alone; a new control gets none. Withdrawn is written and
+// compared like any field OSCAL owns.
+func TestOSCALKeepsTheStoredStatementForGRCText(t *testing.T) {
+	repo := openControlCatalogRepo(t)
+	svc := NewService(repo, "")
+	seedJSONCatalog(t, svc)
+	first := sampleOSCAL()
+	res, _ := svc.PreviewOSCAL(first)
+	if _, err := svc.ApplyOSCAL(first, res.Base); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := repo.oscalColumnsOf("AC-1")
+
+	second := sampleOSCAL()
+	second.Controls[0].Requirements = "a. Develop a policy, as grc holds it."
+	second.Controls[0].Statement = "null"
+	second.Controls[0].KeepStatement = true
+	second.Controls = append(second.Controls, OSCALControl{ID: "SA-25", Type: "Control", Name: "Text only", Requirements: "Text.",
+		Params: "null", Statement: "null", Assessment: "null", KeepStatement: true})
+	second.Controls[3].Withdrawn = false
+	res, err := svc.PreviewOSCAL(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := map[string][]string{}
+	for _, c := range res.Changed {
+		for _, f := range c.Fields {
+			fields[c.ID] = append(fields[c.ID], f.Field)
+		}
+	}
+	if !reflect.DeepEqual(fields["AC-1"], []string{fieldRequirements}) {
+		t.Errorf("AC-1 should change its requirements and keep its structure: %v", fields["AC-1"])
+	}
+	if !reflect.DeepEqual(fields["AC-13"], []string{fieldWithdrawn}) {
+		t.Errorf("AC-13 should change only its withdrawn status: %v", fields["AC-13"])
+	}
+	if _, err := svc.ApplyOSCAL(second, res.Base); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := repo.oscalColumnsOf("AC-1"); got.Statement != stored.Statement || stored.Statement == "null" {
+		t.Errorf("AC-1's statement structure changed: %s", got.Statement)
+	}
+	if got, _ := repo.oscalColumnsOf("SA-25"); got.Statement != "null" {
+		t.Errorf("a new control from grc text has no structure: %s", got.Statement)
+	}
+	ac1, _ := svc.Get("AC-1")
+	ac13, _ := svc.Get("AC-13")
+	if ac1.Requirements != "a. Develop a policy, as grc holds it." || ac13.Withdrawn {
+		t.Errorf("requirements %q withdrawn %v", ac1.Requirements, ac13.Withdrawn)
+	}
+}

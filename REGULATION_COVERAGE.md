@@ -49,7 +49,11 @@ import + segment  →  analyse  →  report v1
    section, plus one for the executive summary. Writes version 1.
 3. **Read** the report at `/regulation-coverage/:id`, download it at
    `/regulation-coverage/:id/report.pdf`, or take the JSON at
-   `/regulation-coverage/:id/report.json`.
+   `/regulation-coverage/:id/report.json`. For another tool, a version is
+   also OSCAL: `/regulation-coverage/:id/oscal/catalog.json` (the sections
+   with grc's findings) and `/regulation-coverage/:id/oscal/mapping.json` (the
+   mappings to the NFR catalog and to 800-53), both read from the version's
+   snapshot (`?version=N`) — see `OSCAL.md`.
 4. **Ask** (`POST /regulation-coverage/:id/chat`) — a conversation grounded in
    the report, carrying its own history.
 5. **Revise** (`POST /regulation-coverage/:id/revise`) — apply a correction to
