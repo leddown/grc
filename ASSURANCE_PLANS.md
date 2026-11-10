@@ -40,7 +40,7 @@ The module produces:
 - a quarterly progress report
 - an annual conclusion that feeds the yearly ICT risk management framework
   review
-- JSON and CSV exports
+- JSON and CSV exports, and the plan workbook (`.xlsx`) to work the year in
 
 ## Practice it follows
 
@@ -888,6 +888,8 @@ spend need admin, the same split as the risk register and Audit Findings.
   "proposals"}`, newest first; `GET /assurance-plans/:id/ai/proposals/:pid`:
   one proposal (see [AI assist](#ai-assist-optional))
 - `GET /assurance-plans/:id/export.json`: the whole plan (see below)
+- `GET /assurance-plans/:id/export.xlsx`: the plan workbook (see
+  [The plan workbook](#the-plan-workbook))
 - `GET /assurance-plans/:id/oscal/assessment-plan.json?version=N` (the latest
   approval without it): the approval snapshot as an OSCAL 1.2.1 Assessment
   Plan, the same bytes every time; 409 for a plan never approved or one whose
@@ -1014,6 +1016,48 @@ a formula. Names and notes come from pasted CSV and from testers, so a cell
 like `=HYPERLINK(…)` is not trusted. The header row is fixed and is not
 prefixed.
 
+### The plan workbook
+
+`export.xlsx` (`workbook.go`) is the export laid out as an Excel workbook to
+work the year in, written with `internal/xlsx`. It is built from `PlanExport`,
+so it holds what the JSON export holds and nothing else. Nothing in it needs
+the application: what the plan page works out is a formula over the
+workbook's own rows, reading the plan's parameters from the Plan sheet, and
+each formula is stored with the value the application worked out, for a
+viewer that does not calculate.
+
+| Sheet | Holds | Works out |
+|---|---|---|
+| Guide | How to use it, and the rules in words | |
+| Plan (locked) | Header, parameters, regulatory basis, non-working dates | Capacity per quarter; headline figures |
+| Schedule | Steps; Status is a dropdown | A step past its end and not Complete is highlighted |
+| Quarters (locked) | The quarterly cycle, retest and overhead days | Planned tests, reviews, effort, capacity, utilisation, over threshold |
+| Strata (locked) | Sampling parameters and the sizes, waves and top-ups at export | Total tests |
+| Test script (locked) | The attributes | |
+| Population | Items, selection, attestation date, DQ status (dropdown), DQ review date | Test result; signed off on; covered on; covered today and at each quarter end |
+| Tests | Tester, evidence dates, fieldwork, QA | Evidence due (`WORKDAY` with the SLA and the non-working dates), evidence late, Pass/Fail/N/A/Pending, overall result |
+| Results | One row per test and applicable attribute; Result is a Pass/Fail/N/A dropdown | |
+| Deviations (locked) | Attribute × stratum | Tested, deviations, rule, conclusion, extend in, extend by |
+| Coverage (locked) | Stratum × quarter targets at export | N, attested, tested, covered, DQ accepted, in cycle, each quarter's covered, actual and RAG |
+| Findings (locked) | Findings as Audit Findings had them | |
+| Governance, History (locked) | RACI, cadence, escalations; approved versions and gate findings | |
+
+- The formulas count whole columns, so a row copied below a table counts.
+  Dates are real dates (`YYYY-MM-DD` format) and quarters numbers shown as
+  `Q1`..`Q4`, so they sort, filter and compare.
+- What the workbook cannot work out stays as at the export: the sample sizes
+  (the frozen population and the seed), the selection, the failing tests listed
+  on Deviations, and the findings.
+- Locked sheets have no password; Unprotect Sheet lifts the lock. Nothing
+  changed in the workbook goes back to the application.
+- `MINIFS` and `MAXIFS` are written `_xlfn.`-prefixed, as the file format
+  wants for functions newer than Excel 2007: Excel 2019 or Microsoft 365, or
+  LibreOffice.
+- A rule in `execution.go` or the dashboard is also a formula here. Change
+  both: `TestPlanWorkbookFormulasInLibreOffice` writes workbooks without
+  stored results, has LibreOffice calculate them, and checks every cell
+  against what the application worked out (skipped without LibreOffice).
+
 ## Documents
 
 Three documents render through `internal/doctemplate`, with its engine
@@ -1026,7 +1070,8 @@ discovery, the render host and the sources-zip fallback:
 The module does not import `doctemplate`. `internal/app` passes it a
 `Renderer` (`Handler.WithRenderer`) that answers like the redline does. The
 **Documents and exports** table on the Overview tab links each document with
-its sources and its data, and links the JSON and CSV exports.
+its sources and its data, and links the workbook and the JSON and CSV
+exports.
 
 **Committee approval pack** (`pack.pdf`)
 

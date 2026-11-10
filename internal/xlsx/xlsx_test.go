@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -219,5 +220,35 @@ func TestProtectLocksTheSheet(t *testing.T) {
 	}
 	if strings.Contains(sheet, "password") || strings.Contains(sheet, "hashValue") {
 		t.Error("the lock must have no password")
+	}
+}
+
+func TestDateIsASerialShownAsISO(t *testing.T) {
+	cases := []struct {
+		in       string
+		number   float64
+		isNumber bool
+		text     string
+	}{
+		{"2027-03-31", 46477, true, ""},
+		{"1900-03-01", 61, true, ""},
+		{"31/03/2027", 0, false, "31/03/2027"},
+		{"", 0, false, ""},
+	}
+	w := New()
+	s := w.AddSheet("Dates")
+	for i, c := range cases {
+		s.Set(1, i+1, Date(c.in))
+		text, number, isNumber := s.Stored(1, i+1)
+		if isNumber != c.isNumber || number != c.number || text != c.text {
+			t.Errorf("Date(%q) stores %q / %v / %v", c.in, text, number, isNumber)
+		}
+	}
+	sheet := writeParts(t, w)["xl/worksheets/sheet1.xml"]
+	if !strings.Contains(sheet, `<c r="A1" s="`+strconv.Itoa(int(ISODate))+`"><v>46477</v></c>`) {
+		t.Errorf("a date is not a styled serial:\n%s", sheet)
+	}
+	if !strings.Contains(sheet, `<c r="A4" s="`+strconv.Itoa(int(ISODate))+`"/>`) {
+		t.Errorf("an empty date cell loses its format, so a date typed into it is not shown as one:\n%s", sheet)
 	}
 }

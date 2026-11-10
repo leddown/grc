@@ -22,6 +22,7 @@ func (h *Handler) WithRenderer(r Renderer) *Handler {
 
 func (h *Handler) registerDocumentRoutes(r gin.IRouter) {
 	r.GET("/assurance-plans/:id/export.json", h.ExportJSON)
+	r.GET("/assurance-plans/:id/export.xlsx", h.ExportXLSX)
 	r.GET("/assurance-plans/:id/export/:file", h.ExportCSV)
 	r.GET("/assurance-plans/:id/pack.pdf", h.Pack)
 	r.GET("/assurance-plans/:id/report/annual.pdf", h.AnnualReportPDF)
@@ -40,6 +41,21 @@ func (h *Handler) ExportJSON(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileStem(e.Reference, id)+".json"))
 	c.JSON(http.StatusOK, e)
+}
+
+// ExportXLSX serves the plan workbook.
+func (h *Handler) ExportXLSX(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	name, data, err := h.service.ExportXLSX(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
 }
 
 // ExportCSV serves one table of the plan, named by the file segment:

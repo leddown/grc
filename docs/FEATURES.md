@@ -353,6 +353,11 @@ Code: `internal/assuranceplan`; detail in `ASSURANCE_PLANS.md`.
     quarter
   - the **annual conclusion**, labelled as an input to the ICT risk
     management framework review report (RTS (EU) 2024/1774 Art. 27)
+  - the **plan workbook** (`.xlsx`) to work the year in: results, test
+    dates, attestations and step statuses recorded there recalculate each
+    test's result, the deviation rule, coverage and RAG, capacity and the
+    headline figures, with the plan's own thresholds; the design sheets are
+    locked
   - the whole plan as **JSON**
   - one **CSV** per table (steps, quarters, population, tests, deviations),
     with formula-like cells prefixed so a spreadsheet reads them as text

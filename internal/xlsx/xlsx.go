@@ -32,6 +32,11 @@ const (
 	Section
 	Decimal
 	Left
+	// ISODate shows a date serial as YYYY-MM-DD; Date writes one.
+	ISODate
+	// Quarter shows 1 to 4 as Q1 to Q4 and keeps the number, so a formula can
+	// compare quarters and a filter still lists them in order.
+	Quarter
 	styleCount
 )
 
@@ -75,6 +80,29 @@ func FormulaNumber(expr string, value float64) Cell {
 
 func FormulaText(expr string, value string) Cell {
 	return Cell{kind: kindFormulaText, formula: expr, text: value}
+}
+
+// excelEpoch is day zero of the serial dates Excel and LibreOffice count.
+var excelEpoch = time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+
+// Serial is a date's day number in a workbook.
+func Serial(t time.Time) float64 {
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	return float64(day.Sub(excelEpoch) / (24 * time.Hour))
+}
+
+// Date is a YYYY-MM-DD date as a real date, so it sorts, filters and compares
+// as one in a formula. Empty stays empty, and anything else stays the text it
+// was rather than being lost.
+func Date(iso string) Cell {
+	if iso == "" {
+		return Cell{style: ISODate}
+	}
+	t, err := time.Parse("2006-01-02", iso)
+	if err != nil {
+		return Text(iso)
+	}
+	return Number(Serial(t)).With(ISODate)
 }
 
 func (c Cell) With(style Style) Cell {
@@ -408,6 +436,7 @@ func (w *Workbook) workbookRels() string {
 
 // The order of cellXfs is the order of the Style constants.
 const stylesXML = xmlHeader + `<styleSheet xmlns="` + mainNS + `">` +
+	`<numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="&quot;Q&quot;0"/></numFmts>` +
 	`<fonts count="5">` +
 	`<font><sz val="11"/><name val="Calibri"/></font>` +
 	`<font><b/><sz val="11"/><name val="Calibri"/></font>` +
@@ -428,11 +457,11 @@ const stylesXML = xmlHeader + `<styleSheet xmlns="` + mainNS + `">` +
 	`<top style="thin"><color rgb="FFB0B7C3"/></top><bottom style="thin"><color rgb="FFB0B7C3"/></bottom><diagonal/></border>` +
 	`</borders>` +
 	`<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-	`<cellXfs count="12">` +
+	`<cellXfs count="14">` +
 	`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
 	`<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
 	`<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>` +
-	`<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+	`<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top"/></xf>` +
 	`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
 	`<xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>` +
 	`<xf numFmtId="9" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left"/></xf>` +
@@ -441,6 +470,8 @@ const stylesXML = xmlHeader + `<styleSheet xmlns="` + mainNS + `">` +
 	`<xf numFmtId="0" fontId="1" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/>` +
 	`<xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left"/></xf>` +
 	`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left"/></xf>` +
+	`<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left"/></xf>` +
+	`<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center"/></xf>` +
 	`</cellXfs>` +
 	`<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
 	`<dxfs count="1"><dxf><fill><patternFill><bgColor rgb="FFFFF2CC"/></patternFill></fill></dxf></dxfs>` +
@@ -507,7 +538,7 @@ func (s *Sheet) xml(active, omitFormulaValues bool) string {
 	for r, line := range s.rows {
 		empty := true
 		for _, c := range line {
-			if c.kind != kindEmpty {
+			if c.kind != kindEmpty || c.style != Default {
 				empty = false
 				break
 			}

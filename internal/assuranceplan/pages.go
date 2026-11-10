@@ -573,6 +573,7 @@ func documentsHTML(p Plan) string {
 			pdf(fmt.Sprintf("/report/quarter/%d.pdf", q))+` · `+link(fmt.Sprintf("%s/oscal/assessment-results/q%d.json", base, q), "OSCAL results"))
 	}
 	row("Annual conclusion", "Input to the ICT risk management framework review report (RTS (EU) 2024/1774 Art. 27)", pdf("/report/annual.pdf"))
+	row("Plan workbook", "The plan as an Excel workbook to work the year in: results, tests and attestations recorded there recalculate the deviation rule, coverage and capacity", link(base+"/export.xlsx", "XLSX"))
 	row("Plan export", "The whole plan as one JSON file, without database ids", link(base+"/export.json", "JSON"))
 	row("OSCAL Assessment Plan", "The latest approved version as an OSCAL 1.2.1 Assessment Plan; each version's is under History", link(base+"/oscal/assessment-plan.json", "OSCAL JSON"))
 	tables := []string{}

@@ -110,7 +110,11 @@ lists it (`docs/HTTP_API.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`,
   through `knowledge.Service` (`WithAI`, wired in `app.go`). Every answer is a
   row in `assurance_plan_ai_proposals` with its model and prompt hash, every
   cited reference is resolved before it is shown, and nothing changes on the
-  plan until a person accepts. A payload change
+  plan until a person accepts. The plan workbook (`workbook.go`,
+  `/assurance-plans/:id/export.xlsx`) lays `PlanExport` out through
+  `internal/xlsx` with the execution rules as formulas: change a rule in
+  `execution.go` or the dashboard and its formula together;
+  `TestPlanWorkbookFormulasInLibreOffice` checks them. A payload change
   means regenerating `templates/samples/assurance-*.json` with
   `GRC_UPDATE_SAMPLES=1 go test ./internal/assuranceplan -run Payload` — see
   `ASSURANCE_PLANS.md`

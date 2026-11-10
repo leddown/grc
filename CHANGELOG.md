@@ -3,6 +3,87 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-10 (Assurance Plans: the plan workbook, an .xlsx export to work the year in)
+
+An assurance plan could be exported as JSON, or as five separate CSV tables
+with no formulas. It now also downloads as one Excel workbook
+(`GET /assurance-plans/:id/export.xlsx`, **Plan workbook** in the Overview tab's
+Documents and exports table). Results, test dates, attestations and step
+statuses recorded in the workbook recalculate everything the plan page works
+out from them.
+
+- **The workbook** (`internal/assuranceplan/workbook.go`, new; `PlanWorkbook`,
+  `Service.ExportXLSX`, `Handler.ExportXLSX`).
+  - Built from `PlanExport`, so it holds what the JSON export holds. Fourteen
+    sheets: Guide, Plan, Schedule, Quarters, Strata, Test script, Population,
+    Tests, Results, Deviations, Coverage, Findings, Governance, History.
+  - **Working sheets:**
+    - Results: one row per test and applicable attribute, with a Pass/Fail/N/A
+      dropdown; a Fail row is highlighted.
+    - Tests: tester, evidence, fieldwork and QA dates.
+    - Population: attestation date, DQ status (dropdown) and its review date.
+    - Schedule: step status (dropdown); a step past its end date and not
+      Complete is highlighted.
+  - **Formulas:** they read the plan's parameters from the Plan sheet.
+    - A test's Pass/Fail/N/A/Pending and overall result.
+    - Evidence due (`WORKDAY` with the SLA and the plan's non-working dates)
+      and evidence late.
+    - The deviation rule per attribute and stratum: tested, deviations,
+      conclusion (including the full-coverage wording), and the quarter and
+      size of the sample extension.
+    - Each item's signed-off date, covered-on date, and whether it is covered
+      today and at each quarter end, including the multi-year cycle.
+    - Coverage per stratum: attested, tested, covered, DQ accepted, in cycle,
+      and each quarter's covered, actual and RAG.
+    - Quarterly planned tests, effort, capacity, utilisation and over
+      threshold.
+    - The headline figures on the Plan sheet.
+  - Every formula is stored with the value the application worked out, for a
+    viewer that does not calculate (a previewer, or Excel's Protected View).
+  - Formulas count whole columns, so a row copied below a table is counted.
+  - Dates are real dates shown as `YYYY-MM-DD`, and quarters are numbers shown
+    as `Q1`..`Q4`.
+  - **Locked sheets** (no password): Plan, Quarters, Strata, Test script,
+    Deviations, Coverage, Findings, Governance and History.
+  - **Kept as at the export:** sample sizes, the selection, the failing tests
+    listed on Deviations, and the findings. The Guide says so, and says that
+    nothing goes back to the application.
+  - `MINIFS` and `MAXIFS` are written with the `_xlfn.` prefix that the file
+    format requires for functions newer than Excel 2007. Without it they show
+    `#NAME?`, as the first LibreOffice run showed. They need Excel 2019 or
+    Microsoft 365, or LibreOffice.
+- **`internal/xlsx`.**
+  - Two new styles: `ISODate` (`yyyy-mm-dd`) and `Quarter` (`"Q"0`).
+  - `Date(iso)` writes a real date, leaving empty or unparseable values as
+    they are; `Serial(t)` gives a date's serial number.
+  - A row that holds only styled empty cells is now written. `writeCell`
+    already wrote them, but the row was dropped, so an empty input cell lost
+    its format.
+  - `Label` is top-aligned, so a label stays level with a value that wraps.
+    The Exceptions Workbook's tests, including its LibreOffice check, still
+    pass.
+- **Tests.**
+  - `workbook_test.go` (new):
+    - The sheets, their order, and the columns the formulas rely on.
+    - Results row count against the tests' tallies.
+    - A formula-like item name stays text.
+    - Which sheets are locked.
+    - The route: content type, file name, 404, and the documents link.
+  - `TestPlanWorkbookFormulasInLibreOffice`:
+    - Writes four workbooks with no stored results: an empty plan, the sample
+      controls-testing plan after two quarters and after four, and a
+      resilience programme on the tests basis with a three-year TLPT cycle.
+    - LibreOffice (with `TZ=UTC`) calculates them, and every cell is compared
+      with what the application worked out: about 47,000 cells, 6,700 of them
+      formulas, all agree.
+    - Skipped without LibreOffice.
+  - `TestDateIsASerialShownAsISO` in `internal/xlsx`.
+- **Docs.**
+  - `ASSURANCE_PLANS.md` (new section "The plan workbook").
+  - `docs/FEATURES.md`, `docs/HTTP_API.md` and `docs/ARCHITECTURE.md`.
+  - The Help page.
+  - `Agents.md`: change a rule and its formula together.
+
 ## 2026-11-10 (Risk Register Editor: a list and a form instead of a table of inputs)
 
 The Risk Register Editor (`/risk-register/manage`) drew the register as a table

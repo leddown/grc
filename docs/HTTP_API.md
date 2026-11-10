@@ -278,6 +278,7 @@ still malformed after one repair turn is 502. `ai/proposals` answers
 | GET | `/assurance-plans/:id/dashboard` | signed in | `assuranceplan.(*Handler).Dashboard` |
 | GET | `/assurance-plans/:id/deviations` | signed in | `assuranceplan.(*Handler).Deviations` |
 | GET | `/assurance-plans/:id/export.json` | signed in | `assuranceplan.(*Handler).ExportJSON` |
+| GET | `/assurance-plans/:id/export.xlsx` | signed in | `assuranceplan.(*Handler).ExportXLSX` |
 | GET | `/assurance-plans/:id/export/:file` | signed in | `assuranceplan.(*Handler).ExportCSV` |
 | PUT | `/assurance-plans/:id/governance` | admin | `assuranceplan.(*Handler).ReplaceGovernance` |
 | GET | `/assurance-plans/:id/history` | signed in | `assuranceplan.(*Handler).History` |

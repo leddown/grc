@@ -321,6 +321,10 @@ func helpPage(c *gin.Context) {
               pack, each quarter's progress report and the annual conclusion as PDFs (or their
               sources and data), and the plan as JSON or one CSV per table. The pack's regulatory
               slide is the Governance tab's regulatory basis.</li>
+            <li>The plan workbook (XLSX) is the plan as an Excel workbook to work the year in. Record
+              results, test dates, attestations and step statuses there and each test's result, the
+              deviation rule, coverage and capacity recalculate with the plan's thresholds. It is a
+              copy: nothing in it goes back to the application.</li>
             <li>The same table links the OSCAL exports. The OSCAL Assessment Plan is the latest
               approved version, and the History tab links each version's. A quarter's OSCAL results
               hold only the tests QA has signed off, with a finding per Fail that names its Audit
