@@ -35,7 +35,8 @@ func palettes(theme string) string {
   --on-accent: #000000 !important;
   --error: #ff3b3b !important;
   --gain: #00ff41 !important;
-  --loss: #ff3b3b !important;`
+  --loss: #ff3b3b !important;
+  --radius: 8px !important;`
 
 	case themeK40:
 		// The muted tone is a failing indicator lamp rather than the brass it
@@ -57,7 +58,62 @@ func palettes(theme string) string {
   --on-accent: #0a0806 !important;
   --error: #ff5f56 !important;
   --gain: #a8bb63 !important;
-  --loss: #ff5f56 !important;`
+  --loss: #ff5f56 !important;
+  --radius: 8px !important;`
+
+	case themeTron:
+		// Ice rather than grey for the secondary text: 9.6:1 on the ground and
+		// still clearly the voice underneath the white. Orange is the other
+		// side, so it is what an error and a loss are.
+		return `
+  color-scheme: dark !important;
+  --bg: #01040a !important;
+  --bg-image: none !important;
+  --surface: #050e1a !important;
+  --surface-2: #0a1b2e !important;
+  --border: #12506a !important;
+  --text-base: #dafcff !important;
+  --muted-base: #72c4d9 !important;
+  --accent: #18e6ff !important;
+  --on-accent: #01040a !important;
+  --error: #ff7a1a !important;
+  --gain: #5dffe0 !important;
+  --loss: #ff7a1a !important;
+  --radius: 2px !important;
+  --tron-glow: rgba(24, 230, 255, 0.55) !important;
+  --tron-faint: rgba(24, 230, 255, 0.32) !important;
+  --tron-orange: #ff7a1a !important;
+  --tron-display: "Orbitron", "Eurostile", "Bahnschrift", "DIN Alternate", "Rajdhani", ui-sans-serif, system-ui, sans-serif !important;`
+
+	case themeTrench:
+		// Parchment and bone on warm near-blacks: 15:1 and 7.5:1 on the ground.
+		// The game's own red is 2.8:1 against these grounds, so it is spent on
+		// fills, rules and ornaments (--tc-blood) and never on small text; gilt
+		// is the accent, a lighter red the error, and the "faithful blue" a gain.
+		// A filled button is the red a shade deeper, lettered in bone at 6.2:1.
+		return `
+  color-scheme: dark !important;
+  --bg: #0e0b09 !important;
+  --bg-image: none !important;
+  --surface: #18130f !important;
+  --surface-2: #221b15 !important;
+  --border: #3d3228 !important;
+  --text-base: #e9e1d1 !important;
+  --muted-base: #aa9f8b !important;
+  --accent: #c9a862 !important;
+  --on-accent: #0e0b09 !important;
+  --error: #ec6559 !important;
+  --gain: #7fa9c9 !important;
+  --loss: #ec6559 !important;
+  --radius: 1px !important;
+  --button-fill: #a51d22 !important;
+  --button-ink: #f1e9da !important;
+  --tc-blood: #af1f24 !important;
+  --tc-rubric: #cf3a33 !important;
+  --tc-gilt: #b89a5e !important;
+  --tc-iron: #4a3d31 !important;
+  --tc-blackletter: "Grenze Gotisch", "UnifrakturMaguntia", "Old English Text MT", serif !important;
+  --tc-book: "EB Garamond", "Garamond Premier Pro", "Adobe Garamond Pro", Garamond, "Times New Roman", serif !important;`
 
 	default:
 		return `
@@ -73,7 +129,8 @@ func palettes(theme string) string {
   --on-accent: #0b0d12 !important;
   --error: #ff8a8a !important;
   --gain: #7ddc9a !important;
-  --loss: #ff8a8a !important;`
+  --loss: #ff8a8a !important;
+  --radius: 8px !important;`
 	}
 }
 
@@ -101,11 +158,10 @@ const aliasCSS = `
   --bad: var(--loss) !important;
   --danger: var(--error) !important;
   --red: var(--error) !important;
-  --green: var(--gain) !important;
-  --radius: 8px !important;`
+  --green: var(--gain) !important;`
 
 // textLiftCSS derives the two text colours from the palette's base values, so
-// one control lifts all five themes and no rule below has to know the setting
+// one control lifts every theme and no rule below has to know the setting
 // exists.
 //
 // The plain assignment comes first as the fallback. If color-mix is not
@@ -159,6 +215,16 @@ body {
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
 }
+/* The sign-in page has no shell: its <main> is the card, and it set its own
+   slate colours, which no theme reached. */
+main:has(#loginForm) {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+}
+main:has(#loginForm) label { color: var(--text) !important; }
+main:has(#loginForm) .sub { color: var(--muted) !important; }
 /* A card inside a panel is a step further from the page, so it takes the next
    surface up rather than the same one with a line drawn between them. */
 .panel [class*="card"], .panel-body [class*="card"], .pane [class*="card"],
@@ -255,8 +321,8 @@ input:focus, select:focus, textarea:focus {
 .global-content button[type="submit"], .global-content button.primary,
 body:not(:has(.global-shell)) main button[type="submit"],
 body:not(:has(.global-shell)) main button.primary {
-  background: var(--accent) !important;
-  color: var(--on-accent) !important;
+  background: var(--button-fill, var(--accent)) !important;
+  color: var(--button-ink, var(--on-accent)) !important;
   border-color: transparent !important;
   font-weight: 600 !important;
 }
@@ -432,11 +498,27 @@ pre {
 .empty { padding: 16px !important; }`
 
 // monoThemeCSS is the typography for the three themes that are meant to look
-// like output from a machine rather than a document.
+// like output from a machine rather than a document. The section switcher is
+// named because a one-page section is a link, which the element list misses.
 const monoThemeCSS = `
-body, button, input, select, textarea, .tab, table {
+body, button, input, select, textarea, .tab, table, #globalTopbar .global-view-btn {
   font-family: "Courier New", Courier, monospace !important;
 }`
+
+// matrixTopbarCSS is for Matrix and Chaos. The section switcher is transparent
+// on a black bar, and the base rule's --muted is a dim green there, so the
+// buttons take the full phosphor green and the glow carries the emphasis that a
+// surface tint carries in the other themes.
+const matrixTopbarCSS = `
+#globalTopbar .global-view-btn {
+  color: var(--accent) !important;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.5);
+}
+#globalTopbar .global-view-btn:hover, #globalTopbar .global-view-btn.active {
+  color: #c8ffd6 !important;
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.9);
+}
+#globalTopbar .global-view-btn.active { border-color: var(--accent) !important; }`
 
 // k40ThemeCSS is what makes 40K a costume rather than a palette swap: stamped
 // lettering on the headings, and the name of the machine carrying the gold.
@@ -451,7 +533,21 @@ h1, h2, .group-head, .panel-header, .list-header, thead th, th {
   letter-spacing: 0.12em !important;
 }
 h1 { color: var(--accent) !important; }
-.global-sidenav .tab-home { color: var(--accent) !important; }`
+#globalTopbar .global-view-btn {
+  text-transform: uppercase;
+  letter-spacing: 0.08em !important;
+  font-size: 11.5px !important;
+}
+#globalTopbar .global-view-btn:hover, #globalTopbar .global-view-btn.active {
+  color: var(--accent) !important;
+  text-shadow: 0 0 8px rgba(216, 167, 48, 0.45);
+}
+#globalTopbar .global-view-btn.active { border-color: var(--accent) !important; }
+#globalTopbar .global-brand-link {
+  color: var(--accent) !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+}`
 
 // chaosCharCSS eases the per-character colour the glitch engine sets, so the
 // effect is a shimmer rather than a strobe. Chaos only: the other themes must
@@ -471,11 +567,15 @@ func themeStyleTag(theme string) string {
 
 	switch theme {
 	case themeMatrix:
-		css += monoThemeCSS
+		css += monoThemeCSS + matrixTopbarCSS
 	case themeChaos:
-		css += monoThemeCSS + chaosCharCSS
+		css += monoThemeCSS + matrixTopbarCSS + chaosCharCSS
 	case themeK40:
 		css += k40ThemeCSS
+	case themeTron:
+		css += tronThemeCSS
+	case themeTrench:
+		css += trenchThemeCSS
 	}
 	return css + `
 </style>` + textLiftInitTag

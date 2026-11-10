@@ -203,7 +203,8 @@ likelihood and impact, current controls, residual likelihood and impact, the
 response strategy and action, owner, status, target and review dates, and
 whether it is within risk appetite. Likelihood and impact are 1 to 5; the
 inherent and residual scores are their products and are computed by the
-service. An admin creates, edits and deletes.
+service. An admin creates, edits and deletes in the editor: a list of risks
+beside a form for the one picked, its fields one above the other.
 
 ### Audit Findings (`/audit-findings`)
 

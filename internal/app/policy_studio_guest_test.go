@@ -281,7 +281,7 @@ func TestGuestPagesEnforceTheirCSP(t *testing.T) {
 	a.asAdmin(http.MethodPut, "/api/settings/policy-studio", `{"guest_links":true}`)
 	doc := a.studioDocument()
 	guest, _, _ := a.invite(doc, `{"role":"viewer"}`)
-	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
+	for _, theme := range allThemes() {
 		rec := a.do(http.MethodGet, "/shared/studio", "", guest, &http.Cookie{Name: themeCookieName, Value: theme})
 		csp := rec.Header().Get("Content-Security-Policy")
 		if rec.Code != http.StatusOK || csp == "" || rec.Header().Get("Referrer-Policy") != "no-referrer" {

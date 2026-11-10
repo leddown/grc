@@ -143,8 +143,9 @@ func helpPage(c *gin.Context) {
           <li><strong>Ask AI</strong> on the right edge of every page asks a question without leaving
             the page you are on. It uses whatever provider and agent Settings configures; the
             <a href="/ai-chat">AI Chat</a> page is where those are chosen per question.</li>
-          <li>The theme control at the top right switches palette, and <code>Aa</code> lifts text
-            brightness — a per-browser choice, not a setting for everyone.</li>
+          <li>The theme picker at the top right switches between Dark, Matrix, Chaos, 40K, Tron
+            and Trench Crusade, and <code>Aa</code> lifts text brightness — per-browser choices,
+            not settings for everyone.</li>
         </ul>
       </div>
     </section>

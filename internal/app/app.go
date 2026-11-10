@@ -779,6 +779,7 @@ func registerPublicPageRoutes(r gin.IRouter, localMode bool) {
 		r.GET("/login", loginPage)
 	}
 	r.GET("/version", versionHandler)
+	r.GET("/theme-assets/:file", themeAsset)
 	r.GET("/JSON_view", jsonViewPage)
 	r.GET("/json-view", jsonViewPage)
 	r.GET("/jira/json", jiraJSONPage)

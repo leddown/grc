@@ -614,7 +614,7 @@ main:has(> .global-shell) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 150px 0 8px;
+  padding: 0 190px 0 8px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
@@ -1592,57 +1592,50 @@ const aiQuickPromptDockTag = `<button id="global-ai-dock-toggle" type="button" a
 })();
 </script>`
 
-// themeToggleTag renders a small fixed-position control that flips the
-// theme cookie and reloads the page.
+// themeChoices is every theme, in the order the picker lists them. currentTheme
+// accepts exactly these.
+var themeChoices = []struct{ id, label, icon string }{
+	{themeDark, "Dark", "🌙"},
+	{themeMatrix, "Matrix", "▓"},
+	{themeChaos, "Chaos", "⚡"},
+	{themeK40, "40K", "⚙"},
+	{themeTron, "Tron", "◈"},
+	{themeTrench, "Trench Crusade", "✠"},
+}
+
+// themeToggleTag renders the theme picker on the top bar: a select over every
+// theme, which writes the theme cookie and reloads the page.
 //
-// The button names the theme you are *in*, not the one a click switches to.
-// It used to do the opposite, and since this control is the only place a theme
-// is ever named, that made every theme appear to be called the next one along:
-// the green palette with no glitch — Matrix — sat under a button reading
-// "Chaos theme". What a click does is in the tooltip and the accessible name,
-// where a control's action belongs.
+// It replaced a button that cycled through the themes. With six of them,
+// reaching the one before the current meant going all the way round, and the
+// only way to learn what a theme was called was to land on it.
 func themeToggleTag(theme string) string {
-	name := map[string]string{
-		themeDark:   "Dark",
-		themeMatrix: "Matrix",
-		themeChaos:  "Chaos",
-		themeK40:    "40K",
+	var options strings.Builder
+	for _, choice := range themeChoices {
+		options.WriteString(`<option value="` + choice.id + `"`)
+		if choice.id == theme {
+			options.WriteString(` selected`)
+		}
+		options.WriteString(`>` + choice.icon + ` ` + choice.label + `</option>`)
 	}
-	icon := map[string]string{
-		themeDark:   "🌙",
-		themeMatrix: "▓",
-		themeChaos:  "⚡",
-		themeK40:    "⚙",
-	}
-	next := map[string]string{
-		themeDark:   themeMatrix,
-		themeMatrix: themeChaos,
-		themeChaos:  themeK40,
-		themeK40:    themeDark,
-	}
-	current, ok := name[theme]
-	if !ok {
-		theme, current = themeDark, name[themeDark]
-	}
-	action := "Switch to " + name[next[theme]]
-	return `<button id="global-theme-toggle" type="button" aria-label="Theme: ` + current + `. ` + action + `" title="` + action + `">` + icon[theme] + ` ` + current + `</button>
+	return `<select id="global-theme-toggle" aria-label="Theme" title="Theme">` + options.String() + `</select>
 <button id="global-text-lift" type="button" aria-label="Text brightness" title="Text brightness">Aa</button>
 <style id="global-theme-toggle-style">
+/* !important because the component layer styles every select with it. The
+   width is fixed so the top bar's right padding can be too; the face is left to
+   the theme. */
 #global-theme-toggle {
   position: fixed;
   top: 6px;
   right: 46px;
   z-index: 10000;
-  height: 28px;
-  /* Same reason as the AI dock handle: a page's bare "button {}" rule owns
-     every property this one leaves unset. */
-  width: auto; max-width: none; margin: 0; box-sizing: border-box;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
-  color: var(--ink);
-  font: 12px Arial, sans-serif;
+  height: 28px !important;
+  width: 136px !important; max-width: none !important; margin: 0; box-sizing: border-box !important;
+  padding: 0 6px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--surface-strong) !important;
+  color: var(--ink) !important;
+  font-size: 12px !important;
   cursor: pointer;
 }
 #global-text-lift {
@@ -1661,7 +1654,6 @@ func themeToggleTag(theme string) string {
   font: 12px Arial, sans-serif;
   cursor: pointer;
 }
-#global-theme-toggle:hover,
 #global-text-lift:hover {
   background: var(--hover);
 }
@@ -1694,15 +1686,10 @@ func themeToggleTag(theme string) string {
     });
   }
 
-  const btn = document.getElementById('global-theme-toggle');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    const cycle = ['` + themeDark + `', '` + themeMatrix + `', '` + themeChaos + `', '` + themeK40 + `'];
-    const match = document.cookie.split('; ').find((row) => row.startsWith('` + themeCookieName + `='));
-    const current = match ? match.split('=')[1] : '` + themeDark + `';
-    const idx = cycle.indexOf(current);
-    const next = cycle[(idx + 1) % cycle.length];
-    document.cookie = '` + themeCookieName + `=' + next + '; Max-Age=31536000; Path=/; SameSite=Lax';
+  const picker = document.getElementById('global-theme-toggle');
+  if (!picker) return;
+  picker.addEventListener('change', () => {
+    document.cookie = '` + themeCookieName + `=' + encodeURIComponent(picker.value) + '; Max-Age=31536000; Path=/; SameSite=Lax';
     window.location.reload();
   });
 })();
@@ -1789,16 +1776,13 @@ func currentTheme(c *gin.Context) string {
 	if err != nil {
 		return themeDark
 	}
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case themeMatrix:
-		return themeMatrix
-	case themeChaos:
-		return themeChaos
-	case themeK40:
-		return themeK40
-	default:
-		return themeDark
+	value = strings.ToLower(strings.TrimSpace(value))
+	for _, choice := range themeChoices {
+		if choice.id == value {
+			return choice.id
+		}
 	}
+	return themeDark
 }
 
 // injectGlobalUI splices the theme palette and the layout layer into the
@@ -1884,21 +1868,25 @@ func headInsertTag(theme string) string {
 	return themeStyleTag(theme) + layoutStyleTag
 }
 
-// bodyInsertTag is everything that belongs at the end of <body>. The falling-
-// glyph backdrop goes to Matrix and Chaos, which share a palette built around
-// it; Dark and Light must not pay for a canvas repainting behind a page that
-// would never show it. The glitch engine is narrower still — Chaos only, since
-// the other three themes must not pay for a timer that walks the whole DOM.
+// bodyInsertTag is everything that belongs at the end of <body>. Each
+// background engine goes to its own theme only, so no other theme pays for a
+// canvas repainting behind a page that would never show it: the falling glyphs
+// to Matrix and Chaos, which share a palette built around them; the glitch
+// timer, which walks the whole DOM, to Chaos alone; the CRT overlay to 40K; the
+// light cycles to Tron; no man's land to Trench Crusade.
 func bodyInsertTag(theme string) string {
 	tags := sideNavTag + commandPaletteTag + themeToggleTag(theme) + aiQuickPromptDockTag
-	if theme == themeMatrix || theme == themeChaos {
+	switch theme {
+	case themeMatrix:
 		tags += matrixRainTag
-	}
-	if theme == themeChaos {
-		tags += chaosEngineTag
-	}
-	if theme == themeK40 {
+	case themeChaos:
+		tags += matrixRainTag + chaosEngineTag
+	case themeK40:
 		tags += fritzOverlayTag
+	case themeTron:
+		tags += lightCyclesTag
+	case themeTrench:
+		tags += noMansLandTag
 	}
 	return tags
 }
