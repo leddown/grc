@@ -3,6 +3,179 @@
 This file is the local rollback reference for changes made in this repository.
 When a change introduces an error, review the latest entries here first and then inspect the related files before reverting.
 
+## 2026-11-10 (Risk Register Editor: a list and a form instead of a table of inputs)
+
+The Risk Register Editor (`/risk-register/manage`) drew the register as a table
+with an input in every cell: twenty-two columns of inputs that had no room in a
+laptop window. The table is replaced with a list and a form.
+
+- **Layout** (`internal/riskregister/handler.go`, `riskRegisterEditorHTML`).
+  - The risks are a list on the left: title, risk id, status, owner and
+    residual score.
+  - The risk you pick is a form on the right. Its fields go one above the
+    other, with the label above each field, in the order the table had them.
+  - Save and Delete sit in the form's header. The list and the form each
+    scroll to the bottom of the window, so the two buttons stay visible.
+  - Checked at 1024×640 and 1440×900.
+- **Behaviour.**
+  - The inherent and residual scores show as values worked out from the 1–5
+    inputs and update as you type. The service still computes the stored score.
+  - Status and response strategy are free text, as before, with suggestions:
+    Open/In Progress/Accepted/Closed and Mitigate/Accept/Transfer/Avoid.
+  - Moving to another risk, adding one, or leaving the page with unsaved
+    changes asks first.
+  - Delete now asks for confirmation; before, a click deleted the row.
+  - A required field left blank is named in the header and gets focus, and the
+    request is not sent. A server error shows its `error` text rather than raw
+    JSON.
+  - Add Risk creates the risk as before, then opens it with the title selected.
+- **Unchanged.** The read-only Risk Register (`/risk-register`) keeps its table.
+  `riskRegisterHTML` no longer takes a `manage` flag, and the unused `ternary`
+  helper is removed. The API and the data are unchanged.
+- **Test.** `TestEditorFormCoversEveryRequestField` (`handler_test.go`, new)
+  fails if a field of `upsertRiskRequest` has no input in the form.
+- `docs/FEATURES.md` describes the editor's layout.
+
+## 2026-11-07 (Themes from Wintermute: Tron and Trench Crusade, a theme picker, Matrix and 40K top-bar touches)
+
+On `feature/wintermute-themes`. Wintermute's UI shares this application's
+token system, and its Dark, Matrix, Chaos and 40K palettes are identical to
+ours. It has two themes that grc did not, and a few top-bar touches. They are
+brought across, mapped onto grc's shell: `.global-topbar`, `.global-view-btn`,
+`.global-sidenav .tab`, `.tab-group-label`, the panels and cards, and the
+sign-in page's `<main>`. Chaos keeps grc's rain under the glitch. In
+Wintermute, Chaos has no rain.
+
+- **Tron** (`theme_tron.go`, new).
+  - Ice-blue text and cyan accent on a near-black blue. Orange is the error
+    and the loss.
+  - A 40px grid with a horizon glow, a top bar with a light pulse along its
+    rail, the brand in a gradient display face, and uppercase spaced section
+    buttons with an active rail.
+  - Square sidebar tabs with a cyan edge, circuit-line group labels, glowing
+    display-face heads, and corner-bracket plates on panels, cards and the
+    sign-in card.
+  - **Light cycles** (`lightCyclesTag`): a canvas behind the page where cycles
+    race the grid, turn at intersections, leave fading walls and derezz into
+    shards when they crash.
+    - Tuned from the console through `window.GRCCycles`: `grc-cycles-count`
+      (default 4, 0–12) and `grc-cycles-brightness` (default 100, 10–230).
+- **Trench Crusade** (`theme_trench.go`, new).
+  - Parchment and bone on warm near-blacks. Gilt is the accent. The setting's
+    red is spent on fills, rules and ornaments, never on small text: it is
+    2.8:1 on these grounds. A filled button is the red a shade deeper, with
+    bone lettering (`--button-fill`/`--button-ink`, which every other theme
+    falls back from to the accent).
+  - Type: EB Garamond for text, with `font-size-adjust` so the scale's pixel
+    sizes keep their x-height. Grenze Gotisch blackletter for the brand,
+    `h1` (in red, at 20px, which is large text) and `h2`. The `h2` is lifted
+    to 17px and set in lower case, because blackletter cannot be read at a
+    12px caption or in a run of capitals.
+  - Film grain and a vignette on the ground, barbed wire strung along the top
+    bar, a cross ahead of the brand and the group heads, small capitals for
+    the section buttons, labels and table heads, a red rule on the active tab,
+    and plates with an inset gilt hairline.
+  - The sign-in card carries the pilgrim emblem.
+  - **No man's land** (`noMansLandTag`): a front at night along the foot of
+    the screen, drawn from a fixed seed. Ridges, grave crosses, wire on
+    pickets and the odd helmet stand against a red glow. Ash falls, embers
+    rise, and every half minute or so a star shell goes up, sways and gutters.
+    - `window.GRCFront`: `grc-front-ash` (default 90, 0–400),
+      `grc-front-brightness` (default 100, 10–115), and `flare()`.
+  - No mark, logo, art or lettering of the game's is used. The faces are SIL
+    OFL, and the ornaments were drawn for Wintermute.
+- **Theme assets** (`theme_assets.go`, `internal/app/themeassets/`, new).
+  - The two faces (three woff2 files), their OFL licences and the four SVG
+    ornaments are embedded. They are served at `GET /theme-assets/:file`
+    from an allowlist, each with its own type, `nosniff`, a week's cache and
+    a `default-src 'none'` CSP; anything else is a 404.
+  - The path is public, because the sign-in page is themed before anyone has
+    a session.
+  - The licences travel beside the fonts rather than in
+    `THIRD_PARTY_NOTICES.md`, which the Studio build generates.
+- **Theme picker.**
+  - The theme button that cycled through the themes is now a
+    `<select id="global-theme-toggle">` over all six, in Wintermute's order.
+    The current theme is selected, and choosing one writes `grc_theme` and
+    reloads. With six themes, reaching the one before the current meant going
+    all the way round.
+  - The select has a fixed 136px width, and the top bar's right padding grows
+    from 150px to 190px to leave room for it. Checked at 1024×640: every
+    section button still fits.
+  - `themeChoices` is the one list: `currentTheme` accepts exactly those ids,
+    and the picker lists them.
+- **Matrix and Chaos.** The section buttons take the full phosphor green with
+  a glow, brighter when hovered or active, with an accent border on the active
+  one. They were the dim `--muted` on a black bar.
+- **40K.**
+  - Uppercase spaced section buttons in the lamp tone, gold with a glow when
+    hovered or active.
+  - The brand is set in gold, uppercase. This replaces a rule on
+    `.global-sidenav .tab-home`, which matched nothing once Home moved to the
+    top bar.
+- **Fixes found on the way.**
+  - In the mono themes, a section that is a single page ("Crisis Exercises",
+    "AI Chat") is a link, and it fell back to the sans face. The mono rule now
+    names `#globalTopbar .global-view-btn`.
+  - The sign-in card kept its own slate colours in every theme. It now takes
+    the theme's surface, border and radius, and its labels and subtitle take
+    the text tokens.
+  - `--radius` is per palette now: 8px, Tron 2px, Trench 1px.
+- **The Policy Studio document is left alone.**
+  - Tron and Trench set heading faces, a glow, Tron's hard-coded cyan on `th`
+    and Trench's red with `!important`. Their head and table rules are scoped
+    `:not(.ps-prosemirror *)`, so neither the editor nor the paper view (the
+    deliverable) takes them.
+  - Trench's inherited `font-size-adjust` stops at `.ps-prosemirror`.
+  - The fix is in the theme layer, so the Studio bundle is not rebuilt.
+  - Checked in headless Chrome: a paper-view `h2` keeps Liberation Sans 18px
+    in paper ink, with no glow and no adjustment, while the app's own heads
+    take the costume.
+- **Cascade notes.**
+  - The shell's styles are injected at the end of `<body>`, after the theme.
+    So the costumes address the top bar through `#globalTopbar` and the
+    sidebar tab radius through `.global-shell`.
+  - `font-variant-caps` and `font-size-adjust` carry `!important`, because
+    the scale's `font` shorthand resets them.
+  - A gradient on a control with a transparent 1px border is painted from the
+    border box. Otherwise the image repeats into the border and draws a 1px
+    line on the far edge, which the first screenshots showed on the active
+    sidebar tab and section button.
+- **Tests.**
+  - `theme_wintermute_test.go` (new) covers:
+    - the Tron and Trench palettes;
+    - each engine injected for its own theme and no other (all five engines
+      against all six themes);
+    - reduced motion, hidden tabs and canvas sizing in both engines;
+    - every `/theme-assets/` URL the CSS references being served with its
+      type;
+    - 404s for unknown names and traversal;
+    - the OFL licences embedded, and the ornaments carrying no script or
+      href;
+    - the asset path being public;
+    - the costumes leaving the Studio document alone.
+  - `TestThemePickerListsEveryThemeAndSelectsTheCurrent` replaces the cycle
+    test.
+  - The palette, layout, phone-layout, control-sizing and guest-CSP tests now
+    run over every theme through `allThemes()`, not a list of four.
+- **Verified.**
+  - `node --check` on both engines and the picker script.
+  - Headless Chrome at 1024×640:
+    - Home, the risk register and Assurance Plans in Trench;
+    - Home, the control database and the risk register in Tron;
+    - Home in 40K, Matrix and Dark;
+    - the sign-in page in both new themes.
+  - The engines' still frames (reduced motion) draw the front and the cycles.
+  - Under headless Chrome's virtual time, `requestAnimationFrame` fires only a
+    few times, so the animated cycles do not show in a static capture. The
+    front is now drawn at start, before the first animation frame.
+  - The throwaway servers and proxies (ports 18963–18976, scratch databases)
+    were stopped, and their files removed.
+  - `go fmt ./...` clean, `go vet ./...` clean, `go test ./...` green
+    (exit 0, including `TestGosec` and `TestGovulncheck`). `.` and
+    `./internal/app` were rerun with `-count=1` after the last edit to
+    `help.go`.
+
 ## 2026-11-07 (Assurance Plans, phase 6: AI assist — plan drafts, test attributes, committee narrative)
 
 Last of six phases on `feature/assurance-plans`. Three optional assists on a

@@ -57,6 +57,7 @@ The home page, sign-in, build information and the in-app documentation.
 | GET | `/knowledge/:name` | public | `app.markdownKnowledgeDocPage` |
 | GET | `/login` | public | `app.loginPage` |
 | GET | `/openapi.json` | signed in | `app.openAPIJSON` |
+| GET | `/theme-assets/:file` | public | `app.themeAsset` (an allowlist of fonts, OFL licences and SVG ornaments; anything else is 404) |
 | GET | `/version` | public | `app.versionHandler` |
 
 ## Authentication and accounts

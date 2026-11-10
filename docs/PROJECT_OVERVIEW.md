@@ -99,7 +99,7 @@ Measured on 2026-10-10 with `find` and `wc`, blank lines excluded.
 | Largest packages | `internal/app` (18,400 lines with tests), `internal/crisisexercise` (11,300), `internal/policystudio` (8,900), `internal/policydocs` (6,000) |
 
 About a fifth of the non-test Go (12,900 lines in 34 files) is page markup,
-CSS and JavaScript inside string literals. The theme layer adds about 2,600
+CSS and JavaScript inside string literals. The theme layer adds about 4,000
 more lines, mostly CSS and JavaScript.
 
 ## Repository layout

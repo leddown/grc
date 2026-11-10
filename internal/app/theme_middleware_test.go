@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -32,6 +33,9 @@ func TestCurrentThemeRecognizesEveryTheme(t *testing.T) {
 		"nonsense":  themeDark,
 		"":          themeDark,
 		themeK40:    themeK40,
+		themeTron:   themeTron,
+		themeTrench: themeTrench,
+		" Trench ":  themeTrench,
 	}
 	for cookie, want := range cases {
 		if got := currentTheme(themeContextWithCookie(cookie)); got != want {
@@ -67,7 +71,7 @@ func TestEveryThemeDefinesTheWholePalette(t *testing.T) {
 		"--text-base:", "--muted-base:", "--accent:", "--on-accent:",
 		"--error:", "--gain:", "--loss:",
 	}
-	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
+	for _, theme := range allThemes() {
 		css := headInsertTag(theme)
 		for _, token := range tokens {
 			if !strings.Contains(css, token) {
@@ -104,13 +108,13 @@ func TestTextLiftAppliedInHead(t *testing.T) {
 }
 
 // The 40K overlay is injected the way the rain is: only for the theme built
-// around it. The other four must not pay for a timer that appends elements.
+// around it. The others must not pay for a timer that appends elements.
 func TestFritzOverlayInjectedOnlyFor40K(t *testing.T) {
 	page := []byte("<html><head></head><body>x</body></html>")
 	if got := string(injectGlobalUI(page, themeK40)); !strings.Contains(got, "global-fritz") {
 		t.Error("40K theme must receive the fritz overlay")
 	}
-	for _, theme := range []string{themeDark, themeMatrix, themeChaos} {
+	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeTron, themeTrench} {
 		if got := string(injectGlobalUI(page, theme)); strings.Contains(got, "global-fritz") {
 			t.Errorf("theme %q must not receive the fritz overlay", theme)
 		}
@@ -288,34 +292,43 @@ func TestMatrixRainHonoursReducedMotion(t *testing.T) {
 	}
 }
 
-func TestThemeToggleCycleCoversEveryTheme(t *testing.T) {
-	toggle := themeToggleTag(themeDark)
-	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
-		if !strings.Contains(toggle, "'"+theme+"'") {
-			t.Errorf("toggle cycle is missing %q", theme)
+// The picker lists every theme, in order, and the one you are in is the one
+// selected: it is the only place a theme is ever named.
+func TestThemePickerListsEveryThemeAndSelectsTheCurrent(t *testing.T) {
+	want := []string{themeDark, themeMatrix, themeChaos, themeK40, themeTron, themeTrench}
+	if got := allThemes(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("themes = %v, want %v", got, want)
+	}
+	option := regexp.MustCompile(`<option value="([^"]+)"( selected)?>([^<]+)</option>`)
+	for _, theme := range want {
+		picker := themeToggleTag(theme)
+		if !strings.Contains(picker, `<select id="global-theme-toggle" aria-label="Theme"`) {
+			t.Fatalf("%s: the picker is not a labelled select", theme)
+		}
+		var listed, selected []string
+		for _, m := range option.FindAllStringSubmatch(picker, -1) {
+			listed = append(listed, m[1])
+			if m[2] != "" {
+				selected = append(selected, m[1])
+			}
+		}
+		if strings.Join(listed, ",") != strings.Join(want, ",") {
+			t.Errorf("%s: picker lists %v", theme, listed)
+		}
+		if len(selected) != 1 || selected[0] != theme {
+			t.Errorf("%s: selected %v", theme, selected)
 		}
 	}
-
-	// The visible label names the theme you are *in*. This control is the only
-	// place a theme is ever named, so naming the next one made every theme
-	// appear to be called the one after it — the green palette with no glitch,
-	// which is Matrix, sat under a button reading "Chaos theme".
-	for _, tc := range []struct{ theme, label, action string }{
-		{themeDark, ">🌙 Dark</button>", "Switch to Matrix"},
-		{themeMatrix, ">▓ Matrix</button>", "Switch to Chaos"},
-		{themeChaos, ">⚡ Chaos</button>", "Switch to 40K"},
-		{themeK40, ">⚙ 40K</button>", "Switch to Dark"},
-	} {
-		toggle := themeToggleTag(tc.theme)
-		if !strings.Contains(toggle, tc.label) {
-			t.Errorf("in %s the button should read %q", tc.theme, tc.label)
-		}
-		// What a click does belongs in the accessible name and the tooltip,
-		// where a control's action belongs — and the cycle has to advance
-		// rather than dead-ending on the last entry.
-		if !strings.Contains(toggle, tc.action) {
-			t.Errorf("in %s the button should offer %q", tc.theme, tc.action)
-		}
+	if !strings.Contains(themeToggleTag(themeTrench), ">✠ Trench Crusade</option>") {
+		t.Error("the Trench Crusade theme is named in full")
+	}
+	// An unknown theme falls back to dark everywhere else; the picker must not
+	// show a theme as current that the server is not rendering.
+	if got := themeToggleTag("nonsense"); strings.Contains(got, " selected") {
+		t.Error("an unknown theme must select nothing rather than a theme it is not")
+	}
+	if !strings.Contains(themeToggleTag(themeDark), "addEventListener('change'") {
+		t.Error("the picker must switch on change")
 	}
 }
 
@@ -335,7 +348,7 @@ func TestInjectGlobalUIWiresChaosEndToEnd(t *testing.T) {
 func TestLayoutStyleFollowsThemeStyleInEveryTheme(t *testing.T) {
 	page := []byte("<html><head></head><body>hello</body></html>")
 
-	for _, theme := range []string{themeDark, themeMatrix, themeChaos} {
+	for _, theme := range allThemes() {
 		got := string(injectGlobalUI(page, theme))
 
 		themeIdx := strings.Index(got, `id="global-theme-style"`)
@@ -370,7 +383,7 @@ func TestLayoutStyleKeepsFocusAndMotionRules(t *testing.T) {
 // phone costs space on every screen it was not written for: the 16px floor on
 // form controls alone made every input larger than the text around it.
 func TestInjectedChromeHasNoPhoneLayout(t *testing.T) {
-	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
+	for _, theme := range allThemes() {
 		injected := stripCSSComments(headInsertTag(theme) + bodyInsertTag(theme))
 		for _, unwanted := range []string{
 			"max(16px",
@@ -473,7 +486,7 @@ func stripCSSComments(s string) string {
 // inside a table cell or a flex row, so without border-box sizing that padding
 // is added outside the column and the control draws past it.
 func TestInjectedControlsAreSizedWithinTheirColumn(t *testing.T) {
-	for _, theme := range []string{themeDark, themeMatrix, themeChaos, themeK40} {
+	for _, theme := range allThemes() {
 		css := stripCSSComments(themeStyleTag(theme))
 		start := strings.Index(css, "input, select, textarea {")
 		if start < 0 {
@@ -496,12 +509,17 @@ func TestInjectedControlsAreSizedWithinTheirColumn(t *testing.T) {
 // element selector in the page wins every property the injected rule leaves
 // unset, and most pages here style bare `button`.
 func TestInjectedFixedControlsPinTheirOwnBox(t *testing.T) {
-	cases := map[string]string{
-		"#global-ai-dock-toggle": aiQuickPromptDockTag,
-		"#global-theme-toggle":   themeToggleTag(themeDark),
-		"#global-text-lift":      themeToggleTag(themeDark),
+	cases := map[string]struct {
+		source string
+		width  string
+	}{
+		"#global-ai-dock-toggle": {aiQuickPromptDockTag, "width: auto"},
+		// The picker has a fixed width so the top bar can leave room for it.
+		"#global-theme-toggle": {themeToggleTag(themeDark), "width: 136px !important"},
+		"#global-text-lift":    {themeToggleTag(themeDark), "width: auto"},
 	}
-	for selector, source := range cases {
+	for selector, tc := range cases {
+		source := tc.source
 		// Comments in these rules quote CSS of their own, braces included, so
 		// the block has to be located in the declarations alone.
 		source = stripCSSComments(source)
@@ -516,10 +534,18 @@ func TestInjectedFixedControlsPinTheirOwnBox(t *testing.T) {
 			continue
 		}
 		rule := source[start : start+end]
-		for _, want := range []string{"width: auto", "margin: 0"} {
+		for _, want := range []string{tc.width, "margin: 0"} {
 			if !strings.Contains(rule, want) {
-				t.Errorf("%s must declare %q so a page's own button rule cannot resize it", selector, want)
+				t.Errorf("%s must declare %q so a page's own control rule cannot resize it", selector, want)
 			}
 		}
 	}
+}
+
+func allThemes() []string {
+	out := make([]string, 0, len(themeChoices))
+	for _, choice := range themeChoices {
+		out = append(out, choice.id)
+	}
+	return out
 }

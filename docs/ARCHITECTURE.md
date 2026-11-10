@@ -151,8 +151,8 @@ knowing how sessions work.
 2. **`themeMiddleware`** replaces the response writer with one that buffers.
    After the handler returns, a non-HTML response is written through
    unchanged. An HTML response is spliced: the theme's palette, the scale of
-   sizes and the layout CSS before `</head>`, and the sidebar, command palette, theme toggle and AI
-   dock before `</body>`. A page can opt out of the chrome (the guest Studio
+   sizes and the layout CSS before `</head>`, and the sidebar, command palette, theme picker and AI
+   dock before `</body>`, with the theme's background engine if it has one. A page can opt out of the chrome (the guest Studio
    does). Streaming responses and WebSocket upgrades pass through.
 3. **`pageAccessMiddleware`** (not in local mode) looks at the path. If it is
    not under one of the protected prefixes it lets the request through. If it
@@ -180,8 +180,15 @@ Consequences an analyst should know:
 - Each page carries its own CSS, written for an older light, serif design.
   What a user sees is the **theme layer**, which overrides those styles from
   outside with `!important` rules and its own tokens (`--bg`, `--surface-2`,
-  `--text`, `--accent`, `--border`). There are four themes, all dark: dark
-  (default), matrix, chaos and 40k. There is no light theme.
+  `--text`, `--accent`, `--border`). There are six themes, all dark, chosen
+  from the picker on the top bar and kept in the `grc_theme` cookie: dark
+  (default), matrix, chaos, 40k, tron and trench (Trench Crusade). There is no
+  light theme. The palettes and the component layer are in `theme_design.go`;
+  the Tron and Trench costumes and their canvas engines (light cycles, no
+  man's land) in `theme_tron.go` and `theme_trench.go`, brought across from
+  Wintermute. Trench's two OFL faces and its ornaments are embedded from
+  `internal/app/themeassets` and served, with the licences, at the public
+  `/theme-assets/:file`.
 - The theme layer restyles elements by tag and by common class names. A new
   control that is not a `button`, `input`, `select` or `textarea` takes none of
   it and must use the tokens itself.
